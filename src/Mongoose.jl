@@ -30,15 +30,12 @@ const MG_EV_SNTP_TIME   = Cint(18)
 const MG_EV_WAKEUP      = Cint(19)
 const MG_EV_USER        = Cint(20)
 
-# Punteros a estructuras C. No necesitamos definir la estructura completa
-# a menos que necesitemos acceder a sus campos directamente en Julia.
-# Mongoose a menudo te da punteros opacos que usas en otras llamadas.
+# Punteros a estructuras C.
 const Ptr_mg_mgr = Ptr{Cvoid}
 const Ptr_mg_connection = Ptr{Cvoid}
 const Ptr_mg_http_message = Ptr{Cvoid} # Para el ev_data en MG_EV_HTTP_MSG
 
 # Tipo de la función de callback de eventos de Mongoose
-# typedef void (*mg_event_handler_t)(struct mg_connection *, int, void *);
 const mg_event_handler_t = Ptr{Cvoid} # Cuando se pasa a @ccall
 
 # --- 3. Wrapper de Funciones C de Mongoose ---
@@ -80,11 +77,6 @@ struct mg_http_header
 end
 
 # Función para obtener la URI de una petición HTTP
-# Mongoose 7+ usa mg_http_message.uri para la URI
-# Necesitamos acceder a la estructura `mg_http_message`.
-# Vamos a definir una versión simplificada de `mg_str` y `mg_http_message`
-# Solo los campos que necesitamos.
-# struct mg_str { const char *ptr; size_t len; };
 struct mg_http_message
     method::mg_str
     uri::mg_str
@@ -145,31 +137,27 @@ end
 # mg_event_handler_t espera (struct mg_connection *c, int ev, void *ev_data, void *fn_data)
 # fn_data es opcional, lo usamos para pasar cualquier cosa a nuestro handler.
 function mongoose_event_handler(c::Ptr_mg_connection, ev::Cint, ev_data::Ptr{Cvoid}, fn_data::Ptr{Cvoid})
-    # This println is good for general debugging
+    # This println is good for general debugging, but can be verbose.
     # println("Event: $ev (Raw), Conn: $c, EvData: $ev_data")
 
     if ev == MG_EV_HTTP_MSG
-        # Only attempt to access ev_data as mg_http_message for these specific events
+        # This is the primary event to handle the complete HTTP request
         if ev_data == C_NULL
-            # This case should ideally not happen for MG_EV_HTTP_MSG/HDRS,
-            # but it's good to have a safeguard if Mongoose behaves unexpectedly.
-            println(stderr, "Warning: ev_data is NULL for HTTP_MSG/HDRS event. This should not happen. Event: $ev")
+            println(stderr, "Warning: ev_data is NULL for MG_EV_HTTP_MSG. Skipping. Event: $ev")
             return
         end
 
         http_msg = get_http_message(ev_data)
         uri = unsafe_string(pointer(http_msg.uri.ptr), http_msg.uri.len)
         method = unsafe_string(pointer(http_msg.method.ptr), http_msg.method.len)
-        # And also for body, if you access it like this:
-        body = unsafe_string(pointer(http_msg.body.ptr), http_msg.body.len) # In echo_handler
 
-        println("Received $method request for: $uri (Event Type: $ev)")
+        println("Handling $method request for: $uri (Event Type: MG_EV_HTTP_MSG)")
 
         # Your existing routing logic for ROUTES
         if haskey(ROUTES, uri)
-            # For POST requests, specifically for /echo, you'll need the body
             if method == "POST" && uri == "/echo"
-                body = unsafe_string(http_msg.body.ptr, http_msg.body.len)
+                # For the body, you'd also access http_msg.body
+                body = unsafe_string(pointer(http_msg.body.ptr), http_msg.body.len)
                 ROUTES[uri](c, body)
             else
                 ROUTES[uri](c)
@@ -177,25 +165,51 @@ function mongoose_event_handler(c::Ptr_mg_connection, ev::Cint, ev_data::Ptr{Cvo
         else
             not_found_handler(c)
         end
-    elseif ev == MG_EV_ERROR
-        # For MG_EV_ERROR, ev_data is char* error_message
+
+    elseif ev == MG_EV_HTTP_HDRS
+        # This event means headers have arrived, but the full message might not yet be complete.
+        # DO NOT reply here. Simply log if needed, or ignore.
         if ev_data != C_NULL
-            error_msg = unsafe_string(ev_data) # Attempt to read the error message
+            http_msg = get_http_message(ev_data)
+            uri = unsafe_string(pointer(http_msg.uri.ptr), http_msg.uri.len)
+            method = unsafe_string(pointer(http_msg.method.ptr), http_msg.method.len)
+            println("Info: HTTP Headers received for $method $uri (Event Type: MG_EV_HTTP_HDRS)")
+        end
+
+    elseif ev == MG_EV_OPEN
+        println("Connection opened: $c")
+    elseif ev == MG_EV_ACCEPT
+        println("Connection accepted: $c")
+    elseif ev == MG_EV_CLOSE
+        println("Connection closed: $c")
+    elseif ev == MG_EV_ERROR
+        if ev_data != C_NULL
+            error_msg_ptr = Ptr{Cchar}(ev_data)
+            error_msg = unsafe_string(error_msg_ptr) # unsafe_string(::Ptr{Cchar}) is valid
             println(stderr, "Mongoose Error: $error_msg (Event Code: $ev)")
         else
             println(stderr, "Mongoose Error: (No error message) (Event Code: $ev)")
         end
     elseif ev == MG_EV_POLL
-        # For MG_EV_POLL, ev_data is uint64_t *uptime_millis
-        # You could read uptime here if needed: unsafe_load(Ptr{UInt64}(ev_data))
-        # println("Poll event. Uptime: $(unsafe_load(Ptr{UInt64}(ev_data))) ms")
-    elseif ev == MG_EV_CLOSE
-        println("Connection closed: $c")
-    elseif ev == MG_EV_ACCEPT
-        println("Connection accepted: $c")
-    # You can add more specific handling for other events if you need them.
+        # If you need to see uptime, uncomment this. Can be very verbose.
+        # if ev_data != C_NULL
+        #     uptime = unsafe_load(Ptr{UInt64}(ev_data))
+        #     println("Poll event. Uptime: $uptime ms")
+        # end
+    elseif ev == MG_EV_READ
+        # Data read from socket. You generally don't need to handle this unless you're implementing custom protocols.
+        # if ev_data != C_NULL
+        #     bytes_read = unsafe_load(Ptr{Clong}(ev_data))
+        #     println("Read $bytes_read bytes from $c")
+        # end
+    elseif ev == MG_EV_WRITE
+        # Data written to socket. Similar to MG_EV_READ.
+        # if ev_data != C_NULL
+        #     bytes_written = unsafe_load(Ptr{Clong}(ev_data))
+        #     println("Written $bytes_written bytes to $c")
+        # end
     else
-        # For all other events where ev_data is NULL or a different type
+        # Catch-all for any other unhandled Mongoose events
         println("Unhandled Mongoose event: $ev")
     end
 end
@@ -221,43 +235,6 @@ function start_server(port::Int=8080)
         return
     end
 
-    # Asignar memoria para el manager de Mongoose
-    # Mongoose 7+ no requiere que asignes mg_mgr. Simplemente pasas &mgr.
-    # Pero para FFI con Julia, a menudo asignamos y pasamos un puntero.
-    # Una forma segura es un `Ref` si la struct mg_mgr es pequeña y simple,
-    # o `Libc.malloc` para structs más complejas que son manejadas por la librería C.
-    # Mongoose 7.x: `struct mg_mgr mgr; mg_mgr_init(&mgr);`
-    # Esto significa que `mg_mgr` es una struct y la inicializas.
-    # Si la pasamos a C como `Ptr{Cvoid}`, es mejor que la librería C la maneje,
-    # o que la asignemos con `Libc.malloc` y la liberemos después.
-    # Para la máxima simplicidad, podemos usar un `Ref{Cvoid}` como proxy para `mg_mgr`
-    # o un `Ref{MgMgrStruct}` si definimos la struct completamente.
-    # Pero el ejemplo de Mongoose simplemente declara `struct mg_mgr mgr;`
-    # y pasa `&mgr`. Esto es un poco delicado con `ccall`.
-    # Un puntero a una estructura sin tamaño conocido es Ptr{Cvoid}.
-    # Lo más seguro es que Mongoose te dé un puntero a un `mg_mgr` que maneja internamente.
-    # Sin embargo, el ejemplo C es `struct mg_mgr mgr; mg_mgr_init(&mgr);`.
-    # Esto implica que `mgr` es stack-allocated.
-
-    # Intentemos con un `Ref` a un `Cvoid` para simular un `&mgr` si Mongoose
-    # realmente lo maneja como una caja negra. Esto es un hack.
-    # La forma correcta sería definir `struct MongooseMgr # ... # end`
-    # y luego `mgr = Ref{MongooseMgr}()` y pasar `mgr`.
-    # Pero no conocemos la estructura interna de `mg_mgr`.
-
-    # A menudo, en Mongoose, se pasa una dirección de una estructura declarada localmente.
-    # En Julia, esto es complicado con `ccall`. Podemos simularla con `Libc.malloc`
-    # para un tamaño aproximado, o la documentación de Mongoose podría decir el tamaño
-    # de `mg_mgr`. Asumiremos que `mg_mgr` puede ser tratada como una `Ptr{Cvoid}` por ahora
-    # y que Mongoose no espera un tamaño específico de asignación de Julia.
-    # Sin embargo, la forma más robusta es definir `struct mg_mgr` en Julia si es accesible.
-
-    # Por simplicidad, y basándonos en cómo Mongoose se usa a menudo,
-    # el `mgr_ptr` es un puntero a una instancia de `mg_mgr` que Mongoose manipula.
-    # Si no la asignamos, Mongoose podría escribir en memoria inválida.
-    # Vamos a usar `Libc.malloc` para darle un lugar.
-    # El tamaño real de `struct mg_mgr` es el problema.
-    # Una búsqueda rápida muestra que `sizeof(struct mg_mgr)` es alrededor de 88 bytes en 64-bit.
     mgr_ptr = Libc.malloc(Csize_t(128)) # Damos un poco de espacio extra
 
     mg_mgr_init(mgr_ptr)
@@ -314,9 +291,6 @@ function stop_server()
     if global_server_state.is_running
         println("Stopping server...")
         global_server_state.is_running = false
-        # No hay una función mg_stop_listen o mg_close para un listener específico
-        # en las versiones más simples de Mongoose directamente callable.
-        # Al detener el bucle de mg_mgr_poll y liberar el mgr, debería parar.
         if global_server_state.task !== nothing
             wait(global_server_state.task) # Esperar a que la tarea termine
         end
