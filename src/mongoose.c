@@ -11879,6 +11879,7 @@ static int mg_tls_parse_cert_der(void *buf, size_t dersz,
 
   MG_VERBOSE(("sig algo (oid): %M", mg_print_hex, algo.len, algo.value));
   // Signature algorithm OID mapping
+<<<<<<< HEAD
   if (algo.len == 8 &&
       memcmp(algo.value, "\x2A\x86\x48\xCE\x3D\x04\x03\x02", 8) == 0) {
     MG_VERBOSE(("sig algo: ECDSA with SHA256"));
@@ -11898,6 +11899,24 @@ static int mg_tls_parse_cert_der(void *buf, size_t dersz,
   } else if (algo.len == 9 &&
              memcmp(algo.value, "\x2A\x86\x48\x86\xF7\x0D\x01\x01\x0C", 9) ==
                  0) {
+=======
+  if (memcmp(algo.value, "\x2A\x86\x48\xCE\x3D\x04\x03\x02", algo.len) == 0) {
+    MG_VERBOSE(("sig algo: ECDSA with SHA256"));
+    mg_sha256(cert->tbshash, tbs, tbssz);
+    cert->tbshashsz = 32;
+  } else if (memcmp(algo.value, "\x2A\x86\x48\x86\xF7\x0D\x01\x01\x0B",
+                    algo.len) == 0) {
+    MG_VERBOSE(("sig algo: RSA with SHA256"));
+    mg_sha256(cert->tbshash, tbs, tbssz);
+    cert->tbshashsz = 32;
+  } else if (memcmp(algo.value, "\x2A\x86\x48\xCE\x3D\x04\x03\x03", algo.len) ==
+             0) {
+    MG_VERBOSE(("sig algo: ECDSA with SHA384"));
+    mg_sha384(cert->tbshash, tbs, tbssz);
+    cert->tbshashsz = 48;
+  } else if (memcmp(algo.value, "\x2A\x86\x48\x86\xF7\x0D\x01\x01\x0C",
+                    algo.len) == 0) {
+>>>>>>> 732a849 (Initial functional simple API)
     MG_VERBOSE(("sig algo: RSA with SHA384"));
     mg_sha384(cert->tbshash, tbs, tbssz);
     cert->tbshashsz = 48;
@@ -11918,7 +11937,11 @@ static int mg_tls_parse_cert_der(void *buf, size_t dersz,
     struct mg_der_tlv before, after;
     mg_der_next(&field, &before);
     mg_der_next(&field, &after);
+<<<<<<< HEAD
     if (after.len == 13 && memcmp(after.value, "250101000000Z", 13) < 0) {
+=======
+    if (memcmp(after.value, "250101000000Z", after.len) < 0) {
+>>>>>>> 732a849 (Initial functional simple API)
       MG_ERROR(("invalid validity dates: before=%M after=%M", mg_print_hex,
                 before.len, before.value, mg_print_hex, after.len,
                 after.value));
@@ -11938,6 +11961,7 @@ static int mg_tls_parse_cert_der(void *buf, size_t dersz,
 
   // public key algorithm
   MG_VERBOSE(("pk algo (oid): %M", mg_print_hex, pki_algo.len, pki_algo.value));
+<<<<<<< HEAD
   if (pki_algo.len == 8 &&
       memcmp(pki_algo.value, "\x2A\x86\x48\xCE\x3D\x03\x01\x07", 8) == 0) {
     cert->is_ec_pubkey = 1;
@@ -11954,6 +11978,22 @@ static int mg_tls_parse_cert_der(void *buf, size_t dersz,
   } else if (pki_algo.len == 9 &&
              memcmp(pki_algo.value, "\x2A\x86\x48\x86\xF7\x0D\x01\x01\x01",
                     9) == 0) {
+=======
+  if (memcmp(pki_algo.value, "\x2A\x86\x48\xCE\x3D\x03\x01\x07",
+             pki_algo.len) == 0) {
+    cert->is_ec_pubkey = 1;
+    MG_VERBOSE(("pk algo: ECDSA secp256r1"));
+  } else if (memcmp(pki_algo.value, "\x2A\x86\x48\xCE\x3D\x03\x01\x08",
+                    pki_algo.len) == 0) {
+    cert->is_ec_pubkey = 1;
+    MG_VERBOSE(("pk algo: ECDSA secp384r1"));
+  } else if (memcmp(pki_algo.value, "\x2A\x86\x48\xCE\x3D\x02\x01",
+                    pki_algo.len) == 0) {
+    cert->is_ec_pubkey = 1;
+    MG_VERBOSE(("pk algo: EC public key"));
+  } else if (memcmp(pki_algo.value, "\x2A\x86\x48\x86\xF7\x0D\x01\x01\x01",
+                    pki_algo.len) == 0) {
+>>>>>>> 732a849 (Initial functional simple API)
     cert->is_ec_pubkey = 0;
     MG_VERBOSE(("pk algo: RSA"));
   } else {
