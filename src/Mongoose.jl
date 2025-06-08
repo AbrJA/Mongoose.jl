@@ -7,28 +7,7 @@ const SCRIPT_DIR = @__DIR__
 const LIB_MONGOOSE = joinpath(SCRIPT_DIR, "libmongoose.so")
 
 # --- 2. Constantes y Tipos Mongoose (Mapeo a Julia) ---
-# ¡Estos valores deben coincidir exactamente con el enum de mongoose.c!
-const MG_EV_ERROR       = Cint(0)
-const MG_EV_OPEN        = Cint(1)
-const MG_EV_POLL        = Cint(2)
-const MG_EV_RESOLVE     = Cint(3)
-const MG_EV_CONNECT     = Cint(4)
-const MG_EV_ACCEPT      = Cint(5)
-const MG_EV_TLS_HS      = Cint(6)
-const MG_EV_READ        = Cint(7)
-const MG_EV_WRITE       = Cint(8)
-const MG_EV_CLOSE       = Cint(9)
-const MG_EV_HTTP_HDRS   = Cint(10) # New: HTTP Headers event
 const MG_EV_HTTP_MSG    = Cint(11) # This is the main one for full requests
-const MG_EV_WS_OPEN     = Cint(12)
-const MG_EV_WS_MSG      = Cint(13)
-const MG_EV_WS_CTL      = Cint(14)
-const MG_EV_MQTT_CMD    = Cint(15)
-const MG_EV_MQTT_MSG    = Cint(16)
-const MG_EV_MQTT_OPEN   = Cint(17)
-const MG_EV_SNTP_TIME   = Cint(18)
-const MG_EV_WAKEUP      = Cint(19)
-const MG_EV_USER        = Cint(20)
 
 # Punteros a estructuras C.
 const Ptr_mg_mgr = Ptr{Cvoid}
@@ -67,7 +46,6 @@ struct mg_str
     ptr::Cstring # Puntero al inicio de la cadena
     len::Csize_t # Longitud de la cadena
 end
-
 
 const MG_MAX_HTTP_HEADERS = 30 # <-- VERIFICA ESTE VALOR EN TU mongoose.h
 
@@ -115,15 +93,6 @@ function hello_world_handler(conn_ptr::Ptr_mg_connection)
     )
 end
 
-function echo_handler(conn_ptr::Ptr_mg_connection, body::String)
-    mg_http_reply(
-        conn_ptr,
-        Cint(200),
-        Base.unsafe_convert(Cstring, "Content-Type: text/plain\r\n"),
-        Base.unsafe_convert(Cstring, "Echo: $(body)") # Use string interpolation for body
-    )
-end
-
 function not_found_handler(conn_ptr::Ptr_mg_connection)
     mg_http_reply(
         conn_ptr,
@@ -141,12 +110,6 @@ function mongoose_event_handler(c::Ptr_mg_connection, ev::Cint, ev_data::Ptr{Cvo
     # println("Event: $ev (Raw), Conn: $c, EvData: $ev_data")
 
     if ev == MG_EV_HTTP_MSG
-        # This is the primary event to handle the complete HTTP request
-        if ev_data == C_NULL
-            println(stderr, "Warning: ev_data is NULL for MG_EV_HTTP_MSG. Skipping. Event: $ev")
-            return
-        end
-
         http_msg = get_http_message(ev_data)
         uri = unsafe_string(pointer(http_msg.uri.ptr), http_msg.uri.len)
         method = unsafe_string(pointer(http_msg.method.ptr), http_msg.method.len)
@@ -155,62 +118,10 @@ function mongoose_event_handler(c::Ptr_mg_connection, ev::Cint, ev_data::Ptr{Cvo
 
         # Your existing routing logic for ROUTES
         if haskey(ROUTES, uri)
-            if method == "POST" && uri == "/echo"
-                # For the body, you'd also access http_msg.body
-                body = unsafe_string(pointer(http_msg.body.ptr), http_msg.body.len)
-                ROUTES[uri](c, body)
-            else
-                ROUTES[uri](c)
-            end
+            ROUTES[uri](c)
         else
             not_found_handler(c)
         end
-
-    elseif ev == MG_EV_HTTP_HDRS
-        # This event means headers have arrived, but the full message might not yet be complete.
-        # DO NOT reply here. Simply log if needed, or ignore.
-        if ev_data != C_NULL
-            http_msg = get_http_message(ev_data)
-            uri = unsafe_string(pointer(http_msg.uri.ptr), http_msg.uri.len)
-            method = unsafe_string(pointer(http_msg.method.ptr), http_msg.method.len)
-            println("Info: HTTP Headers received for $method $uri (Event Type: MG_EV_HTTP_HDRS)")
-        end
-
-    elseif ev == MG_EV_OPEN
-        println("Connection opened: $c")
-    elseif ev == MG_EV_ACCEPT
-        println("Connection accepted: $c")
-    elseif ev == MG_EV_CLOSE
-        println("Connection closed: $c")
-    elseif ev == MG_EV_ERROR
-        if ev_data != C_NULL
-            error_msg_ptr = Ptr{Cchar}(ev_data)
-            error_msg = unsafe_string(error_msg_ptr) # unsafe_string(::Ptr{Cchar}) is valid
-            println(stderr, "Mongoose Error: $error_msg (Event Code: $ev)")
-        else
-            println(stderr, "Mongoose Error: (No error message) (Event Code: $ev)")
-        end
-    elseif ev == MG_EV_POLL
-        # If you need to see uptime, uncomment this. Can be very verbose.
-        # if ev_data != C_NULL
-        #     uptime = unsafe_load(Ptr{UInt64}(ev_data))
-        #     println("Poll event. Uptime: $uptime ms")
-        # end
-    elseif ev == MG_EV_READ
-        # Data read from socket. You generally don't need to handle this unless you're implementing custom protocols.
-        # if ev_data != C_NULL
-        #     bytes_read = unsafe_load(Ptr{Clong}(ev_data))
-        #     println("Read $bytes_read bytes from $c")
-        # end
-    elseif ev == MG_EV_WRITE
-        # Data written to socket. Similar to MG_EV_READ.
-        # if ev_data != C_NULL
-        #     bytes_written = unsafe_load(Ptr{Clong}(ev_data))
-        #     println("Written $bytes_written bytes to $c")
-        # end
-    else
-        # Catch-all for any other unhandled Mongoose events
-        println("Unhandled Mongoose event: $ev")
     end
 end
 
@@ -243,14 +154,14 @@ function start_server(port::Int=8080)
 
     # Registrar las rutas de ejemplo
     register_route("/hello", hello_world_handler)
-    register_route("/echo", (c, body) -> echo_handler(c, body)) # El handler de echo necesita el cuerpo
+    # register_route("/echo", (c, body) -> echo_handler(c, body)) # El handler de echo necesita el cuerpo
 
     listen_url = "http://0.0.0.0:$port"
     listener_conn = mg_http_listen(global_server_state.mgr, Cstring(pointer(listen_url)), C_MONGOOSE_HANDLER, C_NULL)
-    if listener_conn == C_NULL
-        Libc.free(global_server_state.mgr)
-        error("Failed to listen on $listen_url. Is the port already in use?")
-    end
+    # if listener_conn == C_NULL
+    #     Libc.free(global_server_state.mgr)
+    #     error("Failed to listen on $listen_url. Is the port already in use?")
+    # end
     global_server_state.listener = listener_conn
     println("Listening on $listen_url")
 
@@ -261,9 +172,9 @@ function start_server(port::Int=8080)
         try
             while global_server_state.is_running
                 # println("Polling Mongoose...")
-                mg_mgr_poll(global_server_state.mgr, Cint(10)) # Poll cada 1000ms
+                mg_mgr_poll(global_server_state.mgr, Cint(1)) # Poll cada 1000ms
                 # println("Poll complete.")
-                sleep(0.01) # Pequeña pausa para no bloquear el hilo de Julia
+                yield() # Permitir que otros procesos se ejecuten
             end
         catch e
             if !isa(e, InterruptException)
@@ -287,13 +198,25 @@ function start_server(port::Int=8080)
     return
 end
 
+# --- 7. Función para Detener el Servidor (Modificada) ---
 function stop_server()
     if global_server_state.is_running
         println("Stopping server...")
         global_server_state.is_running = false
+
+        # Espera a que el bucle de eventos termine
         if global_server_state.task !== nothing
-            wait(global_server_state.task) # Esperar a que la tarea termine
+            wait(global_server_state.task)
         end
+
+        # Limpieza en el orden correcto
+        if global_server_state.mgr != C_NULL
+            println("Freeing Mongoose manager...")
+            mg_mgr_free(global_server_state.mgr) # <-- Llamada correcta
+            Libc.free(global_server_state.mgr)   # Liberar la memoria del puntero en sí
+            global_server_state.mgr = C_NULL
+        end
+
         println("Server stopped.")
     else
         println("Server not running.")
