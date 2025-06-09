@@ -41,6 +41,9 @@ function mg_http_reply(c::Ptr_mg_connection, status::Cint, headers::Cstring, bod
     @ccall LIB_MONGOOSE.mg_http_reply(c::Ptr_mg_connection, status::Cint, headers::Cstring, body::Cstring)::Cvoid
 end
 
+function mg_mgr_free(mgr::Ptr_mg_mgr)
+    @ccall LIB_MONGOOSE.mg_mgr_free(mgr::Ptr_mg_mgr)::Cvoid
+end
 
 struct mg_str
     ptr::Cstring # Puntero al inicio de la cadena
@@ -114,7 +117,7 @@ function mongoose_event_handler(c::Ptr_mg_connection, ev::Cint, ev_data::Ptr{Cvo
         uri = unsafe_string(pointer(http_msg.uri.ptr), http_msg.uri.len)
         method = unsafe_string(pointer(http_msg.method.ptr), http_msg.method.len)
 
-        println("Handling $method request for: $uri (Event Type: MG_EV_HTTP_MSG)")
+        # println("Handling $method request for: $uri (Event Type: MG_EV_HTTP_MSG)")
 
         # Your existing routing logic for ROUTES
         if haskey(ROUTES, uri)
@@ -127,8 +130,7 @@ end
 
 # Crear el puntero a la función Julia que se pasará a Mongoose
 # `@cfunction` solo funciona con funciones de nivel superior.
-const C_MONGOOSE_HANDLER = @cfunction(mongoose_event_handler, Cvoid,
-                                      (Ptr_mg_connection, Cint, Ptr{Cvoid}, Ptr{Cvoid}))
+const C_MONGOOSE_HANDLER = @cfunction(mongoose_event_handler, Cvoid, (Ptr_mg_connection, Cint, Ptr{Cvoid}, Ptr{Cvoid}))
 
 # --- 6. Función para Iniciar el Servidor ---
 mutable struct ServerState
@@ -158,10 +160,15 @@ function start_server(port::Int=8080)
 
     listen_url = "http://0.0.0.0:$port"
     listener_conn = mg_http_listen(global_server_state.mgr, Cstring(pointer(listen_url)), C_MONGOOSE_HANDLER, C_NULL)
-    # if listener_conn == C_NULL
-    #     Libc.free(global_server_state.mgr)
-    #     error("Failed to listen on $listen_url. Is the port already in use?")
-    # end
+
+    if listener_conn == C_NULL
+        # Si la escucha falla, debemos limpiar aquí mismo.
+        Libc.free(mgr_ptr)
+        # mg_mgr_free NO es necesario porque el manager no llegó a usarse.
+        println(stderr, "Mongoose failed to listen on $listen_url. errno: $(Libc.errno())")
+        error("Failed to start server.")
+    end
+
     global_server_state.listener = listener_conn
     println("Listening on $listen_url")
 
@@ -174,27 +181,17 @@ function start_server(port::Int=8080)
                 # println("Polling Mongoose...")
                 mg_mgr_poll(global_server_state.mgr, Cint(1)) # Poll cada 1000ms
                 # println("Poll complete.")
-                yield() # Permitir que otros procesos se ejecuten
+                yield()
             end
         catch e
             if !isa(e, InterruptException)
                 println(stderr, "Server loop error: $e")
                 Base.showerror(stderr, e, catch_backtrace())
             end
-        finally
-            # Mongoose tiene mg_mgr_free para limpiar. Necesitaríamos envolverla.
-            # Por ahora, solo liberamos la memoria asignada por Julia.
-            # mg_mgr_free(global_server_state.mgr) # Esto sería lo ideal
-            if global_server_state.mgr != C_NULL
-                Libc.free(global_server_state.mgr)
-                global_server_state.mgr = C_NULL
-            end
-            println("Mongoose resources freed.")
-            global_server_state.is_running = false
         end
+        println("Event loop task finished.")
     end
-
-    println("Server started in background task. Press Ctrl+C to stop.")
+    println("Server started in background task.")
     return
 end
 
@@ -206,18 +203,22 @@ function stop_server()
 
         # Espera a que el bucle de eventos termine
         if global_server_state.task !== nothing
+            println("Waiting for event loop to exit...")
             wait(global_server_state.task)
+            global_server_state.task = nothing # Limpia la referencia a la tarea
         end
 
         # Limpieza en el orden correcto
         if global_server_state.mgr != C_NULL
-            println("Freeing Mongoose manager...")
-            mg_mgr_free(global_server_state.mgr) # <-- Llamada correcta
-            Libc.free(global_server_state.mgr)   # Liberar la memoria del puntero en sí
+            println("Freeing Mongoose manager and closing connections...")
+            # 1. Decirle a Mongoose que libere todo (sockets, conexiones, etc.)
+            mg_mgr_free(global_server_state.mgr)
+            # 2. Liberar la memoria del puntero que asignamos con malloc
+            Libc.free(global_server_state.mgr)
+            # 3. Marcar como nulo para evitar doble liberación
             global_server_state.mgr = C_NULL
         end
-
-        println("Server stopped.")
+        println("Server stopped successfully.")
     else
         println("Server not running.")
     end
