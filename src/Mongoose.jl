@@ -1,13 +1,9 @@
 module Mongoose
 
-using Libdl # Para dlopen, etc.
-
-# --- 1. Configuración y Ruta de la Librería ---
-const SCRIPT_DIR = @__DIR__
-const LIB_MONGOOSE = joinpath(SCRIPT_DIR, "libmongoose.so")
+using Mongoose_jll
 
 # --- 2. Constantes y Tipos Mongoose (Mapeo a Julia) ---
-const MG_EV_HTTP_MSG    = Cint(11) # This is the main one for full requests
+const MG_EV_HTTP_MSG = Cint(11) # This is the main one for full requests
 
 # Punteros a estructuras C.
 const Ptr_mg_mgr = Ptr{Cvoid}
@@ -20,29 +16,34 @@ const mg_event_handler_t = Ptr{Cvoid} # Cuando se pasa a @ccall
 # --- 3. Wrapper de Funciones C de Mongoose ---
 # Función para inicializar el manager de Mongoose
 function mg_mgr_init(mgr::Ptr_mg_mgr)
-    @ccall LIB_MONGOOSE.mg_mgr_init(mgr::Ptr_mg_mgr)::Cvoid
+    # @ccall LIB_MONGOOSE.mg_mgr_init(mgr::Ptr_mg_mgr)::Cvoid
+    ccall((:mg_mgr_init, libmongoose), Cvoid, (Ptr_mg_mgr,), mgr)
 end
 
 # Función para escuchar conexiones HTTP
 # mg_http_listen(mgr, url, handler, userdata)
 function mg_http_listen(mgr::Ptr_mg_mgr, url::Cstring, handler::mg_event_handler_t, userdata::Ptr{Cvoid})::Ptr_mg_connection
-    @ccall LIB_MONGOOSE.mg_http_listen(mgr::Ptr_mg_mgr, url::Cstring, handler::mg_event_handler_t, userdata::Ptr{Cvoid})::Ptr_mg_connection
+    # @ccall LIB_MONGOOSE.mg_http_listen(mgr::Ptr_mg_mgr, url::Cstring, handler::mg_event_handler_t, userdata::Ptr{Cvoid})::Ptr_mg_connection
+    ccall((:mg_http_listen, libmongoose), Ptr_mg_connection, (Ptr_mg_mgr, Cstring, mg_event_handler_t, Ptr{Cvoid}), mgr, url, handler, userdata)
 end
 
 # Función para procesar eventos
 # mg_mgr_poll(mgr, timeout_ms)
 function mg_mgr_poll(mgr::Ptr_mg_mgr, timeout_ms::Cint)::Cint
-    @ccall LIB_MONGOOSE.mg_mgr_poll(mgr::Ptr_mg_mgr, timeout_ms::Cint)::Cint
+    # @ccall LIB_MONGOOSE.mg_mgr_poll(mgr::Ptr_mg_mgr, timeout_ms::Cint)::Cint
+    ccall((:mg_mgr_poll, libmongoose), Cint, (Ptr_mg_mgr, Cint), mgr, timeout_ms)
 end
 
 # Función para responder a una petición HTTP
 # mg_http_reply(c, status, headers, body)
 function mg_http_reply(c::Ptr_mg_connection, status::Cint, headers::Cstring, body::Cstring)
-    @ccall LIB_MONGOOSE.mg_http_reply(c::Ptr_mg_connection, status::Cint, headers::Cstring, body::Cstring)::Cvoid
+    # @ccall LIB_MONGOOSE.mg_http_reply(c::Ptr_mg_connection, status::Cint, headers::Cstring, body::Cstring)::Cvoid
+    ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr_mg_connection, Cint, Cstring, Cstring), c, status, headers, body)
 end
 
 function mg_mgr_free(mgr::Ptr_mg_mgr)
-    @ccall LIB_MONGOOSE.mg_mgr_free(mgr::Ptr_mg_mgr)::Cvoid
+    # @ccall LIB_MONGOOSE.mg_mgr_free(mgr::Ptr_mg_mgr)::Cvoid
+    ccall((:mg_mgr_free, libmongoose), Cvoid, (Ptr_mg_mgr,), mgr)
 end
 
 struct mg_str
