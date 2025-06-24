@@ -6,110 +6,107 @@ using Mongoose_jll
 const MG_EV_HTTP_MSG = Cint(11) # This is the main one for full requests
 
 # Punteros a estructuras C.
-const Ptr_mg_mgr = Ptr{Cvoid}
-const Ptr_mg_connection = Ptr{Cvoid}
-const Ptr_mg_http_message = Ptr{Cvoid} # Para el ev_data en MG_EV_HTTP_MSG
+const PTR_MG_MGR = Ptr{Cvoid}
+const PTR_MG_CONNECTION = Ptr{Cvoid}
+const PTR_MG_EVENT_HANDLER_T = Ptr{Cvoid} # Tipo de la función de callback de eventos de Mongoose
 
-# Tipo de la función de callback de eventos de Mongoose
-const mg_event_handler_t = Ptr{Cvoid} # Cuando se pasa a @ccall
-
-# --- 3. Wrapper de Funciones C de Mongoose ---
-# Función para inicializar el manager de Mongoose
-function mg_mgr_init(mgr::Ptr_mg_mgr)
-    # @ccall LIB_MONGOOSE.mg_mgr_init(mgr::Ptr_mg_mgr)::Cvoid
-    ccall((:mg_mgr_init, libmongoose), Cvoid, (Ptr_mg_mgr,), mgr)
+# --- Wrapper de Funciones C de Mongoose ---
+function mg_mgr_init(mgr::PTR_MG_MGR)::Cvoid
+    ccall((:mg_mgr_init, libmongoose), Cvoid, (PTR_MG_MGR,), mgr)
 end
 
 # Función para escuchar conexiones HTTP
-# mg_http_listen(mgr, url, handler, userdata)
-function mg_http_listen(mgr::Ptr_mg_mgr, url::Cstring, handler::mg_event_handler_t, userdata::Ptr{Cvoid})::Ptr_mg_connection
-    # @ccall LIB_MONGOOSE.mg_http_listen(mgr::Ptr_mg_mgr, url::Cstring, handler::mg_event_handler_t, userdata::Ptr{Cvoid})::Ptr_mg_connection
-    ccall((:mg_http_listen, libmongoose), Ptr_mg_connection, (Ptr_mg_mgr, Cstring, mg_event_handler_t, Ptr{Cvoid}), mgr, url, handler, userdata)
+function mg_http_listen(mgr::PTR_MG_MGR, url::Cstring, handler::PTR_MG_EVENT_HANDLER_T, userdata::Ptr{Cvoid})::PTR_MG_CONNECTION
+    ccall((:mg_http_listen, libmongoose), PTR_MG_CONNECTION, (PTR_MG_MGR, Cstring, PTR_MG_EVENT_HANDLER_T, Ptr{Cvoid}), mgr, url, handler, userdata)
 end
 
 # Función para procesar eventos
-# mg_mgr_poll(mgr, timeout_ms)
-function mg_mgr_poll(mgr::Ptr_mg_mgr, timeout_ms::Cint)::Cint
-    # @ccall LIB_MONGOOSE.mg_mgr_poll(mgr::Ptr_mg_mgr, timeout_ms::Cint)::Cint
-    ccall((:mg_mgr_poll, libmongoose), Cint, (Ptr_mg_mgr, Cint), mgr, timeout_ms)
+function mg_mgr_poll(mgr::PTR_MG_MGR, timeout_ms::Cint)::Cint
+    ccall((:mg_mgr_poll, libmongoose), Cint, (PTR_MG_MGR, Cint), mgr, timeout_ms)
 end
 
 # Función para responder a una petición HTTP
-# mg_http_reply(c, status, headers, body)
-function mg_http_reply(c::Ptr_mg_connection, status::Cint, headers::Cstring, body::Cstring)
-    # @ccall LIB_MONGOOSE.mg_http_reply(c::Ptr_mg_connection, status::Cint, headers::Cstring, body::Cstring)::Cvoid
-    ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr_mg_connection, Cint, Cstring, Cstring), c, status, headers, body)
+function mg_http_reply(conn::PTR_MG_CONNECTION, status::Cint, headers::Cstring, body::Cstring)::Cvoid
+    ccall((:mg_http_reply, libmongoose), Cvoid, (PTR_MG_CONNECTION, Cint, Cstring, Cstring), conn, status, headers, body)
 end
 
-function mg_mgr_free(mgr::Ptr_mg_mgr)
-    # @ccall LIB_MONGOOSE.mg_mgr_free(mgr::Ptr_mg_mgr)::Cvoid
-    ccall((:mg_mgr_free, libmongoose), Cvoid, (Ptr_mg_mgr,), mgr)
+# Función para liberar el gestor de Mongoose
+function mg_mgr_free(mgr::PTR_MG_MGR)::Cvoid
+    ccall((:mg_mgr_free, libmongoose), Cvoid, (PTR_MG_MGR,), mgr)
 end
 
-struct mg_str
+struct MgStr
     ptr::Cstring # Puntero al inicio de la cadena
     len::Csize_t # Longitud de la cadena
 end
 
-const MG_MAX_HTTP_HEADERS = 30 # <-- VERIFICA ESTE VALOR EN TU mongoose.h
+const MG_MAX_HTTP_HEADERS = 30 # Número máximo de cabeceras HTTP
 
-struct mg_http_header
-    name::mg_str
-    val::mg_str
+struct MgHttpHeader
+    name::MgStr
+    val::MgStr
 end
 
 # Función para obtener la URI de una petición HTTP
-struct mg_http_message
-    method::mg_str
-    uri::mg_str
-    query::mg_str
-    proto::mg_str
-    headers::NTuple{MG_MAX_HTTP_HEADERS, mg_http_header} # Array of headers
-    body::mg_str
-    head::mg_str
-    message::mg_str
+struct MgHttpMessage
+    method::MgStr
+    uri::MgStr
+    query::MgStr
+    proto::MgStr
+    headers::NTuple{MG_MAX_HTTP_HEADERS, MgHttpHeader} # Array of headers
+    body::MgStr
+    head::MgStr
+    message::MgStr
 end
 
-# Ahora podemos acceder a la URI de mg_http_message
-function get_http_message(ev_data::Ptr{Cvoid})::mg_http_message
+# Ahora podemos acceder a la URI de MgHttpMessage
+function get_http_message(ev_data::Ptr{Cvoid})::MgHttpMessage
     if ev_data == C_NULL
         error("ev_data for HTTP message is NULL")
     end
-    return unsafe_load(Ptr{mg_http_message}(ev_data))
+    return unsafe_load(Ptr{MgHttpMessage}(ev_data))
 end
 
 # --- 4. Enrutamiento en Julia ---
 # Esto será un diccionario simple de rutas a funciones Julia
-const ROUTES = Dict{String, Function}()
-
-# Registra una función para una ruta específica
-function register_route(path::String, handler::Function)
-    ROUTES[path] = handler
+struct Router
+    routes::Dict{Tuple{Symbol, String}, Function}
+    Router() = new(Dict{Tuple{Symbol, String}, Function}())
 end
 
-# Funciones de handler de ejemplo
-function hello_world_handler(conn_ptr::Ptr_mg_connection)
-    mg_http_reply(
-        conn_ptr,
-        Cint(200),
-        Base.unsafe_convert(Cstring, "Content-Type: text/plain\r\n"),
-        Base.unsafe_convert(Cstring, "Hello World from Julia!")
-    )
+const ROUTER = Router()
+
+"""
+    add_route!(router::Router, method::Symbol, path::String, handler::Function)
+
+Agrega una ruta al router.
+"""
+function add_route!(method::Symbol, path::String, handler::Function)
+    ROUTER.routes[(method, path)] = handler
 end
 
-function not_found_handler(conn_ptr::Ptr_mg_connection)
+function not_found_handler(c::PTR_MG_CONNECTION)
     mg_http_reply(
-        conn_ptr,
+        c,
         Cint(404),
         Base.unsafe_convert(Cstring, "Content-Type: text/plain\r\n"), # Still good to send headers
         Base.unsafe_convert(Cstring, "404 Not Found")
     )
 end
 
+function internal_server_error_handler(c::PTR_MG_CONNECTION)
+    mg_http_reply(
+        c,
+        Cint(500),
+        Base.unsafe_convert(Cstring, "Content-Type: text/plain\r\n"),
+        Base.unsafe_convert(Cstring, "500 Internal Server Error")
+    )
+end
+
 # --- 5. El Callback Principal de Mongoose ---
-# mg_event_handler_t espera (struct mg_connection *c, int ev, void *ev_data, void *fn_data)
+# PTR_MG_EVENT_HANDLER_T espera (struct mg_connection *c, int ev, void *ev_data, void *fn_data)
 # fn_data es opcional, lo usamos para pasar cualquier cosa a nuestro handler.
-function mongoose_event_handler(c::Ptr_mg_connection, ev::Cint, ev_data::Ptr{Cvoid}, fn_data::Ptr{Cvoid})
+function mongoose_event_handler(c::PTR_MG_CONNECTION, ev::Cint, ev_data::Ptr{Cvoid}, fn_data::Ptr{Cvoid})
     # This println is good for general debugging, but can be verbose.
     # println("Event: $ev (Raw), Conn: $c, EvData: $ev_data")
 
@@ -117,34 +114,44 @@ function mongoose_event_handler(c::Ptr_mg_connection, ev::Cint, ev_data::Ptr{Cvo
         http_msg = get_http_message(ev_data)
         uri = unsafe_string(pointer(http_msg.uri.ptr), http_msg.uri.len)
         method = unsafe_string(pointer(http_msg.method.ptr), http_msg.method.len)
+        # query = unsafe_string(pointer(http_msg.query.ptr), http_msg.query.len)
+        # body = unsafe_string(http_msg.body.ptr, http_msg.body.len)
 
-        # println("Handling $method request for: $uri (Event Type: MG_EV_HTTP_MSG)")
+        # @info "Handling $method request for: $uri (Event Type: MG_EV_HTTP_MSG)"
 
         # Your existing routing logic for ROUTES
-        if haskey(ROUTES, uri)
-            ROUTES[uri](c)
-        else
-            not_found_handler(c)
+        handler = get(ROUTER.routes, (Symbol(method), uri), nothing)
+        if isnothing(handler)
+            return not_found_handler(c)
+            @warn "404 Not Found: $method $uri"
+        end
+        try
+            handler(c)
+        catch e
+            @error "Error handling request: $e"
+            Base.showerror(stderr, e, catch_backtrace())
+            internal_server_error_handler(c)
         end
     end
+    return
 end
 
 # Crear el puntero a la función Julia que se pasará a Mongoose
 # `@cfunction` solo funciona con funciones de nivel superior.
-const C_MONGOOSE_HANDLER = @cfunction(mongoose_event_handler, Cvoid, (Ptr_mg_connection, Cint, Ptr{Cvoid}, Ptr{Cvoid}))
+# const C_MONGOOSE_HANDLER = @cfunction(mongoose_event_handler, Cvoid, (PTR_MG_CONNECTION, Cint, Ptr{Cvoid}, Ptr{Cvoid}))
 
 # --- 6. Función para Iniciar el Servidor ---
 mutable struct ServerState
-    mgr::Ptr_mg_mgr
-    listener::Ptr_mg_connection
+    mgr::PTR_MG_MGR
+    listener::PTR_MG_CONNECTION
     is_running::Bool
     task::Union{Task, Nothing}
 end
 
-const global_server_state = ServerState(C_NULL, C_NULL, false, nothing)
+const SERVER_STATE = ServerState(C_NULL, C_NULL, false, nothing)
 
-function start_server(port::Int=8080)
-    if global_server_state.is_running
+function start_server(port::Int=8080)::Nothing
+    if SERVER_STATE.is_running
         println("Server already running.")
         return
     end
@@ -152,15 +159,13 @@ function start_server(port::Int=8080)
     mgr_ptr = Libc.malloc(Csize_t(128)) # Damos un poco de espacio extra
 
     mg_mgr_init(mgr_ptr)
-    global_server_state.mgr = mgr_ptr
+    SERVER_STATE.mgr = mgr_ptr
     println("Mongoose manager initialized.")
 
-    # Registrar las rutas de ejemplo
-    register_route("/hello", hello_world_handler)
-    # register_route("/echo", (c, body) -> echo_handler(c, body)) # El handler de echo necesita el cuerpo
+    C_MONGOOSE_HANDLER = @cfunction(mongoose_event_handler, Cvoid, (PTR_MG_CONNECTION, Cint, Ptr{Cvoid}, Ptr{Cvoid}))
 
     listen_url = "http://0.0.0.0:$port"
-    listener_conn = mg_http_listen(global_server_state.mgr, Cstring(pointer(listen_url)), C_MONGOOSE_HANDLER, C_NULL)
+    listener_conn = mg_http_listen(SERVER_STATE.mgr, Cstring(pointer(listen_url)), C_MONGOOSE_HANDLER, C_NULL)
 
     if listener_conn == C_NULL
         # Si la escucha falla, debemos limpiar aquí mismo.
@@ -170,17 +175,17 @@ function start_server(port::Int=8080)
         error("Failed to start server.")
     end
 
-    global_server_state.listener = listener_conn
+    SERVER_STATE.listener = listener_conn
     println("Listening on $listen_url")
 
-    global_server_state.is_running = true
+    SERVER_STATE.is_running = true
 
     # Ejecutar el bucle de eventos en una tarea asíncrona
-    global_server_state.task = @async begin
+    SERVER_STATE.task = @async begin
         try
-            while global_server_state.is_running
+            while SERVER_STATE.is_running
                 # println("Polling Mongoose...")
-                mg_mgr_poll(global_server_state.mgr, Cint(1)) # Poll cada 1000ms
+                mg_mgr_poll(SERVER_STATE.mgr, Cint(1)) # Poll cada 1000ms
                 # println("Poll complete.")
                 yield()
             end
@@ -197,32 +202,33 @@ function start_server(port::Int=8080)
 end
 
 # --- 7. Función para Detener el Servidor (Modificada) ---
-function stop_server()
-    if global_server_state.is_running
+function stop_server()::Nothing
+    if SERVER_STATE.is_running
         println("Stopping server...")
-        global_server_state.is_running = false
+        SERVER_STATE.is_running = false
 
         # Espera a que el bucle de eventos termine
-        if global_server_state.task !== nothing
+        if SERVER_STATE.task !== nothing
             println("Waiting for event loop to exit...")
-            wait(global_server_state.task)
-            global_server_state.task = nothing # Limpia la referencia a la tarea
+            wait(SERVER_STATE.task)
+            SERVER_STATE.task = nothing # Limpia la referencia a la tarea
         end
 
         # Limpieza en el orden correcto
-        if global_server_state.mgr != C_NULL
+        if SERVER_STATE.mgr != C_NULL
             println("Freeing Mongoose manager and closing connections...")
             # 1. Decirle a Mongoose que libere todo (sockets, conexiones, etc.)
-            mg_mgr_free(global_server_state.mgr)
+            mg_mgr_free(SERVER_STATE.mgr)
             # 2. Liberar la memoria del puntero que asignamos con malloc
-            Libc.free(global_server_state.mgr)
+            Libc.free(SERVER_STATE.mgr)
             # 3. Marcar como nulo para evitar doble liberación
-            global_server_state.mgr = C_NULL
+            SERVER_STATE.mgr = C_NULL
         end
         println("Server stopped successfully.")
     else
         println("Server not running.")
     end
+    return
 end
 
 end
