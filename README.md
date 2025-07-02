@@ -1,4 +1,5 @@
-# Mongoose
+# Mongoose![logo](https://github.com/user-attachments/assets/40a66324-a904-40d7-8b00-c996f7c3e34c)
+
 
 [![Build Status](https://github.com/AbrJA/Mongoose.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/AbrJA/Mongoose.jl/actions/workflows/CI.yml?query=branch%3Amain)
 
