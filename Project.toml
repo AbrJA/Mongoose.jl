@@ -3,6 +3,9 @@ uuid = "494b707d-6180-4d60-8018-fdbee1ff8085"
 authors = ["Abraham Jaimes"]
 version = "1.0.0-DEV"
 
+[deps]
+Mongoose_jll = "0a8a3f5b-4c0e-5906-8e29-5b3fee15539c"
+
 [compat]
 julia = "1.6.7"
 
