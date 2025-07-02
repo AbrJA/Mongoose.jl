@@ -12,7 +12,6 @@ const MG_EV_HTTP_MSG = Cint(11) # For full requests
 const MG_PTR_MGR = Ptr{Cvoid}
 const MG_PTR_CONNECTION = Ptr{Cvoid}
 const MG_PTR_EVENT_HANDLER_T = Ptr{Cvoid} # Pointer to the event handler function
-const MG_ROUTER = MgRouter()
 
 # --- 2. Wrapper de Funciones C de Mongoose ---
 function mg_mgr_init(mgr::MG_PTR_MGR)::Cvoid
@@ -106,6 +105,8 @@ mutable struct MgRouter
     routes::Dict{String, MgRoute}
     MgRouter() = new(Dict{String, MgRoute}())
 end
+
+const MG_ROUTER = MgRouter()
 
 function mg_register!(method::AbstractString, uri::AbstractString, handler::Function)
     method = uppercase(method)
