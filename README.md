@@ -8,7 +8,7 @@
 ] add https://github.com/AbrJA/Mongoose.jl.git
 ```
 
-# Example: Simple HTTP Server with Mongoose.jl
+## Example: Simple HTTP Server with Mongoose.jl
 
 This example demonstrates how to use the `Mongoose.jl` package to create a basic HTTP server in Julia. The server registers a single route (`/hello`) that responds to GET requests with a JSON message.
 
