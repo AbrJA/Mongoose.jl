@@ -4,7 +4,7 @@
     <img width="300px" src="logo.png"/>
 </p>
 
-**Mongoose.jl** is a Julia package that provides a lightweight and efficient interface for building HTTP servers and web applications. It leverages the [Mongoose C library](https://github.com/cesanta/mongoose) to deliver fast, embeddable web server capabilities directly from Julia code. The package is designed for simplicity and ease of use. With Mongoose.jl, users can define routes, handle HTTP requests, and serve dynamic or static content with minimal setup.
+**Mongoose.jl** is a Julia package that provides a lightweight and efficient interface for building HTTP servers and web applications. It leverages the [Mongoose C library](https://github.com/cesanta/mongoose) to deliver fast, embeddable web server capabilities directly from Julia code. The package is designed for simplicity and ease of use. With `Mongoose.jl`, users can define routes, handle HTTP requests, and serve dynamic or static content with minimal setup.
 
 ## Install
 

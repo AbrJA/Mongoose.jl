@@ -141,8 +141,7 @@ function mg_event_handler(conn::MG_PTR_CONNECTION, ev::Cint, ev_data::Ptr{Cvoid}
             try
                 route.handlers[method](conn, message)
             catch e
-                @error "Error handling request: $e"
-                Base.showerror(stderr, e, catch_backtrace())
+                @error "Error handling request: $e" error = (e, catch_backtrace())
                 return mg_text_reply(conn, 500, "500 Internal Server Error")
             end
         end
@@ -173,7 +172,7 @@ function mg_serve(host::AbstractString="127.0.0.1", port::Integer=8080)::Nothing
     if listener == C_NULL
         Libc.free(mgr_ptr)
         # mg_mgr_free NO es necesario porque el manager no llegó a usarse.
-        println(stderr, "Mongoose failed to listen on $url. errno: $(Libc.errno())")
+        @error "Mongoose failed to listen on $url. errno: $(Libc.errno())"
         error("Failed to start server.")
     end
     MG_SERVER.listener = listener
@@ -187,8 +186,7 @@ function mg_serve(host::AbstractString="127.0.0.1", port::Integer=8080)::Nothing
             end
         catch e
             if !isa(e, InterruptException)
-                println(stderr, "Server loop error: $e")
-                Base.showerror(stderr, e, catch_backtrace())
+                @error "Server loop error: $e" error = (e, catch_backtrace())
             end
         end
         @info "Event loop task finished."
