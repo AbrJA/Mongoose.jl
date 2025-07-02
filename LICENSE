@@ -1,5 +1,3 @@
-SPDX-License-Identifier: GPL-2.0
-
 Mongoose.jl - A lightweight HTTP server library for Julia
 Copyright (C) 2025 [Abraham Jaimes Avila]
 
