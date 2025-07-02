@@ -3,7 +3,7 @@ module Mongoose
 using Mongoose_jll
 
 export mg_serve, mg_shutdown,
-       mg_register!,
+       mg_register,
        mg_query, mg_proto, mg_body, mg_message, mg_headers,
        mg_http_reply, mg_json_reply, mg_text_reply
 
@@ -108,7 +108,7 @@ end
 
 const MG_ROUTER = MgRouter()
 
-function mg_register!(method::AbstractString, uri::AbstractString, handler::Function)
+function mg_register(method::AbstractString, uri::AbstractString, handler::Function)
     method = uppercase(method)
     valid_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
     if !(method in valid_methods)
@@ -199,7 +199,7 @@ function mg_shutdown()::Nothing
     if MG_SERVER.is_running
         @info "Stopping server..."
         MG_SERVER.is_running = false
-        if MG_SERVER.task !== nothing
+        if !isnothing(MG_SERVER.task)
             @info "Waiting for event loop to exit..."
             wait(MG_SERVER.task)
             MG_SERVER.task = nothing
