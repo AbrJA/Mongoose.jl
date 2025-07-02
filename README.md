@@ -1,7 +1,7 @@
 [![Build Status](https://github.com/AbrJA/Mongoose.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/AbrJA/Mongoose.jl/actions/workflows/CI.yml?query=branch%3Amain)
 
 <p align="center">
-    <img width="400px" src="https://github.com/user-attachments/assets/40a66324-a904-40d7-8b00-c996f7c3e34c"/>
+    <img width="200px" src="https://github.com/user-attachments/assets/40a66324-a904-40d7-8b00-c996f7c3e34c"/>
 </p>
 
 ## Abstract
