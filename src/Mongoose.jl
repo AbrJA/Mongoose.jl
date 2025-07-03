@@ -10,7 +10,6 @@ export MgConnection, MgHttpMessage,
 
 # --- 1. Constants and Types ---
 const MgConnection = Ptr{Cvoid} # Pointer to a generic C void type
-const MG_EV_HTTP_MSG = Cint(11) # For full requests
 
 # --- 2. Function wrappers for Mongoose C API ---
 function mg_mgr_init!(mgr::Ptr{Cvoid})::Cvoid
@@ -80,6 +79,7 @@ struct MgStr
     len::Csize_t # Length of the string
 end
 
+const MG_EV_HTTP_MSG = Cint(11) # For full requests
 const MG_MAX_HTTP_HEADERS = 30 # Maximum number of HTTP headers allowed
 
 """
@@ -255,7 +255,7 @@ mutable struct MgRouter
     MgRouter() = new(Dict{String, MgRoute}())
 end
 
-const MG_ROUTER = MgRouter()
+const MG_ROUTER = MgRouter() # Global router instance to hold registered routes
 
 # --- 4. Request Handler Registration ---
 """
