@@ -7,13 +7,13 @@ export mg_serve, mg_shutdown,
        mg_query, mg_proto, mg_body, mg_message, mg_headers,
        mg_http_reply, mg_json_reply, mg_text_reply
 
-# --- 1. Constantes y punteros ---
+# --- 1. Constants and Types ---
 const MG_EV_HTTP_MSG = Cint(11) # For full requests
 const MG_PTR_MGR = Ptr{Cvoid}
 const MG_PTR_CONNECTION = Ptr{Cvoid}
 const MG_PTR_EVENT_HANDLER_T = Ptr{Cvoid} # Pointer to the event handler function
 
-# --- 2. Wrapper de Funciones C de Mongoose ---
+# --- 2. Function wrappers for Mongoose C API ---
 function mg_mgr_init(mgr::MG_PTR_MGR)::Cvoid
     ccall((:mg_mgr_init, libmongoose), Cvoid, (MG_PTR_MGR,), mgr)
 end
@@ -26,14 +26,35 @@ function mg_mgr_poll(mgr::MG_PTR_MGR, timeout_ms::Int)::Cint
     ccall((:mg_mgr_poll, libmongoose), Cint, (MG_PTR_MGR, Cint), mgr, Cint(timeout_ms))
 end
 
+"""
+    mg_http_reply(conn::MG_PTR_CONNECTION, status::Int, headers::String, body::String)::Cvoid
+
+Sends an HTTP reply to a connected client. It constructs and sends an HTTP response including the status code, headers, and body.
+
+# Arguments
+- `conn::MG_PTR_CONNECTION`: A pointer to the Mongoose connection to which the reply should be sent.
+- `status::Int`: The HTTP status code (e.g., 200 for OK, 404 for Not Found).
+- `headers::String`: A string containing HTTP headers, separated by `\\r\\n`. For example: `"Content-Type: text/plain\\r\\nCustom-Header: value\\r\\n"`.
+- `body::String`: The body of the HTTP response.
+"""
 function mg_http_reply(conn::MG_PTR_CONNECTION, status::Int, headers::String, body::String)::Cvoid
     ccall((:mg_http_reply, libmongoose), Cvoid, (MG_PTR_CONNECTION, Cint, Cstring, Cstring), conn, Cint(status), Base.unsafe_convert(Cstring, headers), Base.unsafe_convert(Cstring, body))
 end
 
+"""
+    mg_json_reply(conn::MG_PTR_CONNECTION, status::Int, body::String)
+
+This is a convenience function that calls `mg_http_reply` with the `Content-Type` header set to `application/json`.
+"""
 function mg_json_reply(conn::MG_PTR_CONNECTION, status::Int, body::String)
     mg_http_reply(conn, status, "Content-Type: application/json\r\n", body)
 end
 
+"""
+    mg_text_reply(conn::MG_PTR_CONNECTION, status::Int, body::String)
+
+This is a convenience function that calls `mg_http_reply` with the `Content-Type` header set to `text/plain`.
+"""
 function mg_text_reply(conn::MG_PTR_CONNECTION, status::Int, body::String)
     mg_http_reply(conn, status, "Content-Type: text/plain\r\n", body)
 end
@@ -42,7 +63,19 @@ function mg_mgr_free(mgr::MG_PTR_MGR)::Cvoid
     ccall((:mg_mgr_free, libmongoose), Cvoid, (MG_PTR_MGR,), mgr)
 end
 
-# --- 3. Estructuras de Datos ---
+# --- 3. Data Structures ---
+"""
+    struct MgStr
+        ptr::Cstring
+        len::Csize_t
+    end
+
+A Julia representation of Mongoose's `struct mg_str` which is a view into a string buffer. It's used to represent strings returned by Mongoose.
+
+# Fields
+- `ptr::Cstring`: A pointer to the beginning of the string data in memory.
+- `len::Csize_t`: The length of the string in bytes.
+"""
 struct MgStr
     ptr::Cstring # Pointer to the string data
     len::Csize_t # Length of the string
@@ -50,11 +83,45 @@ end
 
 const MG_MAX_HTTP_HEADERS = 30 # Número máximo de cabeceras HTTP
 
+"""
+    struct MgHttpHeader
+        name::MgStr
+        val::MgStr
+    end
+
+A Julia representation of Mongoose's `struct mg_http_header`, representing a single HTTP header.
+
+# Fields
+- `name::MgStr`: An `MgStr` structure representing the header field name (e.g., "Content-Type").
+- `val::MgStr`: An `MgStr` structure representing the header field value (e.g., "application/json").
+"""
 struct MgHttpHeader
     name::MgStr
     val::MgStr
 end
 
+"""
+    struct MgHttpMessage
+        method::MgStr
+        uri::MgStr
+        query::MgStr
+        proto::MgStr
+        headers::NTuple{MG_MAX_HTTP_HEADERS, MgHttpHeader}
+        body::MgStr
+        message::MgStr
+    end
+
+A Julia representation of Mongoose's `struct mg_http_message`, containing parsed information about an HTTP request or response.
+
+# Fields
+- `method::MgStr`: The HTTP method (e.g., "GET", "POST").
+- `uri::MgStr`: The request URI (e.g., "/api/data").
+- `query::MgStr`: The query string part of the URI (e.g., "id=123").
+- `proto::MgStr`: The protocol string (e.g., "HTTP/1.1").
+- `headers::NTuple{MG_MAX_HTTP_HEADERS, MgHttpHeader}`: A tuple of `MgHttpHeader` structs representing the HTTP headers.
+- `body::MgStr`: The body of the HTTP message.
+- `message::MgStr`: The entire raw HTTP message.
+"""
 struct MgHttpMessage
     method::MgStr
     uri::MgStr
@@ -65,22 +132,105 @@ struct MgHttpMessage
     message::MgStr
 end
 
+"""
+    mg_method(message::MgHttpMessage) -> String
+
+Extracts the HTTP method from an `MgHttpMessage` as a Julia `String`.
+
+# Arguments
+- `message::MgHttpMessage`: The HTTP message object.
+
+# Returns
+`String`: The HTTP method (e.g., "GET", "POST").
+"""
 mg_method(message::MgHttpMessage) = mg_str(message.method)
+
+"""
+    mg_uri(message::MgHttpMessage) -> String
+
+Extracts the URI from an `MgHttpMessage` as a Julia `String`.
+
+# Arguments
+- `message::MgHttpMessage`: The HTTP message object.
+
+# Returns
+`String`: The request URI (e.g., "/api/users").
+"""
 mg_uri(message::MgHttpMessage) = mg_str(message.uri)
+
+"""
+    mg_query(message::MgHttpMessage) -> String
+
+Extracts the query string from an `MgHttpMessage` as a Julia `String`.
+
+# Arguments
+- `message::MgHttpMessage`: The HTTP message object.
+
+# Returns
+`String`: The query string (e.g., "param=value&id=1").
+"""
 mg_query(message::MgHttpMessage) = mg_str(message.query)
+
+"""
+    mg_proto(message::MgHttpMessage) -> String
+
+Extracts the protocol string from an `MgHttpMessage` as a Julia `String`.
+
+# Arguments
+- `message::MgHttpMessage`: The HTTP message object.
+
+# Returns
+`String`: The protocol string (e.g., "HTTP/1.1").
+"""
 mg_proto(message::MgHttpMessage) = mg_str(message.proto)
+
+"""
+    mg_body(message::MgHttpMessage) -> String
+
+Extracts the body of the HTTP message from an `MgHttpMessage` as a Julia `String`.
+
+# Arguments
+- `message::MgHttpMessage`: The HTTP message object.
+
+# Returns
+`String`: The body content of the HTTP message.
+"""
 mg_body(message::MgHttpMessage) = mg_str(message.body)
+
+"""
+    mg_message(message::MgHttpMessage) -> String
+
+Extracts the entire raw HTTP message from an `MgHttpMessage` as a Julia `String`.
+
+# Arguments
+- `message::MgHttpMessage`: The HTTP message object.
+
+# Returns
+`String`: The complete raw HTTP message string.
+"""
 mg_message(message::MgHttpMessage) = mg_str(message.message)
+
+"""
+    mg_headers(message::MgHttpMessage) -> NamedTuple
+
+Extracts all HTTP headers from an `MgHttpMessage` into a Julia `Named Tuple`.
+
+# Arguments
+- `message::MgHttpMessage`: The HTTP message object.
+
+# Returns
+`NamedTuple`: A dictionary where keys are header names and values are header values.
+"""
 function mg_headers(message::MgHttpMessage)
-    headers = Dict{String, String}()
+    headers = Pair{String, String}[]
     for header in message.headers
         if header.name.ptr != C_NULL && header.name.len > 0
             name = mg_str(header.name)
             value = mg_str(header.val)
-            headers[name] = value
+            push!(header_pairs, name => value)
         end
     end
-    return headers
+    return (; headers...)
 end
 
 function mg_http_message(ev_data::Ptr{Cvoid})::MgHttpMessage
@@ -108,6 +258,18 @@ end
 
 const MG_ROUTER = MgRouter()
 
+"""
+    mg_register(method::AbstractString, uri::AbstractString, handler::Function)
+
+Registers an HTTP request handler for a specific method and URI.
+
+# Arguments
+- `method::AbstractString`: The HTTP method (e.g., "GET", "POST", "PUT", "PATCH", "DELETE").
+- `uri::AbstractString`: The URI path to register the handler for (e.g., "/api/users").
+- `handler::Function`: The Julia function to be called when a matching request arrives.
+
+This function should accept two arguments: `(conn::MG_PTR_CONNECTION, message::MgHttpMessage)`.
+"""
 function mg_register(method::AbstractString, uri::AbstractString, handler::Function)
     method = uppercase(method)
     valid_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
@@ -157,7 +319,16 @@ end
 
 const MG_SERVER = MgServer(C_NULL, C_NULL, false, nothing)
 
-function mg_serve(host::AbstractString="127.0.0.1", port::Integer=8080)::Nothing
+"""
+    mg_serve(host::AbstractString="127.0.0.1", port::Integer=8080)::Nothing
+
+Starts the Mongoose HTTP server. Initialize the Mongoose manager, binds an HTTP listener, and starts a background Task to poll the Mongoose event loop.
+
+Arguments
+- `host::AbstractString="127.0.0.1"`: The IP address or hostname to listen on. Defaults to "127.0.0.1" (localhost).
+- `port::Integer=8080`: The port number to listen on. Defaults to 8080.
+"""
+function mg_serve(host::AbstractString = "127.0.0.1", port::Integer = 8080)::Nothing
     if MG_SERVER.is_running
         @warn "Server already running."
         return
@@ -171,7 +342,7 @@ function mg_serve(host::AbstractString="127.0.0.1", port::Integer=8080)::Nothing
     listener = mg_http_listen(MG_SERVER.mgr, Cstring(pointer(url)), ptr_mg_event_handler, C_NULL)
     if listener == C_NULL
         Libc.free(mgr_ptr)
-        # mg_mgr_free NO es necesario porque el manager no llegó a usarse.
+        # mg_mgr_free isn't needed here since we free the manager later
         @error "Mongoose failed to listen on $url. errno: $(Libc.errno())"
         error("Failed to start server.")
     end
@@ -195,6 +366,11 @@ function mg_serve(host::AbstractString="127.0.0.1", port::Integer=8080)::Nothing
     return
 end
 
+"""
+    mg_shutdown()::Nothing
+
+Stops the running Mongoose HTTP server. Sets a flag to stop the background event loop task, and then frees the Mongoose associated resources.
+"""
 function mg_shutdown()::Nothing
     if MG_SERVER.is_running
         @info "Stopping server..."
