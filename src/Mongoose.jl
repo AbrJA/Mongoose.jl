@@ -2,65 +2,64 @@ module Mongoose
 
 using Mongoose_jll
 
-export mg_serve, mg_shutdown,
+export MgConnection, MgHttpMessage,
+       mg_serve, mg_shutdown,
        mg_register,
        mg_query, mg_proto, mg_body, mg_message, mg_headers,
        mg_http_reply, mg_json_reply, mg_text_reply
 
 # --- 1. Constants and Types ---
+const MgConnection = Ptr{Cvoid} # Pointer to a generic C void type
 const MG_EV_HTTP_MSG = Cint(11) # For full requests
-const MG_PTR_MGR = Ptr{Cvoid}
-const MG_PTR_CONNECTION = Ptr{Cvoid}
-const MG_PTR_EVENT_HANDLER_T = Ptr{Cvoid} # Pointer to the event handler function
 
 # --- 2. Function wrappers for Mongoose C API ---
-function mg_mgr_init(mgr::MG_PTR_MGR)::Cvoid
-    ccall((:mg_mgr_init, libmongoose), Cvoid, (MG_PTR_MGR,), mgr)
+function mg_mgr_init!(mgr::Ptr{Cvoid})::Cvoid
+    ccall((:mg_mgr_init, libmongoose), Cvoid, (Ptr{Cvoid},), mgr)
 end
 
-function mg_http_listen(mgr::MG_PTR_MGR, url::Cstring, handler::MG_PTR_EVENT_HANDLER_T, userdata::Ptr{Cvoid})::MG_PTR_CONNECTION
-    ccall((:mg_http_listen, libmongoose), MG_PTR_CONNECTION, (MG_PTR_MGR, Cstring, MG_PTR_EVENT_HANDLER_T, Ptr{Cvoid}), mgr, Base.unsafe_convert(Cstring, url), handler, userdata)
+function mg_mgr_free!(mgr::Ptr{Cvoid})::Cvoid
+    ccall((:mg_mgr_free, libmongoose), Cvoid, (Ptr{Cvoid},), mgr)
 end
 
-function mg_mgr_poll(mgr::MG_PTR_MGR, timeout_ms::Int)::Cint
-    ccall((:mg_mgr_poll, libmongoose), Cint, (MG_PTR_MGR, Cint), mgr, Cint(timeout_ms))
+function mg_http_listen(mgr::Ptr{Cvoid}, url::String, handler::Ptr{Cvoid}, userdata::Ptr{Cvoid})::Ptr{Cvoid}
+    ccall((:mg_http_listen, libmongoose), Ptr{Cvoid}, (Ptr{Cvoid}, Cstring, Ptr{Cvoid}, Ptr{Cvoid}), mgr, Base.unsafe_convert(Cstring, url), handler, userdata)
+end
+
+function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Int)::Cint
+    ccall((:mg_mgr_poll, libmongoose), Cint, (Ptr{Cvoid}, Cint), mgr, Cint(timeout_ms))
 end
 
 """
-    mg_http_reply(conn::MG_PTR_CONNECTION, status::Int, headers::String, body::String)::Cvoid
+    mg_http_reply(conn::MgConnection, status::Int, headers::String, body::String)::Cvoid
 
 Sends an HTTP reply to a connected client. It constructs and sends an HTTP response including the status code, headers, and body.
 
 # Arguments
-- `conn::MG_PTR_CONNECTION`: A pointer to the Mongoose connection to which the reply should be sent.
+- `conn::MgConnection`: A pointer to the Mongoose connection to which the reply should be sent.
 - `status::Int`: The HTTP status code (e.g., 200 for OK, 404 for Not Found).
 - `headers::String`: A string containing HTTP headers, separated by `\\r\\n`. For example: `"Content-Type: text/plain\\r\\nCustom-Header: value\\r\\n"`.
 - `body::String`: The body of the HTTP response.
 """
-function mg_http_reply(conn::MG_PTR_CONNECTION, status::Int, headers::String, body::String)::Cvoid
-    ccall((:mg_http_reply, libmongoose), Cvoid, (MG_PTR_CONNECTION, Cint, Cstring, Cstring), conn, Cint(status), Base.unsafe_convert(Cstring, headers), Base.unsafe_convert(Cstring, body))
+function mg_http_reply(conn::MgConnection, status::Int, headers::String, body::String)::Cvoid
+    ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring), conn, Cint(status), Base.unsafe_convert(Cstring, headers), Base.unsafe_convert(Cstring, body))
 end
 
 """
-    mg_json_reply(conn::MG_PTR_CONNECTION, status::Int, body::String)
+    mg_json_reply(conn::MgConnection, status::Int, body::String)
 
 This is a convenience function that calls `mg_http_reply` with the `Content-Type` header set to `application/json`.
 """
-function mg_json_reply(conn::MG_PTR_CONNECTION, status::Int, body::String)
+function mg_json_reply(conn::MgConnection, status::Int, body::String)
     mg_http_reply(conn, status, "Content-Type: application/json\r\n", body)
 end
 
 """
-    mg_text_reply(conn::MG_PTR_CONNECTION, status::Int, body::String)
+    mg_text_reply(conn::MgConnection, status::Int, body::String)
 
 This is a convenience function that calls `mg_http_reply` with the `Content-Type` header set to `text/plain`.
 """
-function mg_text_reply(conn::MG_PTR_CONNECTION, status::Int, body::String)
+function mg_text_reply(conn::MgConnection, status::Int, body::String)
     mg_http_reply(conn, status, "Content-Type: text/plain\r\n", body)
-end
-
-function mg_mgr_free(mgr::MG_PTR_MGR)::Cvoid
-    ccall((:mg_mgr_free, libmongoose), Cvoid, (MG_PTR_MGR,), mgr)
 end
 
 # --- 3. Data Structures ---
@@ -81,7 +80,7 @@ struct MgStr
     len::Csize_t # Length of the string
 end
 
-const MG_MAX_HTTP_HEADERS = 30 # Número máximo de cabeceras HTTP
+const MG_MAX_HTTP_HEADERS = 30 # Maximum number of HTTP headers allowed
 
 """
     struct MgHttpHeader
@@ -258,6 +257,7 @@ end
 
 const MG_ROUTER = MgRouter()
 
+# --- 4. Request Handler Registration ---
 """
     mg_register(method::AbstractString, uri::AbstractString, handler::Function)
 
@@ -268,7 +268,7 @@ Registers an HTTP request handler for a specific method and URI.
 - `uri::AbstractString`: The URI path to register the handler for (e.g., "/api/users").
 - `handler::Function`: The Julia function to be called when a matching request arrives.
 
-This function should accept two arguments: `(conn::MG_PTR_CONNECTION, message::MgHttpMessage)`.
+This function should accept two arguments: `(conn::MgConnection, message::MgHttpMessage)`.
 """
 function mg_register(method::AbstractString, uri::AbstractString, handler::Function)
     method = uppercase(method)
@@ -284,9 +284,9 @@ function mg_register(method::AbstractString, uri::AbstractString, handler::Funct
     return
 end
 
-# --- 5. El Callback Principal de Mongoose ---
-function mg_event_handler(conn::MG_PTR_CONNECTION, ev::Cint, ev_data::Ptr{Cvoid}, fn_data::Ptr{Cvoid})
-    # @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data"
+# --- 5. Event handling ---
+function mg_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid}, fn_data::Ptr{Cvoid})
+    # @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data, FnData: $fn_data"
     if ev == MG_EV_HTTP_MSG
         message = mg_http_message(ev_data)
         uri = mg_uri(message)
@@ -311,14 +311,15 @@ function mg_event_handler(conn::MG_PTR_CONNECTION, ev::Cint, ev_data::Ptr{Cvoid}
 end
 
 mutable struct MgServer
-    mgr::MG_PTR_MGR
-    listener::MG_PTR_CONNECTION
+    mgr::Ptr{Cvoid}
+    listener::Ptr{Cvoid}
     is_running::Bool
     task::Union{Task, Nothing}
 end
 
 const MG_SERVER = MgServer(C_NULL, C_NULL, false, nothing)
 
+# --- 6. Server Management ---
 """
     mg_serve(host::AbstractString="127.0.0.1", port::Integer=8080)::Nothing
 
@@ -328,20 +329,20 @@ Arguments
 - `host::AbstractString="127.0.0.1"`: The IP address or hostname to listen on. Defaults to "127.0.0.1" (localhost).
 - `port::Integer=8080`: The port number to listen on. Defaults to 8080.
 """
-function mg_serve(host::AbstractString = "127.0.0.1", port::Integer = 8080)::Nothing
+function mg_serve(host::AbstractString="127.0.0.1", port::Integer=8080)::Nothing
     if MG_SERVER.is_running
         @warn "Server already running."
         return
     end
-    mgr_ptr = Libc.malloc(Csize_t(128)) # Damos un poco de espacio extra
-    mg_mgr_init(mgr_ptr)
-    MG_SERVER.mgr = mgr_ptr
+    ptr_mgr = Libc.malloc(Csize_t(128)) # Allocate memory for the Mongoose manager
+    mg_mgr_init!(ptr_mgr)
+    MG_SERVER.mgr = ptr_mgr
     @info "Mongoose manager initialized."
-    ptr_mg_event_handler = @cfunction(mg_event_handler, Cvoid, (MG_PTR_CONNECTION, Cint, Ptr{Cvoid}, Ptr{Cvoid}))
-    url = "http://$host:$port" #"http://0.0.0.0:$port"
-    listener = mg_http_listen(MG_SERVER.mgr, Cstring(pointer(url)), ptr_mg_event_handler, C_NULL)
+    ptr_mg_event_handler = @cfunction(mg_event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}, Ptr{Cvoid}))
+    url = "http://$host:$port"
+    listener = mg_http_listen(MG_SERVER.mgr, url, ptr_mg_event_handler, C_NULL)
     if listener == C_NULL
-        Libc.free(mgr_ptr)
+        Libc.free(ptr_mgr)
         # mg_mgr_free isn't needed here since we free the manager later
         @error "Mongoose failed to listen on $url. errno: $(Libc.errno())"
         error("Failed to start server.")
@@ -382,7 +383,7 @@ function mg_shutdown()::Nothing
         end
         if MG_SERVER.mgr != C_NULL
             @info "Freeing Mongoose manager and closing connections..."
-            mg_mgr_free(MG_SERVER.mgr)
+            mg_mgr_free!(MG_SERVER.mgr)
             Libc.free(MG_SERVER.mgr)
             MG_SERVER.mgr = C_NULL
         end
