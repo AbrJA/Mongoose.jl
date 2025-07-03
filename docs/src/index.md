@@ -10,6 +10,8 @@
 
 ## Quick start
 
+**Important:** The handler functions always should have two arguments `conn::MgConnection` and `request::MgHttpMessage`
+
 ```julia
 using Mongoose
 
