@@ -9,6 +9,10 @@ export MgConnection, MgHttpMessage,
        mg_http_reply, mg_json_reply, mg_text_reply
 
 # --- 1. Constants and Types ---
+"""
+    MgConnection
+A type alias for a pointer to a Mongoose connection. This is used to represent a connection to a client in the Mongoose server.
+"""
 const MgConnection = Ptr{Cvoid} # Pointer to a generic C void type
 
 # --- 2. Function wrappers for Mongoose C API ---
