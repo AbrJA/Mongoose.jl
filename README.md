@@ -9,7 +9,7 @@
 ## Install
 
 ```julia
-] add https://github.com/AbrJA/Mongoose.jl.git
+] add Mongoose
 ```
 
 ## Example
