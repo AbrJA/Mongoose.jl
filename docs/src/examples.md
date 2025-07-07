@@ -19,7 +19,7 @@ function greet(conn, request)
     end
 end
 
-mg_register("GET", "/greet", greet)
+mg_register!("GET", "/greet", greet)
 ```
 
 ## POST endpoint with body
@@ -33,17 +33,17 @@ function saygoodbye(conn, request)
     return mg_json_reply(conn, 200, json)
 end
 
-mg_register("POST", "/saygoodbye", saygoodbye)
+mg_register!("POST", "/saygoodbye", saygoodbye)
 ```
 
 ## Start server
 
 ```julia
-mg_serve()
+mg_serve!()
 ```
 
 ## End server
 
 ```julia
-mg_shutdown()
+mg_shutdown!()
 ```

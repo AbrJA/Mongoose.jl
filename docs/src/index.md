@@ -5,7 +5,7 @@
 ## Instalation
 
 ```julia
-] add https://github.com/AbrJA/Mongoose.jl.git
+] add Mongoose
 ```
 
 ## Quick start
@@ -23,11 +23,11 @@ function test_text(conn, request)
     mg_text_reply(conn, 200, "Hi TEXT!")
 end
 
-mg_register("GET", "/json", test_json)
-mg_register("GET", "/text", test_text)
+mg_register!("GET", "/json", test_json)
+mg_register!("GET", "/text", test_text)
 
-mg_serve()
-mg_shutdown()
+mg_serve!()
+mg_shutdown!()
 ```
 
 ## Examples

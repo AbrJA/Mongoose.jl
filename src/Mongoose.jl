@@ -3,9 +3,9 @@ module Mongoose
 using Mongoose_jll
 
 export MgConnection, MgHttpMessage,
-       mg_serve, mg_shutdown,
-       mg_register,
-       mg_query, mg_proto, mg_body, mg_message, mg_headers,
+       mg_serve!, mg_shutdown!,
+       mg_register!,
+       mg_method, mg_uri, mg_query, mg_proto, mg_body, mg_message, mg_headers,
        mg_http_reply, mg_json_reply, mg_text_reply
 
 # --- 1. Constants and Types ---
@@ -259,11 +259,18 @@ mutable struct MgRouter
     MgRouter() = new(Dict{String, MgRoute}())
 end
 
-const MG_ROUTER = MgRouter() # Global router instance to hold registered routes
+const MG_ROUTER = Ref{MgRouter}()
+
+function mg_global_router()::MgRouter
+    if !isassigned(MG_ROUTER)
+        MG_ROUTER[] = MgRouter()
+    end
+    return MG_ROUTER[]
+end
 
 # --- 4. Request Handler Registration ---
 """
-    mg_register(method::AbstractString, uri::AbstractString, handler::Function)
+    mg_register!(method::AbstractString, uri::AbstractString, handler::Function)
 
 Registers an HTTP request handler for a specific method and URI.
 
@@ -274,29 +281,29 @@ Registers an HTTP request handler for a specific method and URI.
 
 This function should accept two arguments: `(conn::MgConnection, message::MgHttpMessage)`.
 """
-function mg_register(method::AbstractString, uri::AbstractString, handler::Function)
+function mg_register!(method::AbstractString, uri::AbstractString, handler::Function; router::MgRouter = mg_global_router())
     method = uppercase(method)
     valid_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
     if !(method in valid_methods)
         error("Invalid HTTP method: $method. Valid methods are: $valid_methods")
     end
     method = Symbol(method)
-    if !haskey(MG_ROUTER.routes, uri)
-        MG_ROUTER.routes[uri] = MgRoute(Dict{Symbol, Function}())
+    if !haskey(router.routes, uri)
+        router.routes[uri] = MgRoute(Dict{Symbol, Function}())
     end
-    MG_ROUTER.routes[uri].handlers[method] = handler
+    router.routes[uri].handlers[method] = handler
     return
 end
 
 # --- 5. Event handling ---
-function mg_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid}, fn_data::Ptr{Cvoid})
+function mg_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid}, fn_data::Ptr{Cvoid}; router::MgRouter = mg_global_router())
     # @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data, FnData: $fn_data"
     if ev == MG_EV_HTTP_MSG
         message = mg_http_message(ev_data)
         uri = mg_uri(message)
         method = mg_method(message) |> Symbol
         # @info "Handling request: $method $uri"
-        route = get(MG_ROUTER.routes, uri, nothing)
+        route = get(router.routes, uri, nothing)
         if isnothing(route)
             @warn "404 Not Found: $method $uri"
             return mg_http_reply(conn, 404, "Content-Type: text/plain\r\n", "404 Not Found")
@@ -317,15 +324,22 @@ end
 mutable struct MgServer
     mgr::Ptr{Cvoid}
     listener::Ptr{Cvoid}
-    is_running::Bool
+    running::Bool
     task::Union{Task, Nothing}
 end
 
-const MG_SERVER = MgServer(C_NULL, C_NULL, false, nothing)
+const MG_SERVER = Ref{MgServer}()
+
+function mg_global_server()::MgServer
+    if !isassigned(MG_SERVER)
+        MG_SERVER[] = MgServer(C_NULL, C_NULL, false, nothing)
+    end
+    return MG_SERVER[]
+end
 
 # --- 6. Server Management ---
 """
-    mg_serve(host::AbstractString="127.0.0.1", port::Integer=8080)::Nothing
+    mg_serve!(host::AbstractString="127.0.0.1", port::Integer=8080)::Nothing
 
 Starts the Mongoose HTTP server. Initialize the Mongoose manager, binds an HTTP listener, and starts a background Task to poll the Mongoose event loop.
 
@@ -333,31 +347,31 @@ Arguments
 - `host::AbstractString="127.0.0.1"`: The IP address or hostname to listen on. Defaults to "127.0.0.1" (localhost).
 - `port::Integer=8080`: The port number to listen on. Defaults to 8080.
 """
-function mg_serve(host::AbstractString="127.0.0.1", port::Integer=8080)::Nothing
-    if MG_SERVER.is_running
+function mg_serve!(host::AbstractString="127.0.0.1", port::Integer=8080; router::MgRouter = mg_global_router(), server::MgServer = mg_global_server())::Nothing
+    if server.running
         @warn "Server already running."
         return
     end
     ptr_mgr = Libc.malloc(Csize_t(128)) # Allocate memory for the Mongoose manager
     mg_mgr_init!(ptr_mgr)
-    MG_SERVER.mgr = ptr_mgr
+    server.mgr = ptr_mgr
     @info "Mongoose manager initialized."
     ptr_mg_event_handler = @cfunction(mg_event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}, Ptr{Cvoid}))
     url = "http://$host:$port"
-    listener = mg_http_listen(MG_SERVER.mgr, url, ptr_mg_event_handler, C_NULL)
+    listener = mg_http_listen(server.mgr, url, ptr_mg_event_handler, C_NULL)
     if listener == C_NULL
         Libc.free(ptr_mgr)
         # mg_mgr_free isn't needed here since we free the manager later
         @error "Mongoose failed to listen on $url. errno: $(Libc.errno())"
         error("Failed to start server.")
     end
-    MG_SERVER.listener = listener
+    server.listener = listener
     @info "Listening on $url"
-    MG_SERVER.is_running = true
-    MG_SERVER.task = @async begin
+    server.running = true
+    server.task = @async begin
         try
-            while MG_SERVER.is_running
-                mg_mgr_poll(MG_SERVER.mgr, 1)
+            while server.running
+                mg_mgr_poll(server.mgr, 1)
                 yield()
             end
         catch e
@@ -372,24 +386,24 @@ function mg_serve(host::AbstractString="127.0.0.1", port::Integer=8080)::Nothing
 end
 
 """
-    mg_shutdown()::Nothing
+    mg_shutdown!()::Nothing
 
 Stops the running Mongoose HTTP server. Sets a flag to stop the background event loop task, and then frees the Mongoose associated resources.
 """
-function mg_shutdown()::Nothing
-    if MG_SERVER.is_running
+function mg_shutdown!(; server::MgServer = mg_global_server())::Nothing
+    if server.running
         @info "Stopping server..."
-        MG_SERVER.is_running = false
-        if !isnothing(MG_SERVER.task)
+        server.running = false
+        if !isnothing(server.task)
             @info "Waiting for event loop to exit..."
-            wait(MG_SERVER.task)
-            MG_SERVER.task = nothing
+            wait(server.task)
+            server.task = nothing
         end
-        if MG_SERVER.mgr != C_NULL
+        if server.mgr != C_NULL
             @info "Freeing Mongoose manager and closing connections..."
-            mg_mgr_free!(MG_SERVER.mgr)
-            Libc.free(MG_SERVER.mgr)
-            MG_SERVER.mgr = C_NULL
+            mg_mgr_free!(server.mgr)
+            Libc.free(server.mgr)
+            server.mgr = C_NULL
         end
         @info "Server stopped successfully."
     else

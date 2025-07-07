@@ -41,17 +41,17 @@ end
 - Route registration
 
 ```julia
-mg_register("GET", "/hello", greet)
+mg_register!("GET", "/hello", greet)
 ```
 
 - Start server
 
 ```julia
-mg_serve()
+mg_serve!()
 ```
 
 - Shoutdown server
 
 ```julia
-mg_shutdown()
+mg_shutdown!()
 ```
