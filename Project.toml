@@ -1,7 +1,7 @@
 name = "Mongoose"
 uuid = "494b707d-6180-4d60-8018-fdbee1ff8085"
 authors = ["Abraham Jaimes"]
-version = "0.1.1"
+version = "0.1.2"
 
 [deps]
 Mongoose_jll = "0a8a3f5b-4c0e-5906-8e29-5b3fee15539c"
