@@ -15,11 +15,11 @@
 ```julia
 using Mongoose
 
-function test_json(conn, request)
+function test_json(conn; kwargs...)
     mg_json_reply(conn, 200, "{\"message\":\"Hi JSON!\"}")
 end
 
-function test_text(conn, request)
+function test_text(conn; kwargs...)
     mg_text_reply(conn, 200, "Hi TEXT!")
 end
 

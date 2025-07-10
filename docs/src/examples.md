@@ -9,8 +9,8 @@ using Mongoose
 ## GET endpoint with query params
 
 ```julia
-function greet(conn, request)
-    query = mg_query(request)
+function greet(conn; kwargs...)
+    query = mg_query(kwargs[:message])
     matches = match(r"name=([^&]*)", query)
     if !isnothing(matches)
         return mg_text_reply(conn, 200, "Hi $(matches.captures[1])")
@@ -26,8 +26,8 @@ mg_register!("GET", "/greet", greet)
 ```julia
 using JSON
 
-function saygoodbye(conn, request)
-    body = mg_body(request)
+function saygoodbye(conn; kwargs...)
+    body = mg_body(kwargs[:message])
     dict = JSON.parse(body)
     json = Dict("message" => dict["name"]) |> JSON.json
     return mg_json_reply(conn, 200, json)

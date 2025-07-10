@@ -26,15 +26,11 @@ using Mongoose
 
 - JSON response
 
-```julia
-const json = "{\"message\":\"Hello World from Julia!\"}"
-```
-
 - Request handler
 
 ```julia
-function greet(conn, request)
-    mg_json_reply(conn, 200, json)
+function greet(conn; kwargs...)
+    mg_json_reply(conn, 200, "{\"message\":\"Hello World from Julia!\"}")
 end
 ```
 

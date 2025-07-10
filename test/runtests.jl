@@ -3,11 +3,11 @@ using Mongoose
 using Test
 
 @testset "Mongoose.jl" begin
-    function greet(conn, request)
+    function greet(conn; kwargs...)
         mg_json_reply(conn, 200, "{\"message\":\"Hello World from Julia!\"}")
     end
 
-    function echo(conn, request; kwargs...)
+    function echo(conn; kwargs...)
         params = kwargs[:params]
         name = params[:name]
         body = "Hello $name from Julia!"

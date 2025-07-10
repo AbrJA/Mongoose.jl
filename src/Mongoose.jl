@@ -305,10 +305,10 @@ function mg_register!(method::AbstractString, uri::AbstractString, handler::Func
     return
 end
 
-function mg_route_handler(conn::Ptr{Cvoid}, message::MgHttpMessage, method::Symbol, route::MgRoute; kwargs...)
+function mg_route_handler(conn::Ptr{Cvoid}, method::Symbol, route::MgRoute; kwargs...)
     if haskey(route.handlers, method)
             try
-                return route.handlers[method](conn, message; kwargs...)
+                return route.handlers[method](conn; kwargs...)
             catch e # CHECK THIS TO ALWAYS RESPOND
                 @error "Error handling request: $e" error = (e, catch_backtrace())
                 return mg_text_reply(conn, 500, "500 Internal Server Error")
@@ -330,12 +330,12 @@ function mg_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid}, fn_da
     method = Symbol(mg_method(message))
     route = get(router.static, uri, nothing)
     if !isnothing(route)
-        return mg_route_handler(conn, message, method, route)
+        return mg_route_handler(conn, method, route; message = message)
     end
     for (regex, route) in router.dynamic
         matched = match(regex, uri)
         if !isnothing(matched)
-            return mg_route_handler(conn, message, method, route; params = matched)
+            return mg_route_handler(conn, method, route; message = message, params = matched)
         end
     end
     @warn "404 Not Found: $uri"
