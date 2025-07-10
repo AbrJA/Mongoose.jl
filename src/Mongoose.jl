@@ -224,7 +224,7 @@ Extracts all HTTP headers from an `MgHttpMessage` into a Julia `Named Tuple`.
 # Returns
 `NamedTuple`: A dictionary where keys are header names and values are header values.
 """
-function mg_headers(message::MgHttpMessage)
+function mg_headers(message::MgHttpMessage)::NamedTuple
     headers = Pair{String, String}[]
     for header in message.headers
         if header.name.ptr != C_NULL && header.name.len > 0
@@ -243,20 +243,22 @@ function mg_http_message(ev_data::Ptr{Cvoid})::MgHttpMessage
     return Base.unsafe_load(Ptr{MgHttpMessage}(ev_data))
 end
 
-function mg_str(str::MgStr)
+function mg_str(str::MgStr)::String
     if str.ptr == C_NULL || str.len == 0
         return ""
     end
     return Base.unsafe_string(pointer(str.ptr), str.len)
 end
 
-mutable struct MgRoute
+struct MgRoute
     handlers::Dict{Symbol, Function}
+    MgRoute() = new(Dict{Symbol, Function}())
 end
 
 mutable struct MgRouter
-    routes::Dict{String, MgRoute}
-    MgRouter() = new(Dict{String, MgRoute}())
+    static::Dict{String, MgRoute}
+    dynamic::Dict{Regex, MgRoute}
+    MgRouter() = new(Dict{String, MgRoute}(), Dict{Regex, MgRoute}())
 end
 
 const MG_ROUTER = Ref{MgRouter}()
@@ -270,55 +272,72 @@ end
 
 # --- 4. Request Handler Registration ---
 """
-    mg_register!(method::AbstractString, uri::AbstractString, handler::Function)
+    mg_register!(method::Symbol, uri::AbstractString, handler::Function)
 
 Registers an HTTP request handler for a specific method and URI.
 
 # Arguments
-- `method::AbstractString`: The HTTP method (e.g., "GET", "POST", "PUT", "PATCH", "DELETE").
+- `method::Symbol`: The HTTP method (e.g., :GET, :POST, :PUT, :PATCH, :DELETE).
 - `uri::AbstractString`: The URI path to register the handler for (e.g., "/api/users").
 - `handler::Function`: The Julia function to be called when a matching request arrives.
 
 This function should accept two arguments: `(conn::MgConnection, message::MgHttpMessage)`.
 """
-function mg_register!(method::AbstractString, uri::AbstractString, handler::Function; router::MgRouter = mg_global_router())
-    method = uppercase(method)
-    valid_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+function mg_register!(method::Symbol, uri::AbstractString, handler::Function; router::MgRouter = mg_global_router())::Nothing
+    valid_methods = [:GET, :POST, :PUT, :PATCH, :DELETE]
     if !(method in valid_methods)
         error("Invalid HTTP method: $method. Valid methods are: $valid_methods")
     end
-    method = Symbol(method)
-    if !haskey(router.routes, uri)
-        router.routes[uri] = MgRoute(Dict{Symbol, Function}())
+    if occursin(':', uri)
+        regex = Regex("^" * replace(uri, r":([a-zA-Z0-9_]+)" => s"(?P<\1>[^/]+)") * "\$")
+        if !haskey(router.dynamic, regex)
+            router.dynamic[regex] = MgRoute()
+        end
+        router.dynamic[regex].handlers[method] = handler
+    else
+        if !haskey(router.static, uri)
+            router.static[uri] = MgRoute()
+        end
+        router.static[uri].handlers[method] = handler
     end
-    router.routes[uri].handlers[method] = handler
     return
+end
+
+function mg_route_handler(conn::Ptr{Cvoid}, message::MgHttpMessage, method::Symbol, route::MgRoute; kwargs...)
+    if haskey(route.handlers, method)
+            try
+                return route.handlers[method](conn, message; kwargs...)
+            catch e # CHECK THIS TO ALWAYS RESPOND
+                @error "Error handling request: $e" error = (e, catch_backtrace())
+                return mg_text_reply(conn, 500, "500 Internal Server Error")
+            end
+    else
+        @warn "405 Method Not Allowed: $method $uri"
+        return mg_text_reply(conn, 405, "405 Method Not Allowed")
+    end
 end
 
 # --- 5. Event handling ---
 function mg_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid}, fn_data::Ptr{Cvoid}; router::MgRouter = mg_global_router())
     # @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data, FnData: $fn_data"
-    if ev == MG_EV_HTTP_MSG
-        message = mg_http_message(ev_data)
-        uri = mg_uri(message)
-        method = mg_method(message) |> Symbol
-        # @info "Handling request: $method $uri"
-        route = get(router.routes, uri, nothing)
-        if isnothing(route)
-            @warn "404 Not Found: $method $uri"
-            return mg_http_reply(conn, 404, "Content-Type: text/plain\r\n", "404 Not Found")
-        elseif !haskey(route.handlers, method)
-            @warn "405 Method Not Allowed: $method $uri"
-            return mg_text_reply(conn, 405, "405 Method Not Allowed")
-        else
-            try
-                route.handlers[method](conn, message)
-            catch e
-                @error "Error handling request: $e" error = (e, catch_backtrace())
-                return mg_text_reply(conn, 500, "500 Internal Server Error")
-            end
+    if ev !== MG_EV_HTTP_MSG
+        return
+    end
+    message = mg_http_message(ev_data)
+    uri = mg_uri(message)
+    method = Symbol(mg_method(message))
+    route = get(router.static, uri, nothing)
+    if !isnothing(route)
+        return mg_route_handler(conn, message, method, route)
+    end
+    for (regex, route) in router.dynamic
+        matched = match(regex, uri)
+        if !isnothing(matched)
+            return mg_route_handler(conn, message, method, route; params = matched)
         end
     end
+    @warn "404 Not Found: $uri"
+    return mg_text_reply(conn, 404, "404 Not Found")
 end
 
 mutable struct MgServer
