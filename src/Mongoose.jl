@@ -277,17 +277,19 @@ end
 Registers an HTTP request handler for a specific method and URI.
 
 # Arguments
-- `method::Symbol`: The HTTP method (e.g., :GET, :POST, :PUT, :PATCH, :DELETE).
+- `method::AbstractString`: The HTTP method (e.g., GET, POST, PUT, PATCH, DELETE).
 - `uri::AbstractString`: The URI path to register the handler for (e.g., "/api/users").
 - `handler::Function`: The Julia function to be called when a matching request arrives.
 
-This function should accept two arguments: `(conn::MgConnection, message::MgHttpMessage)`.
+This function should accept two arguments and kwargs: `(conn::MgConnection, message::MgHttpMessage; kwargs...)`.
 """
-function mg_register!(method::Symbol, uri::AbstractString, handler::Function; router::MgRouter = mg_global_router())::Nothing
-    valid_methods = [:GET, :POST, :PUT, :PATCH, :DELETE]
+function mg_register!(method::AbstractString, uri::AbstractString, handler::Function; router::MgRouter = mg_global_router())::Nothing
+    method = uppercase(method)
+    valid_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
     if !(method in valid_methods)
         error("Invalid HTTP method: $method. Valid methods are: $valid_methods")
     end
+    method = Symbol(method)
     if occursin(':', uri)
         regex = Regex("^" * replace(uri, r":([a-zA-Z0-9_]+)" => s"(?P<\1>[^/]+)") * "\$")
         if !haskey(router.dynamic, regex)

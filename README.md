@@ -41,7 +41,7 @@ end
 - Route registration
 
 ```julia
-mg_register!("GET", "/hello", greet)
+mg_register!("get", "/hello", greet)
 ```
 
 - Start server
