@@ -281,7 +281,7 @@ Registers an HTTP request handler for a specific method and URI.
 - `uri::AbstractString`: The URI path to register the handler for (e.g., "/api/users").
 - `handler::Function`: The Julia function to be called when a matching request arrives.
 
-This function should accept two arguments and kwargs: `(conn::MgConnection, message::MgHttpMessage; kwargs...)`.
+This function should accept two arguments: `(conn::MgConnection, message::MgHttpMessage; kwargs...)`.
 """
 function mg_register!(method::AbstractString, uri::AbstractString, handler::Function; router::MgRouter = mg_global_router())::Nothing
     method = uppercase(method)
@@ -314,7 +314,7 @@ function mg_route_handler(conn::Ptr{Cvoid}, message::MgHttpMessage, method::Symb
                 return mg_text_reply(conn, 500, "500 Internal Server Error")
             end
     else
-        @warn "405 Method Not Allowed: $method $uri"
+        @warn "405 Method Not Allowed: $method"
         return mg_text_reply(conn, 405, "405 Method Not Allowed")
     end
 end
