@@ -33,22 +33,22 @@ function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Integer)::Cint
 end
 
 """
-    mg_http_reply(conn::MgConnection, status::Int, headers::String, body::String)::Cvoid
+    mg_http_reply(conn::MgConnection, status::Integer, headers::AbstractString, body::AbstractString)::Cvoid
 
 Sends an HTTP reply to a connected client. It constructs and sends an HTTP response including the status code, headers, and body.
 
 # Arguments
 - `conn::MgConnection`: A pointer to the Mongoose connection to which the reply should be sent.
-- `status::Int`: The HTTP status code (e.g., 200 for OK, 404 for Not Found).
-- `headers::String`: A string containing HTTP headers, separated by `\\r\\n`. For example: `"Content-Type: text/plain\\r\\nCustom-Header: value\\r\\n"`.
-- `body::String`: The body of the HTTP response.
+- `status::Integer`: The HTTP status code (e.g., 200 for OK, 404 for Not Found).
+- `headers::AbstractString`: A string containing HTTP headers, separated by `\\r\\n`. For example: `"Content-Type: text/plain\\r\\nCustom-Header: value\\r\\n"`.
+- `body::AbstractString`: The body of the HTTP response.
 """
 function mg_http_reply(conn::MgConnection, status::Integer, headers::AbstractString, body::AbstractString)::Cvoid
     ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring), conn, Cint(status), Base.unsafe_convert(Cstring, String(headers)), Base.unsafe_convert(Cstring, String(body)))
 end
 
 """
-    mg_json_reply(conn::MgConnection, status::Int, body::String)
+    mg_json_reply(conn::MgConnection, status::Integer, body::AbstractString)
 
 This is a convenience function that calls `mg_http_reply` with the `Content-Type` header set to `application/json`.
 """
@@ -57,7 +57,7 @@ function mg_json_reply(conn::MgConnection, status::Integer, body::AbstractString
 end
 
 """
-    mg_text_reply(conn::MgConnection, status::Int, body::String)
+    mg_text_reply(conn::MgConnection, status::Integer, body::AbstractString)
 
 This is a convenience function that calls `mg_http_reply` with the `Content-Type` header set to `text/plain`.
 """
