@@ -281,7 +281,7 @@ Registers an HTTP request handler for a specific method and URI.
 - `uri::AbstractString`: The URI path to register the handler for (e.g., "/api/users").
 - `handler::Function`: The Julia function to be called when a matching request arrives.
 
-This function should accept two arguments: `(conn::MgConnection, message::MgHttpMessage; kwargs...)`.
+This function should accept a `MgConnection` pointer as its first argument, followed by any additional keyword arguments.
 """
 function mg_register!(method::AbstractString, uri::AbstractString, handler::Function; router::MgRouter = mg_global_router())::Nothing
     method = uppercase(method)
@@ -367,8 +367,9 @@ Starts the Mongoose HTTP server. Initialize the Mongoose manager, binds an HTTP 
 Arguments
 - `host::AbstractString="127.0.0.1"`: The IP address or hostname to listen on. Defaults to "127.0.0.1" (localhost).
 - `port::Integer=8080`: The port number to listen on. Defaults to 8080.
+- `async::Bool=true`: If true, runs the server in a non-blocking mode. If false, blocks until the server is stopped.
 """
-function mg_serve!(; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool = false, server::MgServer = mg_global_server())::Nothing
+function mg_serve!(; host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true, server::MgServer = mg_global_server())::Nothing
     if server.running
         @warn "Server already running."
         return
@@ -404,7 +405,7 @@ function mg_serve!(; host::AbstractString="127.0.0.1", port::Integer=8080, block
         @info "Event loop task finished."
     end
     @info "Server started successfully."
-    if blocking
+    if async
         try
             wait(server.task)
         catch e
