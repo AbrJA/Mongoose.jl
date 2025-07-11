@@ -28,7 +28,7 @@ function mg_http_listen(mgr::Ptr{Cvoid}, url::String, handler::Ptr{Cvoid}, userd
     ccall((:mg_http_listen, libmongoose), Ptr{Cvoid}, (Ptr{Cvoid}, Cstring, Ptr{Cvoid}, Ptr{Cvoid}), mgr, Base.unsafe_convert(Cstring, url), handler, userdata)
 end
 
-function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Int)::Cint
+function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Integer)::Cint
     ccall((:mg_mgr_poll, libmongoose), Cint, (Ptr{Cvoid}, Cint), mgr, Cint(timeout_ms))
 end
 
@@ -43,8 +43,8 @@ Sends an HTTP reply to a connected client. It constructs and sends an HTTP respo
 - `headers::String`: A string containing HTTP headers, separated by `\\r\\n`. For example: `"Content-Type: text/plain\\r\\nCustom-Header: value\\r\\n"`.
 - `body::String`: The body of the HTTP response.
 """
-function mg_http_reply(conn::MgConnection, status::Int, headers::String, body::String)::Cvoid
-    ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring), conn, Cint(status), Base.unsafe_convert(Cstring, headers), Base.unsafe_convert(Cstring, body))
+function mg_http_reply(conn::MgConnection, status::Integer, headers::AbstractString, body::AbstractString)::Cvoid
+    ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring), conn, Cint(status), Base.unsafe_convert(Cstring, String(headers)), Base.unsafe_convert(Cstring, String(body)))
 end
 
 """
@@ -52,7 +52,7 @@ end
 
 This is a convenience function that calls `mg_http_reply` with the `Content-Type` header set to `application/json`.
 """
-function mg_json_reply(conn::MgConnection, status::Int, body::String)
+function mg_json_reply(conn::MgConnection, status::Integer, body::AbstractString)
     mg_http_reply(conn, status, "Content-Type: application/json\r\n", body)
 end
 
@@ -61,7 +61,7 @@ end
 
 This is a convenience function that calls `mg_http_reply` with the `Content-Type` header set to `text/plain`.
 """
-function mg_text_reply(conn::MgConnection, status::Int, body::String)
+function mg_text_reply(conn::MgConnection, status::Integer, body::AbstractString)
     mg_http_reply(conn, status, "Content-Type: text/plain\r\n", body)
 end
 
