@@ -368,11 +368,12 @@ Arguments
 - `host::AbstractString="127.0.0.1"`: The IP address or hostname to listen on. Defaults to "127.0.0.1" (localhost).
 - `port::Integer=8080`: The port number to listen on. Defaults to 8080.
 """
-function mg_serve!(host::AbstractString="127.0.0.1", port::Integer=8080; router::MgRouter = mg_global_router(), server::MgServer = mg_global_server())::Nothing
+function mg_serve!(; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool = false, server::MgServer = mg_global_server())::Nothing
     if server.running
         @warn "Server already running."
         return
     end
+    @info "Starting server..."
     ptr_mgr = Libc.malloc(Csize_t(128)) # Allocate memory for the Mongoose manager
     mg_mgr_init!(ptr_mgr)
     server.mgr = ptr_mgr
@@ -402,7 +403,18 @@ function mg_serve!(host::AbstractString="127.0.0.1", port::Integer=8080; router:
         end
         @info "Event loop task finished."
     end
-    @info "Server started in background task."
+    @info "Server started successfully."
+    if blocking
+        try
+            wait(server.task)
+        catch e
+            if !isa(e, InterruptException)
+                @error "Server task error: $e" error = (e, catch_backtrace())
+            end
+        finally
+            mg_shutdown!()
+        end
+    end
     return
 end
 
@@ -416,15 +428,14 @@ function mg_shutdown!(; server::MgServer = mg_global_server())::Nothing
         @info "Stopping server..."
         server.running = false
         if !isnothing(server.task)
-            @info "Waiting for event loop to exit..."
             wait(server.task)
             server.task = nothing
         end
         if server.mgr != C_NULL
-            @info "Freeing Mongoose manager and closing connections..."
             mg_mgr_free!(server.mgr)
             Libc.free(server.mgr)
             server.mgr = C_NULL
+            @info "Mongoose manager freed."
         end
         @info "Server stopped successfully."
     else
