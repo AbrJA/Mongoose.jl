@@ -405,7 +405,7 @@ function mg_serve!(; host::AbstractString="127.0.0.1", port::Integer=8080, async
         @info "Event loop task finished."
     end
     @info "Server started successfully."
-    if async
+    if !async
         try
             wait(server.task)
         catch e
