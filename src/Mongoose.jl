@@ -14,6 +14,7 @@ export MgConnection, MgHttpMessage, MgRequest, MgResponse,
 include("wrappers.jl")
 include("structs.jl")
 include("routes.jl")
+include("threaded.jl")
 
 function mg_route_handler(conn::Ptr{Cvoid}, method::Symbol, route::MgRoute; kwargs...)
     if haskey(route.handlers, method)
@@ -56,31 +57,21 @@ end
 # Instead of manual malloc, consider using finalizers
 mutable struct MgManager
     ptr::Ptr{Cvoid}
-
     function MgManager()
         ptr = Libc.malloc(Csize_t(128))
         ptr == C_NULL && error("Failed to allocate manager memory")
         mg_mgr_init!(ptr)
-
         mgr = new(ptr)
-        finalizer(mgr) do m
-            if m.ptr != C_NULL
-                mg_mgr_free!(m.ptr)
-                Libc.free(m.ptr)
-                m.ptr = C_NULL
-            end
-        end
+        finalizer(mg_mgr_cleanup!, mgr)
         return mgr
     end
 end
 
-function close(mgr::MgManager)
-    if m.ptr != C_NULL
+function mg_mgr_cleanup!(mgr::MgManager)
+    if mgr.ptr != C_NULL
         mg_mgr_free!(mgr.ptr)
         Libc.free(mgr.ptr)
-        # prevent double free
         mgr.ptr = C_NULL
-        # unsafe_store!(Ref(m), MgManager(C_NULL))  # optional, makes `ptr` null
     end
 end
 
@@ -118,13 +109,11 @@ function mg_serve!(; host::AbstractString="127.0.0.1", port::Integer=8080, async
         return
     end
     @info "Starting server..."
-    @info "Mongoose manager initialized."
     ptr_mg_event_handler = @cfunction(mg_event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}, Ptr{Cvoid}))
     url = "http://$host:$port"
     listener = mg_http_listen(server.mgr.ptr, url, ptr_mg_event_handler, C_NULL)
     if listener == C_NULL
-        Libc.free(ptr_mgr)
-        # mg_mgr_free isn't needed here since we free the manager later
+        mg_mgr_cleanup!(server.mgr)
         @error "Mongoose failed to listen on $url. errno: $(Libc.errno())"
         error("Failed to start server.")
     end
@@ -164,8 +153,7 @@ end
 
     Stops the running Mongoose HTTP server. Sets a flag to stop the background event loop task, and then frees the Mongoose associated resources.
 """
-function mg_shutdown!()::Nothing
-    server = mg_global_server()
+function mg_shutdown!(; server::MgServer = mg_global_server())::Nothing
     if server.running
         @info "Stopping server..."
         server.running = false
@@ -173,12 +161,7 @@ function mg_shutdown!()::Nothing
             wait(server.task)
             server.task = nothing
         end
-        if server.mgr.ptr != C_NULL
-            # mg_mgr_free!(server.mgr.ptr)
-            # Libc.free(server.mgr.ptr)
-            # server.mgr.ptr = C_NULL
-            @info "Mongoose manager freed."
-        end
+        mg_mgr_cleanup!(server.mgr)
         @info "Server stopped successfully."
     else
         @warn "Server not running."

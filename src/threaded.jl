@@ -1,10 +1,12 @@
+using ConcurrentCollections
+
 mutable struct MgThreadPoolServer
     mgr::Ptr{Cvoid}
     listener::Ptr{Cvoid}
     running::Bool
     main_task::Union{Task, Nothing}
-    request_channel::Channel{MgRequest}
-    response_channel::Channel{MgResponse}
+    request_channel::DualLinkedQueue{MgRequest}
+    response_channel::ConcurrentQueue{MgResponse}
 
     conn_map::Dict{Int, MgConnection}
     conn_id_counter::Atomic{Int}
@@ -17,7 +19,7 @@ const MG_THREAD_POOL_SERVER = Ref{MgThreadPoolServer}()
 
 function mg_global_thread_pool_server(num_workers::Int)::MgThreadPoolServer
     if !isassigned(MG_THREAD_POOL_SERVER)
-        MG_THREAD_POOL_SERVER[] = MgThreadPoolServer(C_NULL, C_NULL, false, nothing, Channel{MgRequest}(1024), Channel{MgResponse}(512), Dict{Int, MgConnection}(), Atomic{Int}(0), Task[], num_workers)
+        MG_THREAD_POOL_SERVER[] = MgThreadPoolServer(C_NULL, C_NULL, false, nothing, DualLinkedQueue{MgRequest}(), ConcurrentQueue{MgResponse}(), Dict{Int, MgConnection}(), Atomic{Int}(0), Vector{Task}(), num_workers)
     end
     return MG_THREAD_POOL_SERVER[]
 end
@@ -46,11 +48,15 @@ function mg_threaded_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoi
     message = mg_http_message(ev_data)
     conn_id = atomic_add!(server.conn_id_counter, 1)
     server.conn_map[conn_id] = conn
+    # println("ptr method: ", message.method.ptr)
+    # println("len method: ", message.method.len)
+    # println("typeof ptr: ", typeof(message.method.ptr))
+    # println("typeof len: ", typeof(message.method.len))
     request = mg_request(conn_id, message)
     # @info "Received request: $(request.id) from thread $(Threads.threadid())"
     try
         # @info "Queueing request: $(request.id) for processing on thread $(Threads.threadid())"
-        put!(server.request_channel, request)
+        push!(server.request_channel, request)
     catch e
         @error "Failed to queue request: $e"
         mg_text_reply(conn, 500, "Internal Server Error")
@@ -67,45 +73,46 @@ function start_worker_threads!(server::MgThreadPoolServer)
         server.worker_tasks[i] = @spawn begin
             @info "Worker thread $i started on thread $(Threads.threadid())"
 
-            # @info "Is running: $(server.running)"
-            # @info "Is ready for request channel: $(isready(server.request_channel))"
-            while server.running # && isready(server.request_channel)
+            # This is correct: popfirst! BLOCKS efficiently until a request is available.
+            while server.running
                 try
-                    # Wait for request or timeout
                     # @info "Worker $i waiting for request..."
-                    request = take!(server.request_channel)
+                    request = popfirst!(server.request_channel)
+                    if request.id == -1
+                        break  # Shutdown signal received
+                    end
                     uri = request.uri
-                    method = Symbol(request.method)
+                    # method = Symbol(request.method)
                     route = get(router.static, uri, nothing)
                     if !isnothing(route)
                         response = mg_threaded_route_handler(request, route)
-                        put!(server.response_channel, response)
+                        push!(server.response_channel, response)
                         continue
                     end
                     for (regex, route) in router.dynamic
                         matched = match(regex, uri)
                         if !isnothing(matched)
                             response = mg_threaded_route_handler(request, route; params = matched)
-                            put!(server.response_channel, response)
+                            push!(server.response_channel, response)
                             continue
                         end
                     end
                     response = MgResponse(request.id, 404, Dict("Content-Type" => "text/plain"), "404 Not Found")
                     @warn "404 Not Found: $uri"
-                    put!(server.response_channel, response)
+                    push!(server.response_channel, response)
                     continue
                     # @info "Worker $i processing request: $(request.id) from thread $(Threads.threadid())"
                     # response = MgResponse(request.id, 200, Dict("Content-Type" => "application/json"), "{}")
                     # put!(server.response_channel, response)
                 catch e
-                    if isa(e, InvalidStateException) && !server.running
-                        break  # Channel closed, server shutting down
+                    if !server.running
+                        break # Normal exit for shutdown
                     else
                         @error "Worker thread error: $e"
                     end
                 end
             end
-            @info "Worker thread $i finished"
+            # @info "Worker thread $i finished"
         end
     end
     return
@@ -118,64 +125,80 @@ function mg_serve_threaded!(; host::AbstractString="127.0.0.1", port::Integer=80
         return
     end
     @info "Starting threaded server with $num_workers workers..."
+    # Initialize Mongoose manager
+    ptr_mgr = Libc.malloc(Csize_t(128))
+    mg_mgr_init!(ptr_mgr)
+    server.mgr = ptr_mgr
     # Start worker threads
     start_worker_threads!(server)
     # Create event handler with server reference
     ptr_mg_event_handler = @cfunction(mg_threaded_event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}, Ptr{Cvoid}))
     url = "http://$host:$port"
-    listener = mg_http_listen(server.mgr.ptr, url, ptr_mg_event_handler, C_NULL)
-
+    listener = mg_http_listen(server.mgr, url, ptr_mg_event_handler, C_NULL)
     if listener == C_NULL
         Libc.free(ptr_mgr)
         close(server.request_channel)
         error("Failed to start threaded server on $url")
     end
-
     server.listener = listener
     server.running = true
-
     # Main event loop (still single-threaded for Mongoose)
     server.main_task = @async begin
         try
             @info "Main event loop started on thread $(Threads.threadid())"
             while server.running
-                # Poll Mongoose for new events
-                mg_mgr_poll(server.mgr.ptr, 1)
-                # Check for completed responses from worker threads
-                # @info "Is ready for response channel: $(isready(server.response_channel))"
-                response_count = 0
-                while isready(server.response_channel) && response_count < 10
+                # Poll Mongoose for new events (CRITICAL: Must be done frequently)
+                mg_mgr_poll(server.mgr, 1)
+
+                # DRAIN RESPONSES NON-BLOCKINGLY
+                while server.running
+                    # Use maybepopfirst! to check for a completed response.
+                    # This is NON-BLOCKING and returns immediately if empty.
+                    maybe_response = maybepopfirst!(server.response_channel)
+
+                    if maybe_response === nothing
+                        # Queue is empty right now. Break the inner loop
+                        # to quickly get back to mg_mgr_poll.
+                        break
+                    end
+
+                    response = maybe_response.value # Unwrap the response from Some
+
                     # @info "Processing response from worker thread"
-                    response = take!(server.response_channel)
                     # @info "Processing response for connection ID $(response.id) with status $(response.status)"
+
                     conn = get(server.conn_map, response.id, nothing)
                     # @info "Connection for response: $(conn)"
+
                     if !isnothing(conn)
                         # The conn pointer is valid here, send the reply
                         mg_text_reply(conn, response.status, response.body)
-
                         # Clean up the map
                         delete!(server.conn_map, response.id)
                     else
-                        @warn "Connection ID $(response.conn) not found, likely already closed."
+                        # Note: Used response.id instead of response.conn for consistency
+                        @warn "Connection ID $(response.id) not found, likely already closed."
                     end
-                    response_count += 1
+
+                    # No yield() needed here; the break handles returning control.
                 end
+
+                # Yield is still useful here to be a good citizen on the main thread
+                # before the next mg_mgr_poll, but is less critical now.
                 yield()
             end
         catch e
-            @error "Main loop error: $e"
+            @error "Main loop error: $e" error = (e, catch_backtrace())
         finally
             @info "Main event loop finished"
         end
     end
-
     @info "Threaded server started on $url with $num_workers workers"
-
     if !async
         wait(server.main_task)
         mg_shutdown_threaded!()
     end
+
     return
 end
 
@@ -188,8 +211,9 @@ function mg_shutdown_threaded!()::Nothing
     @info "Shutting down threaded server..."
     server.running = false
 
-    # Close request channel to signal workers
-    close(server.request_channel)
+    for i in 1:server.num_workers
+        push!(server.request_channel, MgRequest(-1, "", "", "", "", Dict(), "", ""))
+    end
 
     # Wait for workers to finish
     for task in server.worker_tasks
@@ -202,10 +226,10 @@ function mg_shutdown_threaded!()::Nothing
     end
 
     # Clean up Mongoose resources
-    if server.mgr.ptr != C_NULL
-        mg_mgr_free!(server.mgr.ptr)
-        Libc.free(server.mgr.ptr)
-        server.mgr.ptr = C_NULL
+    if server.mgr != C_NULL
+        mg_mgr_free!(server.mgr)
+        Libc.free(server.mgr)
+        server.mgr = C_NULL
     end
     @info "Threaded server shut down"
     return

@@ -13,5 +13,15 @@ function fibonacci(request; kwargs...)
 end
 
 mg_register!("GET", "/fibonacci", fibonacci)
-mg_serve_threaded!()
+
+function getroot(request; kwargs...)
+    return MgResponse(request.id, 200, Dict("Content-Type" => "application/json"), "")
+end
+
+mg_register!("GET", "/", getroot)
+
+mg_serve_threaded!(port=3001, async=true)
 # mg_shutdown_threaded!()
+
+# mg_serve!()
+# mg_shutdown!()

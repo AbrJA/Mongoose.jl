@@ -191,7 +191,7 @@ function mg_http_message(ev_data::Ptr{Cvoid})::MgHttpMessage
     return Base.unsafe_load(Ptr{MgHttpMessage}(ev_data))
 end
 
-mg_str(str::MgStr) = (str.ptr == C_NULL || str.len == 0) ? "" : Base.unsafe_string(str.ptr, str.len)
+mg_str(str::MgStr) = (str.ptr == C_NULL || str.len == 0) ? "" : Base.unsafe_string(pointer(str.ptr), str.len)
 
 # function mg_str(str::MgStr)::String
 #     if str.ptr == C_NULL || str.len == 0

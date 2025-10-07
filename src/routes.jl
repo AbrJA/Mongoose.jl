@@ -51,6 +51,50 @@ function mg_register!(method::AbstractString, uri::AbstractString, handler::Func
     return
 end
 
+# --- 5. Event handling ---
+# function mg_dispach(method::Symbol, uri::AbstractString)
+#     router = mg_global_router()
+#     route = get(router.static, uri, nothing)
+#     if !isnothing(route)
+#         if haskey(route.handlers, method)
+#             return route.handlers[method]()
+#         end
+#     end
+#     for (regex, route) in router.dynamic
+#         matched = match(regex, uri)
+#         if !isnothing(matched)
+#             if haskey(route.handlers, method)
+#                 return route.handlers[method](matched)
+#             end
+#         end
+#     end
+#     return
+# end
+
+# zero() = return 0
+# mg_register!("GET", "/zero", zero)
+# one() = return 1
+# mg_register!("GET", "/one", one)
+# user(params) = return params[:name]
+# mg_register!("GET", "/user/:name", user)
+# job(params) = return params[:id]
+# mg_register!("GET", "/job/:id", job)
+# person(params) = return params[:age]
+# mg_register!("GET", "/person/:age", person)
+# student(params) = return params[:school]
+# mg_register!("GET", "/student/:school", student)
+
+# using BenchmarkTools
+
+# @benchmark mg_dispach(:GET, "/zero")
+# @benchmark mg_dispach(:GET, "/one")
+# @benchmark mg_dispach(:GET, "/user/John")
+# @benchmark mg_dispach(:GET, "/job/123")
+# @benchmark mg_dispach(:GET, "/person/20")
+# @benchmark mg_dispach(:GET, "/student5/Universidad")
+
+# println(MG_ROUTER[].dynamic)
+
 # struct Router
 #     routes::Dict{String,String}
 # end
