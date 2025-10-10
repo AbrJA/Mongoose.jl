@@ -15,13 +15,14 @@ include("wrappers.jl")
 include("structs.jl")
 include("routes.jl")
 include("threaded.jl")
+# include("channels.jl")
 
-function mg_route_handler(conn::Ptr{Cvoid}, method::Symbol, route::MgRoute; kwargs...)
+function mg_route_handler(conn::Ptr{Cvoid}, method::AbstractString, route::MgRoute; kwargs...)
     if haskey(route.handlers, method)
             try
                 return route.handlers[method](conn; kwargs...)
             catch e # CHECK THIS TO ALWAYS RESPOND
-                @error "Route handler error: $e" error = (e, catch_backtrace())
+                @error "Route handler failed to execute" exception = (e, catch_backtrace())
                 return mg_text_reply(conn, 500, "500 Internal Server Error")
             end
     else
@@ -39,7 +40,7 @@ function mg_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid}, fn_da
     router = mg_global_router()
     message = mg_http_message(ev_data)
     uri = mg_uri(message)
-    method = Symbol(mg_method(message))
+    method = mg_method(message)
     route = get(router.static, uri, nothing)
     if !isnothing(route)
         return mg_route_handler(conn, method, route; message = message)
@@ -76,19 +77,77 @@ function mg_mgr_cleanup!(mgr::MgManager)
 end
 
 mutable struct MgServer
-    mgr::MgManager
+    manager::MgManager
     listener::Ptr{Cvoid}
-    running::Bool
+    handler::Ptr{Cvoid}
     task::Union{Task, Nothing}
+    running::Bool
 end
 
 const MG_SERVER = Ref{MgServer}()
 
 function mg_global_server()::MgServer
     if !isassigned(MG_SERVER)
-        MG_SERVER[] = MgServer(MgManager(), C_NULL, false, nothing)
+        MG_SERVER[] = MgServer(MgManager(), C_NULL, C_NULL, nothing, false)
     end
     return MG_SERVER[]
+end
+
+function mg_setup_listener!(server, host::AbstractString, port::Integer)
+    server.handler = @cfunction(mg_event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}, Ptr{Cvoid}))
+    url = "http://$host:$port"
+
+    listener = mg_http_listen(server.manager.ptr, url, server.handler, C_NULL)
+
+    if listener == C_NULL
+        mg_mgr_cleanup!(server.manager)
+        # Use ArgumentError or similar for invalid configuration/binding
+        err = Libc.errno()
+        @error "Mongoose failed to listen on $url. errno: $err"
+        error("Failed to start server. (errno: $err)")
+    end
+    server.listener = listener
+    @info "Listening on $url"
+    return
+end
+
+function mg_start_event_loop!(server)
+    server.task = @async begin
+        try
+            @info "Starting server event loop task."
+            while server.running
+                mg_mgr_poll(server.manager.ptr, 1) # Poll for events with a 1ms timeout
+                yield() # Give other tasks a chance to run
+            end
+        catch e
+            if !isa(e, InterruptException)
+                @error "Server event loop error" exception = (e, catch_backtrace())
+            end
+        finally
+            # The loop has stopped, either by clean shutdown or error
+            @info "Server event loop task finished."
+        end
+    end
+    return
+end
+
+function mg_wait_and_shutdown(server)
+    try
+        # If the server task is running, wait for it.
+        # if istaskstarted(server.task) && !istaskdone(server.task)
+            # @info "Waiting for server to finish (synchronous mode)."
+            wait(server.task)
+        # end
+    catch e
+        # InterruptException is often harmless (Ctrl+C). Others should be reported.
+        if !isa(e, InterruptException)
+            @error "Error while waiting for server task" exception = (e, catch_backtrace())
+        end
+    finally
+        # Ensure cleanup happens if the wait or error occurred.
+        # Assuming mg_shutdown! safely stops the server and cleans resources.
+        mg_shutdown!()
+    end
 end
 
 # --- 6. Server Management ---
@@ -104,46 +163,22 @@ end
 """
 function mg_serve!(; host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true)::Nothing
     server = mg_global_server()
+    # 1. Preparation/State Check
     if server.running
         @warn "Server already running."
         return
     end
     @info "Starting server..."
-    ptr_mg_event_handler = @cfunction(mg_event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}, Ptr{Cvoid}))
-    url = "http://$host:$port"
-    listener = mg_http_listen(server.mgr.ptr, url, ptr_mg_event_handler, C_NULL)
-    if listener == C_NULL
-        mg_mgr_cleanup!(server.mgr)
-        @error "Mongoose failed to listen on $url. errno: $(Libc.errno())"
-        error("Failed to start server.")
-    end
-    server.listener = listener
-    @info "Listening on $url"
+    server.manager = MgManager()
+    # 2. Listening Setup (Delegate to a new function)
+    mg_setup_listener!(server, host, port)
     server.running = true
-    server.task = @async begin
-        try
-            while server.running
-                mg_mgr_poll(server.mgr.ptr, 1)
-                yield()
-            end
-        catch e
-            if !isa(e, InterruptException)
-                @error "Server loop error: $e" error = (e, catch_backtrace())
-            end
-        end
-        @info "Event loop task finished."
-    end
+    # 3. Asynchronous Loop Start (Delegate to a new function)
+    mg_start_event_loop!(server)
     @info "Server started successfully."
+    # 4. Blocking/Waiting Logic (Delegate to a new function)
     if !async
-        try
-            wait(server.task)
-        catch e
-            if !isa(e, InterruptException)
-                @error "Server task error: $e" error = (e, catch_backtrace())
-            end
-        finally
-            mg_shutdown!()
-        end
+        mg_wait_and_shutdown(server)
     end
     return
 end
@@ -161,7 +196,7 @@ function mg_shutdown!(; server::MgServer = mg_global_server())::Nothing
             wait(server.task)
             server.task = nothing
         end
-        mg_mgr_cleanup!(server.mgr)
+        mg_mgr_cleanup!(server.manager)
         @info "Server stopped successfully."
     else
         @warn "Server not running."

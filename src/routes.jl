@@ -1,6 +1,6 @@
 struct MgRoute
-    handlers::Dict{Symbol, Function}
-    MgRoute() = new(Dict{Symbol, Function}())
+    handlers::Dict{String, Function}
+    MgRoute() = new(Dict{String, Function}())
 end
 
 mutable struct MgRouter
@@ -20,7 +20,7 @@ end
 
 # --- 4. Request Handler Registration ---
 """
-    mg_register!(method::Symbol, uri::AbstractString, handler::Function)
+    mg_register!(method::String, uri::AbstractString, handler::Function)
     Registers an HTTP request handler for a specific method and URI.
     # Arguments
     - `method::AbstractString`: The HTTP method (e.g., GET, POST, PUT, PATCH, DELETE).
@@ -35,7 +35,6 @@ function mg_register!(method::AbstractString, uri::AbstractString, handler::Func
         error("Invalid HTTP method: $method. Valid methods are: $valid_methods")
     end
     router = mg_global_router()
-    method = Symbol(method)
     if occursin(':', uri)
         regex = Regex("^" * replace(uri, r":([a-zA-Z0-9_]+)" => s"(?P<\1>[^/]+)") * "\$")
         if !haskey(router.dynamic, regex)
@@ -50,72 +49,3 @@ function mg_register!(method::AbstractString, uri::AbstractString, handler::Func
     end
     return
 end
-
-# --- 5. Event handling ---
-# function mg_dispach(method::Symbol, uri::AbstractString)
-#     router = mg_global_router()
-#     route = get(router.static, uri, nothing)
-#     if !isnothing(route)
-#         if haskey(route.handlers, method)
-#             return route.handlers[method]()
-#         end
-#     end
-#     for (regex, route) in router.dynamic
-#         matched = match(regex, uri)
-#         if !isnothing(matched)
-#             if haskey(route.handlers, method)
-#                 return route.handlers[method](matched)
-#             end
-#         end
-#     end
-#     return
-# end
-
-# zero() = return 0
-# mg_register!("GET", "/zero", zero)
-# one() = return 1
-# mg_register!("GET", "/one", one)
-# user(params) = return params[:name]
-# mg_register!("GET", "/user/:name", user)
-# job(params) = return params[:id]
-# mg_register!("GET", "/job/:id", job)
-# person(params) = return params[:age]
-# mg_register!("GET", "/person/:age", person)
-# student(params) = return params[:school]
-# mg_register!("GET", "/student/:school", student)
-
-# using BenchmarkTools
-
-# @benchmark mg_dispach(:GET, "/zero")
-# @benchmark mg_dispach(:GET, "/one")
-# @benchmark mg_dispach(:GET, "/user/John")
-# @benchmark mg_dispach(:GET, "/job/123")
-# @benchmark mg_dispach(:GET, "/person/20")
-# @benchmark mg_dispach(:GET, "/student5/Universidad")
-
-# println(MG_ROUTER[].dynamic)
-
-# struct Router
-#     routes::Dict{String,String}
-# end
-
-# # === Global table of routers ===
-# const ROUTER_TABLE = Dict{Int, Router}()
-# const NEXT_ID = Ref(0)
-
-# # Register router and return a Ptr{Cvoid} handle
-# function register_router(router::Router)::Ptr{Cvoid}
-#     id = (NEXT_ID[] += 1)
-#     ROUTER_TABLE[id] = router
-#     return Ptr{Cvoid}(id)   # store integer ID in pointer slot
-# end
-
-# # Unregister when no longer needed
-# function unregister_router(ptr::Ptr{Cvoid})
-#     id = Int(ptr)
-#     pop!(ROUTER_TABLE, id, nothing)
-# end
-
-# router = Router(Dict("/" => "Hello", "/bye" => "Goodbye"))
-# fn_data = register_router(router)
-# ROUTER_TABLE
