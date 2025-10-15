@@ -5,7 +5,7 @@ using Base.Threads
 
 export MgConnection, MgHttpMessage, MgRequest, MgResponse,
        mg_serve!, mg_shutdown!,
-       mg_register!,
+       MgRouter, mg_register!,
        mg_method, mg_uri, mg_query, mg_proto, mg_body, mg_message, mg_headers,
        mg_http_reply, mg_json_reply, mg_text_reply,
        MgThreadPoolServer,
@@ -32,8 +32,8 @@ function mg_route_handler(conn::Ptr{Cvoid}, method::AbstractString, route::MgRou
 end
 
 # --- 5. Event handling ---
-function mg_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid}, fn_data::Ptr{Cvoid})
-    # @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data, FnData: $fn_data"
+function mg_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
+    # ev != 2 && @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data"
     if ev !== MG_EV_HTTP_MSG
         return
     end
@@ -82,26 +82,28 @@ mutable struct MgServer
     handler::Ptr{Cvoid}
     task::Union{Task, Nothing}
     running::Bool
+
+    function MgServer()
+        return new(MgManager(), C_NULL, C_NULL, nothing, false)
+    end
 end
 
 const MG_SERVER = Ref{MgServer}()
 
-function mg_global_server()::MgServer
+function mg_global_server()
     if !isassigned(MG_SERVER)
-        MG_SERVER[] = MgServer(MgManager(), C_NULL, C_NULL, nothing, false)
+        MG_SERVER[] = MgServer()
     end
     return MG_SERVER[]
 end
 
-function mg_setup_listener!(server, host::AbstractString, port::Integer)
-    server.handler = @cfunction(mg_event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}, Ptr{Cvoid}))
+function mg_setup_listener!(server::MgServer, host::AbstractString, port::Integer)
+    server.handler = @cfunction(mg_event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+    # MAYBE: Put this in the constructor
     url = "http://$host:$port"
-
-    listener = mg_http_listen(server.manager.ptr, url, server.handler, C_NULL)
-
+    listener = mg_http_listen(server.manager.ptr, url, server.handler, server.handler)
     if listener == C_NULL
         mg_mgr_cleanup!(server.manager)
-        # Use ArgumentError or similar for invalid configuration/binding
         err = Libc.errno()
         @error "Mongoose failed to listen on $url. errno: $err"
         error("Failed to start server. (errno: $err)")
@@ -111,13 +113,13 @@ function mg_setup_listener!(server, host::AbstractString, port::Integer)
     return
 end
 
-function mg_start_event_loop!(server)
+function mg_start_event_loop!(server::MgServer, timeout::Integer)
     server.task = @async begin
         try
             @info "Starting server event loop task."
             while server.running
-                mg_mgr_poll(server.manager.ptr, 1) # Poll for events with a 1ms timeout
-                yield() # Give other tasks a chance to run
+                mg_mgr_poll(server.manager.ptr, timeout)
+                yield()
             end
         catch e
             if !isa(e, InterruptException)
@@ -131,28 +133,22 @@ function mg_start_event_loop!(server)
     return
 end
 
-function mg_wait_and_shutdown(server)
+function mg_wait_and_shutdown!(server::MgServer)
     try
-        # If the server task is running, wait for it.
-        # if istaskstarted(server.task) && !istaskdone(server.task)
-            # @info "Waiting for server to finish (synchronous mode)."
-            wait(server.task)
-        # end
+        wait(server.task)
     catch e
-        # InterruptException is often harmless (Ctrl+C). Others should be reported.
         if !isa(e, InterruptException)
             @error "Error while waiting for server task" exception = (e, catch_backtrace())
         end
     finally
-        # Ensure cleanup happens if the wait or error occurred.
-        # Assuming mg_shutdown! safely stops the server and cleans resources.
         mg_shutdown!()
     end
+    return
 end
 
 # --- 6. Server Management ---
 """
-    mg_serve!(host::AbstractString="127.0.0.1", port::Integer=8080)::Nothing
+    mg_serve!(; host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true, server::MgServer = mg_global_server(), timeout::Integer = 0)
 
     Starts the Mongoose HTTP server. Initialize the Mongoose manager, binds an HTTP listener, and starts a background Task to poll the Mongoose event loop.
 
@@ -160,25 +156,23 @@ end
     - `host::AbstractString="127.0.0.1"`: The IP address or hostname to listen on. Defaults to "127.0.0.1" (localhost).
     - `port::Integer=8080`: The port number to listen on. Defaults to 8080.
     - `async::Bool=true`: If true, runs the server in a non-blocking mode. If false, blocks until the server is stopped.
+    - `server::MgServer=mg_global_server()`: The Mongoose server object.
+    - `timeout::Integer=0`: The timeout value in milliseconds for the event loop. Defaults to 0 (no timeout).
 """
-function mg_serve!(; host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true)::Nothing
-    server = mg_global_server()
-    # 1. Preparation/State Check
+function mg_serve!(; host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true, timeout::Integer = 0,
+                     server::MgServer = mg_global_server())
     if server.running
         @warn "Server already running."
         return
     end
     @info "Starting server..."
     server.manager = MgManager()
-    # 2. Listening Setup (Delegate to a new function)
     mg_setup_listener!(server, host, port)
     server.running = true
-    # 3. Asynchronous Loop Start (Delegate to a new function)
-    mg_start_event_loop!(server)
+    mg_start_event_loop!(server, timeout)
     @info "Server started successfully."
-    # 4. Blocking/Waiting Logic (Delegate to a new function)
     if !async
-        mg_wait_and_shutdown(server)
+        mg_wait_and_shutdown!(server)
     end
     return
 end
@@ -188,7 +182,7 @@ end
 
     Stops the running Mongoose HTTP server. Sets a flag to stop the background event loop task, and then frees the Mongoose associated resources.
 """
-function mg_shutdown!(; server::MgServer = mg_global_server())::Nothing
+function mg_shutdown!(; server::MgServer = mg_global_server())
     if server.running
         @info "Stopping server..."
         server.running = false

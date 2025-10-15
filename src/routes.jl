@@ -28,13 +28,12 @@ end
     - `handler::Function`: The Julia function to be called when a matching request arrives.
     This function should accept a `MgConnection` pointer as its first argument, followed by any additional keyword arguments.
 """
-function mg_register!(method::AbstractString, uri::AbstractString, handler::Function)::Nothing
+function mg_register!(method::AbstractString, uri::AbstractString, handler::Function, router::MgRouter = mg_global_router())
     method = uppercase(method)
     valid_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
     if !(method in valid_methods)
         error("Invalid HTTP method: $method. Valid methods are: $valid_methods")
     end
-    router = mg_global_router()
     if occursin(':', uri)
         regex = Regex("^" * replace(uri, r":([a-zA-Z0-9_]+)" => s"(?P<\1>[^/]+)") * "\$")
         if !haskey(router.dynamic, regex)

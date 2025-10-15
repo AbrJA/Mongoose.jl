@@ -10,7 +10,7 @@ const MgConnection = Ptr{Cvoid} # Pointer to a generic C void type
     mg_mng_init!(mgr::Ptr{Cvoid})
     Initializes the Mongoose manager.
 """
-function mg_mgr_init!(mgr::Ptr{Cvoid})::Cvoid
+function mg_mgr_init!(mgr::Ptr{Cvoid})
     ccall((:mg_mgr_init, libmongoose), Cvoid, (Ptr{Cvoid},), mgr)
 end
 
@@ -18,7 +18,7 @@ end
     mg_mgr_free!(mgr::Ptr{Cvoid})
     Frees the Mongoose manager.
 """
-function mg_mgr_free!(mgr::Ptr{Cvoid})::Cvoid
+function mg_mgr_free!(mgr::Ptr{Cvoid})
     ccall((:mg_mgr_free, libmongoose), Cvoid, (Ptr{Cvoid},), mgr)
 end
 
@@ -31,7 +31,7 @@ end
     - `handler::Ptr{Cvoid}`: A pointer to the event handler function.
     - `fn_data::Ptr{Cvoid}`: A pointer to user data that will be passed to the event handler.
 """
-function mg_http_listen(mgr::Ptr{Cvoid}, url::String, handler::Ptr{Cvoid}, fn_data::Ptr{Cvoid})::Ptr{Cvoid}
+function mg_http_listen(mgr::Ptr{Cvoid}, url::String, handler::Ptr{Cvoid}, fn_data::Ptr{Cvoid})
     ccall((:mg_http_listen, libmongoose), Ptr{Cvoid}, (Ptr{Cvoid}, Cstring, Ptr{Cvoid}, Ptr{Cvoid}), mgr, Base.unsafe_convert(Cstring, url), handler, fn_data)
 end
 
@@ -42,7 +42,7 @@ end
     - `mgr::Ptr{Cvoid}`: A pointer to the Mongoose manager.
     - `timeout_ms::Integer`: The maximum number of milliseconds to wait for events.
 """
-function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Integer)::Cint
+function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Integer)
     ccall((:mg_mgr_poll, libmongoose), Cint, (Ptr{Cvoid}, Cint), mgr, Cint(timeout_ms))
 end
 
@@ -55,7 +55,7 @@ end
     - `headers::AbstractString`: A string containing HTTP headers, separated by `\\r\\n`. For example: `"Content-Type: text/plain\\r\\nCustom-Header: value\\r\\n"`.
     - `body::AbstractString`: The body of the HTTP response.
 """
-function mg_http_reply(conn::MgConnection, status::Integer, headers::AbstractString, body::AbstractString)::Cvoid
+function mg_http_reply(conn::MgConnection, status::Integer, headers::AbstractString, body::AbstractString)
     ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring), conn, Cint(status), Base.unsafe_convert(Cstring, String(headers)), Base.unsafe_convert(Cstring, String(body)))
 end
 
