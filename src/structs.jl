@@ -15,7 +15,6 @@ struct MgStr
     len::Csize_t # Length of the string
 end
 
-const MG_EV_HTTP_MSG = Cint(11) # For full requests
 const MG_MAX_HTTP_HEADERS = 30 # Maximum number of HTTP headers allowed
 
 """

@@ -7,15 +7,14 @@ export MgConnection, MgHttpMessage, MgRequest, MgResponse,
        mg_serve!, mg_shutdown!,
        MgRouter, mg_register!,
        mg_method, mg_uri, mg_query, mg_proto, mg_body, mg_message, mg_headers,
-       mg_http_reply, mg_json_reply, mg_text_reply,
-       MgThreadPoolServer,
-       mg_serve_threaded!, mg_shutdown_threaded!
+       mg_http_reply, mg_json_reply, mg_text_reply
 
 include("wrappers.jl")
 include("structs.jl")
 include("routes.jl")
-include("threaded.jl")
-# include("channels.jl")
+
+const MG_EV_HTTP_MSG = Cint(11) # For full requests
+const MG_EV_POLL = Cint(2) # For polling
 
 function mg_route_handler(conn::Ptr{Cvoid}, method::AbstractString, route::MgRoute; kwargs...)
     if haskey(route.handlers, method)
@@ -33,7 +32,7 @@ end
 
 # --- 5. Event handling ---
 function mg_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
-    # ev != 2 && @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data"
+    # ev != MG_EV_POLL && @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data"
     if ev !== MG_EV_HTTP_MSG
         return
     end
@@ -101,7 +100,7 @@ function mg_setup_listener!(server::MgServer, host::AbstractString, port::Intege
     server.handler = @cfunction(mg_event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
     # MAYBE: Put this in the constructor
     url = "http://$host:$port"
-    listener = mg_http_listen(server.manager.ptr, url, server.handler, server.handler)
+    listener = mg_http_listen(server.manager.ptr, url, server.handler, C_NULL)
     if listener == C_NULL
         mg_mgr_cleanup!(server.manager)
         err = Libc.errno()
