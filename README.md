@@ -29,25 +29,26 @@ using Mongoose
 - Request handler
 
 ```julia
-function greet(conn; kwargs...)
-    mg_json_reply(conn, 200, "{\"message\":\"Hello World from Julia!\"}")
+function greet(request::Request; kwargs...)
+    body = "{\"message\":\"Hello World from Julia!\"}"
+    Response(200, Dict("Content-Type" => "application/json"), body)
 end
 ```
 
 - Route registration
 
 ```julia
-mg_register!("get", "/hello", greet)
+register("get", "/hello", greet)
 ```
 
 - Start server
 
 ```julia
-mg_serve!()
+serve()
 ```
 
 - Shoutdown server
 
 ```julia
-mg_shutdown!()
+shutdown()
 ```

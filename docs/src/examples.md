@@ -13,37 +13,36 @@ function greet(conn; kwargs...)
     query = mg_query(kwargs[:message])
     matches = match(r"name=([^&]*)", query)
     if !isnothing(matches)
-        return mg_text_reply(conn, 200, "Hi $(matches.captures[1])")
+        return Response(200, Dict("Content-Type" => "text/plain"), "Hi $(matches.captures[1])")
     else
-        return mg_text_reply(conn, 200, "Hi unknown person")
+        return Response(200, Dict("Content-Type" => "text/plain"), "Hi unknown person")
     end
 end
 
-mg_register!("GET", "/greet", greet)
+register("GET", "/greet", greet)
 ```
 
 ## POST endpoint with body
 ```julia
 using JSON
 
-function saygoodbye(conn; kwargs...)
-    body = mg_body(kwargs[:message])
-    dict = JSON.parse(body)
-    json = Dict("message" => dict["name"]) |> JSON.json
-    return mg_json_reply(conn, 200, json)
+function saygoodbye(request; kwargs...)
+    body = JSON.parse(request.body)
+    json = Dict("message" => body["name"]) |> JSON.json
+    return Response(200, Dict("Content-Type" => "application/json"), json)
 end
 
-mg_register!("POST", "/saygoodbye", saygoodbye)
+register("POST", "/saygoodbye", saygoodbye)
 ```
 
 ## Start server
 
 ```julia
-mg_serve!()
+serve()
 ```
 
 ## End server
 
 ```julia
-mg_shutdown!()
+shutdown()
 ```
