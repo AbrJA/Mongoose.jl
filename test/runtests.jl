@@ -3,21 +3,22 @@ using Mongoose
 using Test
 
 @testset "Mongoose.jl" begin
-    function greet(conn; kwargs...)
-        mg_json_reply(conn, 200, "{\"message\":\"Hello World from Julia!\"}")
+    function greet(request; kwargs...)
+        body = "{\"message\":\"Hello World from Julia!\"}"
+        Response(200, Dict("Content-Type" => "application/json"), body)
     end
 
-    function echo(conn; kwargs...)
+    function echo(request; kwargs...)
         params = kwargs[:params]
         name = params[:name]
         body = "Hello $name from Julia!"
-        mg_text_reply(conn, 200, body)
+        Response(200, Dict("Content-Type" => "text/plain"), body)
     end
 
-    mg_register!("GET", "/hello", greet)
-    mg_register!("GET", "/echo/:name", echo)
+    register("GET", "/hello", greet)
+    register("GET", "/echo/:name", echo)
 
-    mg_serve!()
+    serve()
 
     response = HTTP.get("http://localhost:8080/hello")
     @test response.status == 200
@@ -39,5 +40,5 @@ using Test
     @test response.status == 404
     @test String(response.body) == "404 Not Found"
 
-    mg_shutdown!()
+    shutdown()
 end

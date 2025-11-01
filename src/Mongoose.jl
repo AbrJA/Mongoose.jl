@@ -3,8 +3,7 @@ module Mongoose
 using Mongoose_jll
 
 export Request, Response,
-       serve!, shutdown!,
-       register!
+       serve, shutdown, register
 
 include("wrappers.jl")
 include("structs.jl")
@@ -23,7 +22,7 @@ function route_handler(request::IdRequest, route::Route; kwargs...)
             end
     else
         @warn "405 Method Not Allowed: $method"
-        response = Response(405, Dict("Content-Type: text/plain"), "405 Method Not Allowed")
+        response = Response(405, Dict("Content-Type" => "text/plain"), "405 Method Not Allowed")
         return IdResponse(request.id, response)
     end
 end
@@ -51,7 +50,7 @@ function event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
         end
     end
     @warn "404 Not Found: $uri"
-    return mg_text_reply(conn, 404, "404 Not Found")
+    return mg_http_reply(conn, 404, to_string(Dict("Content-Type" => "text/plain")), "404 Not Found")
 end
 
 # Instead of manual malloc, consider using finalizers
@@ -147,7 +146,7 @@ end
 
 # --- 6. Server Management ---
 """
-    serve!(; host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true, server::Server = global_server(), timeout::Integer = 0)
+    serve(; host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true, timeout::Integer = 0)
 
     Starts the Mongoose HTTP server. Initialize the Mongoose manager, binds an HTTP listener, and starts a background Task to poll the Mongoose event loop.
 
@@ -155,16 +154,15 @@ end
     - `host::AbstractString="127.0.0.1"`: The IP address or hostname to listen on. Defaults to "127.0.0.1" (localhost).
     - `port::Integer=8080`: The port number to listen on. Defaults to 8080.
     - `async::Bool=true`: If true, runs the server in a non-blocking mode. If false, blocks until the server is stopped.
-    - `server::Server=global_server()`: The Mongoose server object.
     - `timeout::Integer=0`: The timeout value in milliseconds for the event loop. Defaults to 0 (no timeout).
 """
-function serve!(; host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true, timeout::Integer = 0,
-                     server::Server = global_server())
+function serve(; host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true, timeout::Integer = 0)
     if server.running
         @warn "Server already running."
         return
     end
     @info "Starting server..."
+    server = global_server()
     server.manager = Manager()
     setup_listener!(server, host, port)
     server.running = true
@@ -177,11 +175,12 @@ function serve!(; host::AbstractString="127.0.0.1", port::Integer=8080, async::B
 end
 
 """
-    shutdown!()::Nothing
+    shutdown()
 
     Stops the running Mongoose HTTP server. Sets a flag to stop the background event loop task, and then frees the Mongoose associated resources.
 """
-function shutdown!(; server::Server = global_server())
+function shutdown()
+    server = global_server()
     if server.running
         @info "Stopping server..."
         server.running = false
