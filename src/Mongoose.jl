@@ -157,12 +157,12 @@ end
     - `timeout::Integer=0`: The timeout value in milliseconds for the event loop. Defaults to 0 (no timeout).
 """
 function serve(; host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true, timeout::Integer = 0)
+    server = global_server()
     if server.running
         @warn "Server already running."
         return
     end
     @info "Starting server..."
-    server = global_server()
     server.manager = Manager()
     setup_listener!(server, host, port)
     server.running = true
