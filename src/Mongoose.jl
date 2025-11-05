@@ -2,8 +2,7 @@ module Mongoose
 
 using Mongoose_jll
 
-export Request, Response,
-       serve, shutdown, register
+export Request, Response, serve, shutdown, register
 
 include("wrappers.jl")
 include("structs.jl")
