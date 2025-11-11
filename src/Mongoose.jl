@@ -13,7 +13,7 @@ function route_handler(request::IdRequest, route::Route; kwargs...)
     if haskey(route.handlers, method)
             try
                 response = route.handlers[method](request.payload; kwargs...)
-                return IdResponse(request.id, response) # TODO: Return response
+                return IdResponse(request.id, response)
             catch e # CHECK THIS TO ALWAYS RESPOND
                 @error "Route handler failed to execute" exception = (e, catch_backtrace())
                 response = Response(500, Dict("Content-Type" => "text/plain"), "500 Internal Server Error")
@@ -80,7 +80,8 @@ mutable struct Server
     task::Union{Task, Nothing}
     running::Bool
 
-    function Server()
+    function Server(log_level::Integer = 0)
+        mg_log_set_level(log_level)
         return new(Manager(), C_NULL, C_NULL, nothing, false)
     end
 end

@@ -129,3 +129,28 @@ end
 function mg_http_reply(conn::MgConnection, status::Integer, headers::AbstractString, body::AbstractString)
     ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring), conn, Cint(status), Base.unsafe_convert(Cstring, String(headers)), Base.unsafe_convert(Cstring, String(body)))
 end
+
+"""
+    mg_conn_get_fn_data(conn::MgConnection)
+    Returns a pointer to user data associated with the specified connection.
+    # Arguments
+    - `conn::MgConnection`: A pointer to the Mongoose connection.
+"""
+function mg_conn_get_fn_data(conn::MgConnection)
+    ccall((:mg_conn_get_fn_data, libmongoose), Ptr{Cvoid}, (Ptr{Cvoid},), conn)
+end
+
+"""
+    mg_log_set_level(level::Integer)
+    Set Mongoose's global log verbosity level. Lower numbers mean less output.
+    # Levels
+    - `0` = MG_LL_NONE — No logs
+    - `1` = MG_LL_ERROR — Errors only
+    - `2` = MG_LL_INFO — Errors and info messages
+    - `3` = MG_LL_DEBUG — Errors, info, and debug details
+    - `4` = MG_LL_VERBOSE — Everything and more
+"""
+function mg_log_set_level(level::Integer)
+    ptr = cglobal((:mg_log_level, libmongoose), Cint)
+    Base.unsafe_store!(ptr, Cint(level))
+end
