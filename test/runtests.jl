@@ -15,10 +15,10 @@ using Test
         Response(200, Dict("Content-Type" => "text/plain"), body)
     end
 
-    register("GET", "/hello", greet)
-    register("GET", "/echo/:name", echo)
+    register!("GET", "/hello", greet)
+    register!("GET", "/echo/:name", echo)
 
-    serve()
+    start!()
 
     response = HTTP.get("http://localhost:8080/hello")
     @test response.status == 200
@@ -40,5 +40,5 @@ using Test
     @test response.status == 404
     @test String(response.body) == "404 Not Found"
 
-    shutdown()
+    stop!()
 end
