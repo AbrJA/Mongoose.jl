@@ -25,7 +25,7 @@ struct MgStr
     len::Csize_t # Length of the string
 end
 
-to_string(str::MgStr) = (str.ptr == C_NULL || str.len == 0) ? "" : Base.unsafe_string(pointer(str.ptr), str.len)
+to_string(str::MgStr) = (str.ptr == C_NULL || str.len == 0) ? "" : unsafe_string(pointer(str.ptr), str.len)
 
 """
     struct MgHttpHeader
@@ -73,7 +73,7 @@ struct MgHttpMessage
 
     function MgHttpMessage(ev_data::Ptr{Cvoid})
         ev_data == C_NULL && error("ev_data for HTTP message is NULL")
-        return Base.unsafe_load(Ptr{MgHttpMessage}(ev_data))
+        return unsafe_load(Ptr{MgHttpMessage}(ev_data))
     end
 end
 
@@ -152,5 +152,5 @@ end
 """
 function mg_log_set_level(level::Integer)
     ptr = cglobal((:mg_log_level, libmongoose), Cint)
-    Base.unsafe_store!(ptr, Cint(level))
+    unsafe_store!(ptr, Cint(level))
 end

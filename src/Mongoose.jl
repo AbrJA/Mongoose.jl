@@ -2,11 +2,43 @@ module Mongoose
 
 using Mongoose_jll
 
-export Request, Response, serve, shutdown, register
+export Server, Request, Response, start!, stop!, register!
 
 include("wrappers.jl")
 include("structs.jl")
-include("routes.jl")
+
+const VALID_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+
+# --- 4. Request Handler Registration ---
+"""
+    register!(method::String, uri::AbstractString, handler::Function; server::Server = default_server())
+    Registers an HTTP request handler for a specific method and URI.
+    # Arguments
+    - `method::AbstractString`: The HTTP method (e.g., GET, POST, PUT, PATCH, DELETE).
+    - `uri::AbstractString`: The URI path to register the handler for (e.g., "/api/users").
+    - `handler::Function`: The Julia function to be called when a matching request arrives.
+    - `server::Server = default_server()`: The server to register the handler with.
+    This function should accept a `Request` object as its first argument, followed by any additional keyword arguments.
+"""
+function register!(method::AbstractString, uri::AbstractString, handler::Function; server::Server = default_server())
+    method = uppercase(method)
+    if !(method in VALID_METHODS)
+        error("Invalid HTTP method: $method. Valid methods are: $(VALID_METHODS)")
+    end
+    if occursin(':', uri)
+        regex = Regex("^" * replace(uri, r":([a-zA-Z0-9_]+)" => s"(?P<\1>[^/]+)") * "\$")
+        if !haskey(server.router.dynamic, regex)
+            server.router.dynamic[regex] = Route()
+        end
+        server.router.dynamic[regex].handlers[method] = handler
+    else
+        if !haskey(server.router.static, uri)
+            server.router.static[uri] = Route()
+        end
+        server.router.static[uri].handlers[method] = handler
+    end
+    return
+end
 
 function route_handler(request::IdRequest, route::Route; kwargs...)
     method = request.payload.method
@@ -32,7 +64,8 @@ function event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
     if ev !== MG_EV_HTTP_MSG
         return
     end
-    router = global_router()
+    fn_data = mg_conn_get_fn_data(conn)
+    router = unsafe_pointer_to_objref(fn_data)
     message = MgHttpMessage(ev_data)
     request = IdRequest(Int(conn), Request(message))
     uri = request.payload.uri
@@ -52,43 +85,9 @@ function event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
     return mg_http_reply(conn, 404, to_string(Dict("Content-Type" => "text/plain")), "404 Not Found")
 end
 
-# Instead of manual malloc, consider using finalizers
-mutable struct Manager
-    ptr::Ptr{Cvoid}
-    function Manager()
-        ptr = Libc.malloc(Csize_t(128))
-        ptr == C_NULL && error("Failed to allocate manager memory")
-        mg_mgr_init!(ptr)
-        mgr = new(ptr)
-        finalizer(mgr_cleanup!, mgr)
-        return mgr
-    end
-end
-
-function mgr_cleanup!(mgr::Manager)
-    if mgr.ptr != C_NULL
-        mg_mgr_free!(mgr.ptr)
-        Libc.free(mgr.ptr)
-        mgr.ptr = C_NULL
-    end
-end
-
-mutable struct Server
-    manager::Manager
-    listener::Ptr{Cvoid}
-    handler::Ptr{Cvoid}
-    task::Union{Task, Nothing}
-    running::Bool
-
-    function Server(log_level::Integer = 0)
-        mg_log_set_level(log_level)
-        return new(Manager(), C_NULL, C_NULL, nothing, false)
-    end
-end
-
 const SERVER = Ref{Server}()
 
-function global_server()
+function default_server()
     if !isassigned(SERVER)
         SERVER[] = Server()
     end
@@ -99,7 +98,8 @@ function setup_listener!(server::Server, host::AbstractString, port::Integer)
     server.handler = @cfunction(event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
     # MAYBE: Put this in the constructor
     url = "http://$host:$port"
-    listener = mg_http_listen(server.manager.ptr, url, server.handler, C_NULL)
+    fn_data = pointer_from_objref(server.router)
+    listener = mg_http_listen(server.manager.ptr, url, server.handler, fn_data)
     if listener == C_NULL
         mgr_cleanup!(server.manager)
         err = Libc.errno()
@@ -111,12 +111,12 @@ function setup_listener!(server::Server, host::AbstractString, port::Integer)
     return
 end
 
-function start_event_loop!(server::Server, timeout::Integer)
+function start_event_loop!(server::Server)
     server.task = @async begin
         try
             @info "Starting server event loop task."
             while server.running
-                mg_mgr_poll(server.manager.ptr, timeout)
+                mg_mgr_poll(server.manager.ptr, server.timeout)
                 yield()
             end
         catch e
@@ -131,7 +131,7 @@ function start_event_loop!(server::Server, timeout::Integer)
     return
 end
 
-function wait_and_shutdown!(server::Server)
+function wait_and_stop!(server::Server)
     try
         wait(server.task)
     catch e
@@ -139,14 +139,14 @@ function wait_and_shutdown!(server::Server)
             @error "Error while waiting for server task" exception = (e, catch_backtrace())
         end
     finally
-        shutdown!()
+        stop!(server)
     end
     return
 end
 
 # --- 6. Server Management ---
 """
-    serve(; host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true, timeout::Integer = 0)
+    start!(server::Server = default_server(); host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true)
 
     Starts the Mongoose HTTP server. Initialize the Mongoose manager, binds an HTTP listener, and starts a background Task to poll the Mongoose event loop.
 
@@ -154,33 +154,27 @@ end
     - `host::AbstractString="127.0.0.1"`: The IP address or hostname to listen on. Defaults to "127.0.0.1" (localhost).
     - `port::Integer=8080`: The port number to listen on. Defaults to 8080.
     - `async::Bool=true`: If true, runs the server in a non-blocking mode. If false, blocks until the server is stopped.
-    - `timeout::Integer=0`: The timeout value in milliseconds for the event loop. Defaults to 0 (no timeout).
+    - `server::Server = default_server()`: The server object to start. If not provided, the default server is used.
 """
-function serve(; host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true, timeout::Integer = 0)
-    server = global_server()
-    if server.running
-        @warn "Server already running."
-        return
-    end
+function start!(server::Server = default_server(); host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true)
+    !server.running || (@warn "Server already running."; return)
     @info "Starting server..."
     server.manager = Manager()
     setup_listener!(server, host, port)
     server.running = true
-    start_event_loop!(server, timeout)
+    start_event_loop!(server)
     @info "Server started successfully."
-    if !async
-        wait_and_shutdown!(server)
-    end
+    async || wait_and_stop!(server)
     return
 end
 
 """
-    shutdown()
-
+    stop!(; server::Server = default_server())
     Stops the running Mongoose HTTP server. Sets a flag to stop the background event loop task, and then frees the Mongoose associated resources.
+    Arguments
+    - `server::Server = default_server()`: The server object to shutdown. If not provided, the default server is used.
 """
-function shutdown()
-    server = global_server()
+function stop!(server::Server = default_server())
     if server.running
         @info "Stopping server..."
         server.running = false
