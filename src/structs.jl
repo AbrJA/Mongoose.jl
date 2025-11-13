@@ -70,35 +70,45 @@ end
 # Server
 mutable struct Manager
     ptr::Ptr{Cvoid}
-    function Manager()
+    function Manager(; empty::Bool = false)
+        empty && return new(C_NULL)
         ptr = Libc.malloc(Csize_t(128))
         ptr == C_NULL && error("Failed to allocate manager memory")
         mg_mgr_init!(ptr)
-        mgr = new(ptr)
-        finalizer(mgr_cleanup!, mgr)
-        return mgr
+        return new(ptr)
     end
 end
 
-function mgr_cleanup!(mgr::Manager)
-    if mgr.ptr != C_NULL
-        mg_mgr_free!(mgr.ptr)
-        Libc.free(mgr.ptr)
-        mgr.ptr = C_NULL
-    end
-end
+# const Nullable{T} = Union{Nothing, T}
 
 mutable struct Server
     manager::Manager
     listener::Ptr{Cvoid}
     handler::Ptr{Cvoid}
-    task::Union{Task, Nothing}
+    master::Union{Nothing, Task}
+    # workers::Vector{Task}
+    # requests::Channel{Request}
+    # responses::Channel{Response}
+    # connections::Dict{Int, MgConnection}
     router::Router
     timeout::Int
     running::Bool
 
     function Server(; timeout::Integer = 0, log_level::Integer = 0)
         mg_log_set_level(log_level)
-        return new(Manager(), C_NULL, C_NULL, nothing, Router(), timeout, false)
+        server = new(Manager(empty = true), C_NULL, C_NULL, nothing, Router(), timeout, false)
+        finalizer(cleanup!, server)
+        return server
     end
+end
+
+function cleanup!(server::Server)
+    if server.manager != C_NULL
+        mg_mgr_free!(server.manager.ptr)
+        server.manager.ptr = C_NULL
+    end
+    server.listener = C_NULL
+    server.handler = C_NULL
+    ccall(:malloc_trim, Cvoid, (Cint,), 0)
+    return
 end

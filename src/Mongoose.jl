@@ -101,7 +101,7 @@ function setup_listener!(server::Server, host::AbstractString, port::Integer)
     fn_data = pointer_from_objref(server.router)
     listener = mg_http_listen(server.manager.ptr, url, server.handler, fn_data)
     if listener == C_NULL
-        mgr_cleanup!(server.manager)
+        cleanup!(server)
         err = Libc.errno()
         @error "Mongoose failed to listen on $url. errno: $err"
         error("Failed to start server. (errno: $err)")
@@ -112,7 +112,7 @@ function setup_listener!(server::Server, host::AbstractString, port::Integer)
 end
 
 function start_event_loop!(server::Server)
-    server.task = @async begin
+    server.master = @async begin
         try
             @info "Starting server event loop task."
             while server.running
@@ -133,10 +133,10 @@ end
 
 function wait_and_stop!(server::Server)
     try
-        wait(server.task)
+        wait(server.master)
     catch e
         if !isa(e, InterruptException)
-            @error "Error while waiting for server task" exception = (e, catch_backtrace())
+            @error "Error while waiting for server" exception = (e, catch_backtrace())
         end
     finally
         stop!(server)
@@ -178,11 +178,11 @@ function stop!(server::Server = default_server())
     if server.running
         @info "Stopping server..."
         server.running = false
-        if !isnothing(server.task)
-            wait(server.task)
-            server.task = nothing
+        if !isnothing(server.master)
+            wait(server.master)
+            server.master = nothing
         end
-        mgr_cleanup!(server.manager)
+        cleanup!(server)
         @info "Server stopped successfully."
     else
         @warn "Server not running."
