@@ -105,12 +105,16 @@ mutable struct Server
     end
 end
 
+function cleanup!(manager::Manager)
+    if manager.ptr != C_NULL
+        mg_mgr_free!(manager.ptr)
+        manager.ptr = C_NULL
+    end
+end
+
 function cleanup!(server::Server)
     deregister(server)
-    if server.manager != C_NULL
-        mg_mgr_free!(server.manager.ptr)
-        server.manager.ptr = C_NULL
-    end
+    cleanup!(server.manager)
     server.listener = C_NULL
     server.handler = C_NULL
     ccall(:malloc_trim, Cvoid, (Cint,), 0)
