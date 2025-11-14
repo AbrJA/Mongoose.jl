@@ -86,23 +86,27 @@ mutable struct Server
     listener::Ptr{Cvoid}
     handler::Ptr{Cvoid}
     master::Union{Nothing, Task}
-    # workers::Vector{Task}
-    # requests::Channel{Request}
-    # responses::Channel{Response}
-    # connections::Dict{Int, MgConnection}
+    workers::Vector{Task}
+    requests::DualLinkedQueue{IdRequest}
+    connections::ConcurrentDict{Int, MgConnection}
     router::Router
     timeout::Int
+    nworkers::Int
     running::Bool
 
-    function Server(; timeout::Integer = 0, log_level::Integer = 0)
+    function Server(; timeout::Integer = 0, log_level::Integer = 0, nworkers::Integer = 0)
         mg_log_set_level(log_level)
-        server = new(Manager(empty = true), C_NULL, C_NULL, nothing, Router(), timeout, false)
+        server = new(Manager(empty = true), C_NULL, C_NULL,
+                     nothing, Task[],
+                     DualLinkedQueue{IdRequest}(), ConcurrentDict{Int, MgConnection}(),
+                     Router(), timeout, nworkers, false)
         finalizer(cleanup!, server)
         return server
     end
 end
 
 function cleanup!(server::Server)
+    deregister(server)
     if server.manager != C_NULL
         mg_mgr_free!(server.manager.ptr)
         server.manager.ptr = C_NULL
@@ -110,5 +114,20 @@ function cleanup!(server::Server)
     server.listener = C_NULL
     server.handler = C_NULL
     ccall(:malloc_trim, Cvoid, (Cint,), 0)
+    return
+end
+
+const SERVER_REGISTRY = Dict{Int, Server}()
+
+function register(server::Server)
+    ptr = pointer_from_objref(server)
+    id = Int(ptr)
+    haskey(SERVER_REGISTRY, id) || (SERVER_REGISTRY[id] = server)
+    return ptr
+end
+
+function deregister(server::Server)
+    id = Int(pointer_from_objref(server))
+    delete!(SERVER_REGISTRY, id)
     return
 end

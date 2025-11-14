@@ -15,8 +15,8 @@ using Test
         Response(200, Dict("Content-Type" => "text/plain"), body)
     end
 
-    register!("GET", "/hello", greet)
-    register!("GET", "/echo/:name", echo)
+    register!(greet, "GET", "/hello")
+    register!(echo, "GET", "/echo/:name")
 
     start!()
 
