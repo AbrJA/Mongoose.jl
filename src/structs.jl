@@ -81,9 +81,9 @@ end
 
 # const Nullable{T} = Union{Nothing, T}
 
-# abstract type AbstractServer end
+abstract type Server end
 
-mutable struct Server
+mutable struct SyncServer <: Server
     manager::Manager
     listener::Ptr{Cvoid}
     handler::Ptr{Cvoid}
@@ -92,9 +92,35 @@ mutable struct Server
     timeout::Int
     running::Bool
 
-    function Server(; timeout::Integer = 0, log_level::Integer = 0)
+    function SyncServer(; timeout::Integer = 0, log_level::Integer = 0)
         mg_log_set_level(log_level)
         server = new(Manager(empty = true), C_NULL, C_NULL, nothing, Router(), timeout, false)
+        finalizer(cleanup!, server)
+        return server
+    end
+end
+
+mutable struct AsyncServer <: Server
+    manager::Manager
+    listener::Ptr{Cvoid}
+    handler::Ptr{Cvoid}
+    master::Union{Nothing, Task}
+    workers::Vector{Task}
+    requests::Channel{IdRequest}
+    responses::Channel{IdResponse}
+    connections::Dict{Int, MgConnection}
+    router::Router
+    timeout::Int
+    nworkers::Int
+    nqueue::Int
+    running::Bool
+
+    function AsyncServer(; timeout::Integer = 0, log_level::Integer = 0, nworkers::Integer = 1, nqueue::Integer = 1024)
+        mg_log_set_level(log_level)
+        server = new(Manager(empty = true), C_NULL, C_NULL,
+                     nothing, Task[],
+                     Channel{IdRequest}(nqueue), Channel{IdResponse}(nqueue), Dict{Int, MgConnection}(),
+                     Router(), timeout, nworkers, nqueue, false)
         finalizer(cleanup!, server)
         return server
     end

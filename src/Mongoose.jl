@@ -2,7 +2,7 @@ module Mongoose
 
 using Mongoose_jll
 
-export Server, Request, Response, start!, stop!, register!
+export AsyncServer, SyncServer, Request, Response, start!, stop!, register!
 
 include("wrappers.jl")
 include("structs.jl")
@@ -28,16 +28,7 @@ function event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
     ev == MG_EV_HTTP_MSG || return
     server = select_server(conn)
     request = build_request(conn, ev_data)
-    response = resolve_request(server.router, request)
-    return mg_http_reply(conn, response.payload.status, to_string(response.payload.headers), response.payload.body)
-end
-
-function threaded_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
-    # ev != MG_EV_POLL && @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data"
-    ev == MG_EV_HTTP_MSG || return
-    server = select_server(conn)
-    request = build_request(conn, ev_data)
-    put!(server.requests, request)
+    resolve(conn, server, request)
     return
 end
 
@@ -76,20 +67,25 @@ end
 function run_event_loop(server::Server)
     while server.running
         mg_mgr_poll(server.manager.ptr, server.timeout)
+        flush(server)
         yield()
     end
     return
 end
 
-# function process_responses(server::Server)
-#     while isready(server.responses)
-#         response = take!(server.responses)
-#         conn = server.connections[response.id]
-#         mg_http_reply(conn, response.payload.status, to_string(response.payload.headers), response.payload.body)
-#         delete!(server.connections, response.id)
-#     end
-#     return
-# end
+function flush(::SyncServer)
+    return
+end
+
+function flush(server::AsyncServer)
+    while isready(server.responses)
+        response = take!(server.responses)
+        conn = server.connections[response.id]
+        mg_http_reply(conn, response.payload.status, to_string(response.payload.headers), response.payload.body)
+        delete!(server.connections, response.id)
+    end
+    return
+end
 
 function wait_and_stop!(server::Server)
     try
@@ -104,32 +100,46 @@ function wait_and_stop!(server::Server)
     return
 end
 
-# function worker_loop(server::Server, worker_index::Int, router::Router)
-#     @info "Worker thread $worker_index started on thread $(Threads.threadid())"
-#     while server.running
-#         try
-#             request = take!(server.requests)
-#             response = resolve_request(request, router)
-#             put!(server.responses, response)
-#         catch e
-#             if !server.running
-#                 break # Normal exit for shutdown
-#             else
-#                 @error "Worker thread error: $e" exception=(e, catch_backtrace())
-#             end
-#         end
-#     end
-#     @info "Worker thread $worker_index finished"
-#     return
-# end
+function worker_loop(server::AsyncServer, worker_index::Int, router::Router)
+    @info "Worker thread $worker_index started on thread $(Threads.threadid())"
+    while server.running
+        try
+            request = take!(server.requests)
+            response = handle(router, request)
+            put!(server.responses, response)
+        catch e
+            if !server.running
+                break # Normal exit for shutdown
+            else
+                @error "Worker thread error: $e" exception=(e, catch_backtrace())
+            end
+        end
+    end
+    @info "Worker thread $worker_index finished"
+    return
+end
 
-# function start_worker_threads!(server::Server)
-#     resize!(server.workers, server.nworkers)
-#     for i in eachindex(server.workers)
-#         server.workers[i] = Threads.@spawn worker_loop(server, i, server.router)
-#     end
-#     return
-# end
+function start_worker_threads!(server::AsyncServer)
+    resize!(server.workers, server.nworkers)
+    for i in eachindex(server.workers)
+        server.workers[i] = Threads.@spawn worker_loop(server, i, server.router)
+    end
+    return
+end
+
+function initialize(server::SyncServer)
+    server.manager = Manager()
+end
+
+function initialize(server::AsyncServer)
+    server.manager = Manager()
+    server.requests = Channel{IdRequest}(server.nqueue)
+    server.responses = Channel{IdResponse}(server.nqueue)
+    server.connections = Dict{Int, MgConnection}()
+    start_worker_threads!(server)
+    return
+end
+
 
 # --- 6. Server Management ---
 """
@@ -146,12 +156,24 @@ end
 function start!(; server::Server = default_server(), host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true)
     !server.running || (@warn "Server already running."; return)
     @info "Starting server..."
-    server.manager = Manager()
+    initialize(server)
     setup_listener!(server, host, port)
-    server.running = true
+    server.running = true ### Here is the error, fix it!
     start_event_loop!(server)
     @info "Server started successfully."
     async || wait_and_stop!(server)
+    return
+end
+
+function unflush(server::AsyncServer)
+    close(server.requests)
+    for worker in server.workers
+        wait(worker)
+    end
+    return
+end
+
+function unflush(::SyncServer)
     return
 end
 
@@ -162,19 +184,17 @@ end
     - `server::Server = default_server()`: The server object to shutdown. If not provided, the default server is used.
 """
 function stop!(server::Server = default_server())
-    if server.running
-        @info "Stopping server..."
-        server.running = false
-        if !isnothing(server.master)
-            wait(server.master)
-            server.master = nothing
-        end
-        deregister(server)
-        cleanup!(server)
-        @info "Server stopped successfully."
-    else
-        @warn "Server not running."
+    server.running || (@warn "Server not running."; return)
+    @info "Stopping server..."
+    server.running = false
+    unflush(server)
+    if !isnothing(server.master)
+        wait(server.master)
+        server.master = nothing
     end
+    deregister(server)
+    cleanup!(server)
+    @info "Server stopped successfully."
     return
 end
 

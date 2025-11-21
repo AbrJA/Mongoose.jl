@@ -13,9 +13,9 @@ function deregister(server::Server)
     return
 end
 
-const SERVER = Ref{Server}()
+const SERVER = Ref{SyncServer}()
 
 function default_server()
-    isassigned(SERVER) || (SERVER[] = Server())
+    isassigned(SERVER) || (SERVER[] = SyncServer())
     return SERVER[]
 end

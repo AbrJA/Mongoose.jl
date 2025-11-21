@@ -31,7 +31,7 @@ function register!(handler::Function, method::AbstractString, uri::AbstractStrin
     return
 end
 
-function dispatch_route(route::Route, request::IdRequest; kwargs...)
+function dispatch(route::Route, request::IdRequest; kwargs...)
     method = request.payload.method
     if haskey(route.handlers, method)
             try
@@ -43,7 +43,6 @@ function dispatch_route(route::Route, request::IdRequest; kwargs...)
                 return IdResponse(request.id, response)
             end
     else
-        @warn "405 Method Not Allowed: $method"
         response = Response(405, Dict("Content-Type" => "text/plain"), "405 Method Not Allowed")
         return IdResponse(request.id, response)
     end
@@ -67,17 +66,30 @@ end
 #     return RESPONSES[]
 # end
 
-function resolve_request(router::Router, request::IdRequest)
-    uri = request.payload.uri
-    if (route = get(router.static, uri, nothing)) !== nothing
-        return dispatch_route(route, request)
+# Change this to match_route
+function handle(router::Router, request::IdRequest)
+    if (route = get(router.static, request.payload.uri, nothing)) !== nothing
+        response = dispatch(route, request)
+        return response
     end
     for (regex, route) in router.dynamic
-        if (m = match(regex, uri)) !== nothing
-            return dispatch_route(route, request; params = m)
+        if (m = match(regex, request.payload.uri)) !== nothing
+            response = dispatch(route, request; params = m)
+            return response
         end
     end
-    @warn "404 Not Found: $uri" # I don't like this
     response = Response(404, Dict("Content-Type" => "text/plain"), "404 Not Found")
     return IdResponse(request.id, response)
+end
+
+function resolve(conn::MgConnection, server::SyncServer, request::IdRequest)
+    response = handle(server.router, request)
+    mg_http_reply(conn, response.payload.status, to_string(response.payload.headers), response.payload.body)
+    return
+end
+
+function resolve(conn::MgConnection, server::AsyncServer, request::IdRequest)
+    server.connections[request.id] = conn
+    put!(server.requests, request)
+    return
 end
