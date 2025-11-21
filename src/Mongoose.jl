@@ -127,6 +127,10 @@ function start_worker_threads!(server::AsyncServer)
     return
 end
 
+function start_worker_threads!(::SyncServer)
+    return
+end
+
 function initialize(server::SyncServer)
     server.manager = Manager()
 end
@@ -136,10 +140,8 @@ function initialize(server::AsyncServer)
     server.requests = Channel{IdRequest}(server.nqueue)
     server.responses = Channel{IdResponse}(server.nqueue)
     server.connections = Dict{Int, MgConnection}()
-    start_worker_threads!(server)
     return
 end
-
 
 # --- 6. Server Management ---
 """
@@ -160,6 +162,7 @@ function start!(; server::Server = default_server(), host::AbstractString="127.0
     setup_listener!(server, host, port)
     server.running = true ### Here is the error, fix it!
     start_event_loop!(server)
+    start_worker_threads!(server)
     @info "Server started successfully."
     async || wait_and_stop!(server)
     return
