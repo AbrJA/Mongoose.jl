@@ -107,27 +107,27 @@ function mg_http_listen(mgr::Ptr{Cvoid}, url::String, handler::Ptr{Cvoid}, fn_da
 end
 
 """
-    mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Integer)
+    mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Int)
     Polls the Mongoose manager for events.
     # Arguments
     - `mgr::Ptr{Cvoid}`: A pointer to the Mongoose manager.
-    - `timeout_ms::Integer`: The maximum number of milliseconds to wait for events.
+    - `timeout_ms::Int`: The maximum number of milliseconds to wait for events.
 """
-function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Integer)
+function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Int)
     ccall((:mg_mgr_poll, libmongoose), Cint, (Ptr{Cvoid}, Cint), mgr, Cint(timeout_ms))
 end
 
 """
-    mg_http_reply(conn::MgConnection, status::Integer, headers::AbstractString, body::AbstractString)::Cvoid
+    mg_http_reply(conn::MgConnection, status::Int, headers::String, body::String)::Cvoid
     Sends an HTTP reply to a connected client. It constructs and sends an HTTP response including the status code, headers, and body.
     # Arguments
     - `conn::MgConnection`: A pointer to the Mongoose connection to which the reply should be sent.
-    - `status::Integer`: The HTTP status code (e.g., 200 for OK, 404 for Not Found).
-    - `headers::AbstractString`: A string containing HTTP headers, separated by `\\r\\n`. For example: `"Content-Type: text/plain\\r\\nCustom-Header: value\\r\\n"`.
-    - `body::AbstractString`: The body of the HTTP response.
+    - `status::Int`: The HTTP status code (e.g., 200 for OK, 404 for Not Found).
+    - `headers::String`: A string containing HTTP headers, separated by `\\r\\n`. For example: `"Content-Type: text/plain\\r\\nCustom-Header: value\\r\\n"`.
+    - `body::String`: The body of the HTTP response.
 """
-function mg_http_reply(conn::MgConnection, status::Integer, headers::AbstractString, body::AbstractString)
-    ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring), conn, Cint(status), Base.unsafe_convert(Cstring, String(headers)), Base.unsafe_convert(Cstring, String(body)))
+function mg_http_reply(conn::MgConnection, status::Int, headers::String, body::String)
+    ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring), conn, Cint(status), Base.unsafe_convert(Cstring, headers), Base.unsafe_convert(Cstring, body))
 end
 
 """

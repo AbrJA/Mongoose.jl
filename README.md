@@ -4,51 +4,130 @@
     <img width="300px" src="logo.png"/>
 </p>
 
-**Mongoose.jl** is a Julia package that provides a lightweight and efficient interface for building HTTP servers and web applications. It leverages the [Mongoose C library](https://github.com/cesanta/mongoose) to deliver fast, embeddable web server capabilities directly from Julia code. The package is designed for simplicity and ease of use. With `Mongoose.jl`, users can define routes, handle HTTP requests, and serve dynamic or static content with minimal setup.
+**Mongoose.jl** is a Julia package that provides a lightweight and efficient interface for building HTTP servers and web applications. It leverages the [Mongoose C library](https://github.com/cesanta/mongoose) to deliver fast, embeddable web server capabilities directly from Julia code.
 
-## Install
+## Installation
 
 ```julia
 ] add Mongoose
 ```
 
-## Example
+## Quick Start
 
-### Simple HTTP server
-
-This example demonstrates how to use the `Mongoose.jl` package to create a basic HTTP server in Julia. The server registers a single route (`/hello`) that responds to GET requests with a JSON message.
-
-- Loading library
+Here is a simple example of how to create a basic HTTP server.
 
 ```julia
 using Mongoose
-```
 
-- JSON response
-
-- Request handler
-
-```julia
-function greet(request::Request; kwargs...)
+# Define a request handler
+function greet(request::Request)
     body = "{\"message\":\"Hello World from Julia!\"}"
-    Response(200, Dict("Content-Type" => "application/json"), body)
+    return Response(200, Dict("Content-Type" => "application/json"), body)
 end
+
+# Register a route
+register!(greet, "GET", "/hello")
+
+# Start the server (defaults to localhost:8080, async=true)
+start!()
+
+# ... do other things ...
+
+# Stop the server
+stop!()
 ```
 
-- Route registration
+## Core Concepts
+
+### Servers
+
+Mongoose.jl supports two types of servers:
+
+*   **AsyncServer** (Default): Runs the event loop in a background task and processes requests in worker threads. Ideal for most applications.
+*   **SyncServer**: Runs the event loop in the main thread (blocking). Useful for simple scripts or when you want full control over the execution flow.
+
+### Routing
+
+Use `register!` to map HTTP methods and paths to handler functions.
 
 ```julia
-register("get", "/hello", greet)
+register!(handler_function, "METHOD", "/path")
 ```
 
-- Start server
+Handler functions should accept a `Request` object and return a `Response` object.
+
+### Request & Response
+
+*   **Request**: Contains `method`, `uri`, `query`, `headers`, and `body`.
+*   **Response**: Constructed with `status` (Int), `headers` (Dict), and `body` (String).
+
+## Advanced Usage
+
+### Multiple Instances
+
+You can create and run multiple server instances simultaneously on different ports.
 
 ```julia
-serve()
+using Mongoose
+
+# Create two server instances
+server1 = AsyncServer()
+server2 = AsyncServer()
+
+# Define handlers
+function handler1(req)
+    return Response(200, Dict(), "Server 1")
+end
+
+function handler2(req)
+    return Response(200, Dict(), "Server 2")
+end
+
+# Register routes on specific servers
+register!(server1, handler1, "GET", "/")
+register!(server2, handler2, "GET", "/")
+
+# Start servers on different ports
+start!(server=server1, port=8080)
+start!(server=server2, port=8081)
+
+# ...
+
+stop!(server1)
+stop!(server2)
 ```
 
-- Shoutdown server
+### Multithreading
+
+`AsyncServer` can utilize multiple worker threads to handle requests concurrently. This is configured via the `nworkers` parameter during server initialization.
 
 ```julia
-shutdown()
+using Mongoose
+
+# Create a server with 4 worker threads
+server = AsyncServer(nworkers=4)
+
+function heavy_computation(req)
+    # This will run on one of the worker threads
+    result = sum(rand(1000000))
+    return Response(200, Dict(), "Result: $result")
+end
+
+register!(server, heavy_computation, "GET", "/compute")
+
+start!(server=server, port=8080)
 ```
+
+> [!NOTE]
+> Ensure you start Julia with multiple threads (e.g., `julia -t 4`) to take full advantage of this feature.
+
+## API Reference
+
+### `start!(; server=default_server(), host="127.0.0.1", port=8080, async=true)`
+Starts the Mongoose HTTP server.
+
+### `stop!(; server=default_server())`
+Stops the running Mongoose HTTP server.
+
+### `register!(server, handler, method, path)`
+Registers a route on the specified server. If `server` is omitted, the default server is used.
