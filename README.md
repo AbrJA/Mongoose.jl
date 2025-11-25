@@ -26,7 +26,7 @@ function greet(request::Request)
 end
 
 # Register a route
-register!(greet, "GET", "/hello")
+route!(greet, "GET", "/hello")
 
 # Start the server (defaults to localhost:8080, async=true)
 start!()
@@ -48,10 +48,10 @@ Mongoose.jl supports two types of servers:
 
 ### Routing
 
-Use `register!` to map HTTP methods and paths to handler functions.
+Use `route!` to map HTTP methods and paths to handler functions.
 
 ```julia
-register!(handler_function, "METHOD", "/path")
+route!(handler_function, "METHOD", "/path")
 ```
 
 Handler functions should accept a `Request` object and return a `Response` object.
@@ -84,8 +84,8 @@ function handler2(req)
 end
 
 # Register routes on specific servers
-register!(server1, handler1, "GET", "/")
-register!(server2, handler2, "GET", "/")
+route!(server1, handler1, "GET", "/")
+route!(server2, handler2, "GET", "/")
 
 # Start servers on different ports
 start!(server=server1, port=8080)
@@ -113,7 +113,7 @@ function heavy_computation(req)
     return Response(200, Dict(), "Result: $result")
 end
 
-register!(server, heavy_computation, "GET", "/compute")
+route!(server, heavy_computation, "GET", "/compute")
 
 start!(server=server, port=8080)
 ```
@@ -129,5 +129,5 @@ Starts the Mongoose HTTP server.
 ### `stop!(; server=default_server())`
 Stops the running Mongoose HTTP server.
 
-### `register!(server, handler, method, path)`
+### `route!(server, handler, method, path)`
 Registers a route on the specified server. If `server` is omitted, the default server is used.

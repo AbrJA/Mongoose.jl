@@ -2,7 +2,7 @@ module Mongoose
 
 using Mongoose_jll
 
-export AsyncServer, SyncServer, Request, Response, start!, stop!, register!
+export AsyncServer, SyncServer, Request, Response, start!, stop!, route!
 
 include("wrappers.jl")
 include("structs.jl")
@@ -27,7 +27,7 @@ function event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
     ev == MG_EV_POLL && return
     # @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data"
     server = select_server(conn)
-    ev == MG_EV_CLOSE && return cancel(conn, server)
+    ev == MG_EV_CLOSE && return cleanup_connection(conn, server)
     if ev == MG_EV_HTTP_MSG
         request = build_request(conn, ev_data)
         handle_request(conn, server, request)
@@ -41,8 +41,8 @@ function start_listener!(server::Server, host::AbstractString, port::Integer)
     fn_data = register(server)
     listener = mg_http_listen(server.manager.ptr, url, server.handler, fn_data)
     if listener == C_NULL
+        release_resources!(server)
         deregister(server)
-        cleanup!(server)
         error("Failed to start server on $url (errno: $(Libc.errno()))")
     end
     server.listener = listener
@@ -108,13 +108,13 @@ function worker_loop(server::AsyncServer, worker_index::Int, router::Router)
     while server.running
         try
             request = take!(server.requests)
-            response = handle(router, request)
+            response = match_route(router, request)
             put!(server.responses, response)
         catch e
             if !server.running
                 break # Normal exit for shutdown
             else
-                @error "Worker thread error: $e" exception=(e, catch_backtrace())
+                @error "Worker thread error: $e" exception = (e, catch_backtrace())
             end
         end
     end
@@ -142,7 +142,7 @@ function start_internal!(server::AsyncServer)
     server.manager = Manager()
     server.requests = Channel{IdRequest}(server.nqueue)
     server.responses = Channel{IdResponse}(server.nqueue)
-    server.connections = Dict{Int, MgConnection}()
+    server.connections = Dict{Int,MgConnection}()
     return
 end
 
@@ -158,7 +158,7 @@ end
     - `port::Integer=8080`: The port number to listen on. Defaults to 8080.
     - `blocking::Bool=false`: If false, runs the server in a non-blocking mode. If true, blocks until the server is stopped.
 """
-function start!(; server::Server = default_server(), host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool = false)
+function start!(; server::Server=default_server(), host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=false)
     if server.running
         @warn "Server already running."
         return
@@ -207,7 +207,7 @@ end
     Arguments
     - `server::Server = default_server()`: The server object to shutdown. If not provided, the default server is used.
 """
-function stop!(server::Server = default_server())
+function stop!(server::Server=default_server())
     if !server.running
         @warn "Server not running."
         return
