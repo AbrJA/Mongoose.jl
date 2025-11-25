@@ -30,7 +30,7 @@ function event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
     ev == MG_EV_CLOSE && return cancel(conn, server)
     if ev == MG_EV_HTTP_MSG
         request = build_request(conn, ev_data)
-        resolve(conn, server, request)
+        handle_request(conn, server, request)
     end
     return
 end
