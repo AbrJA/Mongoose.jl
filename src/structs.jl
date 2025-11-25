@@ -79,6 +79,14 @@ mutable struct Manager
     end
 end
 
+function cleanup!(manager::Manager)
+    if manager.ptr != C_NULL
+        mg_mgr_free!(manager.ptr)
+        manager.ptr = C_NULL
+    end
+    return
+end
+
 # const Nullable{T} = Union{Nothing, T}
 
 abstract type Server end
@@ -115,7 +123,7 @@ mutable struct AsyncServer <: Server
     nqueue::Int
     running::Bool
 
-    function AsyncServer(; timeout::Integer = 0, log_level::Integer = 0, nworkers::Integer = 1, nqueue::Integer = 1024)
+    function AsyncServer(; timeout::Integer = 0, nworkers::Integer = 1, nqueue::Integer = 1024, log_level::Integer = 0)
         mg_log_set_level(log_level)
         server = new(Manager(empty = true), C_NULL, C_NULL,
                      nothing, Task[],
@@ -124,19 +132,4 @@ mutable struct AsyncServer <: Server
         finalizer(cleanup!, server)
         return server
     end
-end
-
-function cleanup!(manager::Manager)
-    if manager.ptr != C_NULL
-        mg_mgr_free!(manager.ptr)
-        manager.ptr = C_NULL
-    end
-end
-
-function cleanup!(server::Server)
-    cleanup!(server.manager)
-    server.listener = C_NULL
-    server.handler = C_NULL
-    ccall(:malloc_trim, Cvoid, (Cint,), 0)
-    return
 end
