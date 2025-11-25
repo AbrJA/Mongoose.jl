@@ -205,8 +205,8 @@ function stop!(server::Server = default_server())
         wait(server.master)
         server.master = nothing
     end
-    deregister(server)
     cleanup!(server)
+    deregister(server)
     @info "Server stopped successfully."
     return
 end
