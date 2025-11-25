@@ -93,3 +93,12 @@ function resolve(conn::MgConnection, server::AsyncServer, request::IdRequest)
     put!(server.requests, request)
     return
 end
+
+function cancel(conn::MgConnection, server::AsyncServer)
+    delete!(server.connections, Int(conn))
+    return
+end
+
+function cancel(::MgConnection, ::SyncServer)
+    return
+end

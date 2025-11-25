@@ -24,11 +24,14 @@ function select_server(conn::Ptr{Cvoid})
 end
 
 function event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
-    # ev != MG_EV_POLL && @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data"
-    ev == MG_EV_HTTP_MSG || return
+    ev == MG_EV_POLL && return
+    # @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data"
     server = select_server(conn)
-    request = build_request(conn, ev_data)
-    resolve(conn, server, request)
+    ev == MG_EV_CLOSE && return cancel(conn, server)
+    if ev == MG_EV_HTTP_MSG
+        request = build_request(conn, ev_data)
+        resolve(conn, server, request)
+    end
     return
 end
 
@@ -80,7 +83,8 @@ end
 function flush(server::AsyncServer)
     while isready(server.responses)
         response = take!(server.responses)
-        conn = server.connections[response.id]
+        conn = get(server.connections, response.id, nothing)
+        conn === nothing && continue
         mg_http_reply(conn, response.payload.status, to_string(response.payload.headers), response.payload.body)
         delete!(server.connections, response.id)
     end
@@ -156,7 +160,10 @@ end
     - `async::Bool=true`: If true, runs the server in a non-blocking mode. If false, blocks until the server is stopped.
 """
 function start!(; server::Server = default_server(), host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true)
-    !server.running || (@warn "Server already running."; return)
+    if server.running
+        @warn "Server already running."
+        return
+    end
     @info "Starting server..."
     initialize(server)
     setup_listener!(server, host, port)
@@ -181,13 +188,16 @@ function unflush(::SyncServer)
 end
 
 """
-    stop!(; server::Server = default_server())
+    stop!(server::Server = default_server())
     Stops the running Mongoose HTTP server. Sets a flag to stop the background event loop task, and then frees the Mongoose associated resources.
     Arguments
     - `server::Server = default_server()`: The server object to shutdown. If not provided, the default server is used.
 """
 function stop!(server::Server = default_server())
-    server.running || (@warn "Server not running."; return)
+    if !server.running
+        @warn "Server not running."
+        return
+    end
     @info "Stopping server..."
     server.running = false
     unflush(server)
