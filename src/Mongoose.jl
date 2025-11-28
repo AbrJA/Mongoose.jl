@@ -23,9 +23,22 @@ function select_server(conn::Ptr{Cvoid})
     return SERVER_REGISTRY[id]
 end
 
-function event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
+function sync_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
+    # ev != MG_EV_POLL && @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data"
+    ev == MG_EV_HTTP_MSG || return
+    server = select_server(conn)
+    request = build_request(conn, ev_data)
+    handle_request(conn, server, request)
+    return
+end
+
+function cleanup_connection(conn::MgConnection, server::AsyncServer)
+    delete!(server.connections, Int(conn))
+    return
+end
+
+function async_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
     ev == MG_EV_POLL && return
-    # @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data"
     server = select_server(conn)
     ev == MG_EV_CLOSE && return cleanup_connection(conn, server)
     if ev == MG_EV_HTTP_MSG
@@ -35,16 +48,15 @@ function event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
     return
 end
 
-function start_listener!(server::Server, host::AbstractString, port::Integer)
+function setup_listener!(server::Server, host::AbstractString, port::Integer)
     url = "http://$host:$port"
-    fn_data = register(server)
-    listener = mg_http_listen(server.manager.ptr, url, server.handler, fn_data)
-    if listener == C_NULL
-        release_resources!(server)
-        deregister(server)
-        error("Failed to start server on $url (errno: $(Libc.errno()))")
-    end
-    server.listener = listener
+    fn_data = pointer_from_objref(server)
+    is_listen = mg_http_listen(server.manager.ptr, url, server.handler, fn_data)
+    is_listen == C_NULL && error("Failed to start server on $url (errno: $(Libc.errno()))")
+    # if is_listen == C_NULL
+    #     error("Failed to start server on $url (errno: $(Libc.errno()))")
+    #     stop!(server)
+    # end
     @info "Listening on $url"
     return
 end
@@ -65,7 +77,7 @@ function start_master!(server::Server)
     return
 end
 
-function run_event_loop(server::Server)
+function run_event_loop(server::AsyncServer)
     while server.running
         mg_mgr_poll(server.manager.ptr, server.timeout)
         process_responses!(server)
@@ -74,7 +86,11 @@ function run_event_loop(server::Server)
     return
 end
 
-function process_responses!(::SyncServer)
+function run_event_loop(server::SyncServer)
+    while server.running
+        mg_mgr_poll(server.manager.ptr, server.timeout)
+        yield()
+    end
     return
 end
 
@@ -135,13 +151,13 @@ end
 
 function setup_resources!(server::SyncServer)
     server.manager = Manager()
-    server.handler = @cfunction(event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+    server.handler = @cfunction(sync_event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
     return
 end
 
 function setup_resources!(server::AsyncServer)
     server.manager = Manager()
-    server.handler = @cfunction(event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+    server.handler = @cfunction(async_event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
     server.requests = Channel{IdRequest}(server.nqueue)
     server.responses = Channel{IdResponse}(server.nqueue)
     server.connections = Dict{Int,MgConnection}()
@@ -150,29 +166,36 @@ end
 
 # --- 6. Server Management ---
 """
-    start!(; server::Server = default_server(), host::AbstractString="127.0.0.1", port::Integer=8080, async::Bool = true)
+    start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=false)
 
     Starts the Mongoose HTTP server. Initialize the Mongoose manager, binds an HTTP listener, and starts a background Task to poll the Mongoose event loop.
 
     Arguments
-    - `server::Server = default_server()`: The server object to start. If not provided, the default server is used.
+    - `server::Server`: The server object to start.
     - `host::AbstractString="127.0.0.1"`: The IP address or hostname to listen on. Defaults to "127.0.0.1" (localhost).
     - `port::Integer=8080`: The port number to listen on. Defaults to 8080.
     - `blocking::Bool=false`: If false, runs the server in a non-blocking mode. If true, blocks until the server is stopped.
 """
-function start!(; server::Server=default_server(), host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=false)
+function start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=false)
     if server.running
-        @warn "Server already running."
+        @info "Server already running. Nothing to do."
         return
     end
-    @info "Starting server..."
-    setup_resources!(server)
-    start_listener!(server, host, port)
-    server.running = true
-    start_master!(server)
-    start_workers!(server)
-    @info "Server started successfully."
-    blocking && run_blocking!(server)
+    try
+        @info "Starting server..."
+        server.running = true
+        register(server)
+        setup_resources!(server)
+        setup_listener!(server, host, port)
+        start_master!(server)
+        start_workers!(server)
+        @info "Server started successfully."
+        blocking && run_blocking!(server)
+    catch e
+        @error "Failed to start server" exception = (e, catch_backtrace())
+        stop!(server)
+        throw(e)
+    end
     return
 end
 
@@ -181,6 +204,7 @@ function stop_master!(server::Server)
         wait(server.master)
         server.master = nothing
     end
+    return
 end
 
 function stop_workers!(server::AsyncServer)
@@ -196,14 +220,14 @@ function stop_workers!(::SyncServer)
 end
 
 """
-    stop!(server::Server = default_server())
+    stop!(server::Server)
     Stops the running Mongoose HTTP server. Sets a flag to stop the background event loop task, and then frees the Mongoose associated resources.
     Arguments
-    - `server::Server = default_server()`: The server object to shutdown. If not provided, the default server is used.
+    - `server::Server`: The server object to shutdown.
 """
-function stop!(server::Server=default_server())
+function stop!(server::Server)
     if !server.running
-        @warn "Server not running."
+        @info "Server not running. Nothing to do."
         return
     end
     @info "Stopping server..."

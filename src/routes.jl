@@ -2,16 +2,16 @@ const VALID_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
 
 # --- 4. Request Handler Registration ---
 """
-    route!(method::String, uri::AbstractString, handler::Function; server::Server = default_server())
+    route!(server::Server, method::String, uri::AbstractString, handler::Function)
     Registers an HTTP request handler for a specific method and URI.
     # Arguments
+    - `server::Server`: The server to register the handler with.
     - `method::AbstractString`: The HTTP method (e.g., GET, POST, PUT, PATCH, DELETE).
     - `uri::AbstractString`: The URI path to register the handler for (e.g., "/api/users").
     - `handler::Function`: The Julia function to be called when a matching request arrives.
-    - `server::Server = default_server()`: The server to register the handler with.
     This function should accept a `Request` object as its first argument, followed by any additional keyword arguments.
 """
-function route!(method::AbstractString, uri::AbstractString, handler::Function; server::Server=default_server())
+function route!(server::Server, method::AbstractString, uri::AbstractString, handler::Function)
     method = uppercase(method)
     if !(method in VALID_METHODS)
         error("Invalid HTTP method: $method. Valid methods are: $(VALID_METHODS)")
@@ -72,14 +72,5 @@ end
 function handle_request(conn::MgConnection, server::AsyncServer, request::IdRequest)
     server.connections[request.id] = conn
     put!(server.requests, request)
-    return
-end
-
-function cleanup_connection(conn::MgConnection, server::AsyncServer)
-    delete!(server.connections, Int(conn))
-    return
-end
-
-function cleanup_connection(::MgConnection, ::SyncServer)
     return
 end

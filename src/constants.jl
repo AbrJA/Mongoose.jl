@@ -1,4 +1,4 @@
-const SERVER_REGISTRY = Dict{Int, Server}()
+const SERVER_REGISTRY = Dict{Int,Server}()
 
 function register(server::Server)
     ptr = pointer_from_objref(server)
@@ -11,11 +11,4 @@ function deregister(server::Server)
     id = Int(pointer_from_objref(server))
     delete!(SERVER_REGISTRY, id)
     return
-end
-
-const SERVER = Ref{SyncServer}()
-
-function default_server()
-    isassigned(SERVER) || (SERVER[] = SyncServer())
-    return SERVER[]
 end

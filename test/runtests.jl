@@ -24,10 +24,10 @@ using Test
     # --- Test 1: SyncServer ---
     @testset "SyncServer" begin
         server = SyncServer()
-        route!("GET", "/hello", greet; server=server)
+        route!(server, "GET", "/hello", greet)
 
         # Start server in a background task since it blocks
-        start!(server=server, port=8091, blocking=false)
+        start!(server, port=8091, blocking=false)
 
         try
             response = HTTP.get("http://localhost:8091/hello")
@@ -41,11 +41,11 @@ using Test
     # --- Test 2: AsyncServer (Default) ---
     @testset "AsyncServer" begin
         server = AsyncServer()
-        route!("GET", "/hello", greet; server=server)
-        route!("GET", "/echo/:name", echo; server=server)
-        route!("GET", "/error", error_handler; server=server)
+        route!(server, "GET", "/hello", greet)
+        route!(server, "GET", "/echo/:name", echo)
+        route!(server, "GET", "/error", error_handler)
 
-        start!(server=server, port=8092)
+        start!(server, port=8092)
 
         try
             # Basic GET
@@ -80,8 +80,8 @@ using Test
         @info "Running multithreading tests with $n_threads threads"
 
         server = AsyncServer(nworkers=4)
-        route!("GET", "/echo/:name", echo; server=server)
-        start!(server=server, port=8093)
+        route!(server, "GET", "/echo/:name", echo)
+        start!(server, port=8093)
 
         try
             results = Channel{Tuple{Int,Int,String}}(10)
@@ -108,11 +108,11 @@ using Test
         server1 = AsyncServer()
         server2 = AsyncServer()
 
-        route!("GET", "/s1", (req; kwargs...) -> Response(200, Dict(), "Server 1"); server=server1)
-        route!("GET", "/s2", (req; kwargs...) -> Response(200, Dict(), "Server 2"); server=server2)
+        route!(server1, "GET", "/s1", (req; kwargs...) -> Response(200, Dict(), "Server 1"))
+        route!(server2, "GET", "/s2", (req; kwargs...) -> Response(200, Dict(), "Server 2"))
 
-        start!(server=server1, port=8094)
-        start!(server=server2, port=8095)
+        start!(server1, port=8094)
+        start!(server2, port=8095)
         sleep(1)
 
         try

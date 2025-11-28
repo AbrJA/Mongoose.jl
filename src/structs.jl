@@ -91,16 +91,15 @@ abstract type Server end
 
 mutable struct SyncServer <: Server
     manager::Manager
-    listener::Ptr{Cvoid}
     handler::Ptr{Cvoid}
+    timeout::Cint
     master::Union{Nothing,Task}
     router::Router
-    timeout::Int
     running::Bool
 
-    function SyncServer(; timeout::Integer=0, log_level::Integer=0)
-        mg_log_set_level(log_level)
-        server = new(Manager(empty=true), C_NULL, C_NULL, nothing, Router(), timeout, false)
+    function SyncServer(; timeout::Integer=0)
+        mg_log_set_level(Cint(0))
+        server = new(Manager(empty=true), C_NULL, Cint(timeout), nothing, Router(), false)
         finalizer(free_resources!, server)
         return server
     end
@@ -108,25 +107,23 @@ end
 
 mutable struct AsyncServer <: Server
     manager::Manager
-    listener::Ptr{Cvoid}
     handler::Ptr{Cvoid}
+    timeout::Cint
     master::Union{Nothing,Task}
     workers::Vector{Task}
     requests::Channel{IdRequest}
     responses::Channel{IdResponse}
     connections::Dict{Int,MgConnection}
     router::Router
-    timeout::Int
     nworkers::Int
     nqueue::Int
     running::Bool
 
-    function AsyncServer(; timeout::Integer=0, nworkers::Integer=1, nqueue::Integer=1024, log_level::Integer=0)
-        mg_log_set_level(log_level)
-        server = new(Manager(empty=true), C_NULL, C_NULL,
-            nothing, Task[],
+    function AsyncServer(; timeout::Integer=0, nworkers::Integer=1, nqueue::Integer=1024)
+        mg_log_set_level(Cint(0))
+        server = new(Manager(empty=true), C_NULL, Cint(timeout), nothing, Task[],
             Channel{IdRequest}(nqueue), Channel{IdResponse}(nqueue), Dict{Int,MgConnection}(),
-            Router(), timeout, nworkers, nqueue, false)
+            Router(), nworkers, nqueue, false)
         finalizer(free_resources!, server)
         return server
     end
@@ -134,7 +131,6 @@ end
 
 function free_resources!(server::Server)
     cleanup!(server.manager)
-    server.listener = C_NULL
     server.handler = C_NULL
     # ccall(:malloc_trim, Cvoid, (Cint,), 0)
     return

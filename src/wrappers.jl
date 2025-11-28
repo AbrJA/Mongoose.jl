@@ -68,7 +68,7 @@ struct MgHttpMessage
     uri::MgStr
     query::MgStr
     proto::MgStr
-    headers::NTuple{MG_MAX_HTTP_HEADERS, MgHttpHeader} # Array of headers
+    headers::NTuple{MG_MAX_HTTP_HEADERS,MgHttpHeader} # Array of headers
     body::MgStr
     message::MgStr
 
@@ -108,14 +108,14 @@ function mg_http_listen(mgr::Ptr{Cvoid}, url::String, handler::Ptr{Cvoid}, fn_da
 end
 
 """
-    mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Int)
+    mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Cint)
     Polls the Mongoose manager for events.
     # Arguments
     - `mgr::Ptr{Cvoid}`: A pointer to the Mongoose manager.
-    - `timeout_ms::Int`: The maximum number of milliseconds to wait for events.
+    - `timeout_ms::Cint`: The maximum number of milliseconds to wait for events.
 """
-function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Int)
-    ccall((:mg_mgr_poll, libmongoose), Cint, (Ptr{Cvoid}, Cint), mgr, Cint(timeout_ms))
+function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Cint)
+    ccall((:mg_mgr_poll, libmongoose), Cint, (Ptr{Cvoid}, Cint), mgr, timeout_ms)
 end
 
 """
@@ -142,7 +142,7 @@ function mg_conn_get_fn_data(conn::MgConnection)
 end
 
 """
-    mg_log_set_level(level::Integer)
+    mg_log_set_level(level::Cint)
     Set Mongoose's global log verbosity level. Lower numbers mean less output.
     # Levels
     - `0` = MG_LL_NONE — No logs
@@ -151,7 +151,7 @@ end
     - `3` = MG_LL_DEBUG — Errors, info, and debug details
     - `4` = MG_LL_VERBOSE — Everything and more
 """
-function mg_log_set_level(level::Integer)
+function mg_log_set_level(level::Cint)
     ptr = cglobal((:mg_log_level, libmongoose), Cint)
-    unsafe_store!(ptr, Cint(level))
+    unsafe_store!(ptr, level)
 end
