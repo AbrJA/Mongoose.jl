@@ -23,12 +23,24 @@ function select_server(conn::Ptr{Cvoid})
     return SERVER_REGISTRY[id]
 end
 
+function handle_request(conn::MgConnection, server::SyncServer, request::IdRequest)
+    response = match_route(server.router, request)
+    mg_http_reply(conn, response.payload.status, to_string(response.payload.headers), response.payload.body)
+    return
+end
+
 function sync_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
     # ev != MG_EV_POLL && @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data"
     ev == MG_EV_HTTP_MSG || return
     server = select_server(conn)
     request = build_request(conn, ev_data)
     handle_request(conn, server, request)
+    return
+end
+
+function handle_request(conn::MgConnection, server::AsyncServer, request::IdRequest)
+    server.connections[request.id] = conn
+    put!(server.requests, request)
     return
 end
 

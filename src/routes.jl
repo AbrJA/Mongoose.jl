@@ -63,14 +63,3 @@ function match_route(router::Router, request::IdRequest)
     return IdResponse(request.id, response)
 end
 
-function handle_request(conn::MgConnection, server::SyncServer, request::IdRequest)
-    response = match_route(server.router, request)
-    mg_http_reply(conn, response.payload.status, to_string(response.payload.headers), response.payload.body)
-    return
-end
-
-function handle_request(conn::MgConnection, server::AsyncServer, request::IdRequest)
-    server.connections[request.id] = conn
-    put!(server.requests, request)
-    return
-end
