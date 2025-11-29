@@ -76,7 +76,7 @@ end
 function start_master!(server::Server)
     server.master = @async begin
         try
-            @info "Starting server event loop task on thread $(Threads.threadid())"
+            @info "Server event loop task started on thread $(Threads.threadid())"
             run_event_loop(server)
         catch e
             if !isa(e, InterruptException)
@@ -186,9 +186,9 @@ end
     - `server::Server`: The server object to start.
     - `host::AbstractString="127.0.0.1"`: The IP address or hostname to listen on. Defaults to "127.0.0.1" (localhost).
     - `port::Integer=8080`: The port number to listen on. Defaults to 8080.
-    - `blocking::Bool=false`: If false, runs the server in a non-blocking mode. If true, blocks until the server is stopped.
+    - `blocking::Bool=true`: If true, blocks until the server is stopped. If false, runs the server in a non-blocking mode.
 """
-function start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=false)
+function start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=true)
     if server.running
         @info "Server already running. Nothing to do."
         return
@@ -199,9 +199,8 @@ function start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=
         register(server)
         setup_resources!(server)
         setup_listener!(server, host, port)
-        start_master!(server)
         start_workers!(server)
-        @info "Server started successfully."
+        start_master!(server)
         blocking && run_blocking!(server)
     catch e
         @error "Failed to start server" exception = (e, catch_backtrace())
@@ -249,6 +248,13 @@ function stop!(server::Server)
     free_resources!(server)
     deregister(server)
     @info "Server stopped successfully."
+    return
+end
+
+function stop_all()
+    for server in values(SERVER_REGISTRY)
+        stop!(server)
+    end
     return
 end
 
