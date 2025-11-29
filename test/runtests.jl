@@ -45,7 +45,7 @@ using Test
         route!(server, "GET", "/echo/:name", echo)
         route!(server, "GET", "/error", error_handler)
 
-        start!(server, port=8092)
+        start!(server, port=8092, blocking=false)
 
         try
             # Basic GET
@@ -81,7 +81,7 @@ using Test
 
         server = AsyncServer(nworkers=4)
         route!(server, "GET", "/echo/:name", echo)
-        start!(server, port=8093)
+        start!(server, port=8093, blocking=false)
 
         try
             results = Channel{Tuple{Int,Int,String}}(10)
@@ -111,8 +111,8 @@ using Test
         route!(server1, "GET", "/s1", (req; kwargs...) -> Response(200, Dict(), "Server 1"))
         route!(server2, "GET", "/s2", (req; kwargs...) -> Response(200, Dict(), "Server 2"))
 
-        start!(server1, port=8094)
-        start!(server2, port=8095)
+        start!(server1, port=8094, blocking=false)
+        start!(server2, port=8095, blocking=false)
         sleep(1)
 
         try
