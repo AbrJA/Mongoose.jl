@@ -19,6 +19,9 @@ Here is a simple example of how to create a basic HTTP server.
 ```julia
 using Mongoose
 
+# Create a server instance (AsyncServer is the default)
+server = AsyncServer()
+
 # Define a request handler
 function greet(request::Request)
     body = "{\"message\":\"Hello World from Julia!\"}"
@@ -26,15 +29,14 @@ function greet(request::Request)
 end
 
 # Register a route
-route!(greet, "GET", "/hello")
+route!(server, "GET", "/hello", greet)
 
-# Start the server (defaults to localhost:8080, async=true)
-start!()
+# Start the server (defaults to localhost:8080)
+# blocking=true keeps the script running
+start!(server, port=8080, blocking=true)
 
-# ... do other things ...
-
-# Stop the server
-shutdown!()
+# To stop the server (if running in a non-blocking way or from another task)
+# shutdown!(server)
 ```
 
 ## Core Concepts
@@ -51,7 +53,7 @@ Mongoose.jl supports two types of servers:
 Use `route!` to map HTTP methods and paths to handler functions.
 
 ```julia
-route!(handler_function, "METHOD", "/path")
+route!(server, "METHOD", "/path", handler_function)
 ```
 
 Handler functions should accept a `Request` object and return a `Response` object.
@@ -84,12 +86,12 @@ function handler2(req)
 end
 
 # Register routes on specific servers
-route!(server1, handler1, "GET", "/")
-route!(server2, handler2, "GET", "/")
+route!(server1, "GET", "/", handler1)
+route!(server2, "GET", "/", handler2)
 
 # Start servers on different ports
-start!(server=server1, port=8080)
-start!(server=server2, port=8081)
+start!(server1, port=8080, blocking=false)
+start!(server2, port=8081, blocking=false)
 
 # ...
 
@@ -113,9 +115,9 @@ function heavy_computation(req)
     return Response(200, Dict(), "Result: $result")
 end
 
-route!(server, heavy_computation, "GET", "/compute")
+route!(server, "GET", "/compute", heavy_computation)
 
-start!(server=server, port=8080)
+start!(server, port=8080, blocking=true)
 ```
 
 > [!NOTE]
@@ -123,11 +125,11 @@ start!(server=server, port=8080)
 
 ## API Reference
 
-### `start!(; server=default_server(), host="127.0.0.1", port=8080, async=true)`
+### `start!(server; host="127.0.0.1", port=8080, blocking=true)`
 Starts the Mongoose HTTP server.
 
-### `shutdown!(; server=default_server())`
+### `shutdown!(server)`
 Stops the running Mongoose HTTP server.
 
-### `route!(server, handler, method, path)`
-Registers a route on the specified server. If `server` is omitted, the default server is used.
+### `route!(server, method, path, handler)`
+Registers a route on the specified server.

@@ -5,170 +5,41 @@ using Mongoose_jll
 export AsyncServer, SyncServer, Request, Response, start!, shutdown!, route!
 
 include("wrappers.jl")
-include("structs.jl")
+include("handlers.jl")
 include("routes.jl")
-include("constants.jl")
+include("events.jl")
+include("servers.jl")
+include("registry.jl")
 
-# --- 5. Event handling ---
-function build_request(conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid})
-    id = Int(conn)
-    message = MgHttpMessage(ev_data)
-    payload = Request(message)
-    return IdRequest(id, payload)
-end
+const VALID_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
 
-function select_server(conn::Ptr{Cvoid})
-    fn_data = mg_conn_get_fn_data(conn)
-    id = UInt(fn_data)
-    return REGISTRY[id]
-end
-
-function handle_request(conn::MgConnection, server::SyncServer, request::IdRequest)
-    response = match_route(server.router, request)
-    mg_http_reply(conn, response.payload.status, to_string(response.payload.headers), response.payload.body)
-    return
-end
-
-function sync_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
-    # ev != MG_EV_POLL && @info "Event: $ev (Raw), Conn: $conn, EvData: $ev_data"
-    ev == MG_EV_HTTP_MSG || return
-    server = select_server(conn)
-    request = build_request(conn, ev_data)
-    handle_request(conn, server, request)
-    return
-end
-
-function handle_request(conn::MgConnection, server::AsyncServer, request::IdRequest)
-    server.connections[request.id] = conn
-    put!(server.requests, request)
-    return
-end
-
-function cleanup_connection(conn::MgConnection, server::AsyncServer)
-    delete!(server.connections, Int(conn))
-    return
-end
-
-function async_event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
-    ev == MG_EV_POLL && return
-    server = select_server(conn)
-    ev == MG_EV_CLOSE && return cleanup_connection(conn, server)
-    if ev == MG_EV_HTTP_MSG
-        request = build_request(conn, ev_data)
-        handle_request(conn, server, request)
+"""
+    route!(server::Server, method::String, uri::AbstractString, handler::Function)
+    Registers an HTTP request handler for a specific method and URI.
+    # Arguments
+    - `server::Server`: The server to register the handler with.
+    - `method::AbstractString`: The HTTP method (e.g., GET, POST, PUT, PATCH, DELETE).
+    - `uri::AbstractString`: The URI path to register the handler for (e.g., "/api/users").
+    - `handler::Function`: The Julia function to be called when a matching request arrives.
+    This function should accept a `Request` object as its first argument, followed by any additional keyword arguments.
+"""
+function route!(server::Server, method::AbstractString, uri::AbstractString, handler::Function)
+    method = uppercase(method)
+    if !(method in VALID_METHODS)
+        error("Invalid HTTP method: $method. Valid methods are: $(VALID_METHODS)")
     end
-    return
-end
-
-function setup_listener!(server::Server, host::AbstractString, port::Integer)
-    url = "http://$host:$port"
-    fn_data = Ptr{Cvoid}(objectid(server))
-    is_listen = mg_http_listen(server.manager.ptr, url, server.handler, fn_data)
-    is_listen == C_NULL && error("Failed to start server on $url. Port may be in use.")
-    @info "Listening on $url"
-    return
-end
-
-function start_master!(server::Server)
-    server.master = @async begin
-        try
-            @info "Server event loop task started on thread $(Threads.threadid())"
-            run_event_loop(server)
-        catch e
-            if !isa(e, InterruptException)
-                @error "Server event loop error: $e" exception = (e, catch_backtrace())
-            end
-        finally
-            @info "Server event loop task finished."
+    if occursin(':', uri)
+        regex = Regex('^' * replace(uri, r":([a-zA-Z0-9_]+)" => s"(?P<\1>[^/]+)") * '\$')
+        if !haskey(server.router.dynamic, regex)
+            server.router.dynamic[regex] = Route()
         end
-    end
-    return
-end
-
-function run_event_loop(server::AsyncServer)
-    while server.running
-        mg_mgr_poll(server.manager.ptr, server.timeout)
-        process_responses!(server)
-        yield()
-    end
-    return
-end
-
-function run_event_loop(server::SyncServer)
-    while server.running
-        mg_mgr_poll(server.manager.ptr, server.timeout)
-        yield()
-    end
-    return
-end
-
-function process_responses!(server::AsyncServer)
-    while isready(server.responses)
-        response = take!(server.responses)
-        conn = get(server.connections, response.id, nothing)
-        conn === nothing && continue
-        mg_http_reply(conn, response.payload.status, to_string(response.payload.headers), response.payload.body)
-        delete!(server.connections, response.id)
-    end
-    return
-end
-
-function run_blocking!(server::Server)
-    try
-        wait(server.master)
-    catch e
-        if !isa(e, InterruptException)
-            @error "Error while waiting for server" exception = (e, catch_backtrace())
+        server.router.dynamic[regex].handlers[method] = handler
+    else
+        if !haskey(server.router.static, uri)
+            server.router.static[uri] = Route()
         end
-    finally
-        shutdown!(server)
+        server.router.static[uri].handlers[method] = handler
     end
-    return
-end
-
-function worker_loop(server::AsyncServer, worker_index::Int, router::Router)
-    @info "Worker thread $worker_index started on thread $(Threads.threadid())"
-    while server.running
-        try
-            request = take!(server.requests)
-            response = match_route(router, request)
-            put!(server.responses, response)
-        catch e
-            if !server.running
-                break # Normal exit for shutdown
-            else
-                @error "Worker thread error: $e" exception = (e, catch_backtrace())
-            end
-        end
-    end
-    @info "Worker thread $worker_index finished"
-    return
-end
-
-function start_workers!(server::AsyncServer)
-    resize!(server.workers, server.nworkers)
-    for i in eachindex(server.workers)
-        server.workers[i] = Threads.@spawn worker_loop(server, i, server.router)
-    end
-    return
-end
-
-function start_workers!(::SyncServer)
-    return
-end
-
-function setup_resources!(server::SyncServer)
-    server.manager = Manager()
-    server.handler = @cfunction(sync_event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
-    return
-end
-
-function setup_resources!(server::AsyncServer)
-    server.manager = Manager()
-    server.handler = @cfunction(async_event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
-    server.requests = Channel{IdRequest}(server.nqueue)
-    server.responses = Channel{IdResponse}(server.nqueue)
-    server.connections = Dict{Int,MgConnection}()
     return
 end
 
@@ -199,29 +70,9 @@ function start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=
         start_master!(server)
         blocking && run_blocking!(server)
     catch e
-        shutdown!(server)
         rethrow(e)
+        shutdown!(server)
     end
-    return
-end
-
-function stop_master!(server::Server)
-    if !isnothing(server.master)
-        wait(server.master)
-        server.master = nothing
-    end
-    return
-end
-
-function stop_workers!(server::AsyncServer)
-    close(server.requests)
-    for worker in server.workers
-        wait(worker)
-    end
-    return
-end
-
-function stop_workers!(::SyncServer)
     return
 end
 

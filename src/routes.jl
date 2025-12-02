@@ -1,34 +1,12 @@
-const VALID_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+struct Route
+    handlers::Dict{String,Function}
+    Route() = new(Dict{String,Function}())
+end
 
-# --- 4. Request Handler Registration ---
-"""
-    route!(server::Server, method::String, uri::AbstractString, handler::Function)
-    Registers an HTTP request handler for a specific method and URI.
-    # Arguments
-    - `server::Server`: The server to register the handler with.
-    - `method::AbstractString`: The HTTP method (e.g., GET, POST, PUT, PATCH, DELETE).
-    - `uri::AbstractString`: The URI path to register the handler for (e.g., "/api/users").
-    - `handler::Function`: The Julia function to be called when a matching request arrives.
-    This function should accept a `Request` object as its first argument, followed by any additional keyword arguments.
-"""
-function route!(server::Server, method::AbstractString, uri::AbstractString, handler::Function)
-    method = uppercase(method)
-    if !(method in VALID_METHODS)
-        error("Invalid HTTP method: $method. Valid methods are: $(VALID_METHODS)")
-    end
-    if occursin(':', uri)
-        regex = Regex('^' * replace(uri, r":([a-zA-Z0-9_]+)" => s"(?P<\1>[^/]+)") * '\$')
-        if !haskey(server.router.dynamic, regex)
-            server.router.dynamic[regex] = Route()
-        end
-        server.router.dynamic[regex].handlers[method] = handler
-    else
-        if !haskey(server.router.static, uri)
-            server.router.static[uri] = Route()
-        end
-        server.router.static[uri].handlers[method] = handler
-    end
-    return
+mutable struct Router
+    static::Dict{String,Route}
+    dynamic::Dict{Regex,Route}
+    Router() = new(Dict{String,Route}(), Dict{Regex,Route}())
 end
 
 function execute_handler(route::Route, request::IdRequest; kwargs...)
