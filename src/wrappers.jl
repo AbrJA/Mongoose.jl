@@ -1,12 +1,9 @@
 using Mongoose_jll
 
-# Constants
-
 const MG_EV_HTTP_MSG = Cint(11) # For full requests
 const MG_EV_POLL = Cint(2) # For polling
 const MG_MAX_HTTP_HEADERS = 30 # Maximum number of HTTP headers allowed
 const MG_EV_CLOSE = Cint(9) # For closing connections
-
 const MgConnection = Ptr{Cvoid} # Pointer to a generic C void type
 
 struct MgStr

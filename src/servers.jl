@@ -116,7 +116,7 @@ function process_responses!(server::AsyncServer)
         response = take!(server.responses)
         conn = get(server.connections, response.id, nothing)
         conn === nothing && continue
-        mg_http_reply(conn, response.payload.status, to_string(response.payload.headers), response.payload.body)
+        mg_http_reply(conn, response.payload.status, response.payload.headers, response.payload.body)
         delete!(server.connections, response.id)
     end
     return
@@ -155,7 +155,7 @@ end
 
 function handle_request(conn::MgConnection, server::SyncServer, request::IdRequest)
     response = match_route(server.router, request)
-    mg_http_reply(conn, response.payload.status, to_string(response.payload.headers), response.payload.body)
+    mg_http_reply(conn, response.payload.status, response.payload.headers, response.payload.body)
     return
 end
 

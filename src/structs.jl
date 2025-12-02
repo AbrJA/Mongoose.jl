@@ -17,8 +17,20 @@ end
 
 struct Response
     status::Int
-    headers::Dict{String,String}
+    headers::String
     body::String
+end
+
+function to_string(headers::Dict{String,String})
+    io = IOBuffer()
+    for (k, v) in headers
+        print(io, k, ": ", v, "\r\n")
+    end
+    return String(take!(io))
+end
+
+function Response(status::Int, headers::Dict{String,String}, body::String)
+    return Response(status, to_string(headers), body)
 end
 
 struct IdResponse
@@ -44,12 +56,4 @@ function _headers(message::MgHttpMessage)::Dict{String,String}
         end
     end
     return headers
-end
-
-function to_string(headers::Dict{String,String})
-    io = IOBuffer()
-    for (k, v) in headers
-        print(io, k, ": ", v, "\r\n")
-    end
-    return String(take!(io))
 end

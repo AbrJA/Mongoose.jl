@@ -5,7 +5,7 @@ using Mongoose_jll
 export AsyncServer, SyncServer, Request, Response, start!, shutdown!, route!
 
 include("wrappers.jl")
-include("handlers.jl")
+include("structs.jl")
 include("routes.jl")
 include("events.jl")
 include("servers.jl")

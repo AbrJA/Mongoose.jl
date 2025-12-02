@@ -1,3 +1,4 @@
+# Maybe another name and add handle_request functions
 function build_request(conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid})
     id = Int(conn)
     message = MgHttpMessage(ev_data)
