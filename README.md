@@ -34,7 +34,7 @@ start!()
 # ... do other things ...
 
 # Stop the server
-stop!()
+shutdown!()
 ```
 
 ## Core Concepts
@@ -93,8 +93,8 @@ start!(server=server2, port=8081)
 
 # ...
 
-stop!(server1)
-stop!(server2)
+shutdown!(server1)
+shutdown!(server2)
 ```
 
 ### Multithreading
@@ -126,7 +126,7 @@ start!(server=server, port=8080)
 ### `start!(; server=default_server(), host="127.0.0.1", port=8080, async=true)`
 Starts the Mongoose HTTP server.
 
-### `stop!(; server=default_server())`
+### `shutdown!(; server=default_server())`
 Stops the running Mongoose HTTP server.
 
 ### `route!(server, handler, method, path)`

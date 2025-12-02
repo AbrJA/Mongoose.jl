@@ -2,7 +2,7 @@ module Mongoose
 
 using Mongoose_jll
 
-export AsyncServer, SyncServer, Request, Response, start!, stop!, route!
+export AsyncServer, SyncServer, Request, Response, start!, shutdown!, route!
 
 include("wrappers.jl")
 include("structs.jl")
@@ -19,8 +19,8 @@ end
 
 function select_server(conn::Ptr{Cvoid})
     fn_data = mg_conn_get_fn_data(conn)
-    id = Int(fn_data)
-    return SERVER_REGISTRY[id]
+    id = UInt(fn_data)
+    return REGISTRY[id]
 end
 
 function handle_request(conn::MgConnection, server::SyncServer, request::IdRequest)
@@ -62,13 +62,9 @@ end
 
 function setup_listener!(server::Server, host::AbstractString, port::Integer)
     url = "http://$host:$port"
-    fn_data = pointer_from_objref(server)
+    fn_data = Ptr{Cvoid}(objectid(server))
     is_listen = mg_http_listen(server.manager.ptr, url, server.handler, fn_data)
-    is_listen == C_NULL && error("Failed to start server on $url (errno: $(Libc.errno()))")
-    # if is_listen == C_NULL
-    #     error("Failed to start server on $url (errno: $(Libc.errno()))")
-    #     stop!(server)
-    # end
+    is_listen == C_NULL && error("Failed to start server on $url. Port may be in use.")
     @info "Listening on $url"
     return
 end
@@ -80,7 +76,7 @@ function start_master!(server::Server)
             run_event_loop(server)
         catch e
             if !isa(e, InterruptException)
-                @error "Server event loop error" exception = (e, catch_backtrace())
+                @error "Server event loop error: $e" exception = (e, catch_backtrace())
             end
         finally
             @info "Server event loop task finished."
@@ -125,7 +121,7 @@ function run_blocking!(server::Server)
             @error "Error while waiting for server" exception = (e, catch_backtrace())
         end
     finally
-        stop!(server)
+        shutdown!(server)
     end
     return
 end
@@ -193,19 +189,18 @@ function start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=
         @info "Server already running. Nothing to do."
         return
     end
+    @info "Starting server..."
+    server.running = true
     try
-        @info "Starting server..."
-        server.running = true
-        register(server)
+        register!(server)
         setup_resources!(server)
         setup_listener!(server, host, port)
         start_workers!(server)
         start_master!(server)
         blocking && run_blocking!(server)
     catch e
-        @error "Failed to start server" exception = (e, catch_backtrace())
-        stop!(server)
-        throw(e)
+        shutdown!(server)
+        rethrow(e)
     end
     return
 end
@@ -231,12 +226,12 @@ function stop_workers!(::SyncServer)
 end
 
 """
-    stop!(server::Server)
+    shutdown!(server::Server)
     Stops the running Mongoose HTTP server. Sets a flag to stop the background event loop task, and then frees the Mongoose associated resources.
     Arguments
     - `server::Server`: The server object to shutdown.
 """
-function stop!(server::Server)
+function shutdown!(server::Server)
     if !server.running
         @info "Server not running. Nothing to do."
         return
@@ -246,15 +241,8 @@ function stop!(server::Server)
     stop_workers!(server)
     stop_master!(server)
     free_resources!(server)
-    deregister(server)
+    unregister!(server)
     @info "Server stopped successfully."
-    return
-end
-
-function stop_all()
-    for server in values(SERVER_REGISTRY)
-        stop!(server)
-    end
     return
 end
 

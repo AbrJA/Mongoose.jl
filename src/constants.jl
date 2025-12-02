@@ -1,14 +1,18 @@
-const SERVER_REGISTRY = Dict{Int,Server}()
+const REGISTRY = Dict{UInt,Server}()
 
-function register(server::Server)
-    ptr = pointer_from_objref(server)
-    id = Int(ptr)
-    haskey(SERVER_REGISTRY, id) || (SERVER_REGISTRY[id] = server)
-    return ptr
+function register!(server::Server)
+    get!(REGISTRY, objectid(server), server)
+    return
 end
 
-function deregister(server::Server)
-    id = Int(pointer_from_objref(server))
-    delete!(SERVER_REGISTRY, id)
+function unregister!(server::Server)
+    delete!(REGISTRY, objectid(server))
+    return
+end
+
+function shutdown_all!()
+    for server in collect(values(REGISTRY))
+        shutdown!(server)
+    end
     return
 end

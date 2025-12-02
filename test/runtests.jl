@@ -34,7 +34,7 @@ using Test
             @test response.status == 200
             @test String(response.body) == "{\"message\":\"Hello World from Julia!\"}"
         finally
-            stop!(server)
+            shutdown!(server)
         end
     end
 
@@ -70,7 +70,7 @@ using Test
             response = HTTP.get("http://localhost:8092/error"; status_exception=false)
             @test response.status == 500
         finally
-            stop!(server)
+            shutdown!(server)
         end
     end
 
@@ -99,7 +99,7 @@ using Test
                 @test body == "Hello User$i from Julia!"
             end
         finally
-            stop!(server)
+            shutdown!(server)
         end
     end
 
@@ -122,8 +122,8 @@ using Test
             r2 = HTTP.get("http://localhost:8095/s2")
             @test String(r2.body) == "Server 2"
         finally
-            stop!(server1)
-            stop!(server2)
+            shutdown!(server1)
+            shutdown!(server2)
         end
     end
 end
