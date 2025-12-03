@@ -17,11 +17,11 @@ function execute_handler(route::Route, request::IdRequest; kwargs...)
             return IdResponse(request.id, response)
         catch e # CHECK THIS TO ALWAYS RESPOND
             @error "Route handler failed to execute" exception = (e, catch_backtrace())
-            response = Response(500, Dict("Content-Type" => "text/plain"), "500 Internal Server Error")
+            response = Response(500, "Content-Type: text/plain\r\n", "500 Internal Server Error")
             return IdResponse(request.id, response)
         end
     else
-        response = Response(405, Dict("Content-Type" => "text/plain"), "405 Method Not Allowed")
+        response = Response(405, "Content-Type: text/plain\r\n", "405 Method Not Allowed")
         return IdResponse(request.id, response)
     end
 end
@@ -37,7 +37,7 @@ function match_route(router::Router, request::IdRequest)
             return response
         end
     end
-    response = Response(404, Dict("Content-Type" => "text/plain"), "404 Not Found")
+    response = Response(404, "Content-Type: text/plain\r\n", "404 Not Found")
     return IdResponse(request.id, response)
 end
 
