@@ -19,24 +19,17 @@ Here is a simple example of how to create a basic HTTP server.
 ```julia
 using Mongoose
 
-# Create a server instance (AsyncServer is the default)
-server = AsyncServer()
+server = SyncServer()
 
-# Define a request handler
-function greet(request::Request)
+function greet(request::Request, params::Dict{String,String})
     body = "{\"message\":\"Hello World from Julia!\"}"
     return Response(200, Dict("Content-Type" => "application/json"), body)
 end
 
-# Register a route
 route!(server, "GET", "/hello", greet)
 
-# Start the server (defaults to localhost:8080)
-# blocking=true keeps the script running
-start!(server, port=8080, blocking=true)
-
-# To stop the server (if running in a non-blocking way or from another task)
-# shutdown!(server)
+start!(server, port=8080)
+shutdown!(server)
 ```
 
 ## Core Concepts
@@ -77,12 +70,12 @@ server1 = AsyncServer()
 server2 = AsyncServer()
 
 # Define handlers
-function handler1(req)
-    return Response(200, Dict(), "Server 1")
+function handler1(request, params)
+    return Response(200, "Content-Type: text/plain\r\n", "Server 1")
 end
 
-function handler2(req)
-    return Response(200, Dict(), "Server 2")
+function handler2(request, params)
+    return Response(200, Dict("Content-Type" => "text/plain"), "Server 2")
 end
 
 # Register routes on specific servers

@@ -11,36 +11,56 @@ include("events.jl")
 include("servers.jl")
 include("registry.jl")
 
-const VALID_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+const VALID_METHODS = Set(["GET", "POST", "PUT", "PATCH", "DELETE"])
 
 """
-    route!(server::Server, method::String, uri::AbstractString, handler::Function)
+    route!(server::Server, method::String, path::String, handler::Function)
     Registers an HTTP request handler for a specific method and URI.
     # Arguments
     - `server::Server`: The server to register the handler with.
-    - `method::AbstractString`: The HTTP method (e.g., GET, POST, PUT, PATCH, DELETE).
-    - `uri::AbstractString`: The URI path to register the handler for (e.g., "/api/users").
+    - `method::String`: The HTTP method (e.g., "get", "post", "put", "patch", "delete").
+    - `path::String`: The URI path to register the handler for (e.g., "/api/users").
     - `handler::Function`: The Julia function to be called when a matching request arrives.
     This function should accept a `Request` object as its first argument, followed by any additional keyword arguments.
 """
-function route!(server::Server, method::AbstractString, uri::AbstractString, handler::Function)
+function route!(server::Server, method::String, path::String, handler::Function)
     method = uppercase(method)
-    if !(method in VALID_METHODS)
-        error("Invalid HTTP method: $method. Valid methods are: $(VALID_METHODS)")
+    if method ∉ VALID_METHODS
+        error("Invalid HTTP method: $method")
     end
-    if occursin(':', uri)
-        regex = Regex('^' * replace(uri, r":([a-zA-Z0-9_]+)" => s"(?P<\1>[^/]+)") * '\$')
-        if !haskey(server.router.dynamic, regex)
-            server.router.dynamic[regex] = Route()
+    if !occursin(':', path)
+        if !haskey(server.router.fixed, path)
+            server.router.fixed[path] = Fixed()
         end
-        server.router.dynamic[regex].handlers[method] = handler
-    else
-        if !haskey(server.router.static, uri)
-            server.router.static[uri] = Route()
-        end
-        server.router.static[uri].handlers[method] = handler
+        server.router.fixed[path].handlers[method] = handler
+        return server
     end
-    return
+    segments = eachsplit(path, '/'; keepempty=false)
+    node = server.router.node
+    for seg in segments
+        if startswith(seg, ':')
+            param = seg[2:end]
+            # Create or validate dynamic child
+            if (dyn = node.dynamic) === nothing
+                dyn = Node()
+                dyn.param = param
+                node.dynamic = dyn
+            elseif dyn.param != param
+                error("Parameter conflict: :$param vs existing :$(dyn.param)")
+            end
+            node = dyn
+        else
+            # Static segment
+            if (child = get(node.static, seg, nothing)) === nothing
+                child = Node()
+                node.static[seg] = child
+            end
+            node = child
+        end
+    end
+    # Attach handler at final node
+    node.handlers[method] = handler
+    return server
 end
 
 # --- 6. Server Management ---

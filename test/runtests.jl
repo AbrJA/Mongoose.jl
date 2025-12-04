@@ -5,19 +5,18 @@ using Test
 @testset "Mongoose.jl" begin
 
     # --- Helper Functions ---
-    function greet(request; kwargs...)
+    function greet(request, params)
         body = "{\"message\":\"Hello World from Julia!\"}"
         Response(200, Dict("Content-Type" => "application/json"), body)
     end
 
-    function echo(request; kwargs...)
-        params = kwargs[:params]
-        name = params[:name]
+    function echo(request, params)
+        name = params["name"]
         body = "Hello $name from Julia!"
         Response(200, Dict("Content-Type" => "text/plain"), body)
     end
 
-    function error_handler(request; kwargs...)
+    function error_handler(request, params)
         error("Something went wrong!")
     end
 
@@ -108,8 +107,8 @@ using Test
         server1 = AsyncServer()
         server2 = AsyncServer()
 
-        route!(server1, "GET", "/s1", (req; kwargs...) -> Response(200, Dict(), "Server 1"))
-        route!(server2, "GET", "/s2", (req; kwargs...) -> Response(200, Dict(), "Server 2"))
+        route!(server1, "GET", "/s1", (req, params) -> Response(200, Dict{String,String}(), "Server 1"))
+        route!(server2, "GET", "/s2", (req, params) -> Response(200, Dict{String,String}(), "Server 2"))
 
         start!(server1, port=8094, blocking=false)
         start!(server2, port=8095, blocking=false)

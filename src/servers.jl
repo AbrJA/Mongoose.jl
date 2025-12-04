@@ -127,7 +127,7 @@ function worker_loop(server::AsyncServer, worker_index::Int, router::Router)
     while server.running
         try
             request = take!(server.requests)
-            response = match_route(router, request)
+            response = execute_handler(router, request)
             put!(server.responses, response)
         catch e
             if !server.running
@@ -154,7 +154,7 @@ function start_workers!(::SyncServer)
 end
 
 function handle_request(conn::MgConnection, server::SyncServer, request::IdRequest)
-    response = match_route(server.router, request)
+    response = execute_handler(server.router, request)
     mg_http_reply(conn, response.payload.status, response.payload.headers, response.payload.body)
     return
 end
