@@ -23,7 +23,7 @@ using Test
     # --- Test 1: SyncServer ---
     @testset "SyncServer" begin
         server = SyncServer()
-        route!(server, "GET", "/hello", greet)
+        route!(server, :get, "/hello", greet)
 
         # Start server in a background task since it blocks
         start!(server, port=8091, blocking=false)
@@ -40,9 +40,9 @@ using Test
     # --- Test 2: AsyncServer (Default) ---
     @testset "AsyncServer" begin
         server = AsyncServer()
-        route!(server, "GET", "/hello", greet)
-        route!(server, "GET", "/echo/:name", echo)
-        route!(server, "GET", "/error", error_handler)
+        route!(server, :get, "/hello", greet)
+        route!(server, :get, "/echo/:name", echo)
+        route!(server, :get, "/error", error_handler)
 
         start!(server, port=8092, blocking=false)
 
@@ -79,7 +79,7 @@ using Test
         @info "Running multithreading tests with $n_threads threads"
 
         server = AsyncServer(nworkers=4)
-        route!(server, "GET", "/echo/:name", echo)
+        route!(server, :get, "/echo/:name", echo)
         start!(server, port=8093, blocking=false)
 
         try
@@ -107,8 +107,8 @@ using Test
         server1 = AsyncServer()
         server2 = AsyncServer()
 
-        route!(server1, "GET", "/s1", (req, params) -> Response(200, Dict{String,String}(), "Server 1"))
-        route!(server2, "GET", "/s2", (req, params) -> Response(200, Dict{String,String}(), "Server 2"))
+        route!(server1, :get, "/s1", (req, params) -> Response(200, Dict{String,String}(), "Server 1"))
+        route!(server2, :get, "/s2", (req, params) -> Response(200, Dict{String,String}(), "Server 2"))
 
         start!(server1, port=8094, blocking=false)
         start!(server2, port=8095, blocking=false)

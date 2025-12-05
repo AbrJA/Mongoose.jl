@@ -4,13 +4,13 @@ mutable struct Node <: Route
     static::Dict{String,Node}                # static children
     dynamic::Union{Nothing,Node}             # parameter child
     param::Union{Nothing,String}             # parameter name
-    handlers::Dict{String,Function}          # HTTP verb → handler
-    Node() = new(Dict{String,Node}(), nothing, nothing, Dict{String,Function}())
+    handlers::Dict{Symbol,Function}          # HTTP verb → handler
+    Node() = new(Dict{String,Node}(), nothing, nothing, Dict{Symbol,Function}())
 end
 
 struct Fixed <: Route
-    handlers::Dict{String,Function}
-    Fixed() = new(Dict{String,Function}())
+    handlers::Dict{Symbol,Function}
+    Fixed() = new(Dict{Symbol,Function}())
 end
 
 struct Router
@@ -29,7 +29,7 @@ end
 struct NotFound <: RouteMatch end
 struct MethodNotAllowed <: RouteMatch end
 
-function match_route(router::Router, method::String, path::AbstractString)
+function match_route(router::Router, method::Symbol, path::AbstractString)
     # Check fixed routes first
     if (route = get(router.fixed, path, nothing)) !== nothing
         if haskey(route.handlers, method)
@@ -44,7 +44,7 @@ function match_route(router::Router, method::String, path::AbstractString)
     return _match(router.node, segments, 1, method, params)
 end
 
-@inline function _match(node::Node, segments::Vector{<:AbstractString}, idx::Int, method::String, params::Dict{String,String})
+@inline function _match(node::Node, segments::Vector{<:AbstractString}, idx::Int, method::Symbol, params::Dict{String,String})
     # Base case: reached end of path
     if idx > length(segments)
         if isempty(node.handlers)

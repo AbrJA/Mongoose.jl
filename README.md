@@ -26,7 +26,7 @@ function greet(request::Request, params::Dict{String,String})
     return Response(200, Dict("Content-Type" => "application/json"), body)
 end
 
-route!(server, "GET", "/hello", greet)
+route!(server, :get, "/hello", greet)
 
 start!(server, port=8080)
 shutdown!(server)
@@ -46,7 +46,7 @@ Mongoose.jl supports two types of servers:
 Use `route!` to map HTTP methods and paths to handler functions.
 
 ```julia
-route!(server, "METHOD", "/path", handler_function)
+route!(server, :method, "/path", handler_function)
 ```
 
 Handler functions should accept a `Request` object and return a `Response` object.
@@ -79,8 +79,8 @@ function handler2(request, params)
 end
 
 # Register routes on specific servers
-route!(server1, "GET", "/", handler1)
-route!(server2, "GET", "/", handler2)
+route!(server1, :get, "/", handler1)
+route!(server2, :get, "/", handler2)
 
 # Start servers on different ports
 start!(server1, port=8080, blocking=false)
@@ -108,7 +108,7 @@ function heavy_computation(req)
     return Response(200, Dict(), "Result: $result")
 end
 
-route!(server, "GET", "/compute", heavy_computation)
+route!(server, :get, "/compute", heavy_computation)
 
 start!(server, port=8080, blocking=true)
 ```

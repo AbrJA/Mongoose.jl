@@ -1,5 +1,5 @@
 struct Request
-    method::String
+    method::Symbol
     uri::String
     query::String
     headers::Dict{String,String}
@@ -38,12 +38,29 @@ struct IdResponse
     payload::Response
 end
 
-_method(message::MgHttpMessage) = to_string(message.method)
+_method(message::MgHttpMessage) = _method_to_symbol(message.method)
 _uri(message::MgHttpMessage) = to_string(message.uri)
 _query(message::MgHttpMessage) = to_string(message.query)
 _proto(message::MgHttpMessage) = to_string(message.proto)
 _body(message::MgHttpMessage) = to_string(message.body)
 _message(message::MgHttpMessage) = to_string(message.message)
+
+function _method_to_symbol(str::MgStr)
+    (str.ptr == C_NULL || str.len == 0) && return :unknown
+    len = str.len
+    ptr = Ptr{UInt8}(str.ptr)
+    b1 = unsafe_load(ptr, 1)
+    if b1 == 0x47  # 'G' - only GET starts with G
+        len == 3 && return :get
+    elseif b1 == 0x50  # 'P' - POST, PUT, PATCH
+        len == 3 && return :put  # PUT (only 3-letter P word)
+        len == 4 && return :post  # POST (only 4-letter P word)
+        len == 5 && return :patch  # PATCH (only 5-letter P word)
+    elseif b1 == 0x44  # 'D' - only DELETE starts with D
+        len == 6 && return :delete
+    end
+    return Symbol(lowercase(to_string(str)))
+end
 
 function _headers(message::MgHttpMessage)::Dict{String,String}
     headers = Dict{String,String}()

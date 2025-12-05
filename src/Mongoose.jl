@@ -11,20 +11,19 @@ include("events.jl")
 include("servers.jl")
 include("registry.jl")
 
-const VALID_METHODS = Set(["GET", "POST", "PUT", "PATCH", "DELETE"])
+const VALID_METHODS = Set([:get, :post, :put, :patch, :delete])
 
 """
-    route!(server::Server, method::String, path::String, handler::Function)
+    route!(server::Server, method::Symbol, path::String, handler::Function)
     Registers an HTTP request handler for a specific method and URI.
     # Arguments
     - `server::Server`: The server to register the handler with.
-    - `method::String`: The HTTP method (e.g., "get", "post", "put", "patch", "delete").
+    - `method::Symbol`: The HTTP method (e.g., :get, :post, :put, :patch, :delete).
     - `path::String`: The URI path to register the handler for (e.g., "/api/users").
     - `handler::Function`: The Julia function to be called when a matching request arrives.
     This function should accept a `Request` object as its first argument, followed by any additional keyword arguments.
 """
-function route!(server::Server, method::String, path::String, handler::Function)
-    method = uppercase(method)
+function route!(server::Server, method::Symbol, path::String, handler::Function)
     if method ∉ VALID_METHODS
         error("Invalid HTTP method: $method")
     end
