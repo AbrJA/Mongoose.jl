@@ -62,7 +62,7 @@ function _method_to_symbol(str::MgStr)
     return Symbol(lowercase(to_string(str)))
 end
 
-function _headers(message::MgHttpMessage)::Dict{String,String}
+function _headers(message::MgHttpMessage)
     headers = Dict{String,String}()
     sizehint!(headers, length(message.headers))
     for header in message.headers

@@ -21,11 +21,11 @@ const VALID_METHODS = Set([:get, :post, :put, :patch, :delete])
     # Arguments
     - `server::Server`: The server to register the handler with.
     - `method::Symbol`: The HTTP method (e.g., :get, :post, :put, :patch, :delete).
-    - `path::String`: The URI path to register the handler for (e.g., "/api/users").
+    - `path::AbstractString`: The URI path to register the handler for (e.g., "/api/users").
     - `handler::Function`: The Julia function to be called when a matching request arrives.
     This function should accept a `Request` object as its first argument, followed by any additional keyword arguments.
 """
-function route!(server::Server, method::Symbol, path::String, handler::Function)
+function route!(server::Server, method::Symbol, path::AbstractString, handler::Function)
     if method ∉ VALID_METHODS
         error("Invalid HTTP method: $method")
     end

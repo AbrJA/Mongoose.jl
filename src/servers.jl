@@ -122,7 +122,7 @@ function process_responses!(server::AsyncServer)
     return
 end
 
-function worker_loop(server::AsyncServer, worker_index::Int, router::Router)
+function worker_loop(server::AsyncServer, worker_index::Integer, router::Router)
     @info "Worker thread $worker_index started on thread $(Threads.threadid())"
     while server.running
         try

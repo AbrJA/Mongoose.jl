@@ -44,7 +44,7 @@ function match_route(router::Router, method::Symbol, path::AbstractString)
     return _match(router.node, segments, 1, method, params)
 end
 
-@inline function _match(node::Node, segments::Vector{<:AbstractString}, idx::Int, method::Symbol, params::Dict{String,String})
+@inline function _match(node::Node, segments::Vector{<:AbstractString}, idx::Integer, method::Symbol, params::Dict{String,String})
     # Base case: reached end of path
     if idx > length(segments)
         if isempty(node.handlers)
