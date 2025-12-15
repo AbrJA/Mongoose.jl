@@ -1,7 +1,5 @@
 module Mongoose
 
-@info "Mongoose.jl version 0.2.0 has syntax changes. Review the documentation."
-
 using Mongoose_jll
 
 export AsyncServer, SyncServer, Request, Response, start!, shutdown!, route!, deserialize, serialize
@@ -91,8 +89,8 @@ function start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=
         start_master!(server)
         blocking && run_blocking!(server)
     catch e
-        rethrow(e)
         shutdown!(server)
+        rethrow(e)
     end
     return
 end
