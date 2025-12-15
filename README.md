@@ -4,17 +4,19 @@
     <img width="300px" src="logo.png"/>
 </p>
 
+# 🚀 Mongoose.jl: A Lightweight HTTP Server for Julia
+
 **Mongoose.jl** is a Julia package that provides a lightweight and efficient interface for building HTTP servers and web applications. It leverages the [Mongoose C library](https://github.com/cesanta/mongoose) to deliver fast, embeddable web server capabilities directly from Julia code.
 
-## Installation
+## 📦 Installation
 
 ```julia
 ] add Mongoose
 ```
 
-## Quick Start
+## ⚡ Quick Start: Your First Server
 
-Here is a simple example of how to create a basic HTTP server.
+This minimal example shows how to create a basic, synchronous HTTP server and define an endpoint.
 
 ```julia
 using Mongoose
@@ -34,51 +36,92 @@ shutdown!(server)
 
 ## Core Concepts
 
-### Servers
+Understanding these fundamental components is key to building applications with Mongoose.jl.
 
-Mongoose.jl supports two types of servers:
+### Server Types
 
-*   **AsyncServer** (Default): Runs the event loop in a background task and processes requests in worker threads. Ideal for most applications.
+Mongoose.jl offers two server models, allowing you to choose the execution flow that best suits your application:
+
+*   **AsyncServer**: Runs the event loop in a background task and processes requests in worker threads. Ideal for most applications.
 *   **SyncServer**: Runs the event loop in the main thread (blocking). Useful for simple scripts or when you want full control over the execution flow.
 
-### Routing
+### Request Handling: route!
 
-Use `route!` to map HTTP methods and paths to handler functions.
+The route! function is used to map specific incoming HTTP requests to your custom Julia functions (handlers).
 
 ```julia
-route!(server, :method, "/path", handler_function)
+route!(server, :method, "/path", handler)
 ```
 
-Handler functions should accept a `Request` object and return a `Response` object.
+* server: The SyncServer or AsyncServer instance.
 
-### Request & Response
+* :method: The HTTP verb, e.g., :get, :post, :put, :delete.
 
-*   **Request**: Contains `method`, `uri`, `query`, `headers`, and `body`.
-*   **Response**: Constructed with `status` (Int), `headers` (Dict), and `body` (String).
+* "/path": The URI path, which can include path parameters (e.g., "/users/:id").
 
-## Advanced Usage
+* handler: A function with the signature (request::Request, params::Dict{String, String}) -> Response.
 
-### Multiple Instances
+### Data Flow: Request and Response
 
-You can create and run multiple server instances simultaneously on different ports.
+All interaction is centered on these two structs:
+
+* Request: The input data from the client, containing fields like:
+    * method (Symbol)
+    * uri (String)
+    * query (String)
+    * headers (Dict)
+    * body (String)
+
+* Response: The output data to the client, containing fields like:
+    * status (Int)
+    * headers (Dict)
+    * body (String)
+
+## ⚙️ Advanced Usage
+
+### Concurrency and Multithreading
+
+The AsyncServer is designed for high concurrency. By configuring the number of worker threads, you can efficiently handle multiple requests in parallel.
+
+```julia
+using Mongoose
+
+server = AsyncServer(nworkers=4)
+
+function heavy_computation(request, params)
+    result = sum(rand(1000000))
+    return Response(200, Dict("Content-Type" => "text/plain"), "Result: $result")
+end
+
+route!(server, :get, "/compute", heavy_computation)
+
+start!(server, port=8080)
+```
+
+> [!NOTE]
+> Ensure you start Julia with multiple threads (e.g., `julia -t 4`) to take full advantage of this feature.
+
+### Running Multiple Server Instances
+
+Mongoose.jl supports running multiple, independent server instances simultaneously on different ports.
 
 ```julia
 using Mongoose
 
 # Create two server instances
 server1 = AsyncServer()
-server2 = AsyncServer()
+server2 = SyncServer() # Mix and match server types
 
 # Define handlers
 function handler1(request, params)
-    return Response(200, "Content-Type: text/plain\r\n", "Server 1")
+    return Response(200, Dict("Content-Type" => "text/plain"), "Server 1: Primary API")
 end
 
 function handler2(request, params)
-    return Response(200, Dict("Content-Type" => "text/plain"), "Server 2")
+    return Response(200, Dict("Content-Type" => "text/plain"), "Server 2: Admin Interface")
 end
 
-# Register routes on specific servers
+# Register routes
 route!(server1, :get, "/", handler1)
 route!(server2, :get, "/", handler2)
 
@@ -86,43 +129,11 @@ route!(server2, :get, "/", handler2)
 start!(server1, port=8080, blocking=false)
 start!(server2, port=8081, blocking=false)
 
-# ...
+# ... application code ...
 
 shutdown!(server1)
 shutdown!(server2)
 ```
 
-### Multithreading
-
-`AsyncServer` can utilize multiple worker threads to handle requests concurrently. This is configured via the `nworkers` parameter during server initialization.
-
-```julia
-using Mongoose
-
-# Create a server with 4 worker threads
-server = AsyncServer(nworkers=4)
-
-function heavy_computation(req)
-    # This will run on one of the worker threads
-    result = sum(rand(1000000))
-    return Response(200, Dict(), "Result: $result")
-end
-
-route!(server, :get, "/compute", heavy_computation)
-
-start!(server, port=8080, blocking=true)
-```
-
 > [!NOTE]
-> Ensure you start Julia with multiple threads (e.g., `julia -t 4`) to take full advantage of this feature.
-
-## API Reference
-
-### `start!(server; host="127.0.0.1", port=8080, blocking=true)`
-Starts the Mongoose HTTP server.
-
-### `shutdown!(server)`
-Stops the running Mongoose HTTP server.
-
-### `route!(server, method, path, handler)`
-Registers a route on the specified server.
+> Use `shutdown_all!()` to stop all servers at once. Be careful of letting orphaned servers running in the background. Use this function to ensure all servers are stopped.

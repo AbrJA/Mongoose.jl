@@ -81,18 +81,18 @@ end
 end
 
 function execute_handler(router::Router, request::IdRequest)
-    match = match_route(router, request.payload.method, request.payload.uri)
-    if match isa NotFound
+    matched = match_route(router, request.payload.method, request.payload.uri)
+    if matched isa NotFound
         response = Response(404, "Content-Type: text/plain\r\n", "404 Not Found")
         return IdResponse(request.id, response)
     end
-    if match isa MethodNotAllowed
+    if matched isa MethodNotAllowed
         response = Response(405, "Content-Type: text/plain\r\n", "405 Method Not Allowed")
         return IdResponse(request.id, response)
     end
-    if match isa Matched
+    if matched isa Matched
         try
-            response = match.handler(request.payload, match.params)
+            response = matched.handler(request.payload, matched.params)
             return IdResponse(request.id, response)
         catch e # CHECK THIS TO ALWAYS RESPOND
             @error "Route handler failed to execute" exception = (e, catch_backtrace())

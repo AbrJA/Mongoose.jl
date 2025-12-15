@@ -2,7 +2,7 @@ module Mongoose
 
 using Mongoose_jll
 
-export AsyncServer, SyncServer, Request, Response, start!, shutdown!, route!
+export AsyncServer, SyncServer, Request, Response, start!, shutdown!, shutdown_all!, route!
 
 include("wrappers.jl")
 include("structs.jl")
