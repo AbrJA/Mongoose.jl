@@ -53,8 +53,30 @@ function to_dict(query::AbstractString)
     return params
 end
 
+"""
+to_struct(::Type{T}, query::AbstractString) where T
+    Converts a query string to a struct of the specified type.
+
+    Arguments
+    - `::Type{T}`: The type of the struct to convert to.
+    - `query::AbstractString`: The query string to convert.
+
+    Returns
+    - `T`: The struct with the same fields as the query string.
+"""
 to_struct(::Type{T}, query::AbstractString) where T = to_struct(T, to_dict(query))
 
+"""
+to_struct(::Type{T}, dict::Dict{String,String}) where T
+    Converts a dictionary of strings to a struct of the specified type.
+
+    Arguments
+    - `::Type{T}`: The type of the struct to convert to.
+    - `dict::Dict{String,String}`: The dictionary to convert.
+
+    Returns
+    - `T`: The struct with the same fields as the dictionary.
+"""
 @generated function to_struct(::Type{T}, dict::Dict{String,String}) where T
     fnames = fieldnames(T)
     ftypes = fieldtypes(T)

@@ -21,6 +21,15 @@ struct Response
     body::String
 end
 
+"""
+Converts a dictionary of strings to a string of headers.
+
+Arguments
+- `headers::Dict{String,String}`: The dictionary of strings to convert.
+
+Returns
+- `String`: The string of headers.
+"""
 function to_string(headers::Dict{String,String})
     io = IOBuffer()
     for (k, v) in headers
