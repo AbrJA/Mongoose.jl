@@ -3,41 +3,126 @@ using Mongoose
 using Test
 
 @testset "Mongoose.jl" begin
-    function greet(conn; kwargs...)
-        mg_json_reply(conn, 200, "{\"message\":\"Hello World from Julia!\"}")
+
+    # --- Helper Functions ---
+    function greet(request, params)
+        body = "{\"message\":\"Hello World from Julia!\"}"
+        Response(200, Dict("Content-Type" => "application/json"), body)
     end
 
-    function echo(conn; kwargs...)
-        params = kwargs[:params]
-        name = params[:name]
+    function echo(request, params)
+        name = params["name"]
         body = "Hello $name from Julia!"
-        mg_text_reply(conn, 200, body)
+        Response(200, Dict("Content-Type" => "text/plain"), body)
     end
 
-    mg_register!("GET", "/hello", greet)
-    mg_register!("GET", "/echo/:name", echo)
+    function error_handler(request, params)
+        error("Something went wrong!")
+    end
 
-    mg_serve!()
+    # --- Test 1: SyncServer ---
+    @testset "SyncServer" begin
+        server = SyncServer()
+        route!(server, :get, "/hello", greet)
 
-    response = HTTP.get("http://localhost:8080/hello")
-    @test response.status == 200
-    @test String(response.body) == "{\"message\":\"Hello World from Julia!\"}"
+        # Start server in a background task since it blocks
+        start!(server, port=8091, blocking=false)
 
-    response = HTTP.post("http://localhost:8080/hello"; status_exception=false)
-    @test response.status == 405
-    @test String(response.body) == "405 Method Not Allowed"
+        try
+            response = HTTP.get("http://localhost:8091/hello")
+            @test response.status == 200
+            @test String(response.body) == "{\"message\":\"Hello World from Julia!\"}"
+        finally
+            shutdown!(server)
+        end
+    end
 
-    response = HTTP.get("http://localhost:8080/nonexistent"; status_exception=false)
-    @test response.status == 404
-    @test String(response.body) == "404 Not Found"
+    # --- Test 2: AsyncServer (Default) ---
+    @testset "AsyncServer" begin
+        server = AsyncServer()
+        route!(server, :get, "/hello", greet)
+        route!(server, :get, "/echo/:name", echo)
+        route!(server, :get, "/error", error_handler)
 
-    response = HTTP.get("http://localhost:8080/echo/Alice")
-    @test response.status == 200
-    @test String(response.body) == "Hello Alice from Julia!"
+        start!(server, port=8092, blocking=false)
 
-    response = HTTP.get("http://localhost:8080/echo/Bob/1"; status_exception=false)
-    @test response.status == 404
-    @test String(response.body) == "404 Not Found"
+        try
+            # Basic GET
+            response = HTTP.get("http://localhost:8092/hello")
+            @test response.status == 200
+            @test String(response.body) == "{\"message\":\"Hello World from Julia!\"}"
 
-    mg_shutdown!()
+            # Dynamic Route
+            response = HTTP.get("http://localhost:8092/echo/Alice")
+            @test response.status == 200
+            @test String(response.body) == "Hello Alice from Julia!"
+
+            # 404 Not Found
+            response = HTTP.get("http://localhost:8092/nonexistent"; status_exception=false)
+            @test response.status == 404
+
+            # 405 Method Not Allowed
+            response = HTTP.post("http://localhost:8092/hello"; status_exception=false)
+            @test response.status == 405
+
+            # 500 Internal Server Error
+            response = HTTP.get("http://localhost:8092/error"; status_exception=false)
+            @test response.status == 500
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test 3: Multithreading (AsyncServer with workers) ---
+    @testset "Multithreading" begin
+        n_threads = Threads.nthreads()
+        @info "Running multithreading tests with $n_threads threads"
+
+        server = AsyncServer(nworkers=4)
+        route!(server, :get, "/echo/:name", echo)
+        start!(server, port=8093, blocking=false)
+
+        try
+            results = Channel{Tuple{Int,Int,String}}(10)
+
+            @sync for i in 1:10
+                @async begin
+                    response = HTTP.get("http://localhost:8093/echo/User$i")
+                    put!(results, (response.status, i, String(response.body)))
+                end
+            end
+
+            for _ in 1:10
+                status, i, body = take!(results)
+                @test status == 200
+                @test body == "Hello User$i from Julia!"
+            end
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test 4: Multiple Instances ---
+    @testset "Multiple Instances" begin
+        server1 = AsyncServer()
+        server2 = AsyncServer()
+
+        route!(server1, :get, "/s1", (req, params) -> Response(200, Dict{String,String}(), "Server 1"))
+        route!(server2, :get, "/s2", (req, params) -> Response(200, Dict{String,String}(), "Server 2"))
+
+        start!(server1, port=8094, blocking=false)
+        start!(server2, port=8095, blocking=false)
+        sleep(1)
+
+        try
+            r1 = HTTP.get("http://localhost:8094/s1")
+            @test String(r1.body) == "Server 1"
+
+            r2 = HTTP.get("http://localhost:8095/s2")
+            @test String(r2.body) == "Server 2"
+        finally
+            shutdown!(server1)
+            shutdown!(server2)
+        end
+    end
 end
