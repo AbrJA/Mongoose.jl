@@ -2,5 +2,5 @@
 
 ```@autodocs
 Modules = [Mongoose]
-Pages   = ["Mongoose.jl"]
+Order = [:constant, :type, :function]
 ```

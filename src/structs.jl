@@ -21,7 +21,16 @@ struct Response
     body::String
 end
 
-function to_string(headers::Dict{String,String})
+"""
+Serializes a dictionary of strings to a string of headers.
+
+Arguments
+- `headers::Dict{String,String}`: The dictionary of strings to serialize.
+
+Returns
+- `String`: The string of headers.
+"""
+function serialize(headers::Dict{String,String})
     io = IOBuffer()
     for (k, v) in headers
         print(io, k, ": ", v, "\r\n")
@@ -30,7 +39,7 @@ function to_string(headers::Dict{String,String})
 end
 
 function Response(status::Int, headers::Dict{String,String}, body::String)
-    return Response(status, to_string(headers), body)
+    return Response(status, serialize(headers), body)
 end
 
 struct IdResponse
@@ -62,7 +71,7 @@ function _method_to_symbol(str::MgStr)
     return Symbol(lowercase(to_string(str)))
 end
 
-function _headers(message::MgHttpMessage)::Dict{String,String}
+function _headers(message::MgHttpMessage)
     headers = Dict{String,String}()
     sizehint!(headers, length(message.headers))
     for header in message.headers

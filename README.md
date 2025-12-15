@@ -136,7 +136,7 @@ shutdown!(server2)
 ```
 
 > [!NOTE]
-> Use `shutdown_all!()` to stop all servers at once. Be careful of letting orphaned servers running in the background. Use this function to ensure all servers are stopped.
+> Use `shutdown!()` to stop all servers at once. Be careful of letting orphaned servers running in the background. Use this function to ensure all servers are stopped.
 
 ## 📚 Documentation
 
