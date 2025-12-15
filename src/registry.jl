@@ -10,7 +10,11 @@ function unregister!(server::Server)
     return
 end
 
-function shutdown_all!()
+"""
+shutdown!()
+    Stops all running servers.
+"""
+function shutdown!()
     for server in collect(values(REGISTRY))
         shutdown!(server)
     end

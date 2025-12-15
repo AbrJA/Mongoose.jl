@@ -22,15 +22,15 @@ struct Response
 end
 
 """
-Converts a dictionary of strings to a string of headers.
+Serializes a dictionary of strings to a string of headers.
 
 Arguments
-- `headers::Dict{String,String}`: The dictionary of strings to convert.
+- `headers::Dict{String,String}`: The dictionary of strings to serialize.
 
 Returns
 - `String`: The string of headers.
 """
-function to_string(headers::Dict{String,String})
+function serialize(headers::Dict{String,String})
     io = IOBuffer()
     for (k, v) in headers
         print(io, k, ": ", v, "\r\n")
@@ -39,7 +39,7 @@ function to_string(headers::Dict{String,String})
 end
 
 function Response(status::Int, headers::Dict{String,String}, body::String)
-    return Response(status, to_string(headers), body)
+    return Response(status, serialize(headers), body)
 end
 
 struct IdResponse

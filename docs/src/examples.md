@@ -17,21 +17,17 @@ using Mongoose
 
 server = SyncServer()
 
+struct Person
+    name::String
+end
+
 function greet(req::Request, params::Dict{String,String})
-    # Simple query parsing (for demonstration)
-    # In a real app, you might want a more robust query parser
-    query_str = req.query
-    name = "unknown person"
-
-    if !isempty(query_str)
-        # simplistic parsing looking for "name=..."
-        m = match(r"name=([^&]*)", query_str)
-        if m !== nothing
-            name = m.captures[1]
-        end
+    person = try
+        deserialize(Person, req.query)
+    catch e
+        return Response(400, Dict("Content-Type" => "text/plain"), "Invalid query parameters")
     end
-
-    return Response(200, Dict("Content-Type" => "text/plain"), "Hi $name")
+    return Response(200, Dict("Content-Type" => "text/plain"), "Hi $(person.name)")
 end
 
 route!(server, :get, "/greet", greet)

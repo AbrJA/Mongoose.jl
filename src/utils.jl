@@ -22,7 +22,7 @@ function decode_range(bytes::AbstractVector{<:UInt8}, start_i::Int, end_i::Int)
     return String(take!(out))
 end
 
-function to_dict(query::AbstractString)
+function parse_params(query::AbstractString)
     bytes = codeunits(query)
     len = length(bytes)
     params = Dict{String,String}()
@@ -54,30 +54,30 @@ function to_dict(query::AbstractString)
 end
 
 """
-to_struct(::Type{T}, query::AbstractString) where T
-    Converts a query string to a struct of the specified type.
+deserialize(::Type{T}, query::AbstractString) where T
+    Deserializes a query string to a struct of the specified type.
 
     Arguments
-    - `::Type{T}`: The type of the struct to convert to.
-    - `query::AbstractString`: The query string to convert.
+    - `::Type{T}`: The type of the struct to deserialize to.
+    - `query::AbstractString`: The query string to deserialize.
 
     Returns
     - `T`: The struct with the same fields as the query string.
 """
-to_struct(::Type{T}, query::AbstractString) where T = to_struct(T, to_dict(query))
+deserialize(::Type{T}, query::AbstractString) where T = deserialize(T, parse_params(query))
 
 """
-to_struct(::Type{T}, dict::Dict{String,String}) where T
-    Converts a dictionary of strings to a struct of the specified type.
+deserialize(::Type{T}, dict::Dict{String,String}) where T
+    Deserializes a dictionary of strings to a struct of the specified type.
 
     Arguments
-    - `::Type{T}`: The type of the struct to convert to.
-    - `dict::Dict{String,String}`: The dictionary to convert.
+    - `::Type{T}`: The type of the struct to deserialize to.
+    - `dict::Dict{String,String}`: The dictionary to deserialize.
 
     Returns
     - `T`: The struct with the same fields as the dictionary.
 """
-@generated function to_struct(::Type{T}, dict::Dict{String,String}) where T
+@generated function deserialize(::Type{T}, dict::Dict{String,String}) where T
     fnames = fieldnames(T)
     ftypes = fieldtypes(T)
     exprs = [:(
