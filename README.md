@@ -34,7 +34,7 @@ start!(server, port=8080)
 shutdown!(server)
 ```
 
-## Core Concepts
+## ✨ Core Concepts
 
 Understanding these fundamental components is key to building applications with Mongoose.jl.
 
@@ -137,3 +137,7 @@ shutdown!(server2)
 
 > [!NOTE]
 > Use `shutdown_all!()` to stop all servers at once. Be careful of letting orphaned servers running in the background. Use this function to ensure all servers are stopped.
+
+## 📚 Documentation
+
+For more information, see the [Mongoose.jl documentation](https://github.com/AbrJA/Mongoose.jl).
