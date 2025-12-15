@@ -1,5 +1,7 @@
 module Mongoose
 
+@info "Mongoose.jl version 0.2.0 has syntax changes. Review the documentation."
+
 using Mongoose_jll
 
 export AsyncServer, SyncServer, Request, Response, start!, shutdown!, shutdown_all!, route!
