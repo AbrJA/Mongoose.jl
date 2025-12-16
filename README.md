@@ -24,11 +24,16 @@ using Mongoose
 server = SyncServer()
 
 function greet(request::Request, params::Dict{String,String})
-    body = "{\"message\":\"Hello World from Julia!\"}"
+    return Response(200, "Content-Type: text/plain\r\n", "Hello from Julia!")
+end
+
+function hello(request::Request, params::Dict{String,String})
+    body = "{\"message\":\"Hello $(params["name"]) from Julia!\"}"
     return Response(200, Dict("Content-Type" => "application/json"), body)
 end
 
-route!(server, :get, "/hello", greet)
+route!(server, :get, "/greet", greet)
+route!(server, :get, "/hello/:name", hello)
 
 start!(server, port=8080)
 shutdown!(server)
