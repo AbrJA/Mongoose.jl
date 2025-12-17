@@ -146,4 +146,4 @@ shutdown!(server2)
 
 ## 📚 Documentation
 
-For more information, see the [Mongoose.jl documentation](https://github.com/AbrJA/Mongoose.jl).
+For more information, see the [Mongoose.jl documentation](https://AbrJA.github.io/Mongoose.jl/dev).
