@@ -32,8 +32,10 @@ function parse_params(query::AbstractString)
         amp_idx = findnext(==(UInt8('&')), bytes, i)
         pair_end = isnothing(amp_idx) ? len : amp_idx - 1
         eq_idx = findnext(==(UInt8('=')), bytes, i)
+
         local k_str::String
         local v_str::String
+        
         if isnothing(eq_idx) || eq_idx > pair_end
             k_end, v_start = pair_end, pair_end + 1
             k_str, v_str = decode_range(bytes, i, k_end), ""
@@ -46,6 +48,7 @@ function parse_params(query::AbstractString)
             params[k_str] = v_str
         end
         i = pair_end + 2
+        
         if isnothing(amp_idx)
             break
         end
@@ -54,44 +57,43 @@ function parse_params(query::AbstractString)
 end
 
 """
-deserialize(::Type{T}, query::AbstractString) where T
+from_query(::Type{T}, query::AbstractString) where T
     Deserializes a query string to a struct of the specified type.
-
-    Arguments
-    - `::Type{T}`: The type of the struct to deserialize to.
-    - `query::AbstractString`: The query string to deserialize.
-
-    Returns
-    - `T`: The struct with the same fields as the query string.
 """
-deserialize(::Type{T}, query::AbstractString) where T = deserialize(T, parse_params(query))
+from_query(::Type{T}, query::AbstractString) where T = from_query(T, parse_params(query))
 
 """
-deserialize(::Type{T}, dict::Dict{String,String}) where T
+from_query(::Type{T}, dict::Dict{String,String}) where T
     Deserializes a dictionary of strings to a struct of the specified type.
-
-    Arguments
-    - `::Type{T}`: The type of the struct to deserialize to.
-    - `dict::Dict{String,String}`: The dictionary to deserialize.
-
-    Returns
-    - `T`: The struct with the same fields as the dictionary.
 """
-@generated function deserialize(::Type{T}, dict::Dict{String,String}) where T
+@generated function from_query(::Type{T}, dict::Dict{String,String}) where T
     fnames = fieldnames(T)
     ftypes = fieldtypes(T)
     exprs = [:(
-        let val = dict[$(string(fname))]
+        let val = get(dict, $(string(fname)), "")
             $(
                 if ftype === String
                     :(val)
                 elseif ftype === Bool
                     :(lowercase(val) in ("true", "1", "yes"))
                 else
-                    :(parse($ftype, val))
+                    :(isempty(val) ? zero($ftype) : parse($ftype, val))
                 end
             )
         end
     ) for (fname, ftype) in zip(fnames, ftypes)]
+    
     return :(T($(exprs...)))
+end
+
+"""
+to_headers(headers::Dict{String,String})
+    Serializes a dictionary of strings to a string of headers.
+"""
+function to_headers(headers::Dict{String,String})
+    io = IOBuffer()
+    for (k, v) in headers
+        print(io, k, ": ", v, "\r\n")
+    end
+    return String(take!(io))
 end
