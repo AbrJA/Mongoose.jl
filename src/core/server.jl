@@ -23,18 +23,20 @@ function cleanup!(manager::Manager)
 end
 
 # Core server state shared across all server types
-mutable struct ServerCore
+mutable struct ServerCore{R <: Route}
     manager::Manager
     handler::Ptr{Cvoid}
     timeout::Cint
     master::Union{Nothing,Task}
-    router::Route # will be set to Router in http layer
+    router::R # will be set to Router in http layer
+    ws_router::WsRouter # WebSocket router
+    ws_connections::Dict{Int,String} # Maps conn ID to WS path
+    ws_lock::ReentrantLock # Protects WS connections map
     running::Threads.Atomic{Bool}
     middlewares::Vector{Middleware}
 
-    function ServerCore(timeout::Integer, router::Route)
-        mg_log_set_level(Cint(0))
-        return new(Manager(empty=true), C_NULL, Cint(timeout), nothing, router, Threads.Atomic{Bool}(false), Middleware[])
+    function ServerCore(timeout::Integer, router::R) where {R <: Route}
+        return new{R}(Manager(empty=true), C_NULL, Cint(timeout), nothing, router, WsRouter(), Dict{Int,String}(), ReentrantLock(), Threads.Atomic{Bool}(false), Middleware[])
     end
 end
 
@@ -45,6 +47,7 @@ function free_resources!(server::Server)
 end
 
 function setup_listener!(server::Server, host::AbstractString, port::Integer)
+    mg_log_set_level(Cint(0))
     url = "http://$host:$port"
     fn_data = Ptr{Cvoid}(objectid(server))
     is_listen = mg_http_listen(server.core.manager.ptr, url, server.core.handler, fn_data)

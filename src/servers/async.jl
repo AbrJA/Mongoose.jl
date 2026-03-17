@@ -1,19 +1,20 @@
-mutable struct AsyncServer <: Server
-    core::ServerCore
+mutable struct AsyncServer{R <: Route} <: Server
+    core::ServerCore{R}
     workers::Vector{Task}
-    requests::Channel{IdRequest}
-    responses::Channel{IdResponse}
+    requests::Channel{Union{IdRequest, IdWsMessage}}
+    responses::Channel{Union{IdResponse, IdWsMessage}}
     connections::Dict{Int,MgConnection}
     connections_lock::ReentrantLock
     nworkers::Int
     nqueue::Int
 
     function AsyncServer(; timeout::Integer=0, nworkers::Integer=1, nqueue::Integer=1024)
-        server = new(
-            ServerCore(timeout, Router()),
+        router = Router()
+        server = new{typeof(router)}(
+            ServerCore(timeout, router),
             Task[],
-            Channel{IdRequest}(nqueue),
-            Channel{IdResponse}(nqueue),
+            Channel{Union{IdRequest, IdWsMessage}}(nqueue),
+            Channel{Union{IdResponse, IdWsMessage}}(nqueue),
             Dict{Int,MgConnection}(),
             ReentrantLock(),
             nworkers,
@@ -27,8 +28,8 @@ end
 function setup_resources!(server::AsyncServer)
     server.core.manager = Manager()
     server.core.handler = @cfunction(event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
-    server.requests = Channel{IdRequest}(server.nqueue)
-    server.responses = Channel{IdResponse}(server.nqueue)
+    server.requests = Channel{Union{IdRequest, IdWsMessage}}(server.nqueue)
+    server.responses = Channel{Union{IdResponse, IdWsMessage}}(server.nqueue)
     server.connections = Dict{Int,MgConnection}()
     return
 end
@@ -38,8 +39,15 @@ function worker_loop(server::AsyncServer, worker_index::Integer, router::Route)
     while server.core.running[]
         try
             request = take!(server.requests)
-            response = execute_http_handler(server, request)
-            put!(server.responses, response)
+            if request isa IdRequest
+                response = execute_http_handler(server, request)
+                put!(server.responses, response)
+            elseif request isa IdWsMessage
+                response = handle_ws_message!(server, request)
+                if response !== nothing
+                    put!(server.responses, response)
+                end
+            end
         catch e
             if !server.core.running[]
                 break # Normal exit
@@ -81,10 +89,18 @@ function process_responses!(server::AsyncServer)
         end
         conn === nothing && continue
         
-        mg_http_reply(conn, response.payload.status, response.payload.headers, response.payload.body)
-        
-        lock(server.connections_lock) do
-            delete!(server.connections, response.id)
+        if response isa IdResponse
+            mg_http_reply(conn, response.payload.status, response.payload.headers, response.payload.body)
+            # Close HTTP connection after reply (unless keep-alive handled by Mongoose usually but we delete it so we don't leak)
+            lock(server.connections_lock) do
+                delete!(server.connections, response.id)
+            end
+        elseif response isa IdWsMessage
+            if response.payload.is_text
+                mg_ws_send(conn, response.payload.data::String, Cint(1))
+            else
+                mg_ws_send(conn, response.payload.data::Vector{UInt8}, Cint(2))
+            end
         end
     end
     return
@@ -113,6 +129,8 @@ end
 # --- HTTP Event Handlers for AsyncServer ---
 
 function handle_event!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
+    check_ws_upgrade(server, conn, ev_data) && return
+
     request = build_request(conn, ev_data)
     
     lock(server.connections_lock) do
@@ -123,6 +141,7 @@ function handle_event!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConne
 end
 
 function handle_event!(server::AsyncServer, ::Val{MG_EV_CLOSE}, conn::MgConnection, ev_data::Ptr{Cvoid})
+    cleanup_ws_connection!(server, conn)
     cleanup_connection!(server, conn)
     return
 end

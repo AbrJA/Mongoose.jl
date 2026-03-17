@@ -22,6 +22,14 @@ function mg_ws_send(conn::MgConnection, buf::String, op::Cint)
     ccall((:mg_ws_send, libmongoose), Cvoid, (Ptr{Cvoid}, Cstring, Csize_t, Cint), conn, buf, sizeof(buf), op)
 end
 
+function mg_ws_send(conn::MgConnection, buf::Vector{UInt8}, op::Cint)
+    ccall((:mg_ws_send, libmongoose), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}, Csize_t, Cint), conn, pointer(buf), sizeof(buf), op)
+end
+
+function mg_ws_upgrade(conn::MgConnection, hm::Ptr{Cvoid}, fmt::Ptr{Cvoid}=C_NULL)
+    ccall((:mg_ws_upgrade, libmongoose), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}, Cstring), conn, hm, fmt)
+end
+
 function mg_conn_get_fn_data(conn::MgConnection)
     ccall((:mg_conn_get_fn_data, libmongoose), Ptr{Cvoid}, (Ptr{Cvoid},), conn)
 end

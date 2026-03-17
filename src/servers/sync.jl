@@ -1,8 +1,9 @@
-mutable struct SyncServer <: Server
-    core::ServerCore
+mutable struct SyncServer{R <: Route} <: Server
+    core::ServerCore{R}
 
     function SyncServer(; timeout::Integer=0)
-        server = new(ServerCore(timeout, Router()))
+        router = Router()
+        server = new{typeof(router)}(ServerCore(timeout, router))
         finalizer(free_resources!, server)
         return server
     end
@@ -33,6 +34,8 @@ end
 # --- HTTP Event Handlers for SyncServer ---
 
 function handle_event!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
+    check_ws_upgrade(server, conn, ev_data) && return
+
     request = build_request(conn, ev_data)
     
     # In SyncServer, we handle it immediately on the same thread
@@ -40,5 +43,10 @@ function handle_event!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnec
     
     # Send reply
     mg_http_reply(conn, response.payload.status, response.payload.headers, response.payload.body)
+    return
+end
+
+function handle_event!(server::SyncServer, ::Val{MG_EV_CLOSE}, conn::MgConnection, ev_data::Ptr{Cvoid})
+    cleanup_ws_connection!(server, conn)
     return
 end
