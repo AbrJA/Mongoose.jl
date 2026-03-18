@@ -1,40 +1,67 @@
-struct WsMessage <: AbstractMessage
-    data::Union{String, Vector{UInt8}}
-    is_text::Bool
+"""
+    WebSocket message types and handler definitions.
+    Uses separate types for text and binary messages for type stability.
+"""
+
+"""
+    WsTextMessage — A text WebSocket message (opcode 1).
+"""
+struct WsTextMessage <: AbstractMessage
+    data::String
 end
 
-# Connection tagged messages for async queues
+"""
+    WsBinaryMessage — A binary WebSocket message (opcode 2).
+"""
+struct WsBinaryMessage <: AbstractMessage
+    data::Vector{UInt8}
+end
+
+"""
+    WsMessage — Union type for all WebSocket message variants.
+"""
+const WsMessage = Union{WsTextMessage, WsBinaryMessage}
+
+"""
+    IdWsMessage — Connection-tagged WebSocket message for async queue routing.
+"""
 struct IdWsMessage
     id::Int
     payload::WsMessage
     uri::String
 end
 
-# To decode C messages easily
-function WsMessage(msg::MgWsMessage)
-    # The flag byte: lowest 4 bits are the opcode. 1 = text frame, 2 = binary frame
-    opcode = msg.flags & 0x0F
-    is_text = opcode == 1
-
-    # Extract the payload
-    if msg.data.len > 0 && msg.data.ptr != C_NULL
-        if is_text
-            data = unsafe_string(pointer(msg.data.ptr), msg.data.len)
-        else
-            # Cast Ptr{Cchar} to Ptr{UInt8} for standard Julia byte vectors
-            ptr = Ptr{UInt8}(pointer(msg.data.ptr))
-            data = unsafe_wrap(Array, ptr, msg.data.len)
-            data = copy(data) # Must copy since the pointer becomes invalid after callback
-        end
-    else
-        data = is_text ? "" : UInt8[]
-    end
-    
-    return WsMessage(data, is_text)
-end
-
+"""
+    WsHandlers — Callbacks for a WebSocket endpoint.
+    on_open: called when a new WebSocket connection is established (receives the HTTP upgrade request).
+    on_message: called when a WebSocket message is received.
+    on_close: called when a WebSocket connection is closed.
+"""
 struct WsHandlers
     on_open::Union{Function, Nothing}
     on_message::Function
     on_close::Union{Function, Nothing}
+end
+
+"""
+    decode_ws_message(msg::MgWsMessage) → WsMessage
+
+Decode a C-level WebSocket message into either a `WsTextMessage` or `WsBinaryMessage`.
+For binary messages, the data is copied since the C buffer is only valid during the callback.
+"""
+function decode_ws_message(msg::MgWsMessage)
+    opcode = msg.flags & 0x0F
+    is_text = opcode == 1
+
+    if msg.data.len > 0 && msg.data.buf != C_NULL
+        if is_text
+            return WsTextMessage(unsafe_string(msg.data.buf, msg.data.len))
+        else
+            ptr = msg.data.buf
+            data = unsafe_wrap(Array, ptr, msg.data.len)
+            return WsBinaryMessage(copy(data))  # Must copy — C buffer invalidated after callback
+        end
+    else
+        return is_text ? WsTextMessage("") : WsBinaryMessage(UInt8[])
+    end
 end

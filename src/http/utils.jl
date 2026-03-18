@@ -1,3 +1,13 @@
+"""
+    HTTP utility functions — URL decoding, query parsing, header serialization,
+    and struct deserialization.
+"""
+
+"""
+    decode_range(bytes, start_i, end_i) → String
+
+Decode a URL-encoded byte range, handling `+` (space) and `%XX` hex escapes.
+"""
 function decode_range(bytes::AbstractVector{<:UInt8}, start_i::Int, end_i::Int)
     out = IOBuffer()
     i = start_i
@@ -22,6 +32,12 @@ function decode_range(bytes::AbstractVector{<:UInt8}, start_i::Int, end_i::Int)
     return String(take!(out))
 end
 
+"""
+    parse_params(query) → Dict{String,String}
+
+Parse a URL-encoded query string into key-value pairs.
+Handles `key=value&key2=value2` format with URL decoding.
+"""
 function parse_params(query::AbstractString)
     bytes = codeunits(query)
     len = length(bytes)
@@ -57,25 +73,50 @@ function parse_params(query::AbstractString)
 end
 
 """
-from_query(::Type{T}, query::AbstractString) where T
-    Deserializes a query string to a struct of the specified type.
+    parse_into(::Type{T}, query::AbstractString) where T
+
+Deserialize a URL-encoded query string into a struct of type `T`.
+Parses the query string first, then maps key-value pairs to struct fields.
+
+# Example
+```julia
+struct SearchParams
+    q::String
+    page::Int
+    limit::Int
+end
+
+params = parse_into(SearchParams, "q=hello&page=1&limit=10")
+# SearchParams("hello", 1, 10)
+```
 """
-from_query(::Type{T}, query::AbstractString) where T = from_query(T, parse_params(query))
+parse_into(::Type{T}, query::AbstractString) where T = parse_into(T, parse_params(query))
 
 """
-from_query(::Type{T}, dict::Dict{String,String}) where T
-    Deserializes a dictionary of strings to a struct of the specified type.
+    parse_into(::Type{T}, dict::Dict{String,String}) where T
+
+Deserialize a dictionary of strings into a struct of type `T`.
+Handles `String`, `Bool`, `Union{T, Nothing}` (optional), and numeric types.
+Missing keys default to empty string, zero, `false`, or `nothing` as appropriate.
 """
-@generated function from_query(::Type{T}, dict::Dict{String,String}) where T
+@generated function parse_into(::Type{T}, dict::Dict{String,String}) where T
     fnames = fieldnames(T)
     ftypes = fieldtypes(T)
-    exprs = [:(
+    exprs = [:( 
         let val = get(dict, $(string(fname)), "")
             $(
                 if ftype === String
                     :(val)
                 elseif ftype === Bool
                     :(lowercase(val) in ("true", "1", "yes"))
+                elseif ftype isa Union && Nothing <: ftype
+                    # Handle Union{T, Nothing} — return nothing if empty
+                    inner = Base.typesplit(ftype, Nothing)
+                    if inner === String
+                        :(isempty(val) ? nothing : val)
+                    else
+                        :(isempty(val) ? nothing : parse($inner, val))
+                    end
                 else
                     :(isempty(val) ? zero($ftype) : parse($ftype, val))
                 end
@@ -87,8 +128,10 @@ from_query(::Type{T}, dict::Dict{String,String}) where T
 end
 
 """
-to_headers(headers::Dict{String,String})
-    Serializes a dictionary of strings to a string of headers.
+    to_headers(headers::Dict{String,String}) → String
+
+Serialize a dictionary of headers into the `"Key: Value\\r\\n"` format
+expected by the Mongoose C library's `mg_http_reply`.
 """
 function to_headers(headers::Dict{String,String})
     io = IOBuffer()

@@ -1,3 +1,13 @@
+"""
+    WebSocket event handling — upgrade, message dispatch, connection lifecycle.
+"""
+
+"""
+    handle_ws_message!(server, request) → IdWsMessage or nothing
+
+Dispatch a WebSocket message to the appropriate handler registered via `ws!`.
+Returns a response message to be sent back, or `nothing` to send nothing.
+"""
 function handle_ws_message!(server::Server, request::IdWsMessage)
     server.core.ws_router isa NoWsRouter && return nothing
     return _handle_dynamic_ws_message!(server, request)
@@ -8,12 +18,14 @@ function _handle_dynamic_ws_message!(server::Server, request::IdWsMessage)
     if handlers !== nothing
         try
             res = handlers.on_message(request.payload)
-            if res isa WsMessage
-                return IdWsMessage(request.id, res)
+            if res isa WsTextMessage
+                return IdWsMessage(request.id, res, request.uri)
+            elseif res isa WsBinaryMessage
+                return IdWsMessage(request.id, res, request.uri)
             elseif res isa String
-                return IdWsMessage(request.id, WsMessage(res, true))
+                return IdWsMessage(request.id, WsTextMessage(res), request.uri)
             elseif res isa Vector{UInt8}
-                return IdWsMessage(request.id, WsMessage(res, false))
+                return IdWsMessage(request.id, WsBinaryMessage(res), request.uri)
             end
         catch e
             @error "WebSocket on_message error" exception = (e, catch_backtrace())
@@ -22,14 +34,22 @@ function _handle_dynamic_ws_message!(server::Server, request::IdWsMessage)
     return nothing
 end
 
+"""
+    get_ws_handlers(server, uri) → WsHandlers or nothing
+
+Look up the WebSocket handlers for a given URI path.
+"""
 function get_ws_handlers(server::Server, uri::String)
     server.core.ws_router isa NoWsRouter && return nothing
-    
     return get(server.core.ws_router.routes, uri, nothing)
 end
 
 """
-Helper function to intercept WebSocket upgrades during MG_EV_HTTP_MSG
+    check_ws_upgrade(server, conn, ev_data) → Bool
+
+Check if an incoming HTTP request is a WebSocket upgrade.
+If a matching WS route exists, performs the upgrade and calls `on_open`.
+Returns `true` if the request was intercepted as a WS upgrade.
 """
 function check_ws_upgrade(server::Server, conn::MgConnection, ev_data::Ptr{Cvoid})
     server.core.ws_router isa NoWsRouter && return false
@@ -41,9 +61,10 @@ function _check_dynamic_ws_upgrade(server::Server, conn::MgConnection, ev_data::
     uri = to_string(message.uri)
 
     if haskey(server.core.ws_router.routes, uri)
-        req = build_request(conn, ev_data)
+        # Build request from the already-parsed message (avoid double parse)
+        req = build_request(conn, message)
 
-        # Accept the upgrade
+        # Accept the WebSocket upgrade
         mg_ws_upgrade(conn, ev_data, C_NULL)
 
         server.core.ws_connections[Int(conn)] = uri
@@ -61,37 +82,59 @@ function _check_dynamic_ws_upgrade(server::Server, conn::MgConnection, ev_data::
     return false
 end
 
+# --- WebSocket event handlers for AsyncServer ---
+
+"""
+    handle_event!(server::AsyncServer, ::Val{MG_EV_WS_MSG}, conn, ev_data)
+
+Handle WebSocket message on AsyncServer — decode and enqueue for worker processing.
+"""
 function handle_event!(server::AsyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     server.connections[Int(conn)] = conn
-    msg = WsMessage(MgWsMessage(ev_data))
+    msg = decode_ws_message(MgWsMessage(ev_data))
     uri = get(server.core.ws_connections, Int(conn), "")
     req = IdWsMessage(Int(conn), msg, uri)
-    put!(server.requests, req)
+    put!(server.ws_requests, req)
     return
 end
 
+# --- WebSocket event handlers for SyncServer ---
+
+"""
+    handle_event!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn, ev_data)
+
+Handle WebSocket message on SyncServer — process inline and respond immediately.
+"""
 function handle_event!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
-    msg = WsMessage(MgWsMessage(ev_data))
+    msg = decode_ws_message(MgWsMessage(ev_data))
     uri = get(server.core.ws_connections, Int(conn), "")
     req = IdWsMessage(Int(conn), msg, uri)
 
     res = handle_ws_message!(server, req)
     if res isa IdWsMessage
-        if res.payload.is_text
-            mg_ws_send(conn, res.payload.data::String, Cint(1))
-        else
-            mg_ws_send(conn, res.payload.data::Vector{UInt8}, Cint(2))
+        if res.payload isa WsTextMessage
+            mg_ws_send(conn, res.payload.data, WS_OP_TEXT)
+        elseif res.payload isa WsBinaryMessage
+            mg_ws_send(conn, res.payload.data, WS_OP_BINARY)
         end
     end
     return
 end
 
+"""
+    handle_event!(server::Server, ::Val{MG_EV_WS_CTL}, conn, ev_data)
+
+Handle WebSocket control frames (ping/pong/close). Largely handled by Mongoose C internally.
+"""
 function handle_event!(server::Server, ::Val{MG_EV_WS_CTL}, conn::MgConnection, ev_data::Ptr{Cvoid})
-    # Control frames (like ping/pong) are largely handled internally by mongoose
-    # We could expose them, but usually they don't need user logic
     return
 end
 
+"""
+    cleanup_ws_connection!(server, conn)
+
+Clean up WebSocket state when a connection closes. Calls `on_close` if registered.
+"""
 function cleanup_ws_connection!(server::Server, conn::MgConnection)
     server.core.ws_router isa NoWsRouter && return
     conn_id = Int(conn)
@@ -112,14 +155,15 @@ function cleanup_ws_connection!(server::Server, conn::MgConnection)
 end
 
 """
-Helper function to send a message to a specific connection
+    send_ws(conn, message::String) — Send a text WebSocket message.
 """
 function send_ws(conn::MgConnection, message::String)
-    # OPC_TEXT = 1
-    mg_ws_send(conn, message, Cint(1))
+    mg_ws_send(conn, message, WS_OP_TEXT)
 end
 
+"""
+    send_ws(conn, payload::Vector{UInt8}) — Send a binary WebSocket message.
+"""
 function send_ws(conn::MgConnection, payload::Vector{UInt8})
-    # OPC_BINARY = 2
-    mg_ws_send(conn, payload, Cint(2))
+    mg_ws_send(conn, payload, WS_OP_BINARY)
 end

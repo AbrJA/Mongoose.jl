@@ -1,10 +1,19 @@
 """
-    start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=true)
+    Server lifecycle management — start, shutdown, graceful drain.
+"""
 
-    Starts the Mongoose HTTP server. Initialize the Mongoose manager, binds an HTTP listener, and starts a background Task to poll the Mongoose event loop.
+"""
+    start!(server; host, port, blocking)
+
+Start the Mongoose HTTP server. Initializes the manager, binds an HTTP listener,
+starts worker threads (for AsyncServer), and begins the event loop.
+
+# Keyword Arguments
+- `host::AbstractString`: IP address to bind to (default: `"127.0.0.1"`).
+- `port::Integer`: Port number to listen on (default: `8080`).
+- `blocking::Bool`: If `true`, blocks until the server is stopped (default: `true`).
 """
 function start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=true)
-    # Use atomics for thread-safe state checking
     if Threads.atomic_xchg!(server.core.running, true)
         @info "Server already running. Nothing to do."
         return
@@ -21,7 +30,6 @@ function start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=
         
         blocking && run_blocking!(server)
     catch e
-        # If startup fails, cleanly shutdown to free resources
         shutdown!(server)
         rethrow(e)
     end
@@ -29,8 +37,14 @@ function start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=
 end
 
 """
-    shutdown!(server::Server)
-    Stops the running Mongoose HTTP server. Sets a flag to stop the background event loop task, and then frees the Mongoose associated resources.
+    shutdown!(server)
+
+Gracefully stop the server:
+1. Signal the event loop to stop.
+2. Wait for in-flight requests to drain (up to `drain_timeout_ms`).
+3. Stop worker threads.
+4. Free all C resources.
+5. Unregister from the global registry.
 """
 function shutdown!(server::Server)
     if !Threads.atomic_xchg!(server.core.running, false)

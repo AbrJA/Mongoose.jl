@@ -1,4 +1,11 @@
-# Server Manager wrapper
+"""
+    Core server structs and lifecycle primitives.
+"""
+
+"""
+    Manager — RAII wrapper around the Mongoose C `mg_mgr` struct.
+    Manages memory lifecycle: allocation, initialization, and cleanup.
+"""
 mutable struct Manager
     ptr::Ptr{Cvoid}
     function Manager(; empty::Bool=false)
@@ -10,41 +17,73 @@ mutable struct Manager
     end
 end
 
+"""
+    cleanup!(manager) — Free the Mongoose manager and its allocated memory.
+"""
 function cleanup!(manager::Manager)
     if manager.ptr != C_NULL
         mg_mgr_free!(manager.ptr)
-        # We allocated this ourselves, mg_mgr_free cleans up internal state
-        # but we also need to free the memory we allocated. Actually mg_mgr_free 
-        # doesn't free the struct itself, just its contents.
+        # mg_mgr_free cleans up internal state but doesn't free the struct itself
         Libc.free(manager.ptr)
         manager.ptr = C_NULL
     end
     return
 end
 
-# Core server state shared across all server types
+"""
+    ServerCore{R} — Shared state for all server types.
+    Parameterized on the router type `R` for type stability and trim-safe compilation.
+
+# Fields
+- `manager`: The Mongoose C manager.
+- `handler`: C function pointer for the event callback.
+- `timeout`: Poll timeout in milliseconds.
+- `master`: The background task running the event loop.
+- `router`: The HTTP router.
+- `ws_router`: The WebSocket router.
+- `ws_connections`: Maps connection pointer (as Int) → WS path.
+    Only accessed from the event-loop thread (single-thread invariant).
+- `running`: Atomic flag for thread-safe start/stop.
+- `middlewares`: Ordered list of middleware to execute on each request.
+- `max_body_size`: Maximum allowed request body size in bytes.
+- `drain_timeout_ms`: Time to wait for in-flight requests during graceful shutdown.
+"""
 mutable struct ServerCore{R <: Route}
     manager::Manager
     handler::Ptr{Cvoid}
     timeout::Cint
     master::Union{Nothing,Task}
-    router::R # will be set to Router in http layer
-    ws_router::WsRouter # WebSocket router
-    ws_connections::Dict{Int,String} # Maps conn ID to WS path
+    router::R
+    ws_router::WsRouter
+    ws_connections::Dict{Int,String}
     running::Threads.Atomic{Bool}
     middlewares::Vector{Middleware}
+    max_body_size::Int
+    drain_timeout_ms::Int
 
-    function ServerCore(timeout::Integer, router::R) where {R <: Route}
-        return new{R}(Manager(empty=true), C_NULL, Cint(timeout), nothing, router, WsRouter(), Dict{Int,String}(), Threads.Atomic{Bool}(false), Middleware[])
+    function ServerCore(timeout::Integer, router::R; max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS) where {R <: Route}
+        return new{R}(
+            Manager(empty=true), C_NULL, Cint(timeout), nothing,
+            router, WsRouter(), Dict{Int,String}(),
+            Threads.Atomic{Bool}(false), Middleware[],
+            max_body_size, drain_timeout_ms
+        )
     end
 end
 
+"""
+    free_resources!(server) — Release all C resources held by the server.
+"""
 function free_resources!(server::Server)
     cleanup!(server.core.manager)
     server.core.handler = C_NULL
     return
 end
 
+"""
+    setup_listener!(server, host, port) — Bind the server to the given host:port.
+    Throws `BindError` if the port is already in use.
+"""
 function setup_listener!(server::Server, host::AbstractString, port::Integer)
     mg_log_set_level(Cint(0))
     url = "http://$host:$port"
@@ -55,6 +94,9 @@ function setup_listener!(server::Server, host::AbstractString, port::Integer)
     return
 end
 
+"""
+    start_master!(server) — Spawn the event loop as a background task on a Julia thread.
+"""
 function start_master!(server::Server)
     server.core.master = Threads.@spawn begin
         try
@@ -71,6 +113,9 @@ function start_master!(server::Server)
     return
 end
 
+"""
+    run_blocking!(server) — Wait for the event loop to finish (blocks the caller).
+"""
 function run_blocking!(server::Server)
     try
         wait(server.core.master)
@@ -84,14 +129,15 @@ function run_blocking!(server::Server)
     return
 end
 
+"""
+    stop_master!(server) — Wait for the master event loop task to complete.
+"""
 function stop_master!(server::Server)
     if !isnothing(server.core.master)
         try
-            # Master might already be done or wait could hang, give it a moment
-            # The event loop will exit when running becomes false
             wait(server.core.master)
         catch e
-            # Ignore
+            # Ignore — task may already be done
         end
         server.core.master = nothing
     end

@@ -1,9 +1,30 @@
-const MG_EV_POLL = Cint(2)          # For polling
-const MG_EV_CLOSE = Cint(9)         # For closing connections
-const MG_EV_HTTP_MSG = Cint(11)     # For full requests
-const MG_EV_WS_OPEN = Cint(12)      # WebSocket connection opened
-const MG_EV_WS_MSG = Cint(13)       # WebSocket message received
-const MG_EV_WS_CTL = Cint(14)       # WebSocket control frame
+"""
+    FFI constants for the Mongoose C library.
+    Event types, struct sizes, and protocol constants.
+"""
 
-const MG_MAX_HTTP_HEADERS = 30      # Maximum number of HTTP headers allowed
-const MG_MGR_SIZE = 256             # Upper bound for mg_mgr struct size in bytes
+# Event types from mongoose.h
+const MG_EV_POLL = Cint(2)          # Periodic poll event (most frequent)
+const MG_EV_CLOSE = Cint(9)         # Connection closed
+const MG_EV_HTTP_MSG = Cint(11)     # Full HTTP message received
+const MG_EV_WS_OPEN = Cint(12)     # WebSocket connection opened
+const MG_EV_WS_MSG = Cint(13)      # WebSocket message received
+const MG_EV_WS_CTL = Cint(14)      # WebSocket control frame
+
+const MG_MAX_HTTP_HEADERS = 30      # Maximum number of HTTP headers (from mongoose.h)
+
+# Upper bound for mg_mgr struct size in bytes.
+# Validated against Mongoose C v7.19.0. If you upgrade Mongoose_jll,
+# verify this is still sufficient by checking sizeof(struct mg_mgr) in the C headers.
+const MG_MGR_SIZE = 256
+
+# WebSocket opcodes (RFC 6455)
+const WS_OP_TEXT = Cint(1)
+const WS_OP_BINARY = Cint(2)
+const WS_OP_CLOSE = Cint(8)
+const WS_OP_PING = Cint(9)
+const WS_OP_PONG = Cint(10)
+
+# Default limits
+const DEFAULT_MAX_BODY_SIZE = 1_048_576  # 1 MB default max body size
+const DEFAULT_DRAIN_TIMEOUT_MS = 5000    # 5s shutdown drain timeout
