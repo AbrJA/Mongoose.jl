@@ -38,9 +38,23 @@ end
     on_close: called when a WebSocket connection is closed.
 """
 struct WsHandlers
-    on_open::Union{Function, Nothing}
+    on_open::Function
     on_message::Function
-    on_close::Union{Function, Nothing}
+    on_close::Function
+    has_on_open::Bool
+    has_on_close::Bool
+end
+
+function WsHandlers(; on_message::Function, on_open::Union{Function,Nothing}=nothing, on_close::Union{Function,Nothing}=nothing)
+    noop_open(_) = nothing
+    noop_close() = nothing
+    return WsHandlers(
+        on_open === nothing ? noop_open : on_open,
+        on_message,
+        on_close === nothing ? noop_close : on_close,
+        on_open !== nothing,
+        on_close !== nothing
+    )
 end
 
 """

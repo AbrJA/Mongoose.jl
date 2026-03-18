@@ -1,14 +1,16 @@
-
 using Mongoose
 
-function greet(request::HttpRequest, params::Dict{String,String})
+function greet(request, params)
     body = "{\"message\":\"Hello World from trimmed Julia!\"}"
     Response(200, Dict("Content-Type" => "application/json"), body)
 end
 
-@main function main(args::Vector{String})
+# Pre-wrap the handler for trim-safe compilation
+const GREET_HANDLER = Handler(greet)
+
+(@main)(ARGS) = begin
     server = AsyncServer()
-    route!(server, :get, "/hello", greet)
+    route!(server, :get, "/hello", GREET_HANDLER)
     start!(server, port=8098, blocking=true)
     return 0
 end

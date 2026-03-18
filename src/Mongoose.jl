@@ -4,6 +4,7 @@ using Mongoose_jll
 
 export AsyncServer, SyncServer,
        Request, Response, HttpRequest, HttpResponse, ViewRequest, PreRenderedResponse,
+       Handler,
        start!, shutdown!, route!, use!,
        parse_into, to_headers,
        ws!, WsTextMessage, WsBinaryMessage, WsMessage, send_ws,

@@ -70,7 +70,7 @@ function _check_dynamic_ws_upgrade(server::Server, conn::MgConnection, ev_data::
         server.core.ws_connections[Int(conn)] = uri
 
         handlers = server.core.ws_router.routes[uri]
-        if handlers.on_open !== nothing
+        if handlers.has_on_open
             try
                 handlers.on_open(req.payload)
             catch e
@@ -142,7 +142,7 @@ function cleanup_ws_connection!(server::Server, conn::MgConnection)
     
     if uri !== nothing
         handlers = get_ws_handlers(server, uri)
-        if handlers !== nothing && handlers.on_close !== nothing
+        if handlers !== nothing && handlers.has_on_close
             try
                 handlers.on_close()
             catch e

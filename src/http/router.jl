@@ -141,12 +141,30 @@ route!(server, :get, "/users/:id", (req, params) -> Response(200, "", "User \$(p
 """
 function route!(server::Server, method::Symbol, path::AbstractString, handler::Function)
     if method ∉ VALID_METHODS
-        throw(RouteError("Invalid HTTP method: $method. Valid: $VALID_METHODS"))
+        throw(RouteError("Invalid HTTP method: $(String(method)). Valid: get, post, put, patch, delete, options, head"))
     end
     
     # Wrap handler in FunctionWrapper for type stability
     wrapped = Handler(handler)
     
+    _register_route!(server, method, path, wrapped)
+end
+
+"""
+    route!(server, method, path, handler::Handler)
+
+Register a pre-wrapped handler. Use this variant for `juliac --trim=safe` AOT compilation,
+where the handler must be wrapped at compile time (e.g., `const MY_HANDLER = Handler(f)`).
+"""
+function route!(server::Server, method::Symbol, path::AbstractString, handler::Handler)
+    if method ∉ VALID_METHODS
+        throw(RouteError("Invalid HTTP method: $(String(method)). Valid: get, post, put, patch, delete, options, head"))
+    end
+    _register_route!(server, method, path, handler)
+end
+
+"""Internal: insert a typed handler into the router at the given method/path."""
+function _register_route!(server::Server, method::Symbol, path::AbstractString, wrapped::Handler)
     router_obj = server.core.router
     
     # Fixed route (no parameters) — stored in O(1) lookup table
@@ -185,3 +203,4 @@ function route!(server::Server, method::Symbol, path::AbstractString, handler::F
     node.handlers[method] = wrapped
     return server
 end
+
