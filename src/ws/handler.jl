@@ -1,12 +1,13 @@
-"""
-Executes the user's on_message handler.
-"""
 function handle_ws_message!(server::Server, request::IdWsMessage)
+    server.core.ws_router isa NoWsRouter && return nothing
+    return _handle_dynamic_ws_message!(server, request)
+end
+
+function _handle_dynamic_ws_message!(server::Server, request::IdWsMessage)
     handlers = get_ws_handlers(server, request.id)
     if handlers !== nothing
         try
-            # AOT TEST MOCK: Bypass dynamic callback to satisfy verifier
-            res = "AOT Mock WS Response"
+            res = handlers.on_message(request.payload)
             if res isa WsMessage
                 return IdWsMessage(request.id, res)
             elseif res isa String
@@ -15,13 +16,15 @@ function handle_ws_message!(server::Server, request::IdWsMessage)
                 return IdWsMessage(request.id, WsMessage(res, false))
             end
         catch e
-            @error "WebSocket on_message error" exception=(e, catch_backtrace())
+            @error "WebSocket on_message error" exception = (e, catch_backtrace())
         end
     end
     return nothing
 end
 
 function get_ws_handlers(server::Server, conn_id::Int)
+    server.core.ws_router isa NoWsRouter && return nothing
+
     uri = lock(server.core.ws_lock) do
         get(server.core.ws_connections, conn_id, nothing)
     end
@@ -35,25 +38,30 @@ end
 Helper function to intercept WebSocket upgrades during MG_EV_HTTP_MSG
 """
 function check_ws_upgrade(server::Server, conn::MgConnection, ev_data::Ptr{Cvoid})
+    server.core.ws_router isa NoWsRouter && return false
+    return _check_dynamic_ws_upgrade(server, conn, ev_data)
+end
+
+function _check_dynamic_ws_upgrade(server::Server, conn::MgConnection, ev_data::Ptr{Cvoid})
     message = MgHttpMessage(ev_data)
     uri = to_string(message.uri)
-    
+
     if haskey(server.core.ws_router.routes, uri)
         req = build_request(conn, ev_data)
-        
+
         # Accept the upgrade
         mg_ws_upgrade(conn, ev_data, C_NULL)
-        
+
         lock(server.core.ws_lock) do
             server.core.ws_connections[Int(conn)] = uri
         end
-        
+
         handlers = server.core.ws_router.routes[uri]
         if handlers.on_open !== nothing
             try
-                # AOT TEST MOCK: handlers.on_open(req.payload)
+                handlers.on_open(req.payload)
             catch e
-                @error "WebSocket on_open error" exception=(e, catch_backtrace())
+                @error "WebSocket on_open error" exception = (e, catch_backtrace())
             end
         end
         return true
@@ -74,7 +82,7 @@ end
 function handle_event!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = WsMessage(MgWsMessage(ev_data))
     req = IdWsMessage(Int(conn), msg)
-    
+
     res = handle_ws_message!(server, req)
     if res isa IdWsMessage
         if res.payload.is_text
@@ -93,15 +101,16 @@ function handle_event!(server::Server, ::Val{MG_EV_WS_CTL}, conn::MgConnection, 
 end
 
 function cleanup_ws_connection!(server::Server, conn::MgConnection)
+    server.core.ws_router isa NoWsRouter && return
     conn_id = Int(conn)
     handlers = get_ws_handlers(server, conn_id)
-    
+
     if handlers !== nothing
         if handlers.on_close !== nothing
             try
-                # AOT TEST MOCK: handlers.on_close()
+                handlers.on_close()
             catch e
-                @error "WebSocket on_close error" exception=(e, catch_backtrace())
+                @error "WebSocket on_close error" exception = (e, catch_backtrace())
             end
         end
         lock(server.core.ws_lock) do
