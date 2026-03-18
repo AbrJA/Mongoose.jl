@@ -38,3 +38,11 @@ function mg_log_set_level(level::Cint)
     ptr = cglobal((:mg_log_level, libmongoose), Cint)
     unsafe_store!(ptr, level)
 end
+
+function mg_wakeup(mgr::Ptr{Cvoid}, id::Culong, arg::Ptr{Cvoid}, fn::Ptr{Cvoid})
+    ccall((:mg_wakeup, libmongoose), Cvoid, (Ptr{Cvoid}, Culong, Ptr{Cvoid}, Ptr{Cvoid}), mgr, id, arg, fn)
+end
+
+function mg_send(conn::MgConnection, buf::Vector{UInt8})
+    ccall((:mg_send, libmongoose), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}, Csize_t), conn, pointer(buf), sizeof(buf))
+end

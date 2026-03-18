@@ -26,33 +26,45 @@ const EMPTY_PARAMS = Dict{String,String}()
 
 const VALID_METHODS = Set([:get, :post, :put, :patch, :delete])
 
+function next_segment(path::AbstractString, start_idx::Int)
+    start_idx > lastindex(path) && return nothing, start_idx
+    
+    # skip leading slashes
+    while start_idx <= lastindex(path) && path[start_idx] == '/'
+        start_idx = nextind(path, start_idx)
+    end
+    
+    start_idx > lastindex(path) && return nothing, start_idx
+    
+    end_idx = start_idx
+    while end_idx <= lastindex(path) && path[end_idx] != '/'
+        end_idx = nextind(path, end_idx)
+    end
+    
+    return SubString(path, start_idx, prevind(path, end_idx)), end_idx
+end
+
 function match_route(router::Router, method::Symbol, path::AbstractString)
     # Check fixed routes first
     if (route = get(router.fixed, path, nothing)) !== nothing
         return Matched(route.handlers, EMPTY_PARAMS)
     end
     
-    # Check dynamic routes using zero-allocation iterator
-    segments = collect(eachsplit(path, '/'; keepempty=false))  # Need array for backtracking
-    
     params = Dict{String,String}()
-    sizehint!(params, 4)
-    
-    return _match(router.node, segments, 1, method, params)
+    return _match(router.node, path, 1, method, params)
 end
 
-@inline function _match(node::Node, segments::Vector{<:AbstractString}, idx::Integer, method::Symbol, params::Dict{String,String})
+@inline function _match(node::Node, path::AbstractString, path_idx::Int, method::Symbol, params::Dict{String,String})
+    seg, next_idx = next_segment(path, path_idx)
+    
     # Base case: reached end of path
-    if idx > length(segments)
+    if seg === nothing
         return isempty(node.handlers) ? nothing : Matched(node.handlers, params)
     end
     
-    seg = segments[idx]
-    next_idx = idx + 1
-    
     # Try static first
     if (static_node = get(node.static, seg, nothing)) !== nothing
-        result = _match(static_node, segments, next_idx, method, params)
+        result = _match(static_node, path, next_idx, method, params)
         result !== nothing && return result
     end
     
@@ -62,8 +74,8 @@ end
         had_value = haskey(params, param_name)
         old_value = had_value ? params[param_name] : ""
         
-        params[param_name] = seg
-        result = _match(dyn, segments, next_idx, method, params)
+        params[param_name] = String(seg)
+        result = _match(dyn, path, next_idx, method, params)
         result !== nothing && return result
         
         # Backtrack

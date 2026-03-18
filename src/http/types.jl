@@ -6,10 +6,20 @@ struct HttpRequest <: AbstractRequest
     body::String
 end
 
+struct ViewRequest <: AbstractRequest
+    method::Symbol
+    uri::String
+    message::MgHttpMessage
+end
+
 struct HttpResponse <: AbstractResponse
     status::Int
     headers::String
     body::String
+end
+
+struct PreRenderedResponse <: AbstractResponse
+    bytes::Vector{UInt8}
 end
 
 # Backward compatibility aliases
@@ -34,6 +44,30 @@ end
 function HttpRequest(message::MgHttpMessage)
     return HttpRequest(_method(message), _uri(message), _query(message), _headers(message), _body(message))
 end
+
+function ViewRequest(message::MgHttpMessage)
+    return ViewRequest(_method(message), _uri(message), message)
+end
+
+function header(req::ViewRequest, name::String)
+    for header in req.message.headers
+        if header.name.ptr != C_NULL && header.name.len > 0 && header.val.ptr != C_NULL && header.val.len > 0
+            h_name = to_string(header.name)
+            if lowercase(h_name) == lowercase(name)
+                return to_string(header.val)
+            end
+        end
+    end
+    return nothing
+end
+
+body(req::ViewRequest) = to_string(req.message.body)
+query(req::ViewRequest) = to_string(req.message.query)
+
+# Standardize getters for both types
+header(req::HttpRequest, name::String) = get(req.headers, name, nothing)
+body(req::HttpRequest) = req.body
+query(req::HttpRequest) = req.query
 
 # Internal helpers
 _method(m::MgHttpMessage) = _method_to_symbol(m.method)

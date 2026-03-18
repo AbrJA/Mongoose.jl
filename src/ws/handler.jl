@@ -4,7 +4,7 @@ function handle_ws_message!(server::Server, request::IdWsMessage)
 end
 
 function _handle_dynamic_ws_message!(server::Server, request::IdWsMessage)
-    handlers = get_ws_handlers(server, request.id)
+    handlers = get_ws_handlers(server, request.uri)
     if handlers !== nothing
         try
             res = handlers.on_message(request.payload)
@@ -22,16 +22,10 @@ function _handle_dynamic_ws_message!(server::Server, request::IdWsMessage)
     return nothing
 end
 
-function get_ws_handlers(server::Server, conn_id::Int)
+function get_ws_handlers(server::Server, uri::String)
     server.core.ws_router isa NoWsRouter && return nothing
-
-    uri = lock(server.core.ws_lock) do
-        get(server.core.ws_connections, conn_id, nothing)
-    end
-    if uri !== nothing
-        return get(server.core.ws_router.routes, uri, nothing)
-    end
-    return nothing
+    
+    return get(server.core.ws_router.routes, uri, nothing)
 end
 
 """
@@ -52,9 +46,7 @@ function _check_dynamic_ws_upgrade(server::Server, conn::MgConnection, ev_data::
         # Accept the upgrade
         mg_ws_upgrade(conn, ev_data, C_NULL)
 
-        lock(server.core.ws_lock) do
-            server.core.ws_connections[Int(conn)] = uri
-        end
+        server.core.ws_connections[Int(conn)] = uri
 
         handlers = server.core.ws_router.routes[uri]
         if handlers.on_open !== nothing
@@ -70,18 +62,18 @@ function _check_dynamic_ws_upgrade(server::Server, conn::MgConnection, ev_data::
 end
 
 function handle_event!(server::AsyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
-    lock(server.connections_lock) do
-        server.connections[Int(conn)] = conn
-    end
+    server.connections[Int(conn)] = conn
     msg = WsMessage(MgWsMessage(ev_data))
-    req = IdWsMessage(Int(conn), msg)
+    uri = get(server.core.ws_connections, Int(conn), "")
+    req = IdWsMessage(Int(conn), msg, uri)
     put!(server.requests, req)
     return
 end
 
 function handle_event!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = WsMessage(MgWsMessage(ev_data))
-    req = IdWsMessage(Int(conn), msg)
+    uri = get(server.core.ws_connections, Int(conn), "")
+    req = IdWsMessage(Int(conn), msg, uri)
 
     res = handle_ws_message!(server, req)
     if res isa IdWsMessage
@@ -103,19 +95,18 @@ end
 function cleanup_ws_connection!(server::Server, conn::MgConnection)
     server.core.ws_router isa NoWsRouter && return
     conn_id = Int(conn)
-    handlers = get_ws_handlers(server, conn_id)
-
-    if handlers !== nothing
-        if handlers.on_close !== nothing
+    uri = get(server.core.ws_connections, conn_id, nothing)
+    
+    if uri !== nothing
+        handlers = get_ws_handlers(server, uri)
+        if handlers !== nothing && handlers.on_close !== nothing
             try
                 handlers.on_close()
             catch e
                 @error "WebSocket on_close error" exception = (e, catch_backtrace())
             end
         end
-        lock(server.core.ws_lock) do
-            delete!(server.core.ws_connections, conn_id)
-        end
+        delete!(server.core.ws_connections, conn_id)
     end
     return
 end

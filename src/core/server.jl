@@ -31,12 +31,11 @@ mutable struct ServerCore{R <: Route}
     router::R # will be set to Router in http layer
     ws_router::WsRouter # WebSocket router
     ws_connections::Dict{Int,String} # Maps conn ID to WS path
-    ws_lock::ReentrantLock # Protects WS connections map
     running::Threads.Atomic{Bool}
     middlewares::Vector{Middleware}
 
     function ServerCore(timeout::Integer, router::R) where {R <: Route}
-        return new{R}(Manager(empty=true), C_NULL, Cint(timeout), nothing, router, WsRouter(), Dict{Int,String}(), ReentrantLock(), Threads.Atomic{Bool}(false), Middleware[])
+        return new{R}(Manager(empty=true), C_NULL, Cint(timeout), nothing, router, WsRouter(), Dict{Int,String}(), Threads.Atomic{Bool}(false), Middleware[])
     end
 end
 

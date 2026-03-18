@@ -36,13 +36,17 @@ end
 function handle_event!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     check_ws_upgrade(server, conn, ev_data) && return
 
-    request = build_request(conn, ev_data)
+    request = build_view_request(conn, ev_data)
     
     # In SyncServer, we handle it immediately on the same thread
     response = execute_http_handler(server, request)
     
     # Send reply
-    mg_http_reply(conn, response.payload.status, response.payload.headers, response.payload.body)
+    if response.payload isa PreRenderedResponse
+        mg_send(conn, response.payload.bytes)
+    else
+        mg_http_reply(conn, response.payload.status, response.payload.headers, response.payload.body)
+    end
     return
 end
 

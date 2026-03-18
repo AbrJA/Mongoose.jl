@@ -7,6 +7,7 @@ end
 struct IdWsMessage
     id::Int
     payload::WsMessage
+    uri::String
 end
 
 # To decode C messages easily

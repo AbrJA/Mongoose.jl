@@ -4,7 +4,6 @@ mutable struct AsyncServer{R <: Route} <: Server
     requests::Channel{Union{IdRequest, IdWsMessage}}
     responses::Channel{Union{IdResponse, IdWsMessage}}
     connections::Dict{Int,MgConnection}
-    connections_lock::ReentrantLock
     nworkers::Int
     nqueue::Int
 
@@ -16,7 +15,6 @@ mutable struct AsyncServer{R <: Route} <: Server
             Channel{Union{IdRequest, IdWsMessage}}(nqueue),
             Channel{Union{IdResponse, IdWsMessage}}(nqueue),
             Dict{Int,MgConnection}(),
-            ReentrantLock(),
             nworkers,
             nqueue
         )
@@ -84,17 +82,18 @@ function process_responses!(server::AsyncServer)
     while isready(server.responses)
         response = take!(server.responses)
         
-        conn = lock(server.connections_lock) do
-            get(server.connections, response.id, nothing)
-        end
+        conn = get(server.connections, response.id, nothing)
         conn === nothing && continue
         
         if response isa IdResponse
-            mg_http_reply(conn, response.payload.status, response.payload.headers, response.payload.body)
-            # Close HTTP connection after reply (unless keep-alive handled by Mongoose usually but we delete it so we don't leak)
-            lock(server.connections_lock) do
-                delete!(server.connections, response.id)
+            if response.payload isa PreRenderedResponse
+                mg_send(conn, response.payload.bytes)
+            else
+                mg_http_reply(conn, response.payload.status, response.payload.headers, response.payload.body)
             end
+            # Close HTTP connection after reply (unless keep-alive handled by Mongoose usually but we delete it so we don't leak)
+            # Close HTTP connection after reply (unless keep-alive handled by Mongoose usually but we delete it so we don't leak)
+            delete!(server.connections, response.id)
         elseif response isa IdWsMessage
             if response.payload.is_text
                 mg_ws_send(conn, response.payload.data::String, Cint(1))
@@ -120,9 +119,7 @@ function run_event_loop(server::AsyncServer)
 end
 
 function cleanup_connection!(server::AsyncServer, conn::MgConnection)
-    lock(server.connections_lock) do
-        delete!(server.connections, Int(conn))
-    end
+    delete!(server.connections, Int(conn))
     return
 end
 
@@ -133,9 +130,7 @@ function handle_event!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConne
 
     request = build_request(conn, ev_data)
     
-    lock(server.connections_lock) do
-        server.connections[request.id] = conn
-    end
+    server.connections[request.id] = conn
     put!(server.requests, request)
     return
 end
