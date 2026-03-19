@@ -101,7 +101,7 @@ function header(req::ViewRequest, name::String)
     return nothing
 end
 
-header(req::HttpRequest, name::String) = get(req.headers, name, nothing)
+header(req::HttpRequest, name::String) = get(req.headers, lowercase(name), nothing)
 
 """
     body(req) — Get the request body as a String.
@@ -161,7 +161,7 @@ function _method_to_symbol(str::MgStr)
             unsafe_load(ptr, 2) == 0x45 && unsafe_load(ptr, 3) == 0x41 && unsafe_load(ptr, 4) == 0x44 && return :head  # HEAD
         end
     end
-    
+
     return Symbol(lowercase(to_string(str)))
 end
 
@@ -174,7 +174,7 @@ function _headers(message::MgHttpMessage)
     headers = Dict{String,String}()
     for h in message.headers
         if h.name.buf != C_NULL && h.name.len > 0 && h.val.buf != C_NULL && h.val.len > 0
-            name = to_string(h.name)
+            name = lowercase(to_string(h.name))
             value = to_string(h.val)
             headers[name] = value
         end

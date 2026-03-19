@@ -99,11 +99,11 @@ Internal helper to convert a parsed JSON dict to a struct of type T.
                 elseif ftype isa Union && Nothing <: ftype
                     :(val === nothing ? nothing : val)
                 else
-                    :(val === nothing ? zero($ftype) : convert($ftype, val))
+                    :(val === nothing ? error("Cannot create default value for field type $($ftype) — provide a value in JSON") : convert($ftype, val))
                 end
             )
         end
     ) for (fname, ftype) in zip(fnames, ftypes)]
-    
+
     return :(T($(exprs...)))
 end

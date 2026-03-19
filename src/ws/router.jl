@@ -35,6 +35,9 @@ The server instance for chaining.
 """
 function ws!(server::Server, path::AbstractString; on_message::Function, on_open::Union{Function,Nothing}=nothing, on_close::Union{Function,Nothing}=nothing)
     router_obj = server.core.ws_router
+    if router_obj isa NoWsRouter
+        throw(ArgumentError("WebSocket support not configured. Pass WsRouter() when creating the server, e.g. AsyncServer(NoApp(), WsRouter())"))
+    end
     router_obj.routes[path] = WsHandlers(on_message=on_message, on_open=on_open, on_close=on_close)
     return server
 end

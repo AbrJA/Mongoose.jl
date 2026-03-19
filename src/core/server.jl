@@ -71,7 +71,7 @@ end
     get_c_handler_async / get_c_handler_sync
 
 Internal fallback functions to retrieve the generic or static AOT-compiled C-handler.
-The `@routes` macro automatically overrides these for specific application types, returning a 
+The `@routes` macro automatically overrides these for specific application types, returning a
 strongly-typed `@cfunction` pointer suitable for `trim=safe` standalone compilation.
 """
 get_c_handler_async(::Type{T}) where {T} = C_NULL
@@ -88,6 +88,12 @@ end
 
 """
     setup_listener!(server, host, port) — Bind the server to the given host:port.
+
+!!! note "GC Safety"
+    `pointer_from_objref(server)` is passed to the C library as `fn_data`.
+    The server MUST remain rooted (not garbage collected) for the lifetime of the listener.
+    This is guaranteed because `register!(server)` stores the server in the global `REGISTRY`
+    Dict before this function is called, and `unregister!` removes it only during `shutdown!`.
 """
 function setup_listener!(server::Server, host::AbstractString, port::Integer)
     mg_log_set_level(Cint(0))

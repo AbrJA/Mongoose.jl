@@ -19,17 +19,27 @@ function decode_range(bytes::AbstractVector{<:UInt8}, start_i::Int, end_i::Int)
         elseif b == UInt8('%') && i + 2 <= end_i
             c1 = bytes[i+1]
             c2 = bytes[i+2]
-            hi = c1 <= UInt8('9') ? c1 - UInt8('0') : (c1 | 0x20) - UInt8('a') + 10
-            lo = c2 <= UInt8('9') ? c2 - UInt8('0') : (c2 | 0x20) - UInt8('a') + 10
-            decoded_byte = (hi << 4) | lo
-            write(out, UInt8(decoded_byte))
-            i += 3
+            if _is_hex(c1) && _is_hex(c2)
+                hi = c1 <= UInt8('9') ? c1 - UInt8('0') : (c1 | 0x20) - UInt8('a') + 10
+                lo = c2 <= UInt8('9') ? c2 - UInt8('0') : (c2 | 0x20) - UInt8('a') + 10
+                decoded_byte = (hi << 4) | lo
+                write(out, UInt8(decoded_byte))
+                i += 3
+            else
+                # Invalid hex escape — emit '%' literally
+                write(out, b)
+                i += 1
+            end
         else
             write(out, b)
             i += 1
         end
     end
     return String(take!(out))
+end
+
+@inline function _is_hex(b::UInt8)
+    return (UInt8('0') <= b <= UInt8('9')) || (UInt8('a') <= b <= UInt8('f')) || (UInt8('A') <= b <= UInt8('F'))
 end
 
 """
@@ -51,7 +61,7 @@ function parse_params(query::AbstractString)
 
         local k_str::String
         local v_str::String
-        
+
         if isnothing(eq_idx) || eq_idx > pair_end
             k_end, v_start = pair_end, pair_end + 1
             k_str, v_str = decode_range(bytes, i, k_end), ""
@@ -64,7 +74,7 @@ function parse_params(query::AbstractString)
             params[k_str] = v_str
         end
         i = pair_end + 2
-        
+
         if isnothing(amp_idx)
             break
         end
@@ -102,7 +112,7 @@ Missing keys default to empty string, zero, `false`, or `nothing` as appropriate
 @generated function parse_into(::Type{T}, dict::Dict{String,String}) where T
     fnames = fieldnames(T)
     ftypes = fieldtypes(T)
-    exprs = [:( 
+    exprs = [:(
         let val = get(dict, $(string(fname)), "")
             $(
                 if ftype === String
@@ -123,7 +133,7 @@ Missing keys default to empty string, zero, `false`, or `nothing` as appropriate
             )
         end
     ) for (fname, ftype) in zip(fnames, ftypes)]
-    
+
     return :(T($(exprs...)))
 end
 

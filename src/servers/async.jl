@@ -63,21 +63,31 @@ function worker_loop(server::AsyncServer, worker_index::Integer, router::Route)
     @info "Worker thread $worker_index started on thread $(Threads.threadid())"
     while server.core.running[]
         try
+            processed = false
+
             if isready(server.http_requests)
                 request = take!(server.http_requests)
                 response = execute_http_handler(server, request)
                 put!(server.http_responses, response)
-            elseif isready(server.ws_requests)
+                processed = true
+            end
+
+            if isready(server.ws_requests)
                 request = take!(server.ws_requests)
                 response = handle_ws_message!(server, request)
                 if response !== nothing
                     put!(server.ws_responses, response)
                 end
-            else
-                sleep(0.001)
+                processed = true
             end
+
+            # Only pause when no work was done — avoids busy-spin while
+            # keeping both HTTP and WS channels responsive
+            processed || sleep(0.0001)
         catch e
             if !server.core.running[]
+                break
+            elseif e isa InvalidStateException
                 break
             else
                 @error "Worker thread error: $e" exception=(e, catch_backtrace())
@@ -142,6 +152,8 @@ function cleanup_connection!(server::AsyncServer, conn::MgConnection)
     delete!(server.connections, Int(conn))
     return
 end
+
+_has_pending(server::AsyncServer) = isready(server.http_requests) || isready(server.http_responses) || isready(server.ws_requests) || isready(server.ws_responses)
 
 function handle_event!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     check_ws_upgrade(server, conn, ev_data) && return

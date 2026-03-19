@@ -22,20 +22,33 @@ function rate_limit_middleware(; max_requests::Int=100, window_seconds::Int=60)
     # Per-IP request tracking: ip → (count, window_start_time)
     tracker = Dict{String, Tuple{Int, Float64}}()
     tracker_lock = ReentrantLock()
-    
+    last_cleanup = Ref(time())
+    cleanup_interval = max(window_seconds * 2.0, 60.0)
+
     return function(request::AbstractRequest, params::Dict{String,String}, next)
-        # Use the first segment of URI as a crude client identifier
-        # In production, you'd extract the client IP from headers or connection
         client_id = if request isa HttpRequest
-            get(request.headers, "X-Forwarded-For", get(request.headers, "X-Real-IP", "unknown"))
+            get(request.headers, "x-forwarded-for", get(request.headers, "x-real-ip", "unknown"))
+        elseif request isa ViewRequest
+            h = header(request, "X-Forwarded-For")
+            h === nothing ? (let h2 = header(request, "X-Real-IP"); h2 === nothing ? "unknown" : h2 end) : h
         else
             "unknown"
         end
-        
+
         now_t = time()
         allowed = lock(tracker_lock) do
+            # Periodic cleanup of stale entries
+            if (now_t - last_cleanup[]) > cleanup_interval
+                for (k, v) in collect(tracker)
+                    if (now_t - v[2]) > window_seconds
+                        delete!(tracker, k)
+                    end
+                end
+                last_cleanup[] = now_t
+            end
+
             entry = get(tracker, client_id, nothing)
-            
+
             if entry === nothing || (now_t - entry[2]) > window_seconds
                 # New window
                 tracker[client_id] = (1, now_t)
@@ -50,12 +63,12 @@ function rate_limit_middleware(; max_requests::Int=100, window_seconds::Int=60)
                 end
             end
         end
-        
+
         if !allowed
             retry_after = string(window_seconds)
             return HttpResponse(429, "Content-Type: text/plain\r\nRetry-After: $retry_after\r\n", "429 Too Many Requests")
         end
-        
+
         return next()
     end
 end

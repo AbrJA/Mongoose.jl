@@ -33,13 +33,13 @@ function static_dispatch end
     if start_idx > len
         return (view(path, 1:0), start_idx)
     end
-    
+
     # find next slash
     end_idx = start_idx
     while end_idx <= len && codeunit(path, end_idx) != UInt8('/')
         end_idx += 1
     end
-    
+
     return (view(path, start_idx:end_idx-1), end_idx)
 end
 
@@ -54,7 +54,7 @@ end
 # --- Compile-time Types and Trie Construction ---
 struct RouteSegment
     is_variable::Bool
-    value::String      
+    value::String
     type::Union{Type, Symbol}
 end
 
@@ -99,7 +99,7 @@ function build_trie(routes)
         # We model the method as the first segment essentially, to share the trie.
         method_seg = RouteSegment(false, String(method_sym), Nothing)
         segments = [method_seg; segments]
-        
+
         node = root
         for seg in segments
             if seg.is_variable
@@ -128,7 +128,7 @@ end
 
 function generate_dispatch_node(node::RouterNode, seg_sym::Symbol, idx_sym::Symbol, path_sym::Symbol, req_sym::Symbol, parsed_vars::Vector{Symbol})
     exprs = []
-    
+
     # 1. Exact match reached
     if node.handler !== nothing
         handler_call = Expr(:call, esc(node.handler), req_sym, parsed_vars...)
@@ -138,7 +138,7 @@ function generate_dispatch_node(node::RouterNode, seg_sym::Symbol, idx_sym::Symb
             end
         end)
     end
-    
+
     # 2. Static children
     if !isempty(node.static_children)
         static_blocks = []
@@ -146,7 +146,7 @@ function generate_dispatch_node(node::RouterNode, seg_sym::Symbol, idx_sym::Symb
             next_seg = gensym("seg")
             next_idx = gensym("idx")
             child_expr = generate_dispatch_node(child, next_seg, next_idx, path_sym, req_sym, parsed_vars)
-            
+
             push!(static_blocks, quote
                 if $(seg_sym) == $val
                     $(next_seg), $(next_idx) = static_next_segment($(path_sym), $(idx_sym))
@@ -156,19 +156,19 @@ function generate_dispatch_node(node::RouterNode, seg_sym::Symbol, idx_sym::Symb
         end
         push!(exprs, Expr(:block, static_blocks...))
     end
-    
+
     # 3. Variable child
     if node.variable_child !== nothing
         seg, child = node.variable_child
         var_sym = gensym(seg.value)
         next_seg = gensym("seg")
         next_idx = gensym("idx")
-        
+
         new_parsed_vars = copy(parsed_vars)
         push!(new_parsed_vars, var_sym)
-        
+
         child_expr = generate_dispatch_node(child, next_seg, next_idx, path_sym, req_sym, new_parsed_vars)
-        
+
         # In Mongoose, we default variables to SubString (zero-copy) for performance
         parse_expr = if seg.type == SubString{String} || seg.type == String || seg.type == :String
             quote
@@ -179,7 +179,7 @@ function generate_dispatch_node(node::RouterNode, seg_sym::Symbol, idx_sym::Symb
                 $(var_sym) = Base.parse($(seg.type), String($(seg_sym)))
             end
         end
-        
+
         push!(exprs, quote
             if length($(seg_sym)) != 0
                 $(parse_expr)
@@ -188,14 +188,14 @@ function generate_dispatch_node(node::RouterNode, seg_sym::Symbol, idx_sym::Symb
             end
         end)
     end
-    
+
     # 4. Wildcard child
     if node.wildcard_child !== nothing
         val, child = node.wildcard_child
         var_sym = gensym(val)
         new_parsed_vars = copy(parsed_vars)
         push!(new_parsed_vars, var_sym)
-        
+
         # A wildcard consumes the rest of the path, zero-copy
         handler_call = Expr(:call, esc(child.handler), req_sym, new_parsed_vars...)
         push!(exprs, quote
@@ -208,7 +208,7 @@ function generate_dispatch_node(node::RouterNode, seg_sym::Symbol, idx_sym::Symb
             end
         end)
     end
-    
+
     return Expr(:block, exprs...)
 end
 
@@ -219,11 +219,11 @@ function _extract_routes(block)
         if line isa Expr && line.head == :call && line.args[1] == :(=>)
             pair_left = line.args[2]
             func = line.args[3]
-            
+
             if pair_left isa Expr && pair_left.head == :call
                 method_name = pair_left.args[1]
                 path = pair_left.args[2]
-                
+
                 method_sym = Symbol(lowercase(String(method_name)))
                 push!(routes, (method_sym, path, func))
             end
@@ -235,18 +235,18 @@ end
 macro routes(app_type::Symbol, block)
     routes = _extract_routes(block)
     isempty(routes) && error("@routes: no routes found in block")
-    
+
     root = build_trie(routes)
-    
+
     path_sym = gensym("path")
     req_sym = gensym("req")
-    
+
     # Initial setup
     method_seg_sym = gensym("method_seg")
     method_idx_sym = gensym("method_idx")
-    
+
     dispatch_body = generate_dispatch_node(root, method_seg_sym, method_idx_sym, path_sym, req_sym, Symbol[])
-    
+
     async_handler_sym = Symbol("_async_", app_type, "_c_handler")
     sync_handler_sym = Symbol("_sync_", app_type, "_c_handler")
 
@@ -256,17 +256,17 @@ macro routes(app_type::Symbol, block)
             fn_data = Mongoose.mg_conn_get_fn_data(conn)
             fn_data == C_NULL && return nothing
             # Fully inferred AsyncServer recovery prevents dynamic dispatch errors in AOT
-            server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.AsyncServer{Mongoose.Router, $app_type, Mongoose.NoWsRouter}
+            server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.AsyncServer{Mongoose.Router, $app_type, <:Mongoose.WsRoute}
             Mongoose._invoke_dispatch(server, ev, conn, ev_data)
             return nothing
         end
-        
+
         function $sync_handler_sym(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})::Cvoid
             ev == Mongoose.MG_EV_POLL && return nothing
             fn_data = Mongoose.mg_conn_get_fn_data(conn)
             fn_data == C_NULL && return nothing
             # Fully inferred SyncServer recovery
-            server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.SyncServer{Mongoose.Router, $app_type, Mongoose.NoWsRouter}
+            server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.SyncServer{Mongoose.Router, $app_type, <:Mongoose.WsRoute}
             Mongoose._invoke_dispatch(server, ev, conn, ev_data)
             return nothing
         end
@@ -277,19 +277,19 @@ macro routes(app_type::Symbol, block)
 
     quote
         struct $(esc(app_type)) <: Mongoose.AbstractApp end
-        
+
         $handler_definitions
 
         # --- Static Router Dispatch ---
         function Mongoose.static_dispatch(::$(esc(app_type)), $(req_sym)::Mongoose.AbstractRequest)::Mongoose.HttpResponse
             $(path_sym) = Mongoose.strip_query($(req_sym).uri)
-            
+
             # The root expects `method` to be matched as the first segment
             $(method_seg_sym) = view(String($(req_sym).method), 1:length(String($(req_sym).method)))
             $(method_idx_sym) = 1
-            
+
             $(dispatch_body)
-            
+
             return Mongoose.HttpResponse(404, "Content-Type: text/plain\r\n", "404 Not Found")
         end
     end

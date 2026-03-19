@@ -17,13 +17,13 @@ function start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=
     if Threads.atomic_xchg!(server.core.running, true)
         return
     end
-    
+
     try
         register!(server)
         setup_resources!(server)
         setup_listener!(server, host, port)
         start_workers!(server)
-        
+
         if blocking
             # Run event loop directly on main thread (required for AOT executables)
             run_event_loop(server)
@@ -52,14 +52,35 @@ function shutdown!(server::Server)
         @info "Server not running. Nothing to do."
         return
     end
-    
+
     @info "Stopping server..."
-    
+
+    # Drain in-flight requests up to drain_timeout_ms
+    _drain_in_flight(server)
+
     stop_workers!(server)
     stop_master!(server)
     free_resources!(server)
     unregister!(server)
-    
+
     @info "Server stopped successfully."
     return
 end
+
+"""
+    _drain_in_flight(server)
+
+Wait for in-flight requests to drain, up to `drain_timeout_ms`.
+For AsyncServer, polls the response channels until they're empty or timeout expires.
+"""
+function _drain_in_flight(server::Server)
+    timeout_s = server.core.drain_timeout_ms / 1000.0
+    deadline = time() + timeout_s
+    while time() < deadline
+        _has_pending(server) || break
+        sleep(0.01)
+    end
+    return
+end
+
+_has_pending(::Server) = false

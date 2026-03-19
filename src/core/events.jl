@@ -3,19 +3,6 @@
 """
 
 """
-    select_server(conn) → Server or nothing
-
-Retrieve the Server instance associated with a connection via `fn_data`.
-"""
-@inline function select_server(conn::MgConnection)
-    fn_data = mg_conn_get_fn_data(conn)
-    id = UInt(fn_data)
-    lock(REGISTRY_LOCK) do
-        return get(REGISTRY, id, nothing)
-    end
-end
-
-"""
     event_handler(conn, ev, ev_data) → Cvoid
 
 The single C callback registered with Mongoose via `@cfunction`.
@@ -23,17 +10,17 @@ Uses manual union splitting for trim-safe AOT compilation.
 """
 function event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})::Cvoid
     ev == MG_EV_POLL && return nothing
-    
+
     fn_data = mg_conn_get_fn_data(conn)
     fn_data == C_NULL && return nothing
-    
+
     server = Base.unsafe_pointer_to_objref(fn_data)
 
     # This generic handler is only used in JIT mode (no @routes macro).
     # For AOT builds, the @routes macro generates type-specific C-handlers
     # that bypass this function entirely via get_c_handler_async/sync.
     _invoke_dispatch(server, ev, conn, ev_data)
-    
+
     return nothing
 end
 

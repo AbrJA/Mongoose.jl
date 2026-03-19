@@ -19,8 +19,8 @@ Create a CORS middleware function.
 use!(server, cors_middleware(origins="https://myapp.com"))
 ```
 """
-function cors_middleware(; 
-    origins::String="*", 
+function cors_middleware(;
+    origins::String="*",
     methods::String="GET, POST, PUT, PATCH, DELETE, OPTIONS",
     headers::String="Content-Type, Authorization",
     max_age::Int=86400
@@ -31,17 +31,22 @@ function cors_middleware(;
         "Access-Control-Allow-Headers: ", headers, "\r\n",
         "Access-Control-Max-Age: ", max_age, "\r\n"
     )
-    
+
     return function(request::AbstractRequest, params::Dict{String,String}, next)
         # Handle preflight OPTIONS
         if request.method === :options
             return HttpResponse(204, cors_headers, "")
         end
-        
+
         # Call next and add CORS headers to response
         response = next()
         if response isa HttpResponse
-            return HttpResponse(response.status, cors_headers * response.headers, response.body)
+            merged = if isempty(response.headers)
+                cors_headers
+            else
+                cors_headers * response.headers
+            end
+            return HttpResponse(response.status, merged, response.body)
         end
         return response
     end
