@@ -5,9 +5,9 @@
 """
     SyncServer{R, A} — Synchronous HTTP/WebSocket server.
     Use `SyncServer()` for dynamic routing (route! API).
-    Use `SyncServer(app)` for static routing (@routes macro).
+    Use `SyncServer(app)` for static routing (@router macro).
 """
-mutable struct SyncServer{R <: Route, A, W <: WsRoute} <: Server
+mutable struct SyncServer{R <: Route, A, W <: WsRoute} <: AbstractServer
     core::ServerCore{R, A, W}
 
     function SyncServer{R, A, W}(core::ServerCore{R, A, W}) where {R, A, W}
@@ -17,11 +17,10 @@ mutable struct SyncServer{R <: Route, A, W <: WsRoute} <: Server
     end
 end
 
-function build_SyncServer(app, ws_router::WsRoute, c_handler::Ptr{Cvoid}, timeout::Integer, max_body_size::Integer, drain_timeout_ms::Integer)
+function build_SyncServer(app, ws_router::WsRoute, c_handler::Ptr{Cvoid}, timeout::Integer, max_body_size::Integer, drain_timeout_ms::Integer; router::Router=Router())
     if c_handler == C_NULL
         c_handler = Mongoose.get_c_handler_sync(typeof(app))
     end
-    router = Router()
     core = ServerCore(timeout, router, app, ws_router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
     return SyncServer{typeof(router), typeof(app), typeof(ws_router)}(core)
 end
@@ -51,7 +50,7 @@ function handle_event!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnec
 
     request = build_view_request(conn, ev_data)
     response = execute_http_handler(server, request)
-    
+
     if response.payload isa PreRenderedResponse
         mg_send(conn, response.payload.bytes)
     else

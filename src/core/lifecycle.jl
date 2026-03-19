@@ -13,7 +13,7 @@ starts worker threads (for AsyncServer), and begins the event loop.
 - `port::Integer`: Port number to listen on (default: `8080`).
 - `blocking::Bool`: If `true`, blocks until the server is stopped (default: `true`).
 """
-function start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=true)
+function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=true)
     if Threads.atomic_xchg!(server.core.running, true)
         return
     end
@@ -47,7 +47,7 @@ Gracefully stop the server:
 4. Free all C resources.
 5. Unregister from the global registry.
 """
-function shutdown!(server::Server)
+function shutdown!(server::AbstractServer)
     if !Threads.atomic_xchg!(server.core.running, false)
         @info "Server not running. Nothing to do."
         return
@@ -73,7 +73,7 @@ end
 Wait for in-flight requests to drain, up to `drain_timeout_ms`.
 For AsyncServer, polls the response channels until they're empty or timeout expires.
 """
-function _drain_in_flight(server::Server)
+function _drain_in_flight(server::AbstractServer)
     timeout_s = server.core.drain_timeout_ms / 1000.0
     deadline = time() + timeout_s
     while time() < deadline
@@ -83,4 +83,4 @@ function _drain_in_flight(server::Server)
     return
 end
 
-_has_pending(::Server) = false
+_has_pending(::AbstractServer) = false

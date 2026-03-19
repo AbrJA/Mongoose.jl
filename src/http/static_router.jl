@@ -1,7 +1,7 @@
 """
-    Static router — compile-time route dispatch via @routes macro.
+    Static router — compile-time route dispatch via @router macro.
     Generates a monolithic Prefix Trie AST dispatch function for juliac --trim=safe AOT compilation.
-    Adapted from Hodos.jl. Zero runtime dispatch, zero allocation.
+    Zero runtime dispatch, zero allocation.
 """
 
 """
@@ -71,10 +71,7 @@ function parse_route_template(path::String)
     segments = RouteSegment[]
     parts = split(path, '/', keepempty=false)
     for part in parts
-        if startswith(part, ":")
-            name = part[2:end]
-            push!(segments, RouteSegment(true, String(name), SubString{String}))
-        elseif startswith(part, "{") && endswith(part, "}")
+        if startswith(part, "{") && endswith(part, "}")
             inner = part[2:end-1]
             if occursin("::", inner)
                 name, typestr = split(inner, "::", limit=2)
@@ -82,6 +79,10 @@ function parse_route_template(path::String)
             else
                 push!(segments, RouteSegment(true, String(inner), SubString{String}))
             end
+        elseif startswith(part, ":")
+            # Support :name syntax but convert to SubString for performance
+            name = part[2:end]
+            push!(segments, RouteSegment(true, String(name), SubString{String}))
         elseif startswith(part, "*")
             name = part[2:end]
             push!(segments, RouteSegment(true, String(name), Vector{String}))
@@ -216,25 +217,34 @@ function _extract_routes(block)
     routes = Tuple{Symbol, String, Any}[]
     for line in block.args
         line isa LineNumberNode && continue
-        if line isa Expr && line.head == :call && line.args[1] == :(=>)
-            pair_left = line.args[2]
-            func = line.args[3]
+        if line isa Expr && line.head == :call
+            method_name = line.args[1]
+            path = line.args[2]
+            handler = line.args[3]
 
-            if pair_left isa Expr && pair_left.head == :call
-                method_name = pair_left.args[1]
-                path = pair_left.args[2]
-
-                method_sym = Symbol(lowercase(String(method_name)))
-                push!(routes, (method_sym, path, func))
-            end
+            method_sym = Symbol(lowercase(String(method_name)))
+            push!(routes, (method_sym, path, handler))
         end
     end
     return routes
 end
 
-macro routes(app_type::Symbol, block)
+"""
+    @router AppType block
+    
+Generate a static router for `AppType`.
+Routes are defined as: `METHOD("/path", handler)`
+Example:
+```julia
+@router MyApp begin
+    GET("/", (req) -> Response(200, "OK"))
+    GET("/users/{id::Int}", (req, id) -> Response(200, "User \$id"))
+end
+```
+"""
+macro router(app_type::Symbol, block)
     routes = _extract_routes(block)
-    isempty(routes) && error("@routes: no routes found in block")
+    isempty(routes) && error("@router: no routes found in block")
 
     root = build_trie(routes)
 

@@ -5,18 +5,17 @@ using Test
 @testset "Mongoose.jl" begin
 
     # --- Helper Functions ---
-    function greet(request, params)
+    function greet(request)
         body = "{\"message\":\"Hello World from Julia!\"}"
         Response(200, Dict("Content-Type" => "application/json"), body)
     end
 
-    function echo(request, params)
-        name = params["name"]
+    function echo(request, name)
         body = "Hello $name from Julia!"
         Response(200, Dict("Content-Type" => "text/plain"), body)
     end
 
-    function error_handler(request, params)
+    function error_handler(request, args...)
         error("Something went wrong!")
     end
 
@@ -72,7 +71,47 @@ using Test
         end
     end
 
-    # --- Test 3: Multithreading (AsyncServer with workers) ---
+    # --- Test 3: Typed Route Parameters ---
+    @testset "Typed Route Parameters" begin
+        server = AsyncServer()
+        route!(server, :get, "/users/:id::Int", (req, id) -> begin
+            Response(200, Dict("Content-Type" => "text/plain"), "User $(id) type=$(typeof(id))")
+        end)
+        route!(server, :get, "/score/:val::Float64", (req, val) -> begin
+            Response(200, Dict("Content-Type" => "text/plain"), "Score $(val) type=$(typeof(val))")
+        end)
+        route!(server, :get, "/greet/:name", (req, name) -> begin
+            Response(200, Dict("Content-Type" => "text/plain"), "Hello $(name) type=$(typeof(name))")
+        end)
+
+        start!(server, port=8100, blocking=false)
+        sleep(0.5)
+
+        try
+            # Int parameter — should be parsed to Int
+            response = HTTP.get("http://localhost:8100/users/42")
+            @test response.status == 200
+            @test String(response.body) == "User 42 type=Int64"
+
+            # Float64 parameter
+            response = HTTP.get("http://localhost:8100/score/3.14")
+            @test response.status == 200
+            @test String(response.body) == "Score 3.14 type=Float64"
+
+            # String parameter (default, no type annotation)
+            response = HTTP.get("http://localhost:8100/greet/World")
+            @test response.status == 200
+            @test String(response.body) == "Hello World type=String"
+
+            # Invalid type — should return 404 (not match the route)
+            response = HTTP.get("http://localhost:8100/users/abc"; status_exception=false)
+            @test response.status == 404
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test 4: Multithreading (AsyncServer with workers) ---
     @testset "Multithreading" begin
         n_threads = Threads.nthreads()
         @info "Running multithreading tests with $n_threads threads"
@@ -106,8 +145,8 @@ using Test
         server1 = AsyncServer()
         server2 = AsyncServer()
 
-        route!(server1, :get, "/s1", (req, params) -> Response(200, Dict{String,String}(), "Server 1"))
-        route!(server2, :get, "/s2", (req, params) -> Response(200, Dict{String,String}(), "Server 2"))
+        route!(server1, :get, "/s1", (req) -> Response(200, Dict{String,String}(), "Server 1"))
+        route!(server2, :get, "/s2", (req) -> Response(200, Dict{String,String}(), "Server 2"))
 
         start!(server1, port=8094, blocking=false)
         start!(server2, port=8095, blocking=false)
@@ -129,7 +168,7 @@ using Test
     @testset "CORS Middleware" begin
         server = AsyncServer()
         use!(server, cors_middleware(origins="https://example.com"))
-        route!(server, :get, "/api/data", (req, params) -> Response(200, Dict("Content-Type" => "application/json"), "{\"ok\":true}"))
+        route!(server, :get, "/api/data", (req) -> Response(200, Dict("Content-Type" => "application/json"), "{\"ok\":true}"))
 
         start!(server, port=8096, blocking=false)
         sleep(0.5)
@@ -153,8 +192,8 @@ using Test
     # --- Test 6: JSON Integration ---
     @testset "JSON Integration" begin
         server = AsyncServer()
-        route!(server, :get, "/api/json", (req, params) -> json_response(Dict("message" => "hello", "count" => 42)))
-        route!(server, :post, "/api/echo", (req, params) -> begin
+        route!(server, :get, "/api/json", (req) -> json_response(Dict("message" => "hello", "count" => 42)))
+        route!(server, :post, "/api/echo", (req) -> begin
             data = json_body(req)
             json_response(data)
         end)
@@ -206,7 +245,7 @@ using Test
     # --- Test 8: Body Size Limit ---
     @testset "Body Size Limit" begin
         server = AsyncServer(max_body_size=100)
-        route!(server, :post, "/upload", (req, params) -> Response(200, "", "OK"))
+        route!(server, :post, "/upload", (req) -> Response(200, "", "OK"))
 
         start!(server, port=8099, blocking=false)
         sleep(0.5)
@@ -258,6 +297,126 @@ using Test
         end
 
         shutdown!(server)
+    end
+
+    # --- Test: Server (unified API, sync mode) ---
+    @testset "Server Sync Mode" begin
+        router = Router()
+        route!(router, :get, "/hello", greet)
+        route!(router, :get, "/echo/:name", echo)
+
+        server = Server(router)
+        start!(server; port=8101, blocking=false)
+
+        try
+            response = HTTP.get("http://localhost:8101/hello")
+            @test response.status == 200
+            @test String(response.body) == "{\"message\":\"Hello World from Julia!\"}"
+
+            response = HTTP.get("http://localhost:8101/echo/Bob")
+            @test response.status == 200
+            @test String(response.body) == "Hello Bob from Julia!"
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: Server (unified API, async mode with workers) ---
+    @testset "Server Async Mode" begin
+        router = Router()
+        route!(router, :get, "/hello", greet)
+        route!(router, :get, "/echo/:name", echo)
+        route!(router, :get, "/error", error_handler)
+
+        server = Server(router)
+        start!(server; port=8102, blocking=false, workers=4)
+
+        try
+            response = HTTP.get("http://localhost:8102/hello")
+            @test response.status == 200
+            @test String(response.body) == "{\"message\":\"Hello World from Julia!\"}"
+
+            response = HTTP.get("http://localhost:8102/echo/Alice")
+            @test response.status == 200
+            @test String(response.body) == "Hello Alice from Julia!"
+
+            response = HTTP.get("http://localhost:8102/nonexistent"; status_exception=false)
+            @test response.status == 404
+
+            response = HTTP.get("http://localhost:8102/error"; status_exception=false)
+            @test response.status == 500
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: Server restart with different worker counts ---
+    @testset "Server Restart" begin
+        router = Router()
+        route!(router, :get, "/ping", (req) -> HttpResponse(200, "", "pong"))
+
+        server = Server(router)
+
+        # Start as sync
+        start!(server; port=8103, blocking=false)
+        try
+            response = HTTP.get("http://localhost:8103/ping")
+            @test response.status == 200
+            @test String(response.body) == "pong"
+        finally
+            shutdown!(server)
+        end
+
+        # Restart as async with 2 workers
+        start!(server; port=8103, blocking=false, workers=2)
+        try
+            response = HTTP.get("http://localhost:8103/ping")
+            @test response.status == 200
+            @test String(response.body) == "pong"
+        finally
+            shutdown!(server)
+        end
+
+        # Restart again as async with 4 workers
+        start!(server; port=8103, blocking=false, workers=4)
+        try
+            response = HTTP.get("http://localhost:8103/ping")
+            @test response.status == 200
+            @test String(response.body) == "pong"
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: Server with middleware ---
+    @testset "Server Middleware" begin
+        router = Router()
+        route!(router, :get, "/api/data", (req) -> HttpResponse(200, "Content-Type: application/json\r\n", "{\"ok\":true}"))
+
+        server = Server(router)
+        use!(server, cors_middleware(origins="https://test.com"))
+        start!(server; port=8104, blocking=false, workers=2)
+        sleep(0.5)
+
+        try
+            response = HTTP.get("http://localhost:8104/api/data")
+            @test response.status == 200
+            headers_dict = Dict(String(h.first) => String(h.second) for h in response.headers)
+            @test headers_dict["Access-Control-Allow-Origin"] == "https://test.com"
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: route! on Router directly ---
+    @testset "route! on Router" begin
+        router = Router()
+        ret = route!(router, :get, "/test", (req) -> HttpResponse(200, "", "ok"))
+        @test ret === router  # returns the router for chaining
+
+        # Verify it registered correctly
+        matched = Mongoose.match_route(router, :get, "/test")
+        @test matched !== nothing
     end
 
 end

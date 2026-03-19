@@ -17,7 +17,7 @@ use!(server, bearer_auth_middleware(token -> token == "my-secret-token"))
 ```
 """
 function bearer_auth_middleware(validator::Function)
-    return function(request::AbstractRequest, params::Dict{String,String}, next)
+    return function(request::AbstractRequest, params::Vector{Any}, next)
         auth_header = if request isa HttpRequest
             get(request.headers, "authorization", nothing)
         elseif request isa ViewRequest
@@ -62,7 +62,7 @@ use!(server, api_key_middleware(keys=valid_keys))
 """
 function api_key_middleware(; header_name::String="X-API-Key", keys::Set{String})
     header_name_lower = lowercase(header_name)
-    return function(request::AbstractRequest, params::Dict{String,String}, next)
+    return function(request::AbstractRequest, params::Vector{Any}, next)
         api_key = if request isa HttpRequest
             get(request.headers, header_name_lower, nothing)
         elseif request isa ViewRequest

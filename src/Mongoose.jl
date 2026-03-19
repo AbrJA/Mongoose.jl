@@ -2,7 +2,7 @@ module Mongoose
 
 using Mongoose_jll
 
-export AsyncServer, SyncServer,
+export Server, AsyncServer, SyncServer, Router,
        Request, Response, HttpRequest, HttpResponse, ViewRequest, PreRenderedResponse,
        Handler, AbstractApp, NoApp,
        start!, shutdown!, route!, use!,
@@ -11,7 +11,7 @@ export AsyncServer, SyncServer,
        header, body, query,
        cors_middleware, rate_limit_middleware, bearer_auth_middleware, api_key_middleware,
        json_response, json_body,
-       @routes, static_dispatch
+       @router, static_dispatch
 
 # FFI Layer
 include("ffi/constants.jl")
@@ -55,5 +55,8 @@ include("ws/handler.jl")
 include("middleware/cors.jl")
 include("middleware/rate_limit.jl")
 include("middleware/auth.jl")
+
+# User-facing Server API (wraps AsyncServer / SyncServer)
+include("server.jl")
 
 end

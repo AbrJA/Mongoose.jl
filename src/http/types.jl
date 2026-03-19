@@ -44,7 +44,6 @@ struct PreRenderedResponse <: AbstractResponse
     bytes::Vector{UInt8}
 end
 
-# Backward compatibility aliases
 const Request = HttpRequest
 const Response = HttpResponse
 

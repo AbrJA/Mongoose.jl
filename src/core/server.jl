@@ -80,7 +80,7 @@ get_c_handler_sync(::Type{T}) where {T} = C_NULL
 """
     free_resources!(server) — Release all C resources held by the server.
 """
-function free_resources!(server::Server)
+function free_resources!(server::AbstractServer)
     cleanup!(server.core.manager)
     server.core.handler = C_NULL
     return
@@ -95,7 +95,7 @@ end
     This is guaranteed because `register!(server)` stores the server in the global `REGISTRY`
     Dict before this function is called, and `unregister!` removes it only during `shutdown!`.
 """
-function setup_listener!(server::Server, host::AbstractString, port::Integer)
+function setup_listener!(server::AbstractServer, host::AbstractString, port::Integer)
     mg_log_set_level(Cint(0))
     url = "http://$host:$port"
     fn_data = pointer_from_objref(server)
@@ -108,7 +108,7 @@ end
 """
     start_master!(server) — Spawn the event loop as a background task.
 """
-function start_master!(server::Server)
+function start_master!(server::AbstractServer)
     server.core.master = Threads.@spawn begin
         try
             @info "Server event loop task started on thread $(Threads.threadid())"
@@ -127,7 +127,7 @@ end
 """
     run_blocking!(server) — Wait for the event loop to finish (blocks the caller).
 """
-function run_blocking!(server::Server)
+function run_blocking!(server::AbstractServer)
     try
         wait(server.core.master)
     catch e
@@ -143,7 +143,7 @@ end
 """
     stop_master!(server) — Wait for the master event loop task to complete.
 """
-function stop_master!(server::Server)
+function stop_master!(server::AbstractServer)
     if !isnothing(server.core.master)
         try
             wait(server.core.master)

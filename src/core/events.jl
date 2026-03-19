@@ -45,7 +45,7 @@ Only known event codes are dispatched to avoid dynamic Val instantiation.
     return nothing
 end
 
-handle_event!(server::Server, ::Val, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid}) = nothing
+handle_event!(server::AbstractServer, ::Val, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid}) = nothing
 
 # JIT-only fallbacks for dynamic routing (NoApp). These are never compiled in AOT
 # because @routes-based builds never instantiate NoApp, so juliac tree-shakes them.

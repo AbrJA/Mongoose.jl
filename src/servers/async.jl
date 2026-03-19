@@ -5,12 +5,12 @@
 """
     AsyncServer{R, A} — Asynchronous HTTP/WebSocket server with background workers.
     Use `AsyncServer()` for dynamic routing (route! API).
-    Use `AsyncServer(app)` for static routing (@routes macro).
+    Use `AsyncServer(app)` for static routing (@router macro).
 
 # Thread-Safety Invariant
 `connections` and `ws_connections` are ONLY accessed from the event-loop thread.
 """
-mutable struct AsyncServer{R <: Route, A, W <: WsRoute} <: Server
+mutable struct AsyncServer{R <: Route, A, W <: WsRoute} <: AbstractServer
     core::ServerCore{R, A, W}
     workers::Vector{Task}
     http_requests::Channel{IdRequest{HttpRequest}}
@@ -31,11 +31,10 @@ mutable struct AsyncServer{R <: Route, A, W <: WsRoute} <: Server
     end
 end
 
-function build_AsyncServer(app, ws_router::WsRoute, c_handler::Ptr{Cvoid}, timeout::Integer, nworkers::Integer, nqueue::Integer, max_body_size::Integer, drain_timeout_ms::Integer)
+function build_AsyncServer(app, ws_router::WsRoute, c_handler::Ptr{Cvoid}, timeout::Integer, nworkers::Integer, nqueue::Integer, max_body_size::Integer, drain_timeout_ms::Integer; router::Router=Router())
     if c_handler == C_NULL
         c_handler = Mongoose.get_c_handler_async(typeof(app))
     end
-    router = Router()
     core = ServerCore(timeout, router, app, ws_router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
     return AsyncServer{typeof(router), typeof(app), typeof(ws_router)}(
         core, Task[],
