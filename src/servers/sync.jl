@@ -26,7 +26,7 @@ function build_SyncServer(app, ws_router::WsRoute, c_handler::Ptr{Cvoid}, timeou
     return SyncServer{typeof(router), typeof(app), typeof(ws_router)}(core)
 end
 
-function SyncServer(app=NoApp(), ws_router::WsRoute=WsRouter(); c_handler::Ptr{Cvoid}=C_NULL, timeout::Integer=0, max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
+function SyncServer(app=NoApp(), ws_router::WsRoute=NoWsRouter(); c_handler::Ptr{Cvoid}=C_NULL, timeout::Integer=0, max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
     return build_SyncServer(app, ws_router, c_handler, timeout, max_body_size, drain_timeout_ms)
 end
 

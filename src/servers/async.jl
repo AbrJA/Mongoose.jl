@@ -45,7 +45,7 @@ function build_AsyncServer(app, ws_router::WsRoute, c_handler::Ptr{Cvoid}, timeo
     )
 end
 
-function AsyncServer(app=NoApp(), ws_router::WsRoute=WsRouter(); c_handler::Ptr{Cvoid}=C_NULL, timeout::Integer=0, nworkers::Integer=1, nqueue::Integer=1024, max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
+function AsyncServer(app=NoApp(), ws_router::WsRoute=NoWsRouter(); c_handler::Ptr{Cvoid}=C_NULL, timeout::Integer=0, nworkers::Integer=1, nqueue::Integer=1024, max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
     return build_AsyncServer(app, ws_router, c_handler, timeout, nworkers, nqueue, max_body_size, drain_timeout_ms)
 end
 

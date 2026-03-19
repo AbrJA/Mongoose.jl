@@ -225,9 +225,9 @@ using Test
         end
     end
 
-    ### --- WS Tests ---
+    # --- WebSocket Tests ---
     @testset "WebSocket Tests" begin
-        server = AsyncServer(nworkers=4)
+        server = AsyncServer(NoApp(), WsRouter(), nworkers=4)
 
         ws!(server, "/chat", on_message=function (msg::WsMessage)
                 if msg isa WsTextMessage
