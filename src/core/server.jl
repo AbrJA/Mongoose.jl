@@ -4,7 +4,6 @@
 
 """
     Manager — RAII wrapper around the Mongoose C `mg_mgr` struct.
-    Manages memory lifecycle: allocation, initialization, and cleanup.
 """
 mutable struct Manager
     ptr::Ptr{Cvoid}
@@ -23,7 +22,6 @@ end
 function cleanup!(manager::Manager)
     if manager.ptr != C_NULL
         mg_mgr_free!(manager.ptr)
-        # mg_mgr_free cleans up internal state but doesn't free the struct itself
         Libc.free(manager.ptr)
         manager.ptr = C_NULL
     end
@@ -31,41 +29,39 @@ function cleanup!(manager::Manager)
 end
 
 """
-    ServerCore{R} — Shared state for all server types.
-    Parameterized on the router type `R` for type stability and trim-safe compilation.
+    ServerCore{R, A} — Shared state for all server types.
+    Parameterized on:
+    - `R`: Router type (for dynamic route! API)
+    - `A`: App type (for static @routes dispatch, or NoApp for dynamic-only)
 
 # Fields
-- `manager`: The Mongoose C manager.
-- `handler`: C function pointer for the event callback.
-- `timeout`: Poll timeout in milliseconds.
-- `master`: The background task running the event loop.
-- `router`: The HTTP router.
-- `ws_router`: The WebSocket router.
-- `ws_connections`: Maps connection pointer (as Int) → WS path.
-    Only accessed from the event-loop thread (single-thread invariant).
-- `running`: Atomic flag for thread-safe start/stop.
-- `middlewares`: Ordered list of middleware to execute on each request.
-- `max_body_size`: Maximum allowed request body size in bytes.
-- `drain_timeout_ms`: Time to wait for in-flight requests during graceful shutdown.
+- `app`: Static app instance for @routes dispatch (NoApp if using dynamic routing).
+- `router`: The dynamic HTTP router (used when app is NoApp).
+- `ws_router`: WebSocket router.
+- `ws_connections`: Maps connection id → WS path (event-loop thread only).
+- `middlewares`: Ordered middleware list.
+- `max_body_size`: Max request body size in bytes.
+- `drain_timeout_ms`: Shutdown drain timeout.
 """
-mutable struct ServerCore{R <: Route}
+mutable struct ServerCore{R <: Route, A}
     manager::Manager
     handler::Ptr{Cvoid}
     timeout::Cint
     master::Union{Nothing,Task}
+    app::A
     router::R
     ws_router::WsRouter
     ws_connections::Dict{Int,String}
     running::Threads.Atomic{Bool}
-    middlewares::Vector{Middleware}
+    middlewares::Vector{Function}
     max_body_size::Int
     drain_timeout_ms::Int
 
-    function ServerCore(timeout::Integer, router::R; max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS) where {R <: Route}
-        return new{R}(
-            Manager(empty=true), C_NULL, Cint(timeout), nothing,
-            router, WsRouter(), Dict{Int,String}(),
-            Threads.Atomic{Bool}(false), Middleware[],
+    function ServerCore(timeout::Integer, router::R, app::A=NoApp(); max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS, c_handler::Ptr{Cvoid}=C_NULL) where {R <: Route, A}
+        return new{R, A}(
+            Manager(empty=true), c_handler, Cint(timeout), nothing,
+            app, router, WsRouter(), Dict{Int,String}(),
+            Threads.Atomic{Bool}(false), Function[],
             max_body_size, drain_timeout_ms
         )
     end
@@ -82,7 +78,6 @@ end
 
 """
     setup_listener!(server, host, port) — Bind the server to the given host:port.
-    Throws `BindError` if the port is already in use.
 """
 function setup_listener!(server::Server, host::AbstractString, port::Integer)
     mg_log_set_level(Cint(0))
@@ -95,7 +90,7 @@ function setup_listener!(server::Server, host::AbstractString, port::Integer)
 end
 
 """
-    start_master!(server) — Spawn the event loop as a background task on a Julia thread.
+    start_master!(server) — Spawn the event loop as a background task.
 """
 function start_master!(server::Server)
     server.core.master = Threads.@spawn begin
@@ -137,7 +132,6 @@ function stop_master!(server::Server)
         try
             wait(server.core.master)
         catch e
-            # Ignore — task may already be done
         end
         server.core.master = nothing
     end

@@ -1,45 +1,61 @@
 """
     HTTP request handler — route matching, middleware execution, and response generation.
+    Supports both dynamic routing (route!) and static dispatch (@routes).
 """
 
 """
     execute_http_handler(server, request) → IdResponse
 
-Match the request against registered routes, execute the middleware pipeline
-and handler, and return a tagged response. Returns 404, 405, 413, or 500
-responses for unmatched routes, wrong methods, oversized bodies, and errors.
-
-Middleware is always executed first — this allows middleware like CORS to
-intercept OPTIONS preflight requests before route matching.
+Dispatch to either static_dispatch (when @routes app is present) or
+dynamic router (when using route! API).
 """
 function execute_http_handler(server::Server, request::IdRequest)
+    app = server.core.app
+    
+    # Static dispatch path — @routes macro generated, fully trim-safe
+    if !(app isa NoApp)
+        return _static_http_handler(server, app, request)
+    end
+    
+    # Dynamic dispatch path — route! API with Dict-based router
+    return _dynamic_http_handler(server, request)
+end
+
+"""Static dispatch handler — calls the @routes-generated dispatch function."""
+function _static_http_handler(server::Server, app, request::IdRequest)
+    # Body size check
+    req_body = _get_body(request.payload)
+    if sizeof(req_body) > server.core.max_body_size
+        return IdResponse(request.id, HttpResponse(413, "Content-Type: text/plain\r\n", "413 Payload Too Large"))
+    end
+    
+    try
+        res = static_dispatch(app, request.payload)
+        return IdResponse(request.id, res)
+    catch e
+        @error "Route handler error" exception=(e, catch_backtrace())
+        return IdResponse(request.id, HttpResponse(500, "Content-Type: text/plain\r\n", "500 Internal Server Error"))
+    end
+end
+
+"""Dynamic dispatch handler — uses Dict-based router and middleware pipeline."""
+function _dynamic_http_handler(server::Server, request::IdRequest)
     router_obj = server.core.router
 
-    # Check body size limit
-    req_body = if request.payload isa HttpRequest
-        request.payload.body
-    elseif request.payload isa ViewRequest
-        body(request.payload)
-    else
-        ""
-    end
-    
+    req_body = _get_body(request.payload)
     if sizeof(req_body) > server.core.max_body_size
-        res = HttpResponse(413, "Content-Type: text/plain\r\n", "413 Payload Too Large")
-        return IdResponse(request.id, res)
+        return IdResponse(request.id, HttpResponse(413, "Content-Type: text/plain\r\n", "413 Payload Too Large"))
     end
     
-    # Route matching
     matched = match_route(router_obj, request.payload.method, request.payload.uri)
     
-    # Determine the final handler (route handler or 404/405 fallback)
     if matched === nothing
-        final_handler = Handler((req, params) -> HttpResponse(404, "Content-Type: text/plain\r\n", "404 Not Found"))
+        final_handler = (req, params) -> HttpResponse(404, "Content-Type: text/plain\r\n", "404 Not Found")
         matched_params = EMPTY_PARAMS
     else
         handler = get(matched.handlers, request.payload.method, nothing)
         if handler === nothing
-            final_handler = Handler((req, params) -> HttpResponse(405, "Content-Type: text/plain\r\n", "405 Method Not Allowed"))
+            final_handler = (req, params) -> HttpResponse(405, "Content-Type: text/plain\r\n", "405 Method Not Allowed")
         else
             final_handler = handler
         end
@@ -47,13 +63,23 @@ function execute_http_handler(server::Server, request::IdRequest)
     end
     
     try
-        # Middleware wraps the final handler — middleware can short-circuit
-        # (e.g., CORS OPTIONS returns 204 before reaching the handler)
         res = execute_middleware(server.core.middlewares, request.payload, matched_params, final_handler)
         return IdResponse(request.id, res)
     catch e
         @error "Route handler failed to execute" exception=(e, catch_backtrace())
-        res = HttpResponse(500, "Content-Type: text/plain\r\n", "500 Internal Server Error")
-        return IdResponse(request.id, res)
+        return IdResponse(request.id, HttpResponse(500, "Content-Type: text/plain\r\n", "500 Internal Server Error"))
     end
+end
+
+"""Get body string from any request type."""
+@inline function _get_body(req::HttpRequest)
+    return req.body
+end
+
+@inline function _get_body(req::ViewRequest)
+    return body(req)
+end
+
+@inline function _get_body(req::AbstractRequest)
+    return ""
 end

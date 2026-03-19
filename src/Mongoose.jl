@@ -4,13 +4,14 @@ using Mongoose_jll
 
 export AsyncServer, SyncServer,
        Request, Response, HttpRequest, HttpResponse, ViewRequest, PreRenderedResponse,
-       Handler,
+       Handler, AbstractApp, NoApp,
        start!, shutdown!, route!, use!,
        parse_into, to_headers,
        ws!, WsTextMessage, WsBinaryMessage, WsMessage, send_ws,
        header, body, query,
        cors_middleware, rate_limit_middleware, bearer_auth_middleware, api_key_middleware,
-       json_response, json_body
+       json_response, json_body,
+       @routes, static_dispatch
 
 # FFI Layer
 include("ffi/constants.jl")
@@ -20,6 +21,9 @@ include("ffi/bindings.jl")
 # Core Layer Types
 include("core/types.jl")
 include("core/errors.jl")
+
+# Static Router (must be before server.jl which uses NoApp/AbstractApp)
+include("http/static_router.jl")
 
 # WS Types and Router (needed by ServerCore)
 include("ws/types.jl")

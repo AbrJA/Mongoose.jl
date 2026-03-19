@@ -1,6 +1,6 @@
 """
     HTTP router — trie-based path matching with fixed-route fast path.
-    Uses `FunctionWrapper`-typed handlers for type stability and trim-safe AOT.
+    For trim-safe AOT compilation, use the `@routes` macro instead.
 """
 
 """
@@ -143,27 +143,10 @@ function route!(server::Server, method::Symbol, path::AbstractString, handler::F
     if method ∉ VALID_METHODS
         throw(RouteError("Invalid HTTP method: $(String(method)). Valid: get, post, put, patch, delete, options, head"))
     end
-    
-    # Wrap handler in FunctionWrapper for type stability
-    wrapped = Handler(handler)
-    
-    _register_route!(server, method, path, wrapped)
-end
-
-"""
-    route!(server, method, path, handler::Handler)
-
-Register a pre-wrapped handler. Use this variant for `juliac --trim=safe` AOT compilation,
-where the handler must be wrapped at compile time (e.g., `const MY_HANDLER = Handler(f)`).
-"""
-function route!(server::Server, method::Symbol, path::AbstractString, handler::Handler)
-    if method ∉ VALID_METHODS
-        throw(RouteError("Invalid HTTP method: $(String(method)). Valid: get, post, put, patch, delete, options, head"))
-    end
     _register_route!(server, method, path, handler)
 end
 
-"""Internal: insert a typed handler into the router at the given method/path."""
+"""Internal: insert a handler into the router at the given method/path."""
 function _register_route!(server::Server, method::Symbol, path::AbstractString, wrapped::Handler)
     router_obj = server.core.router
     
