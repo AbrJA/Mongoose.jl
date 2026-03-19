@@ -15,20 +15,21 @@ starts worker threads (for AsyncServer), and begins the event loop.
 """
 function start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=true)
     if Threads.atomic_xchg!(server.core.running, true)
-        @info "Server already running. Nothing to do."
         return
     end
-    
-    @info "Starting server..."
     
     try
         register!(server)
         setup_resources!(server)
         setup_listener!(server, host, port)
         start_workers!(server)
-        start_master!(server)
         
-        blocking && run_blocking!(server)
+        if blocking
+            # Run event loop directly on main thread (required for AOT executables)
+            run_event_loop(server)
+        else
+            start_master!(server)
+        end
     catch e
         shutdown!(server)
         rethrow(e)

@@ -247,11 +247,42 @@ macro routes(app_type::Symbol, block)
     
     dispatch_body = generate_dispatch_node(root, method_seg_sym, method_idx_sym, path_sym, req_sym, Symbol[])
     
-    quote
-        struct $(esc(app_type)) <: AbstractApp end
+    async_handler_sym = Symbol("_async_", app_type, "_c_handler")
+    sync_handler_sym = Symbol("_sync_", app_type, "_c_handler")
+
+    handler_definitions = esc(quote
+        function $async_handler_sym(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})::Cvoid
+            ev == Mongoose.MG_EV_POLL && return nothing
+            fn_data = Mongoose.mg_conn_get_fn_data(conn)
+            fn_data == C_NULL && return nothing
+            # Fully inferred AsyncServer recovery prevents dynamic dispatch errors in AOT
+            server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.AsyncServer{Mongoose.Router, $app_type, Mongoose.NoWsRouter}
+            Mongoose._invoke_dispatch(server, ev, conn, ev_data)
+            return nothing
+        end
         
-        function Mongoose.static_dispatch(::$(esc(app_type)), $(req_sym)::AbstractRequest)::HttpResponse
-            $(path_sym) = strip_query($(req_sym).uri)
+        function $sync_handler_sym(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})::Cvoid
+            ev == Mongoose.MG_EV_POLL && return nothing
+            fn_data = Mongoose.mg_conn_get_fn_data(conn)
+            fn_data == C_NULL && return nothing
+            # Fully inferred SyncServer recovery
+            server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.SyncServer{Mongoose.Router, $app_type, Mongoose.NoWsRouter}
+            Mongoose._invoke_dispatch(server, ev, conn, ev_data)
+            return nothing
+        end
+
+        Mongoose.get_c_handler_async(::Type{$app_type}) = @cfunction($async_handler_sym, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+        Mongoose.get_c_handler_sync(::Type{$app_type}) = @cfunction($sync_handler_sym, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+    end)
+
+    quote
+        struct $(esc(app_type)) <: Mongoose.AbstractApp end
+        
+        $handler_definitions
+
+        # --- Static Router Dispatch ---
+        function Mongoose.static_dispatch(::$(esc(app_type)), $(req_sym)::Mongoose.AbstractRequest)::Mongoose.HttpResponse
+            $(path_sym) = Mongoose.strip_query($(req_sym).uri)
             
             # The root expects `method` to be matched as the first segment
             $(method_seg_sym) = view(String($(req_sym).method), 1:length(String($(req_sym).method)))
@@ -259,7 +290,7 @@ macro routes(app_type::Symbol, block)
             
             $(dispatch_body)
             
-            return HttpResponse(404, "Content-Type: text/plain\r\n", "404 Not Found")
+            return Mongoose.HttpResponse(404, "Content-Type: text/plain\r\n", "404 Not Found")
         end
     end
 end

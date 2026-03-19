@@ -24,17 +24,15 @@ Uses manual union splitting for trim-safe AOT compilation.
 function event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})::Cvoid
     ev == MG_EV_POLL && return nothing
     
-    server = select_server(conn)
-    server === nothing && return nothing
+    fn_data = mg_conn_get_fn_data(conn)
+    fn_data == C_NULL && return nothing
+    
+    server = Base.unsafe_pointer_to_objref(fn_data)
 
-    # Manual union splitting for exact JIT concrete types to satisfy trim-safe AOT
-    if server isa AsyncServer{Router, NoApp}
-        _invoke_dispatch(server::AsyncServer{Router, NoApp}, ev, conn, ev_data)
-    elseif server isa SyncServer{Router, NoApp}
-        _invoke_dispatch(server::SyncServer{Router, NoApp}, ev, conn, ev_data)
-    else
-        @error "event_handler: Unhandled server type in JIT callback. Custom apps must provide their own c_handler"
-    end
+    # This generic handler is only used in JIT mode (no @routes macro).
+    # For AOT builds, the @routes macro generates type-specific C-handlers
+    # that bypass this function entirely via get_c_handler_async/sync.
+    _invoke_dispatch(server, ev, conn, ev_data)
     
     return nothing
 end
@@ -61,3 +59,8 @@ Only known event codes are dispatched to avoid dynamic Val instantiation.
 end
 
 handle_event!(server::Server, ::Val, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid}) = nothing
+
+# JIT-only fallbacks for dynamic routing (NoApp). These are never compiled in AOT
+# because @routes-based builds never instantiate NoApp, so juliac tree-shakes them.
+get_c_handler_async(::Type{NoApp}) = @cfunction(event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+get_c_handler_sync(::Type{NoApp}) = @cfunction(event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))

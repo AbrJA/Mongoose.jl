@@ -43,29 +43,39 @@ end
 - `max_body_size`: Max request body size in bytes.
 - `drain_timeout_ms`: Shutdown drain timeout.
 """
-mutable struct ServerCore{R <: Route, A}
+mutable struct ServerCore{R <: Route, A, W <: WsRoute}
     manager::Manager
     handler::Ptr{Cvoid}
     timeout::Cint
     master::Union{Nothing,Task}
     app::A
     router::R
-    ws_router::WsRouter
+    ws_router::W
     ws_connections::Dict{Int,String}
     running::Threads.Atomic{Bool}
     middlewares::Vector{Function}
     max_body_size::Int
     drain_timeout_ms::Int
 
-    function ServerCore(timeout::Integer, router::R, app::A=NoApp(); max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS, c_handler::Ptr{Cvoid}=C_NULL) where {R <: Route, A}
-        return new{R, A}(
+    function ServerCore(timeout::Integer, router::R, app::A=NoApp(), ws_router::W=NoWsRouter(); max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS, c_handler::Ptr{Cvoid}=C_NULL) where {R <: Route, A, W <: WsRoute}
+        return new{R, A, W}(
             Manager(empty=true), c_handler, Cint(timeout), nothing,
-            app, router, WsRouter(), Dict{Int,String}(),
+            app, router, ws_router, Dict{Int,String}(),
             Threads.Atomic{Bool}(false), Function[],
             max_body_size, drain_timeout_ms
         )
     end
 end
+
+"""
+    get_c_handler_async / get_c_handler_sync
+
+Internal fallback functions to retrieve the generic or static AOT-compiled C-handler.
+The `@routes` macro automatically overrides these for specific application types, returning a 
+strongly-typed `@cfunction` pointer suitable for `trim=safe` standalone compilation.
+"""
+get_c_handler_async(::Type{T}) where {T} = C_NULL
+get_c_handler_sync(::Type{T}) where {T} = C_NULL
 
 """
     free_resources!(server) — Release all C resources held by the server.
@@ -82,7 +92,7 @@ end
 function setup_listener!(server::Server, host::AbstractString, port::Integer)
     mg_log_set_level(Cint(0))
     url = "http://$host:$port"
-    fn_data = Ptr{Cvoid}(objectid(server))
+    fn_data = pointer_from_objref(server)
     is_listen = mg_http_listen(server.core.manager.ptr, url, server.core.handler, fn_data)
     is_listen == C_NULL && throw(BindError("Failed to start server on $url. Port may be in use."))
     @info "Listening on $url"
