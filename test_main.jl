@@ -15,6 +15,6 @@ end
 
 (@main)(ARGS) = begin
     server = SyncServer(MyApp())
-    start!(server, port=8199, blocking=true)
+    start!(server, port=8099, blocking=true)
     return 0
 end

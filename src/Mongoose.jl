@@ -23,8 +23,8 @@ include("http/types.jl")      # Defines AbstractRouter
 include("ws/types.jl")        # WsEndpoint, WsMessage types
 
 # 3. Router Implementations
-include("http/static_router.jl") # Define StaticRouter first
-include("http/router.jl")        # Router
+include("router/static.jl") # Define StaticRouter first
+include("router/dynamic.jl")        # Router
 include("ws/router.jl")          # ws! registration, static_ws_upgrade
 
 # 4. Core Server Logic
