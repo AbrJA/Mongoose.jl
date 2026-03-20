@@ -7,7 +7,7 @@ export SyncServer, AsyncServer, Router, Request, Response,
        parse_into,
        ws!, WsTextMessage, WsBinaryMessage, WsMessage,
        header, body, query,
-       cors_middleware, rate_limit_middleware, bearer_auth_middleware, api_key_middleware,
+       cors, rate_limit, auth_bearer, auth_api_key,
        json_response, json_body,
        @router
 

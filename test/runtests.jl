@@ -177,7 +177,7 @@ using Test
         route!(router, :get, "/api/data", (req) -> Response(200, Dict("Content-Type" => "application/json"), "{\"ok\":true}"))
 
         server = AsyncServer(router; workers=1)
-        use!(server, cors_middleware(origins="https://example.com"))
+        use!(server, cors(origins="https://example.com"))
         start!(server, port=8096, blocking=false)
         sleep(0.5)
 
@@ -405,7 +405,7 @@ using Test
         route!(router, :get, "/api/data", (req) -> Response(200, "Content-Type: application/json\r\n", "{\"ok\":true}"))
 
         server = AsyncServer(router; workers=2)
-        use!(server, cors_middleware(origins="https://test.com"))
+        use!(server, cors(origins="https://test.com"))
         start!(server; port=8104, blocking=false)
         sleep(0.5)
 

@@ -3,7 +3,7 @@
 """
 
 """
-    bearer_auth_middleware(validator)
+    auth_bearer(validator)
 
 Create a Bearer token authentication middleware.
 The `validator` function receives the token string and must return `true` if valid.
@@ -13,10 +13,10 @@ Returns 401 Unauthorized if missing or invalid.
 
 # Example
 ```julia
-use!(server, bearer_auth_middleware(token -> token == "my-secret-token"))
+use!(server, auth_bearer(token -> token == "my-secret-token"))
 ```
 """
-function bearer_auth_middleware(validator::Function)
+function auth_bearer(validator::Function)
     return function(request::AbstractRequest, params::Vector{Any}, next)
         auth_header = if request isa Request
             get(request.headers, "authorization", nothing)
@@ -45,7 +45,7 @@ function bearer_auth_middleware(validator::Function)
 end
 
 """
-    api_key_middleware(; header_name, keys)
+    auth_api_key(; header_name, keys)
 
 Create an API key authentication middleware.
 Checks for a valid key in the specified request header.
@@ -57,10 +57,10 @@ Checks for a valid key in the specified request header.
 # Example
 ```julia
 valid_keys = Set(["key-123", "key-456"])
-use!(server, api_key_middleware(keys=valid_keys))
+use!(server, auth_api_key(keys=valid_keys))
 ```
 """
-function api_key_middleware(; header_name::String="X-API-Key", keys::Set{String})
+function auth_api_key(; header_name::String="X-API-Key", keys::Set{String})
     header_name_lower = lowercase(header_name)
     return function(request::AbstractRequest, params::Vector{Any}, next)
         api_key = if request isa Request

@@ -4,7 +4,7 @@
 """
 
 """
-    rate_limit_middleware(; max_requests, window_seconds)
+    rate_limit(; max_requests, window_seconds)
 
 Create a rate-limiting middleware using a simple fixed-window counter.
 Returns 429 Too Many Requests when the limit is exceeded.
@@ -15,10 +15,10 @@ Returns 429 Too Many Requests when the limit is exceeded.
 
 # Example
 ```julia
-use!(server, rate_limit_middleware(max_requests=50, window_seconds=30))
+use!(server, rate_limit(max_requests=50, window_seconds=30))
 ```
 """
-function rate_limit_middleware(; max_requests::Int=100, window_seconds::Int=60)
+function rate_limit(; max_requests::Int=100, window_seconds::Int=60)
     # Per-IP request tracking: ip → (count, window_start_time)
     tracker = Dict{String, Tuple{Int, Float64}}()
     tracker_lock = ReentrantLock()

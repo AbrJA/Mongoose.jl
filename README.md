@@ -83,8 +83,8 @@ Mongoose.jl includes built-in middleware for common tasks like CORS and Rate Lim
 
 ```julia
 server = AsyncServer(router)
-use!(server, cors_middleware(origins="*"))
-use!(server, rate_limit_middleware(requests=100, window=60))
+use!(server, cors(origins="*"))
+use!(server, rate_limit(requests=100, window=60))
 ```
 
 ### WebSocket Support

@@ -16,10 +16,10 @@ Create a CORS middleware function.
 
 # Example
 ```julia
-use!(server, cors_middleware(origins="https://myapp.com"))
+use!(server, cors(origins="https://myapp.com"))
 ```
 """
-function cors_middleware(;
+function cors(;
     origins::String="*",
     methods::String="GET, POST, PUT, PATCH, DELETE, OPTIONS",
     headers::String="Content-Type, Authorization",

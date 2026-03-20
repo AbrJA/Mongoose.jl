@@ -119,3 +119,26 @@ end)
 server = AsyncServer(router)
 start!(server, port=8084, blocking=false)
 ```
+## Middleware
+
+Mongoose.jl includes built-in middleware for common tasks.
+
+```julia
+using Mongoose
+
+router = Router()
+route!(router, :get, "/api/data", (req) -> Response(200, "Data"))
+
+server = AsyncServer(router)
+
+# Add CORS support
+use!(server, cors(origins="*"))
+
+# Add Rate Limiting (100 requests per 60 seconds)
+use!(server, rate_limit(max_requests=100, window_seconds=60))
+
+# Add Bearer Token Auth
+use!(server, auth_bearer(token -> token == "secret"))
+
+start!(server, port=8085, blocking=false)
+```
