@@ -4,9 +4,7 @@
 
 function build_AsyncServer(http::HttpRouter, ws::WsRouter, c_handler::Ptr{Cvoid}, timeout::Integer, nworkers::Integer, nqueue::Integer, max_body_size::Integer, drain_timeout_ms::Integer)
     if c_handler == C_NULL
-        if http isa StaticHttpRouter
-            c_handler = Mongoose.get_c_handler_async(typeof(http))
-        end
+        c_handler = Mongoose.get_c_handler_async(typeof(http))
     end
     core = ServerCore(timeout, http, ws; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
     server = AsyncServer{typeof(http), typeof(ws)}(
@@ -79,7 +77,12 @@ function worker_loop(server::AsyncServer)
         # Try HTTP
         if isready(server.http_requests)
             req = take!(server.http_requests)
-            res = _dispatch_http(server, req.payload)
+            res = try
+                _dispatch_http(server, req.payload)
+            catch e
+                @error "Handler error" exception=(e, catch_backtrace())
+                Response(500, "Content-Type: text/plain\r\n", "500 Internal Server Error")
+            end
             put!(server.http_responses, IdResponse(req.id, res))
         # Try WS
         elseif isready(server.ws_requests)
@@ -89,7 +92,9 @@ function worker_loop(server::AsyncServer)
                 put!(server.ws_responses, res)
             end
         else
-            yield()
+            sleep(0.0001)
         end
     end
 end
+
+_has_pending(server::AsyncServer) = isready(server.http_requests) || isready(server.http_responses) || isready(server.ws_requests) || isready(server.ws_responses)

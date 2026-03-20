@@ -41,16 +41,6 @@ function HttpRouter()
     return DynamicHttpRouter()
 end
 
-"""
-    StaticHttpRouter — Base type for macro-generated static routers.
-"""
-abstract type StaticHttpRouter <: HttpRouter end
-
-"""
-    NoStaticHttpRouter — Sentinel for no static routes.
-"""
-struct NoStaticHttpRouter <: StaticHttpRouter end
-
 # (Matched, match_route, route!, etc...)
 struct Matched
     handlers::Dict{Symbol,Handler}

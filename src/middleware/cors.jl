@@ -32,7 +32,7 @@ function cors_middleware(;
         "Access-Control-Max-Age: ", max_age, "\r\n"
     )
 
-    return function(request::Request, params::Vector{Any}, next)
+    return function(request::AbstractRequest, params::Vector{Any}, next)
         # Handle preflight OPTIONS
         if request.method === :options
             return Response(204, cors_headers, "")

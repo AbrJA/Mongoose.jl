@@ -4,11 +4,6 @@
 abstract type HttpRouter end
 
 """
-    Handler — A typed function wrapper for HTTP handlers.
-"""
-const Handler = Function
-
-"""
     Request — Full HTTP request with owned string data.
 """
 struct Request <: AbstractRequest

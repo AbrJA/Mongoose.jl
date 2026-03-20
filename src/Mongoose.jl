@@ -6,11 +6,11 @@ export Server, AsyncServer, SyncServer, HttpRouter, DynamicHttpRouter, StaticHtt
        Request, Response, NoStaticHttpRouter,
        start!, shutdown!, route!, use!,
        parse_into, format_headers,
-       ws!, WsTextMessage, WsBinaryMessage, WsMessage, WsRouter, DynamicWsRouter, StaticWsRouter, NoStaticWsRouter,
+       ws!, WsTextMessage, WsBinaryMessage, WsMessage, WsRouter, DynamicWsRouter, StaticWsRouter, NoWsRouter,
        header, body, query,
        cors_middleware, rate_limit_middleware, bearer_auth_middleware, api_key_middleware,
        json_response, json_body,
-       @router, @wsrouter
+       @router
 
 # 1. FFI Layer (Constants, Structs, Bindings)
 include("ffi/constants.jl")

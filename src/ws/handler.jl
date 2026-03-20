@@ -73,9 +73,52 @@ function _do_ws_upgrade(server, conn, ev_data, uri, endpoint)
     mg_ws_upgrade(conn, ev_data, C_NULL)
     server.core.ws_connections[Int(conn)] = uri
     if endpoint.has_on_open
-        req = build_request(server, conn, MgHttpMessage(ev_data))
-        try endpoint.on_open(req.payload) catch e end
+        req = Request(MgHttpMessage(ev_data))
+        try endpoint.on_open(req) catch e end
     end
+end
+
+# --- WS event handlers ---
+
+# SyncServer: process WS message directly on event-loop thread
+function handle_event!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
+    msg = MgWsMessage(ev_data)
+    ws_msg = decode_ws_message(msg)
+    conn_id = Int(conn)
+    uri = get(server.core.ws_connections, conn_id, "")
+    id_msg = IdWsMessage(conn_id, ws_msg, uri)
+    result = handle_ws_message!(server, id_msg)
+    if result !== nothing
+        if result.payload isa WsTextMessage
+            mg_ws_send(conn, result.payload.data, WS_OP_TEXT)
+        elseif result.payload isa WsBinaryMessage
+            mg_ws_send(conn, result.payload.data, WS_OP_BINARY)
+        end
+    end
+    return
+end
+
+# AsyncServer: queue WS message to worker channels
+function handle_event!(server::AsyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
+    msg = MgWsMessage(ev_data)
+    ws_msg = decode_ws_message(msg)
+    conn_id = Int(conn)
+    uri = get(server.core.ws_connections, conn_id, "")
+    server.connections[conn_id] = conn
+    put!(server.ws_requests, IdWsMessage(conn_id, ws_msg, uri))
+    return
+end
+
+# Connection close — cleanup WS state
+function handle_event!(server::AbstractServer, ::Val{MG_EV_CLOSE}, conn::MgConnection, ev_data::Ptr{Cvoid})
+    cleanup_ws_connection!(server, conn)
+    return
+end
+
+function handle_event!(server::AsyncServer, ::Val{MG_EV_CLOSE}, conn::MgConnection, ev_data::Ptr{Cvoid})
+    cleanup_ws_connection!(server, conn)
+    delete!(server.connections, Int(conn))
+    return
 end
 
 """

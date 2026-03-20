@@ -4,9 +4,7 @@
 
 function build_SyncServer(http::HttpRouter, ws::WsRouter, c_handler::Ptr{Cvoid}, timeout::Integer, max_body_size::Integer, drain_timeout_ms::Integer)
     if c_handler == C_NULL
-        if http isa StaticHttpRouter
-            c_handler = Mongoose.get_c_handler_sync(typeof(http))
-        end
+        c_handler = Mongoose.get_c_handler_sync(typeof(http))
     end
     core = ServerCore(timeout, http, ws; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
     server = SyncServer{typeof(http), typeof(ws)}(core)
