@@ -17,22 +17,24 @@ mutable struct Node
 end
 
 """
-    Fixed — A leaf node for static (non-parameterized) routes.
+    FixedRoute — A leaf node for static (non-parameterized) routes.
     Provides O(1) lookup bypassing the trie entirely.
 """
-struct Fixed
+struct FixedRoute
     handlers::Dict{Symbol,Handler}
-    Fixed() = new(Dict{Symbol,Handler}())
+    FixedRoute() = new(Dict{Symbol,Handler}())
 end
 
 """
-    Router — Top-level router combining fixed and dynamic routes.
+    DynamicRouter — Top-level router combining fixed and dynamic routes.
 """
-struct Router <: AbstractRoute
+struct DynamicRouter <: AbstractRouter
     node::Node
-    fixed::Dict{String,Fixed}
-    Router() = new(Node(), Dict{String,Fixed}())
+    fixed::Dict{String, FixedRoute}
+    DynamicRouter() = new(Node(), Dict{String, FixedRoute}())
 end
+
+const Router = DynamicRouter
 
 """
     Matched — Result of a successful route match.
@@ -170,11 +172,11 @@ end
 Register an HTTP request handler for a specific method and URI path.
 
 # Arguments
-- `router::Router`: The router to register the route on (preferred).
+- `router::DynamicRouter`: The router to register the route on (preferred).
 - `server::AbstractServer`: A running server (delegates to its router).
 - `method::Symbol`: HTTP method (`:get`, `:post`, `:put`, `:patch`, `:delete`, `:options`, `:head`).
 - `path::AbstractString`: URI path, may contain typed parameters (e.g., `"/users/:id::Int"`).
-- `handler::Function`: Handler with signature `(request, params...) → HttpResponse`.
+- `handler::Function`: Handler with signature `(request, params...) → Response`.
 
 # Parameter Types
 Parameters default to `String`. Append `::Type` to declare a type:
@@ -187,12 +189,12 @@ won't match, returning 404 instead of a runtime error in the handler.
 
 # Examples
 ```julia
-router = Router()
-route!(router, :get, "/hello", (req) -> HttpResponse(200, "", "Hello!"))
-route!(router, :get, "/users/:id::Int", (req, id) -> HttpResponse(200, "", "User \$id"))
+router = DynamicRouter()
+route!(router, :get, "/hello", (req) -> Response(200, "", "Hello!"))
+route!(router, :get, "/users/:id::Int", (req, id) -> Response(200, "", "User \$id"))
 ```
 """
-function route!(router::Router, method::Symbol, path::AbstractString, handler::Function)
+function route!(router::DynamicRouter, method::Symbol, path::AbstractString, handler::Function)
     if method ∉ VALID_METHODS
         throw(RouteError("Invalid HTTP method: $(String(method)). Valid: get, post, put, patch, delete, options, head"))
     end
@@ -206,11 +208,11 @@ function route!(server::AbstractServer, method::Symbol, path::AbstractString, ha
 end
 
 """Internal: insert a handler into the router at the given method/path."""
-function _register_route!(router::Router, method::Symbol, path::AbstractString, wrapped::Handler)
+function _register_route!(router::DynamicRouter, method::Symbol, path::AbstractString, wrapped::Handler)
     # Fixed route (no parameters) — stored in O(1) lookup table
     if !occursin(':', path)
         if !haskey(router.fixed, path)
-            router.fixed[path] = Fixed()
+            router.fixed[path] = FixedRoute()
         end
         router.fixed[path].handlers[method] = wrapped
         return router

@@ -25,7 +25,7 @@ end)
 function json_response(data; status::Int=200, headers::Dict{String,String}=Dict{String,String}())
     headers["Content-Type"] = "application/json"
     body = JSON.json(data)
-    return HttpResponse(status, headers, body)
+    return Response(status, headers, body)
 end
 
 """
@@ -43,7 +43,7 @@ end)
 ```
 """
 function json_body(request::AbstractRequest)
-    b = if request isa HttpRequest
+    b = if request isa Request
         request.body
     elseif request isa ViewRequest
         body(request)

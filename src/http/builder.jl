@@ -3,7 +3,7 @@
 """
 
 """
-    build_request(conn, ev_data) → IdRequest{HttpRequest}
+    build_request(conn, ev_data) → IdRequest{Request}
 
 Build a fully-parsed, owned HTTP request from C connection and event data.
 Used by `AsyncServer` where the request must survive beyond the event callback.
@@ -11,18 +11,18 @@ Used by `AsyncServer` where the request must survive beyond the event callback.
 function build_request(conn::MgConnection, ev_data::Ptr{Cvoid})
     id = Int(conn)
     message = MgHttpMessage(ev_data)
-    payload = HttpRequest(message)
+    payload = Request(message)
     return IdRequest(id, payload)
 end
 
 """
-    build_request(conn, message::MgHttpMessage) → IdRequest{HttpRequest}
+    build_request(conn, message::MgHttpMessage) → IdRequest{Request}
 
 Build from an already-parsed `MgHttpMessage` (avoids double parsing).
 """
 function build_request(conn::MgConnection, message::MgHttpMessage)
     id = Int(conn)
-    payload = HttpRequest(message)
+    payload = Request(message)
     return IdRequest(id, payload)
 end
 

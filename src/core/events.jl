@@ -47,7 +47,7 @@ end
 
 handle_event!(server::AbstractServer, ::Val, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid}) = nothing
 
-# JIT-only fallbacks for dynamic routing (NoApp). These are never compiled in AOT
-# because @routes-based builds never instantiate NoApp, so juliac tree-shakes them.
-get_c_handler_async(::Type{NoApp}) = @cfunction(event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
-get_c_handler_sync(::Type{NoApp}) = @cfunction(event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+# JIT-only fallbacks for dynamic routing (NoStaticRouter). These are never compiled in AOT
+# because @routes-based builds never instantiate NoStaticRouter, so juliac tree-shakes them.
+get_c_handler_async(::Type{NoStaticRouter}) = @cfunction(event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+get_c_handler_sync(::Type{NoStaticRouter}) = @cfunction(event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))

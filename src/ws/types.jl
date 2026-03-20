@@ -32,12 +32,12 @@ struct IdWsMessage
 end
 
 """
-    WsHandlers — Callbacks for a WebSocket endpoint.
+    WsEndpoint — Callbacks for a WebSocket endpoint.
     on_open: called when a new WebSocket connection is established (receives the HTTP upgrade request).
     on_message: called when a WebSocket message is received.
     on_close: called when a WebSocket connection is closed.
 """
-struct WsHandlers
+struct WsEndpoint
     on_open::Function
     on_message::Function
     on_close::Function
@@ -45,10 +45,10 @@ struct WsHandlers
     has_on_close::Bool
 end
 
-function WsHandlers(; on_message::Function, on_open::Union{Function,Nothing}=nothing, on_close::Union{Function,Nothing}=nothing)
+function WsEndpoint(; on_message::Function, on_open::Function=nothing, on_close::Function=nothing)
     noop_open(_) = nothing
     noop_close() = nothing
-    return WsHandlers(
+    return WsEndpoint(
         on_open === nothing ? noop_open : on_open,
         on_message,
         on_close === nothing ? noop_close : on_close,

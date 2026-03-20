@@ -2,21 +2,21 @@
     WebSocket router — maps URI paths to WebSocket handler callbacks.
 """
 
-abstract type AbstractWsRoute end
+abstract type AbstractWsRouter end
 
 """
     WsRouter — A path-based router for WebSocket endpoints.
-    Maps URI strings to `WsHandlers` callbacks.
+    Maps URI strings to `WsEndpoint` callbacks.
 """
-struct WsRouter <: AbstractWsRoute
-    routes::Dict{String,WsHandlers}
-    WsRouter() = new(Dict{String,WsHandlers}())
+struct WsRouter <: AbstractWsRouter
+    routes::Dict{String,WsEndpoint}
+    WsRouter() = new(Dict{String,WsEndpoint}())
 end
 
 """
     NoWsRouter — Sentinel type indicating no WebSocket support is configured.
 """
-struct NoWsRouter <: AbstractWsRoute end
+struct NoWsRouter <: AbstractWsRouter end
 
 """
     ws!(server, path; on_message, on_open, on_close)
@@ -27,7 +27,7 @@ Register a WebSocket endpoint at the given `path`.
 - `server::AbstractServer`: The server instance to register the endpoint on.
 - `path::AbstractString`: The URI path for the WebSocket endpoint.
 - `on_message::Function`: Called when a WebSocket message is received. Receives `WsMessage`.
-- `on_open::Union{Function, Nothing}`: Called when a connection opens. Receives `HttpRequest`.
+- `on_open::Union{Function, Nothing}`: Called when a connection opens. Receives `Request`.
 - `on_close::Union{Function, Nothing}`: Called when a connection closes. No arguments.
 
 # Returns
@@ -38,6 +38,6 @@ function ws!(server::AbstractServer, path::AbstractString; on_message::Function,
     if router_obj isa NoWsRouter
         throw(ArgumentError("WebSocket support not configured. Pass WsRouter() when creating the server, e.g. AsyncServer(NoApp(), WsRouter())"))
     end
-    router_obj.routes[path] = WsHandlers(on_message=on_message, on_open=on_open, on_close=on_close)
+    router_obj.routes[path] = WsEndpoint(on_message=on_message, on_open=on_open, on_close=on_close)
     return server
 end

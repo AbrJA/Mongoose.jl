@@ -3,10 +3,10 @@
 """
 
 """
-    HttpRequest — Full HTTP request with owned string data.
+    Request — Full HTTP request with owned string data.
     All fields are eagerly parsed and safe to use anywhere (no pointer lifetime issues).
 """
-struct HttpRequest <: AbstractRequest
+struct Request <: AbstractRequest
     method::Symbol
     uri::String
     query::String
@@ -27,10 +27,10 @@ struct ViewRequest <: AbstractRequest
 end
 
 """
-    HttpResponse — HTTP response with status, headers, and body.
+    Response — HTTP response with status, headers, and body.
     Headers are stored as a pre-formatted string for direct C library use.
 """
-struct HttpResponse <: AbstractResponse
+struct Response <: AbstractResponse
     status::Int
     headers::String
     body::String
@@ -43,9 +43,6 @@ end
 struct PreRenderedResponse <: AbstractResponse
     bytes::Vector{UInt8}
 end
-
-const Request = HttpRequest
-const Response = HttpResponse
 
 """
     IdRequest{R} — Connection-tagged request for async queue routing.
@@ -64,17 +61,17 @@ struct IdResponse{R <: AbstractResponse}
 end
 
 """
-    HttpResponse(status, headers::Dict, body) — Convenience constructor that formats headers.
+    Response(status, headers::Dict, body) — Convenience constructor that formats headers.
 """
-function HttpResponse(status::Int, headers::Dict{String,String}, body::String)
-    return HttpResponse(status, to_headers(headers), body)
+function Response(status::Int, headers::Dict{String,String}, body::String)
+    return Response(status, format_headers(headers), body)
 end
 
 """
-    HttpRequest(message::MgHttpMessage) — Construct from C struct (allocating; copies all data).
+    Request(message::MgHttpMessage) — Construct from C struct (allocating; copies all data).
 """
-function HttpRequest(message::MgHttpMessage)
-    return HttpRequest(_method(message), _uri(message), _query(message), _headers(message), _body(message))
+function Request(message::MgHttpMessage)
+    return Request(_method(message), _uri(message), _query(message), _headers(message), _body(message))
 end
 
 """
@@ -100,19 +97,19 @@ function header(req::ViewRequest, name::String)
     return nothing
 end
 
-header(req::HttpRequest, name::String) = get(req.headers, lowercase(name), nothing)
+header(req::Request, name::String) = get(req.headers, lowercase(name), nothing)
 
 """
     body(req) — Get the request body as a String.
 """
 body(req::ViewRequest) = to_string(req.message.body)
-body(req::HttpRequest) = req.body
+body(req::Request) = req.body
 
 """
     query(req) — Get the raw query string.
 """
 query(req::ViewRequest) = to_string(req.message.query)
-query(req::HttpRequest) = req.query
+query(req::Request) = req.query
 
 # --- Internal FFI helpers ---
 

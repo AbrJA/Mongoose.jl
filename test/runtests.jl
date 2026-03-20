@@ -266,7 +266,7 @@ using Test
 
     # --- WebSocket Tests ---
     @testset "WebSocket Tests" begin
-        server = AsyncServer(NoApp(), WsRouter(), nworkers=4)
+        server = AsyncServer(NoStaticRouter(), WsRouter(), nworkers=4)
 
         ws!(server, "/chat", on_message=function (msg::WsMessage)
                 if msg isa WsTextMessage
@@ -276,7 +276,7 @@ using Test
                     println("Server received binary of length: ", length(msg.data))
                     return msg.data
                 end
-            end, on_open=function (req::HttpRequest)
+            end, on_open=function (req::Request)
                 println("Server opened WS connection! Headers: ", req.headers)
             end, on_close=function ()
                 println("Server closed WS connection!")
@@ -301,7 +301,7 @@ using Test
 
     # --- Test: Server (unified API, sync mode) ---
     @testset "Server Sync Mode" begin
-        router = Router()
+        router = DynamicRouter()
         route!(router, :get, "/hello", greet)
         route!(router, :get, "/echo/:name", echo)
 
@@ -323,7 +323,7 @@ using Test
 
     # --- Test: Server (unified API, async mode with workers) ---
     @testset "Server Async Mode" begin
-        router = Router()
+        router = DynamicRouter()
         route!(router, :get, "/hello", greet)
         route!(router, :get, "/echo/:name", echo)
         route!(router, :get, "/error", error_handler)
@@ -352,8 +352,8 @@ using Test
 
     # --- Test: Server restart with different worker counts ---
     @testset "Server Restart" begin
-        router = Router()
-        route!(router, :get, "/ping", (req) -> HttpResponse(200, "", "pong"))
+        router = DynamicRouter()
+        route!(router, :get, "/ping", (req) -> Response(200, "", "pong"))
 
         server = Server(router)
 
@@ -390,8 +390,8 @@ using Test
 
     # --- Test: Server with middleware ---
     @testset "Server Middleware" begin
-        router = Router()
-        route!(router, :get, "/api/data", (req) -> HttpResponse(200, "Content-Type: application/json\r\n", "{\"ok\":true}"))
+        router = DynamicRouter()
+        route!(router, :get, "/api/data", (req) -> Response(200, "Content-Type: application/json\r\n", "{\"ok\":true}"))
 
         server = Server(router)
         use!(server, cors_middleware(origins="https://test.com"))
@@ -410,8 +410,8 @@ using Test
 
     # --- Test: route! on Router directly ---
     @testset "route! on Router" begin
-        router = Router()
-        ret = route!(router, :get, "/test", (req) -> HttpResponse(200, "", "ok"))
+        router = DynamicRouter()
+        ret = route!(router, :get, "/test", (req) -> Response(200, "", "ok"))
         @test ret === router  # returns the router for chaining
 
         # Verify it registered correctly

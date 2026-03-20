@@ -43,12 +43,12 @@ end
 - `max_body_size`: Max request body size in bytes.
 - `drain_timeout_ms`: Shutdown drain timeout.
 """
-mutable struct ServerCore{R <: AbstractRoute, A <: AbstractApp, W <: AbstractWsRoute}
+mutable struct ServerCore{R <: AbstractRouter, S <: StaticRouter, W <: AbstractWsRouter}
     manager::Manager
     handler::Ptr{Cvoid}
     timeout::Cint
     master::Union{Nothing,Task}
-    app::A
+    static::S
     router::R
     ws_router::W
     ws_connections::Dict{Int,String}
@@ -57,10 +57,10 @@ mutable struct ServerCore{R <: AbstractRoute, A <: AbstractApp, W <: AbstractWsR
     max_body_size::Int
     drain_timeout_ms::Int
 
-    function ServerCore(timeout::Integer, router::R, app::A=NoApp(), ws_router::W=NoWsRouter(); max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS, c_handler::Ptr{Cvoid}=C_NULL) where {R <: AbstractRoute, A <: AbstractApp, W <: AbstractWsRoute}
-        return new{R, A, W}(
+    function ServerCore(timeout::Integer, router::R, static::S=NoStaticRouter(), ws_router::W=NoWsRouter(); max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS, c_handler::Ptr{Cvoid}=C_NULL) where {R <: AbstractRouter, S <: StaticRouter, W <: AbstractWsRouter}
+        return new{R, S, W}(
             Manager(empty=true), c_handler, Cint(timeout), nothing,
-            app, router, ws_router, Dict{Int,String}(),
+            static, router, ws_router, Dict{Int,String}(),
             Threads.Atomic{Bool}(false), Function[],
             max_body_size, drain_timeout_ms
         )

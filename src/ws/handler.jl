@@ -14,10 +14,10 @@ function handle_ws_message!(server::AbstractServer, request::IdWsMessage)
 end
 
 function _handle_dynamic_ws_message!(server::AbstractServer, request::IdWsMessage)
-    handlers = get_ws_handlers(server, request.uri)
-    if handlers !== nothing
+    endpoint = get_ws_endpoint(server, request.uri)
+    if endpoint !== nothing
         try
-            res = handlers.on_message(request.payload)
+            res = endpoint.on_message(request.payload)
             if res isa WsTextMessage
                 return IdWsMessage(request.id, res, request.uri)
             elseif res isa WsBinaryMessage
@@ -35,11 +35,11 @@ function _handle_dynamic_ws_message!(server::AbstractServer, request::IdWsMessag
 end
 
 """
-    get_ws_handlers(server, uri) → WsHandlers or nothing
+    get_ws_endpoint(server, uri) → WsEndpoint or nothing
 
-Look up the WebSocket handlers for a given URI path.
+Look up the WebSocket endpoint for a given URI path.
 """
-function get_ws_handlers(server::AbstractServer, uri::String)
+function get_ws_endpoint(server::AbstractServer, uri::String)
     server.core.ws_router isa NoWsRouter && return nothing
     return get(server.core.ws_router.routes, uri, nothing)
 end
@@ -69,10 +69,10 @@ function _check_dynamic_ws_upgrade(server::AbstractServer, conn::MgConnection, e
 
         server.core.ws_connections[Int(conn)] = uri
 
-        handlers = server.core.ws_router.routes[uri]
-        if handlers.has_on_open
+        endpoint = server.core.ws_router.routes[uri]
+        if endpoint.has_on_open
             try
-                handlers.on_open(req.payload)
+                endpoint.on_open(req.payload)
             catch e
                 @error "WebSocket on_open error" exception = (e, catch_backtrace())
             end
@@ -141,10 +141,10 @@ function cleanup_ws_connection!(server::AbstractServer, conn::MgConnection)
     uri = get(server.core.ws_connections, conn_id, nothing)
 
     if uri !== nothing
-        handlers = get_ws_handlers(server, uri)
-        if handlers !== nothing && handlers.has_on_close
+        endpoint = get_ws_endpoint(server, uri)
+        if endpoint !== nothing && endpoint.has_on_close
             try
-                handlers.on_close()
+                endpoint.on_close()
             catch e
                 @error "WebSocket on_close error" exception = (e, catch_backtrace())
             end
@@ -155,15 +155,15 @@ function cleanup_ws_connection!(server::AbstractServer, conn::MgConnection)
 end
 
 """
-    send_ws(conn, message::String) — Send a text WebSocket message.
+    send_ws!(conn, message::String) — Send a text WebSocket message.
 """
-function send_ws(conn::MgConnection, message::String)
+function send_ws!(conn::MgConnection, message::String)
     mg_ws_send(conn, message, WS_OP_TEXT)
 end
 
 """
-    send_ws(conn, payload::Vector{UInt8}) — Send a binary WebSocket message.
+    send_ws!(conn, payload::Vector{UInt8}) — Send a binary WebSocket message.
 """
-function send_ws(conn::MgConnection, payload::Vector{UInt8})
+function send_ws!(conn::MgConnection, payload::Vector{UInt8})
     mg_ws_send(conn, payload, WS_OP_BINARY)
 end

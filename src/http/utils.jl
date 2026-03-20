@@ -138,12 +138,12 @@ Missing keys default to empty string, zero, `false`, or `nothing` as appropriate
 end
 
 """
-    to_headers(headers::Dict{String,String}) → String
+    format_headers(headers::Dict{String,String}) → String
 
 Serialize a dictionary of headers into the `"Key: Value\\r\\n"` format
 expected by the Mongoose C library's `mg_http_reply`.
 """
-function to_headers(headers::Dict{String,String})
+function format_headers(headers::Dict{String,String})
     io = IOBuffer()
     for (k, v) in headers
         print(io, k, ": ", v, "\r\n")

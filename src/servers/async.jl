@@ -10,55 +10,55 @@
 # Thread-Safety Invariant
 `connections` and `ws_connections` are ONLY accessed from the event-loop thread.
 """
-mutable struct AsyncServer{R <: AbstractRoute, A <: AbstractApp, W <: AbstractWsRoute} <: AbstractServer
-    core::ServerCore{R, A, W}
+mutable struct AsyncServer{R <: AbstractRouter, S <: StaticRouter, W <: AbstractWsRouter} <: AbstractServer
+    core::ServerCore{R, S, W}
     workers::Vector{Task}
-    http_requests::Channel{IdRequest{HttpRequest}}
+    http_requests::Channel{IdRequest{Request}}
     ws_requests::Channel{IdWsMessage}
-    http_responses::Channel{IdResponse{HttpResponse}}
+    http_responses::Channel{IdResponse{Response}}
     ws_responses::Channel{IdWsMessage}
     connections::Dict{Int,MgConnection}
     nworkers::Int
     nqueue::Int
 
-    function AsyncServer{R, A, W}(core::ServerCore{R, A, W}, workers::Vector{Task},
-                                  http_reqs::Channel{IdRequest{HttpRequest}}, ws_reqs::Channel{IdWsMessage},
-                                  http_resps::Channel{IdResponse{HttpResponse}}, ws_resps::Channel{IdWsMessage},
-                                  conns::Dict{Int,MgConnection}, nw::Int, nq::Int) where {R <: AbstractRoute, A <: AbstractApp, W <: AbstractWsRoute}
-        server = new{R, A, W}(core, workers, http_reqs, ws_reqs, http_resps, ws_resps, conns, nw, nq)
+    function AsyncServer{R, S, W}(core::ServerCore{R, S, W}, workers::Vector{Task},
+                                  http_reqs::Channel{IdRequest{Request}}, ws_reqs::Channel{IdWsMessage},
+                                  http_resps::Channel{IdResponse{Response}}, ws_resps::Channel{IdWsMessage},
+                                  conns::Dict{Int,MgConnection}, nw::Int, nq::Int) where {R <: AbstractRouter, S <: StaticRouter, W <: AbstractWsRouter}
+        server = new{R, S, W}(core, workers, http_reqs, ws_reqs, http_resps, ws_resps, conns, nw, nq)
         finalizer(free_resources!, server)
         return server
     end
 end
 
-function build_AsyncServer(app, ws_router::AbstractWsRoute, c_handler::Ptr{Cvoid}, timeout::Integer, nworkers::Integer, nqueue::Integer, max_body_size::Integer, drain_timeout_ms::Integer; router::Router=Router())
+function build_AsyncServer(static, ws_router::AbstractWsRouter, c_handler::Ptr{Cvoid}, timeout::Integer, nworkers::Integer, nqueue::Integer, max_body_size::Integer, drain_timeout_ms::Integer; router::DynamicRouter=DynamicRouter())
     if c_handler == C_NULL
-        c_handler = Mongoose.get_c_handler_async(typeof(app))
+        c_handler = Mongoose.get_c_handler_async(typeof(static))
     end
-    core = ServerCore(timeout, router, app, ws_router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
-    return AsyncServer{typeof(router), typeof(app), typeof(ws_router)}(
+    core = ServerCore(timeout, router, static, ws_router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
+    return AsyncServer{typeof(router), typeof(static), typeof(ws_router)}(
         core, Task[],
-        Channel{IdRequest{HttpRequest}}(nqueue), Channel{IdWsMessage}(nqueue),
-        Channel{IdResponse{HttpResponse}}(nqueue), Channel{IdWsMessage}(nqueue),
+        Channel{IdRequest{Request}}(nqueue), Channel{IdWsMessage}(nqueue),
+        Channel{IdResponse{Response}}(nqueue), Channel{IdWsMessage}(nqueue),
         Dict{Int,MgConnection}(), nworkers, nqueue
     )
 end
 
-function AsyncServer(app=NoApp(), ws_router::AbstractWsRoute=NoWsRouter(); c_handler::Ptr{Cvoid}=C_NULL, timeout::Integer=0, nworkers::Integer=1, nqueue::Integer=1024, max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
-    return build_AsyncServer(app, ws_router, c_handler, timeout, nworkers, nqueue, max_body_size, drain_timeout_ms)
+function AsyncServer(static=NoStaticRouter(), ws_router::AbstractWsRouter=NoWsRouter(); c_handler::Ptr{Cvoid}=C_NULL, timeout::Integer=0, nworkers::Integer=1, nqueue::Integer=1024, max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
+    return build_AsyncServer(static, ws_router, c_handler, timeout, nworkers, nqueue, max_body_size, drain_timeout_ms)
 end
 
 function setup_resources!(server::AsyncServer)
     server.core.manager = Manager()
-    server.http_requests = Channel{IdRequest{HttpRequest}}(server.nqueue)
+    server.http_requests = Channel{IdRequest{Request}}(server.nqueue)
     server.ws_requests = Channel{IdWsMessage}(server.nqueue)
-    server.http_responses = Channel{IdResponse{HttpResponse}}(server.nqueue)
+    server.http_responses = Channel{IdResponse{Response}}(server.nqueue)
     server.ws_responses = Channel{IdWsMessage}(server.nqueue)
     server.connections = Dict{Int,MgConnection}()
     return
 end
 
-function worker_loop(server::AsyncServer, worker_index::Integer, router::AbstractRoute)
+function worker_loop(server::AsyncServer, worker_index::Integer, router::AbstractRouter)
     @info "Worker thread $worker_index started on thread $(Threads.threadid())"
     while server.core.running[]
         try

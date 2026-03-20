@@ -7,26 +7,26 @@
     Use `SyncServer()` for dynamic routing (route! API).
     Use `SyncServer(app)` for static routing (@router macro).
 """
-mutable struct SyncServer{R <: AbstractRoute, A <: AbstractApp, W <: AbstractWsRoute} <: AbstractServer
-    core::ServerCore{R, A, W}
+mutable struct SyncServer{R <: AbstractRouter, S <: StaticRouter, W <: AbstractWsRouter} <: AbstractServer
+    core::ServerCore{R, S, W}
 
-    function SyncServer{R, A, W}(core::ServerCore{R, A, W}) where {R <: AbstractRoute, A <: AbstractApp, W <: AbstractWsRoute}
-        server = new{R, A, W}(core)
+    function SyncServer{R, S, W}(core::ServerCore{R, S, W}) where {R <: AbstractRouter, S <: StaticRouter, W <: AbstractWsRouter}
+        server = new{R, S, W}(core)
         finalizer(free_resources!, server)
         return server
     end
 end
 
-function build_SyncServer(app, ws_router::AbstractWsRoute, c_handler::Ptr{Cvoid}, timeout::Integer, max_body_size::Integer, drain_timeout_ms::Integer; router::Router=Router())
+function build_SyncServer(static, ws_router::AbstractWsRouter, c_handler::Ptr{Cvoid}, timeout::Integer, max_body_size::Integer, drain_timeout_ms::Integer; router::DynamicRouter=DynamicRouter())
     if c_handler == C_NULL
-        c_handler = Mongoose.get_c_handler_sync(typeof(app))
+        c_handler = Mongoose.get_c_handler_sync(typeof(static))
     end
-    core = ServerCore(timeout, router, app, ws_router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
-    return SyncServer{typeof(router), typeof(app), typeof(ws_router)}(core)
+    core = ServerCore(timeout, router, static, ws_router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
+    return SyncServer{typeof(router), typeof(static), typeof(ws_router)}(core)
 end
 
-function SyncServer(app=NoApp(), ws_router::AbstractWsRoute=NoWsRouter(); c_handler::Ptr{Cvoid}=C_NULL, timeout::Integer=0, max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
-    return build_SyncServer(app, ws_router, c_handler, timeout, max_body_size, drain_timeout_ms)
+function SyncServer(static=NoStaticRouter(), ws_router::AbstractWsRouter=NoWsRouter(); c_handler::Ptr{Cvoid}=C_NULL, timeout::Integer=0, max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
+    return build_SyncServer(static, ws_router, c_handler, timeout, max_body_size, drain_timeout_ms)
 end
 
 function setup_resources!(server::SyncServer)

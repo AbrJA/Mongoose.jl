@@ -15,18 +15,12 @@ Here is a simple example of how to create a synchronous server and define a basi
 ```julia
 using Mongoose
 
-# Create a synchronous server
-server = SyncServer()
+# Define your routes
+router = Router()
+route!(router, :get, "/hello", (req) -> Response(200, "Hello!"))
 
-# Define a handler function
-function hello_world(req::Request, params::Dict{String,String})
-    return Response(200, Dict("Content-Type" => "text/plain"), "Hello from Mongoose.jl!")
-end
-
-# Register the route
-route!(server, :get, "/hello", hello_world)
-
-# Start the server
+# Create and start the server
+server = Server(router)
 start!(server, port=8000)
 
 # When done, shutdown the server

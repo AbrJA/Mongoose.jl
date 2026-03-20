@@ -26,7 +26,7 @@ function rate_limit_middleware(; max_requests::Int=100, window_seconds::Int=60)
     cleanup_interval = max(window_seconds * 2.0, 60.0)
 
     return function(request::AbstractRequest, params::Vector{Any}, next)
-        client_id = if request isa HttpRequest
+        client_id = if request isa Request
             get(request.headers, "x-forwarded-for", get(request.headers, "x-real-ip", "unknown"))
         elseif request isa ViewRequest
             h = header(request, "X-Forwarded-For")
@@ -66,7 +66,7 @@ function rate_limit_middleware(; max_requests::Int=100, window_seconds::Int=60)
 
         if !allowed
             retry_after = string(window_seconds)
-            return HttpResponse(429, "Content-Type: text/plain\r\nRetry-After: $retry_after\r\n", "429 Too Many Requests")
+            return Response(429, "Content-Type: text/plain\r\nRetry-After: $retry_after\r\n", "429 Too Many Requests")
         end
 
         return next()

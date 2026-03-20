@@ -15,24 +15,17 @@ This example demonstrates how to parse query parameters from the request URI.
 ```julia
 using Mongoose
 
-server = SyncServer()
-
-struct Person
-    name::String
-end
+router = Router()
 
 function greet(req::Request, params::Dict{String,String})
-    person = try
-        deserialize(Person, req.query)
-    catch e
-        return Response(400, Dict("Content-Type" => "text/plain"), "Invalid query parameters")
-    end
-    return Response(200, Dict("Content-Type" => "text/plain"), "Hi $(person.name)")
+    # Use built-in query parameter parsing if available, or manual:
+    name = get(parse_into(Dict, req.query), "name", "Guest")
+    return Response(200, "Hi $name")
 end
 
-route!(server, :get, "/greet", greet)
+route!(router, :get, "/greet", greet)
 
-# Start server on port 8080
+server = Server(router)
 start!(server, port=8080)
 ```
 
@@ -42,24 +35,18 @@ This example shows how to handle a POST request and parse a JSON body.
 
 ```julia
 using Mongoose
-using JSON
 
-server = SyncServer()
+router = Router()
 
 function saygoodbye(req::Request, params::Dict{String,String})
-    try
-        data = JSON.parse(req.body)
-        name = get(data, "name", "Friend")
-
-        response_data = Dict("message" => "Goodbye, $name!")
-        return Response(200, Dict("Content-Type" => "application/json"), JSON.json(response_data))
-    catch e
-        return Response(400, Dict("Content-Type" => "text/plain"), "Invalid JSON")
-    end
+    data = json_body(req)
+    name = get(data, "name", "Friend")
+    return json_response(Dict("message" => "Goodbye, $name!"))
 end
 
-route!(server, :post, "/saygoodbye", saygoodbye)
+route!(router, :post, "/saygoodbye", saygoodbye)
 
+server = Server(router)
 start!(server, port=8081)
 ```
 
@@ -70,19 +57,20 @@ For higher performance, use `AsyncServer` and start Julia with multiple threads 
 ```julia
 using Mongoose
 
-# Create an async server with 4 worker threads
-server = AsyncServer(nworkers=4)
+router = Router()
 
 function heavy_task(req::Request, params::Dict{String,String})
     # Simulate work
     s = sum(rand(1000000))
-    return Response(200, Dict("Content-Type" => "text/plain"), "Computed: $s")
+    return Response(200, "Computed: $s")
 end
 
-route!(server, :get, "/compute", heavy_task)
+route!(router, :get, "/compute", heavy_task)
 
-# Start non-blocking
-start!(server, port=8082, blocking=false)
+server = Server(router)
+
+# Start with 4 worker threads, non-blocking
+start!(server, port=8082, workers=4, blocking=false)
 
 # Do other things...
 
@@ -97,15 +85,16 @@ Mongoose.jl supports dynamic path parameters.
 ```julia
 using Mongoose
 
-server = SyncServer()
+router = Router()
 
 function get_user(req::Request, params::Dict{String,String})
     user_id = params["id"]
-    return Response(200, Dict("Content-Type" => "text/plain"), "User ID: $user_id")
+    return Response(200, "User ID: $user_id")
 end
 
 # Define route with parameter :id
-route!(server, :get, "/users/:id", get_user)
+route!(router, :get, "/users/:id", get_user)
 
+server = Server(router)
 start!(server, port=8083)
 ```
