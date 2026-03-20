@@ -2,6 +2,12 @@ using HTTP
 using Mongoose
 using Test
 
+@router TestApp begin
+    get("/hello", (req) -> Response(200, "", "Hello Static"))
+    get("/user/:id::Int", (req, id) -> Response(200, "", "User $id"))
+    ws("/chat", on_message=(msg) -> "Echo: $(msg.data)")
+end
+
 @testset "Mongoose.jl" begin
 
     # --- Helper Functions ---
@@ -414,6 +420,127 @@ using Test
             @test response.status == 200
             headers_dict = Dict(String(h.first) => String(h.second) for h in response.headers)
             @test headers_dict["Access-Control-Allow-Origin"] == "https://test.com"
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: Authentication Middleware ---
+    @testset "Authentication Middleware" begin
+        router = Router()
+        route!(router, :get, "/secure", (req) -> Response(200, "", "Secret Data"))
+
+        # 1. Bearer Auth
+        server_bearer = AsyncServer(router; workers=1)
+        use!(server_bearer, auth_bearer(token -> token == "magic-token"))
+        start!(server_bearer; port=8105, blocking=false)
+        sleep(0.5)
+
+        try
+            # Valid token
+            resp = HTTP.get("http://localhost:8105/secure"; headers=["Authorization" => "Bearer magic-token"])
+            @test resp.status == 200
+            @test String(resp.body) == "Secret Data"
+
+            # Invalid token
+            resp = HTTP.get("http://localhost:8105/secure"; headers=["Authorization" => "Bearer wrong"], status_exception=false)
+            @test resp.status == 403
+
+            # Missing header
+            resp = HTTP.get("http://localhost:8105/secure"; status_exception=false)
+            @test resp.status == 401
+        finally
+            shutdown!(server_bearer)
+        end
+
+        # 2. API Key Auth
+        server_api = AsyncServer(router; workers=1)
+        use!(server_api, auth_api_key(keys=Set(["key123"])))
+        start!(server_api; port=8106, blocking=false)
+        sleep(0.5)
+
+        try
+            # Valid key
+            resp = HTTP.get("http://localhost:8106/secure"; headers=["X-API-Key" => "key123"])
+            @test resp.status == 200
+
+            # Invalid key
+            resp = HTTP.get("http://localhost:8106/secure"; headers=["X-API-Key" => "wrong"], status_exception=false)
+            @test resp.status == 401
+        finally
+            shutdown!(server_api)
+        end
+    end
+
+    # --- Test: Rate Limiting Middleware ---
+    @testset "Rate Limiting Middleware" begin
+        router = Router()
+        route!(router, :get, "/limited", (req) -> Response(200, "", "OK"))
+
+        server = AsyncServer(router; workers=1)
+        # 2 requests per 10 seconds
+        use!(server, rate_limit(max_requests=2, window_seconds=10))
+        start!(server; port=8107, blocking=false)
+        sleep(0.5)
+
+        try
+            @test HTTP.get("http://localhost:8107/limited").status == 200
+            @test HTTP.get("http://localhost:8107/limited").status == 200
+            
+            # Third request should be limited
+            resp = HTTP.get("http://localhost:8107/limited"; status_exception=false)
+            @test resp.status == 429
+            @test haskey(Dict(resp.headers), "Retry-After")
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: Static Router (@router) ---
+    @testset "Static Router (@router)" begin
+        server = SyncServer(TestApp())
+        start!(server; port=8108, blocking=false)
+        sleep(0.5)
+
+        try
+            # Basic GET
+            resp = HTTP.get("http://localhost:8108/hello")
+            @test resp.status == 200
+            @test String(resp.body) == "Hello Static"
+
+            # Typed Parameter
+            resp = HTTP.get("http://localhost:8108/user/123")
+            @test resp.status == 200
+            @test String(resp.body) == "User 123"
+
+            # WebSocket
+            HTTP.WebSockets.open("ws://localhost:8108/chat") do ws
+                HTTP.WebSockets.send(ws, "ping")
+                @test String(HTTP.WebSockets.receive(ws)) == "Echo: ping"
+            end
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: Header Handling ---
+    @testset "Header Handling" begin
+        router = Router()
+        route!(router, :get, "/headers", (req) -> begin
+            user_agent = header(req, "User-Agent")
+            Response(200, "X-Custom: Received\r\n", "UA: $user_agent")
+        end)
+
+        server = AsyncServer(router; workers=1)
+        start!(server; port=8109, blocking=false)
+        sleep(0.5)
+
+        try
+            resp = HTTP.get("http://localhost:8109/headers"; headers=["User-Agent" => "TestClient"])
+            @test resp.status == 200
+            @test String(resp.body) == "UA: TestClient"
+            headers_dict = Dict(String(h.first) => String(h.second) for h in resp.headers)
+            @test headers_dict["X-Custom"] == "Received"
         finally
             shutdown!(server)
         end
