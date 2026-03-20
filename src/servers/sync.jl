@@ -7,17 +7,17 @@
     Use `SyncServer()` for dynamic routing (route! API).
     Use `SyncServer(app)` for static routing (@router macro).
 """
-mutable struct SyncServer{R <: Route, A, W <: WsRoute} <: AbstractServer
+mutable struct SyncServer{R <: AbstractRoute, A <: AbstractApp, W <: AbstractWsRoute} <: AbstractServer
     core::ServerCore{R, A, W}
 
-    function SyncServer{R, A, W}(core::ServerCore{R, A, W}) where {R, A, W}
+    function SyncServer{R, A, W}(core::ServerCore{R, A, W}) where {R <: AbstractRoute, A <: AbstractApp, W <: AbstractWsRoute}
         server = new{R, A, W}(core)
         finalizer(free_resources!, server)
         return server
     end
 end
 
-function build_SyncServer(app, ws_router::WsRoute, c_handler::Ptr{Cvoid}, timeout::Integer, max_body_size::Integer, drain_timeout_ms::Integer; router::Router=Router())
+function build_SyncServer(app, ws_router::AbstractWsRoute, c_handler::Ptr{Cvoid}, timeout::Integer, max_body_size::Integer, drain_timeout_ms::Integer; router::Router=Router())
     if c_handler == C_NULL
         c_handler = Mongoose.get_c_handler_sync(typeof(app))
     end
@@ -25,7 +25,7 @@ function build_SyncServer(app, ws_router::WsRoute, c_handler::Ptr{Cvoid}, timeou
     return SyncServer{typeof(router), typeof(app), typeof(ws_router)}(core)
 end
 
-function SyncServer(app=NoApp(), ws_router::WsRoute=NoWsRouter(); c_handler::Ptr{Cvoid}=C_NULL, timeout::Integer=0, max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
+function SyncServer(app=NoApp(), ws_router::AbstractWsRoute=NoWsRouter(); c_handler::Ptr{Cvoid}=C_NULL, timeout::Integer=0, max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
     return build_SyncServer(app, ws_router, c_handler, timeout, max_body_size, drain_timeout_ms)
 end
 

@@ -10,7 +10,7 @@
 # Thread-Safety Invariant
 `connections` and `ws_connections` are ONLY accessed from the event-loop thread.
 """
-mutable struct AsyncServer{R <: Route, A, W <: WsRoute} <: AbstractServer
+mutable struct AsyncServer{R <: AbstractRoute, A <: AbstractApp, W <: AbstractWsRoute} <: AbstractServer
     core::ServerCore{R, A, W}
     workers::Vector{Task}
     http_requests::Channel{IdRequest{HttpRequest}}
@@ -24,14 +24,14 @@ mutable struct AsyncServer{R <: Route, A, W <: WsRoute} <: AbstractServer
     function AsyncServer{R, A, W}(core::ServerCore{R, A, W}, workers::Vector{Task},
                                   http_reqs::Channel{IdRequest{HttpRequest}}, ws_reqs::Channel{IdWsMessage},
                                   http_resps::Channel{IdResponse{HttpResponse}}, ws_resps::Channel{IdWsMessage},
-                                  conns::Dict{Int,MgConnection}, nw::Int, nq::Int) where {R, A, W}
+                                  conns::Dict{Int,MgConnection}, nw::Int, nq::Int) where {R <: AbstractRoute, A <: AbstractApp, W <: AbstractWsRoute}
         server = new{R, A, W}(core, workers, http_reqs, ws_reqs, http_resps, ws_resps, conns, nw, nq)
         finalizer(free_resources!, server)
         return server
     end
 end
 
-function build_AsyncServer(app, ws_router::WsRoute, c_handler::Ptr{Cvoid}, timeout::Integer, nworkers::Integer, nqueue::Integer, max_body_size::Integer, drain_timeout_ms::Integer; router::Router=Router())
+function build_AsyncServer(app, ws_router::AbstractWsRoute, c_handler::Ptr{Cvoid}, timeout::Integer, nworkers::Integer, nqueue::Integer, max_body_size::Integer, drain_timeout_ms::Integer; router::Router=Router())
     if c_handler == C_NULL
         c_handler = Mongoose.get_c_handler_async(typeof(app))
     end
@@ -44,7 +44,7 @@ function build_AsyncServer(app, ws_router::WsRoute, c_handler::Ptr{Cvoid}, timeo
     )
 end
 
-function AsyncServer(app=NoApp(), ws_router::WsRoute=NoWsRouter(); c_handler::Ptr{Cvoid}=C_NULL, timeout::Integer=0, nworkers::Integer=1, nqueue::Integer=1024, max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
+function AsyncServer(app=NoApp(), ws_router::AbstractWsRoute=NoWsRouter(); c_handler::Ptr{Cvoid}=C_NULL, timeout::Integer=0, nworkers::Integer=1, nqueue::Integer=1024, max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
     return build_AsyncServer(app, ws_router, c_handler, timeout, nworkers, nqueue, max_body_size, drain_timeout_ms)
 end
 
@@ -58,7 +58,7 @@ function setup_resources!(server::AsyncServer)
     return
 end
 
-function worker_loop(server::AsyncServer, worker_index::Integer, router::Route)
+function worker_loop(server::AsyncServer, worker_index::Integer, router::AbstractRoute)
     @info "Worker thread $worker_index started on thread $(Threads.threadid())"
     while server.core.running[]
         try

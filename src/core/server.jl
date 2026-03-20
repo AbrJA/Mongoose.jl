@@ -43,7 +43,7 @@ end
 - `max_body_size`: Max request body size in bytes.
 - `drain_timeout_ms`: Shutdown drain timeout.
 """
-mutable struct ServerCore{R <: Route, A, W <: WsRoute}
+mutable struct ServerCore{R <: AbstractRoute, A <: AbstractApp, W <: AbstractWsRoute}
     manager::Manager
     handler::Ptr{Cvoid}
     timeout::Cint
@@ -57,7 +57,7 @@ mutable struct ServerCore{R <: Route, A, W <: WsRoute}
     max_body_size::Int
     drain_timeout_ms::Int
 
-    function ServerCore(timeout::Integer, router::R, app::A=NoApp(), ws_router::W=NoWsRouter(); max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS, c_handler::Ptr{Cvoid}=C_NULL) where {R <: Route, A, W <: WsRoute}
+    function ServerCore(timeout::Integer, router::R, app::A=NoApp(), ws_router::W=NoWsRouter(); max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS, c_handler::Ptr{Cvoid}=C_NULL) where {R <: AbstractRoute, A <: AbstractApp, W <: AbstractWsRoute}
         return new{R, A, W}(
             Manager(empty=true), c_handler, Cint(timeout), nothing,
             app, router, ws_router, Dict{Int,String}(),

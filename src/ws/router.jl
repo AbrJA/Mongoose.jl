@@ -2,13 +2,13 @@
     WebSocket router — maps URI paths to WebSocket handler callbacks.
 """
 
-abstract type WsRoute end
+abstract type AbstractWsRoute end
 
 """
     WsRouter — A path-based router for WebSocket endpoints.
     Maps URI strings to `WsHandlers` callbacks.
 """
-struct WsRouter <: WsRoute
+struct WsRouter <: AbstractWsRoute
     routes::Dict{String,WsHandlers}
     WsRouter() = new(Dict{String,WsHandlers}())
 end
@@ -16,7 +16,7 @@ end
 """
     NoWsRouter — Sentinel type indicating no WebSocket support is configured.
 """
-struct NoWsRouter <: WsRoute end
+struct NoWsRouter <: AbstractWsRoute end
 
 """
     ws!(server, path; on_message, on_open, on_close)

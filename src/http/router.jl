@@ -6,7 +6,7 @@
 """
     Node — A node in the radix trie for path-segment matching.
 """
-mutable struct Node <: Route
+mutable struct Node
     static::Dict{String,Node}                # static segment children
     dynamic::Union{Nothing,Node}             # parameter segment child (:param)
     param::Union{Nothing,String}             # parameter name (if dynamic node)
@@ -20,7 +20,7 @@ end
     Fixed — A leaf node for static (non-parameterized) routes.
     Provides O(1) lookup bypassing the trie entirely.
 """
-struct Fixed <: Route
+struct Fixed
     handlers::Dict{Symbol,Handler}
     Fixed() = new(Dict{Symbol,Handler}())
 end
@@ -28,7 +28,7 @@ end
 """
     Router — Top-level router combining fixed and dynamic routes.
 """
-struct Router <: Route
+struct Router <: AbstractRoute
     node::Node
     fixed::Dict{String,Fixed}
     Router() = new(Node(), Dict{String,Fixed}())

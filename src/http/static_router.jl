@@ -12,7 +12,7 @@ abstract type AbstractApp end
 """
     NoApp — Sentinel type indicating no static app is configured.
 """
-struct NoApp end
+struct NoApp <: AbstractApp end
 
 """
     static_dispatch(app, request) → HttpResponse
@@ -231,7 +231,7 @@ end
 
 """
     @router AppType block
-    
+
 Generate a static router for `AppType`.
 Routes are defined as: `METHOD("/path", handler)`
 Example:
@@ -266,7 +266,7 @@ macro router(app_type::Symbol, block)
             fn_data = Mongoose.mg_conn_get_fn_data(conn)
             fn_data == C_NULL && return nothing
             # Fully inferred AsyncServer recovery prevents dynamic dispatch errors in AOT
-            server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.AsyncServer{Mongoose.Router, $app_type, <:Mongoose.WsRoute}
+            server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.AsyncServer{Mongoose.Router, $app_type, <:Mongoose.AbstractWsRoute}
             Mongoose._invoke_dispatch(server, ev, conn, ev_data)
             return nothing
         end
@@ -276,7 +276,7 @@ macro router(app_type::Symbol, block)
             fn_data = Mongoose.mg_conn_get_fn_data(conn)
             fn_data == C_NULL && return nothing
             # Fully inferred SyncServer recovery
-            server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.SyncServer{Mongoose.Router, $app_type, <:Mongoose.WsRoute}
+            server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.SyncServer{Mongoose.Router, $app_type, <:Mongoose.AbstractWsRoute}
             Mongoose._invoke_dispatch(server, ev, conn, ev_data)
             return nothing
         end
