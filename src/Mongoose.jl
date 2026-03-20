@@ -9,7 +9,7 @@ export SyncServer, AsyncServer, Router, Request, Response,
        header, body, query,
        cors_middleware, rate_limit_middleware, bearer_auth_middleware, api_key_middleware,
        json_response, json_body,
-       @static_router
+       @router
 
 # 1. FFI Layer (Constants, Structs, Bindings)
 include("ffi/constants.jl")

@@ -8,13 +8,13 @@ function echo(req, name)
     Response(200, "Content-Type: text/plain\r\n", "Hello $(String(name))!")
 end
 
-@static_router MyApp begin
-    GET("/hello", greet)
-    GET("/echo/:name", echo)
+@router MyApp begin
+    get("/hello", greet)
+    get("/echo/:name", echo)
 end
 
 (@main)(ARGS) = begin
     server = SyncServer(MyApp())
-    start!(server, port=8099, blocking=true)
+    start!(server, port=8199, blocking=true)
     return 0
 end

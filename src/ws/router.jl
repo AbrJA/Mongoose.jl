@@ -14,5 +14,5 @@ function ws!(router::Router, path::AbstractString;
     return router
 end
 
-# Static router WS upgrade stub — overridden by @static_router macro
+# Static router WS upgrade stub — overridden by @router macro
 function static_ws_upgrade(::StaticRouter, ::String) nothing end

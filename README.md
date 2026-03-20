@@ -17,57 +17,60 @@
 
 ## ⚡ Quick Start: Your First Server
 
-Mongoose.jl uses a decoupled architecture: define your **Router**, then pass it to a **Server**.
+Mongoose.jl uses a decoupled architecture: define your **Router**, then pass it to a **Server** types (`AsyncServer` or `SyncServer`).
 
 ```julia
 using Mongoose
 
-# 1. Define your routes using an HttpRouter
-router = HttpRouter()
+# 1. Define your routes using a Router
+router = Router()
 
 route!(router, :get, "/hello", (req) -> begin
     Response(200, "Hello from Mongoose.jl!")
 end)
 
-route!(router, :get, "/greet/{name}", (req, name) -> begin
+# Capture path parameters with type annotations
+route!(router, :get, "/greet/:name", (req, name) -> begin
     body = Dict("message" => "Hello $name!", "status" => "ok")
     json_response(body)
 end)
 
-# 2. Create the server and start it
-server = Server(router)
+route!(router, :get, "/users/:id::Int", (req, id) -> begin
+    Response(200, "User ID is $id (type $(typeof(id)))")
+end)
 
-# Start with 4 worker threads
-start!(server, port=8080, workers=4)
+# 2. Create the server and start it
+# AsyncServer runs in background worker threads (default 4)
+server = AsyncServer(router; workers=4)
+
+# Start the server. blocking=true blocks the current thread (useful for AOT).
+start!(server, port=8080, blocking=false)
 ```
 
 ## ✨ Core Concepts
 
 ### 1. Routers
-Mongoose.jl provides two ways to handle routing for both HTTP and WebSockets:
+Mongoose.jl provides a flexible `Router` that handles both HTTP and WebSockets:
 
-*   **HttpRouter / WsRouter**: Standard dynamic path-based routing. Routes can be added or modified at runtime using `route!` or `ws!`.
-*   **StaticHttpRouter / StaticWsRouter**: Created via the `@router` and `@wsrouter` macros. They use compile-time dispatch and are required for **AOT compilation** with `juliac --trim=safe`.
+*   **Router**: Dynamic path-based routing. Routes can be added or modified at runtime using `route!` or `ws!`.
+*   **@router**: A macro to generate a static router. This uses compile-time dispatch and is required for **AOT compilation** with `juliac --trim=safe`.
 
 ```julia
-# Static HTTP Router Example
+# Static Router Example
 @router MyApi begin
-    GET("/", (req) -> Response(200, "Static Hello"))
+    get("/", (req) -> Response(200, "Static Hello"))
+    ws("/chat", on_message=(msg) -> "Echo: $(msg.data)")
 end
 
-# Static WS Router Example
-@wsrouter MyWs begin
-    WS("/chat", on_message=(msg) -> "Echo: $(msg.data)")
-end
-
-server = Server(MyApi(), static_ws=MyWs())
+# Use with SyncServer for AOT compatibility
+server = SyncServer(MyApi())
 start!(server, port=8081)
 ```
 
 ### 2. Server Types
 You can choose the execution model that fits your needs:
-*   **AsyncServer**: Processes requests in a background worker pool. This is the default when calling `Server(router)`.
-*   **SyncServer**: Processes requests in the main thread (blocking). Ideal for low-latency or simple scripts.
+*   **AsyncServer**: Processes requests in a background worker pool.
+*   **SyncServer**: Processes requests in the main thread (blocking). Ideal for low-latency, simple scripts, or AOT-compiled binaries.
 
 ### 3. Request and Response
 - **`Request`**: Contains `method`, `uri`, `headers`, and `body`.
@@ -79,7 +82,7 @@ You can choose the execution model that fits your needs:
 Mongoose.jl includes built-in middleware for common tasks like CORS and Rate Limiting.
 
 ```julia
-server = Server(router)
+server = AsyncServer(router)
 use!(server, cors_middleware(origins="*"))
 use!(server, rate_limit_middleware(requests=100, window=60))
 ```
@@ -88,10 +91,10 @@ use!(server, rate_limit_middleware(requests=100, window=60))
 Seamlessly integrate WebSockets into your application.
 
 ```julia
-ws_router = WsRouter()
-ws!(ws_router, "/chat", on_message=(msg) -> "Echo: $(msg.data)")
+router = Router()
+ws!(router, "/chat", on_message=(msg) -> "Echo: $(msg.data)")
 
-server = Server(router, ws_router=ws_router)
+server = AsyncServer(router)
 start!(server, port=8080)
 ```
 
@@ -107,7 +110,7 @@ json_response(Dict("key" => "value"))
 ```
 
 ## 🏗 Ahead-of-Time (AOT) Compilation
-Mongoose.jl is designed to be fully compatible with `juliac --trim=safe`. By using the `@router` macro, you can compile your entire web application into a tiny, standalone binary with no dynamic dispatch.
+Mongoose.jl is designed to be fully compatible with `juliac --trim=safe`. By using the `@router` macro and `SyncServer`, you can compile your entire web application into a tiny, standalone binary with no dynamic dispatch.
 
 ## 📚 Documentation
 
