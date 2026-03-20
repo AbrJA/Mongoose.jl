@@ -21,7 +21,7 @@ using Test
 
     # --- Test 1: SyncServer ---
     @testset "SyncServer" begin
-        server = Server()
+        server = SyncServer()
         route!(server, :get, "/hello", greet)
 
         start!(server, port=8091, blocking=false)
@@ -37,12 +37,12 @@ using Test
 
     # --- Test 2: AsyncServer (Default) ---
     @testset "AsyncServer" begin
-        server = Server()
+        server = AsyncServer(; workers=1)
         route!(server, :get, "/hello", greet)
         route!(server, :get, "/echo/:name", echo)
         route!(server, :get, "/error", error_handler)
 
-        start!(server, port=8092, blocking=false, workers=1)
+        start!(server, port=8092, blocking=false)
 
         try
             # Basic GET
@@ -73,7 +73,7 @@ using Test
 
     # --- Test 3: Typed Route Parameters ---
     @testset "Typed Route Parameters" begin
-        server = Server()
+        server = AsyncServer(; workers=1)
         route!(server, :get, "/users/:id::Int", (req, id) -> begin
             Response(200, Dict("Content-Type" => "text/plain"), "User $(id) type=$(typeof(id))")
         end)
@@ -84,7 +84,7 @@ using Test
             Response(200, Dict("Content-Type" => "text/plain"), "Hello $(name) type=$(typeof(name))")
         end)
 
-        start!(server, port=8100, blocking=false, workers=1)
+        start!(server, port=8100, blocking=false)
         sleep(0.5)
 
         try
@@ -116,9 +116,9 @@ using Test
         n_threads = Threads.nthreads()
         @info "Running multithreading tests with $n_threads threads"
 
-        server = Server()
+        server = AsyncServer(; workers=4)
         route!(server, :get, "/echo/:name", echo)
-        start!(server, port=8093, blocking=false, workers=4)
+        start!(server, port=8093, blocking=false)
 
         try
             results = Channel{Tuple{Int,Int,String}}(10)
@@ -142,14 +142,14 @@ using Test
 
     # --- Test 4: Multiple Instances ---
     @testset "Multiple Instances" begin
-        server1 = Server()
-        server2 = Server()
+        server1 = AsyncServer(; workers=1)
+        server2 = AsyncServer(; workers=1)
 
         route!(server1, :get, "/s1", (req) -> Response(200, Dict{String,String}(), "Server 1"))
         route!(server2, :get, "/s2", (req) -> Response(200, Dict{String,String}(), "Server 2"))
 
-        start!(server1, port=8094, blocking=false, workers=1)
-        start!(server2, port=8095, blocking=false, workers=1)
+        start!(server1, port=8094, blocking=false)
+        start!(server2, port=8095, blocking=false)
         sleep(1)
 
         try
@@ -166,11 +166,11 @@ using Test
 
     # --- Test 5: CORS Middleware ---
     @testset "CORS Middleware" begin
-        server = Server()
+        server = AsyncServer(; workers=1)
         use!(server, cors_middleware(origins="https://example.com"))
         route!(server, :get, "/api/data", (req) -> Response(200, Dict("Content-Type" => "application/json"), "{\"ok\":true}"))
 
-        start!(server, port=8096, blocking=false, workers=1)
+        start!(server, port=8096, blocking=false)
         sleep(0.5)
 
         try
@@ -191,14 +191,14 @@ using Test
 
     # --- Test 6: JSON Integration ---
     @testset "JSON Integration" begin
-        server = Server()
+        server = AsyncServer(; workers=1)
         route!(server, :get, "/api/json", (req) -> json_response(Dict("message" => "hello", "count" => 42)))
         route!(server, :post, "/api/echo", (req) -> begin
             data = json_body(req)
             json_response(data)
         end)
 
-        start!(server, port=8097, blocking=false, workers=1)
+        start!(server, port=8097, blocking=false)
         sleep(0.5)
 
         try
@@ -244,10 +244,10 @@ using Test
 
     # --- Test 8: Body Size Limit ---
     @testset "Body Size Limit" begin
-        server = Server()
+        server = AsyncServer(; workers=1, max_body_size=100)
         route!(server, :post, "/upload", (req) -> Response(200, "", "OK"))
 
-        start!(server, port=8099, blocking=false, workers=1, max_body_size=100)
+        start!(server, port=8099, blocking=false)
         sleep(0.5)
 
         try
@@ -266,7 +266,7 @@ using Test
 
     # --- WebSocket Tests ---
     @testset "WebSocket Tests" begin
-        server = Server(ws_router=WsRouter())
+        server = AsyncServer(ws_router=WsRouter(), workers=1)
 
         ws!(server, "/chat", on_message=function (msg::WsMessage)
                 if msg isa WsTextMessage
@@ -282,7 +282,7 @@ using Test
                 println("Server closed WS connection!")
             end)
 
-        start!(server, port=8097, blocking=false, workers=1)
+        start!(server, port=8097, blocking=false)
         sleep(0.5)
 
         HTTP.WebSockets.open("ws://localhost:8097/chat") do ws
@@ -299,13 +299,13 @@ using Test
         shutdown!(server)
     end
 
-    # --- Test: Server (unified API, sync mode) ---
-    @testset "Server Sync Mode" begin
+    # --- Test: SyncServer with pre-built router ---
+    @testset "SyncServer with Router" begin
         router = HttpRouter()
         route!(router, :get, "/hello", greet)
         route!(router, :get, "/echo/:name", echo)
 
-        server = Server(router)
+        server = SyncServer(router)
         start!(server; port=8101, blocking=false)
 
         try
@@ -321,15 +321,15 @@ using Test
         end
     end
 
-    # --- Test: Server (unified API, async mode with workers) ---
-    @testset "Server Async Mode" begin
+    # --- Test: AsyncServer with pre-built router ---
+    @testset "AsyncServer with Router" begin
         router = HttpRouter()
         route!(router, :get, "/hello", greet)
         route!(router, :get, "/echo/:name", echo)
         route!(router, :get, "/error", error_handler)
 
-        server = Server(router)
-        start!(server; port=8102, blocking=false, workers=4)
+        server = AsyncServer(router; workers=4)
+        start!(server; port=8102, blocking=false)
 
         try
             response = HTTP.get("http://localhost:8102/hello")
@@ -350,14 +350,13 @@ using Test
         end
     end
 
-    # --- Test: Server restart with different worker counts ---
-    @testset "Server Restart" begin
+    # --- Test: Restart with shared router ---
+    @testset "Restart with Shared Router" begin
         router = HttpRouter()
         route!(router, :get, "/ping", (req) -> Response(200, "", "pong"))
 
-        server = Server(router)
-
         # Start as sync
+        server = SyncServer(router)
         start!(server; port=8103, blocking=false)
         try
             response = HTTP.get("http://localhost:8103/ping")
@@ -367,8 +366,9 @@ using Test
             shutdown!(server)
         end
 
-        # Restart as async with 2 workers
-        start!(server; port=8103, blocking=false, workers=2)
+        # Restart as async with 2 workers (same router)
+        server = AsyncServer(router; workers=2)
+        start!(server; port=8103, blocking=false)
         try
             response = HTTP.get("http://localhost:8103/ping")
             @test response.status == 200
@@ -377,8 +377,9 @@ using Test
             shutdown!(server)
         end
 
-        # Restart again as async with 4 workers
-        start!(server; port=8103, blocking=false, workers=4)
+        # Restart again as async with 4 workers (same router)
+        server = AsyncServer(router; workers=4)
+        start!(server; port=8103, blocking=false)
         try
             response = HTTP.get("http://localhost:8103/ping")
             @test response.status == 200
@@ -388,14 +389,14 @@ using Test
         end
     end
 
-    # --- Test: Server with middleware ---
-    @testset "Server Middleware" begin
+    # --- Test: AsyncServer with middleware ---
+    @testset "AsyncServer Middleware" begin
         router = HttpRouter()
         route!(router, :get, "/api/data", (req) -> Response(200, "Content-Type: application/json\r\n", "{\"ok\":true}"))
 
-        server = Server(router)
+        server = AsyncServer(router; workers=2)
         use!(server, cors_middleware(origins="https://test.com"))
-        start!(server; port=8104, blocking=false, workers=2)
+        start!(server; port=8104, blocking=false)
         sleep(0.5)
 
         try

@@ -2,7 +2,7 @@ module Mongoose
 
 using Mongoose_jll
 
-export Server, HttpRouter, Request, Response,
+export SyncServer, AsyncServer, HttpRouter, Request, Response,
        start!, shutdown!, route!, use!,
        parse_into,
        ws!, WsTextMessage, WsBinaryMessage, WsMessage, WsRouter,
@@ -51,6 +51,6 @@ include("middleware/rate_limit.jl")
 include("middleware/auth.jl")
 
 # 8. User-Facing API
-include("server.jl")          # Unified Server struct
+include("server.jl")          # route!/ws!/use! on AbstractServer
 
 end # module Mongoose

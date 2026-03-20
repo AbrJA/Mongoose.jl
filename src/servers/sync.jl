@@ -2,12 +2,19 @@
     SyncServer — Single-threaded blocking server methods.
 """
 
-function build_SyncServer(http::AbstractHttpRouter, ws::AbstractWsRouter, c_handler::Ptr{Cvoid}, timeout::Integer, max_body_size::Integer, drain_timeout_ms::Integer)
-    if c_handler == C_NULL
-        c_handler = Mongoose.get_c_handler_sync(typeof(http))
-    end
-    core = ServerCore(timeout, http, ws; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
-    server = SyncServer{typeof(http), typeof(ws)}(core)
+"""
+    SyncServer(router=HttpRouter(); ws_router=NoWsRouter(), timeout=0, max_body_size, drain_timeout_ms)
+
+Create a single-threaded blocking server. Compatible with `juliac --trim=safe`.
+"""
+function SyncServer(http::AbstractHttpRouter=HttpRouter();
+                    ws_router::AbstractWsRouter=NoWsRouter(),
+                    timeout::Integer=0,
+                    max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
+                    drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
+    c_handler = Mongoose.get_c_handler_sync(typeof(http))
+    core = ServerCore(timeout, http, ws_router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
+    server = SyncServer{typeof(http), typeof(ws_router)}(core)
     finalizer(free_resources!, server)
     return server
 end

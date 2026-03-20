@@ -2,16 +2,26 @@
     AsyncServer — Multi-threaded server methods.
 """
 
-function build_AsyncServer(http::AbstractHttpRouter, ws::AbstractWsRouter, c_handler::Ptr{Cvoid}, timeout::Integer, nworkers::Integer, nqueue::Integer, max_body_size::Integer, drain_timeout_ms::Integer)
-    if c_handler == C_NULL
-        c_handler = Mongoose.get_c_handler_async(typeof(http))
-    end
-    core = ServerCore(timeout, http, ws; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
-    server = AsyncServer{typeof(http), typeof(ws)}(
+"""
+    AsyncServer(router=HttpRouter(); ws_router=NoWsRouter(), workers=4, nqueue=1024, timeout=0, max_body_size, drain_timeout_ms)
+
+Create a multi-threaded server with `workers` background tasks.
+Not compatible with `juliac --trim=safe`.
+"""
+function AsyncServer(http::AbstractHttpRouter=HttpRouter();
+                     ws_router::AbstractWsRouter=NoWsRouter(),
+                     workers::Integer=4,
+                     nqueue::Integer=1024,
+                     timeout::Integer=0,
+                     max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
+                     drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
+    c_handler = Mongoose.get_c_handler_async(typeof(http))
+    core = ServerCore(timeout, http, ws_router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
+    server = AsyncServer{typeof(http), typeof(ws_router)}(
         core, Task[],
         Channel{IdRequest{Request}}(nqueue), Channel{IdWsMessage}(nqueue),
         Channel{IdResponse{Response}}(nqueue), Channel{IdWsMessage}(nqueue),
-        Dict{Int,MgConnection}(), nworkers, nqueue
+        Dict{Int,MgConnection}(), Int(workers), Int(nqueue)
     )
     finalizer(free_resources!, server)
     return server
