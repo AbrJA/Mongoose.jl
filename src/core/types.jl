@@ -7,7 +7,6 @@ abstract type AbstractRequest <: AbstractMessage end
 abstract type AbstractResponse <: AbstractMessage end
 
 abstract type AbstractServer end
-abstract type AbstractRouter end
 
 """
     Handler — Type alias for user route handlers.

@@ -33,7 +33,12 @@ end
 start_workers!(::AbstractServer) = nothing
 
 function stop_workers!(server::AsyncServer)
-    # Drain handles the cleanup of channels implicitly if workers check core.running
+    # Close channels to unblock any workers stuck on take!
+    close(server.http_requests)
+    close(server.ws_requests)
+    close(server.http_responses)
+    close(server.ws_responses)
+
     for t in server.workers
         try wait(t) catch end
     end
@@ -48,7 +53,7 @@ function run_event_loop(server::AsyncServer)
         mg_mgr_poll(server.core.manager.ptr, server.core.timeout)
 
         # Dispatch responses from workers back to C library
-        while isready(server.http_responses)
+        while isopen(server.http_responses) && isready(server.http_responses)
             id_res = take!(server.http_responses)
             conn = get(server.connections, id_res.id, nothing)
             if conn !== nothing
@@ -57,7 +62,7 @@ function run_event_loop(server::AsyncServer)
             end
         end
 
-        while isready(server.ws_responses)
+        while isopen(server.ws_responses) && isready(server.ws_responses)
             id_res = take!(server.ws_responses)
             conn = get(server.connections, id_res.id, nothing)
             if conn !== nothing
@@ -73,27 +78,31 @@ function run_event_loop(server::AsyncServer)
 end
 
 function worker_loop(server::AsyncServer)
-    while server.core.running[]
-        # Try HTTP
-        if isready(server.http_requests)
-            req = take!(server.http_requests)
-            res = try
-                _dispatch_http(server, req.payload)
-            catch e
-                @error "Handler error" exception=(e, catch_backtrace())
-                Response(500, "Content-Type: text/plain\r\n", "500 Internal Server Error")
+    try
+        while server.core.running[]
+            # Try HTTP
+            if isready(server.http_requests)
+                req = take!(server.http_requests)
+                res = try
+                    _dispatch_http(server, req.payload)
+                catch e
+                    @error "Handler error" exception=(e, catch_backtrace())
+                    Response(500, "Content-Type: text/plain\r\n", "500 Internal Server Error")
+                end
+                put!(server.http_responses, IdResponse(req.id, res))
+            # Try WS
+            elseif isready(server.ws_requests)
+                req = take!(server.ws_requests)
+                res = handle_ws_message!(server, req)
+                if res !== nothing
+                    put!(server.ws_responses, res)
+                end
+            else
+                sleep(0.0001)
             end
-            put!(server.http_responses, IdResponse(req.id, res))
-        # Try WS
-        elseif isready(server.ws_requests)
-            req = take!(server.ws_requests)
-            res = handle_ws_message!(server, req)
-            if res !== nothing
-                put!(server.ws_responses, res)
-            end
-        else
-            sleep(0.0001)
         end
+    catch e
+        e isa InvalidStateException || rethrow(e)
     end
 end
 

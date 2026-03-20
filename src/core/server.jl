@@ -117,16 +117,6 @@ function start_master!(server::AbstractServer)
     return
 end
 
-function run_blocking!(server::AbstractServer)
-    try
-        wait(server.core.master)
-    catch e
-    finally
-        shutdown!(server)
-    end
-    return
-end
-
 function stop_master!(server::AbstractServer)
     if !isnothing(server.core.master)
         try wait(server.core.master) catch end

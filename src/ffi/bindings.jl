@@ -72,13 +72,6 @@ function mg_log_set_level(level::Cint)
 end
 
 """
-    mg_wakeup(mgr, id, arg, fn) — Wake up a specific connection from another thread.
-"""
-function mg_wakeup(mgr::Ptr{Cvoid}, id::Culong, arg::Ptr{Cvoid}, fn::Ptr{Cvoid})
-    ccall((:mg_wakeup, libmongoose), Cvoid, (Ptr{Cvoid}, Culong, Ptr{Cvoid}, Ptr{Cvoid}), mgr, id, arg, fn)
-end
-
-"""
     mg_send(conn, buf) — Send raw bytes on a connection.
 """
 function mg_send(conn::MgConnection, buf::Vector{UInt8})

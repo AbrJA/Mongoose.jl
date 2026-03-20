@@ -244,10 +244,10 @@ using Test
 
     # --- Test 8: Body Size Limit ---
     @testset "Body Size Limit" begin
-        server = Server(max_body_size=100)
+        server = Server()
         route!(server, :post, "/upload", (req) -> Response(200, "", "OK"))
 
-        start!(server, port=8099, blocking=false, workers=1)
+        start!(server, port=8099, blocking=false, workers=1, max_body_size=100)
         sleep(0.5)
 
         try
@@ -266,7 +266,7 @@ using Test
 
     # --- WebSocket Tests ---
     @testset "WebSocket Tests" begin
-        server = Server(NoStaticHttpRouter(), ws_router=WsRouter())
+        server = Server(ws_router=WsRouter())
 
         ws!(server, "/chat", on_message=function (msg::WsMessage)
                 if msg isa WsTextMessage

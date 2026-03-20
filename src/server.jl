@@ -5,28 +5,18 @@ mutable struct Server
     http::AbstractHttpRouter
     ws::AbstractWsRouter
     middlewares::Vector{Function}
-    timeout::Int
-    max_body_size::Int
-    drain_timeout_ms::Int
-    nqueue::Int
     _runtime::Union{Nothing, AbstractServer}
 end
 
 """
-    Server(router=HttpRouter(); ws_router=NoWsRouter(), timeout, max_body_size, drain_timeout_ms, nqueue)
+    Server(router=HttpRouter(); ws_router=NoWsRouter())
 
 Create a server with the given HTTP and WebSocket routers.
-Routers can be either dynamic or static (generated via macros).
-`HttpRouter()` and `WsRouter()` create dynamic routers.
+Routers can be either dynamic or static (generated via `@router`).
 """
 function Server(router::AbstractHttpRouter=HttpRouter();
-                ws_router::AbstractWsRouter=NoWsRouter(),
-                timeout::Integer=0,
-                max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
-                drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS,
-                nqueue::Integer=1024)
-    return Server(router, ws_router, Function[], Int(timeout),
-                  Int(max_body_size), Int(drain_timeout_ms), Int(nqueue), nothing)
+                ws_router::AbstractWsRouter=NoWsRouter())
+    return Server(router, ws_router, Function[], nothing)
 end
 
 # --- Delegation methods ---
@@ -56,17 +46,41 @@ end
 
 # --- Lifecycle ---
 
-function start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=true, workers::Integer=0)
+"""
+    start!(server; host, port, blocking, workers, timeout, max_body_size, drain_timeout_ms, nqueue)
+
+Start the server. Runtime parameters are specified here rather than at construction,
+so the same `Server` can be restarted with different configurations.
+
+# Keyword Arguments
+- `host::AbstractString`: IP address to bind to (default: `"127.0.0.1"`).
+- `port::Integer`: Port number to listen on (default: `8080`).
+- `blocking::Bool`: If `true`, blocks until the server is stopped (default: `true`).
+- `workers::Integer`: Number of worker threads. `0` = sync mode, `>0` = async mode (default: `0`).
+- `timeout::Integer`: Poll timeout in milliseconds for the event loop (default: `0`).
+- `max_body_size::Integer`: Maximum HTTP request body size in bytes (default: 1 MB).
+- `drain_timeout_ms::Integer`: Graceful shutdown drain timeout in milliseconds (default: 5000).
+- `nqueue::Integer`: Channel buffer size for async mode (default: `1024`).
+"""
+function start!(server::Server;
+                host::AbstractString="127.0.0.1",
+                port::Integer=8080,
+                blocking::Bool=true,
+                workers::Integer=0,
+                timeout::Integer=0,
+                max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
+                drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS,
+                nqueue::Integer=1024)
     server._runtime !== nothing && throw(ServerError("Server is already running. Call shutdown! first."))
 
     if workers > 0
         runtime = build_AsyncServer(server.http, server.ws, C_NULL,
-                                    server.timeout, workers, server.nqueue,
-                                    server.max_body_size, server.drain_timeout_ms)
+                                    timeout, workers, nqueue,
+                                    max_body_size, drain_timeout_ms)
     else
         runtime = build_SyncServer(server.http, server.ws, C_NULL,
-                                   server.timeout, server.max_body_size,
-                                   server.drain_timeout_ms)
+                                   timeout, max_body_size,
+                                   drain_timeout_ms)
     end
 
     append!(runtime.core.middlewares, server.middlewares)

@@ -2,11 +2,10 @@ module Mongoose
 
 using Mongoose_jll
 
-export Server, AsyncServer, SyncServer, HttpRouter, StaticHttpRouter,
-       Request, Response, NoStaticHttpRouter,
+export Server, HttpRouter, Request, Response,
        start!, shutdown!, route!, use!,
-       parse_into, format_headers,
-       ws!, WsTextMessage, WsBinaryMessage, WsMessage, WsRouter, StaticWsRouter, NoWsRouter,
+       parse_into,
+       ws!, WsTextMessage, WsBinaryMessage, WsMessage, WsRouter,
        header, body, query,
        cors_middleware, rate_limit_middleware, bearer_auth_middleware, api_key_middleware,
        json_response, json_body,
@@ -20,13 +19,13 @@ include("ffi/bindings.jl")
 # 2. Base Types and Errors
 include("core/types.jl")
 include("core/errors.jl")
-include("http/types.jl")      # Defines AbstractRouter
+include("http/types.jl")      # Defines AbstractHttpRouter
 include("ws/types.jl")        # Defines AbstractWsRouter
 
 # 3. Router Implementations
 include("http/static_router.jl") # Define StaticHttpRouter first
 include("http/router.jl")        # HttpRouter
-include("ws/router.jl")          # WsRouter, StaticWsRouter, CompositeWsRouter
+include("ws/router.jl")          # WsRouter, StaticWsRouter, NoWsRouter
 
 # 4. Core Server Logic
 include("core/server.jl")     # ServerCore
