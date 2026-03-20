@@ -2,14 +2,14 @@ module Mongoose
 
 using Mongoose_jll
 
-export SyncServer, AsyncServer, HttpRouter, Request, Response,
+export SyncServer, AsyncServer, Router, Request, Response,
        start!, shutdown!, route!, use!,
        parse_into,
-       ws!, WsTextMessage, WsBinaryMessage, WsMessage, WsRouter,
+       ws!, WsTextMessage, WsBinaryMessage, WsMessage,
        header, body, query,
        cors_middleware, rate_limit_middleware, bearer_auth_middleware, api_key_middleware,
        json_response, json_body,
-       @router
+       @static_router
 
 # 1. FFI Layer (Constants, Structs, Bindings)
 include("ffi/constants.jl")
@@ -24,14 +24,14 @@ include("ws/types.jl")        # Defines AbstractWsRouter
 
 # 3. Router Implementations
 include("http/static_router.jl") # Define StaticHttpRouter first
-include("http/router.jl")        # HttpRouter
-include("ws/router.jl")          # WsRouter, StaticWsRouter, NoWsRouter
+include("http/router.jl")        # Router
+include("ws/router.jl")          # WsRouter, StaticWsRouter
 
 # 4. Core Server Logic
 include("core/server.jl")     # ServerCore
 include("core/registry.jl")
 include("core/middleware.jl")
-include("core/events.jl")     # Uses HttpRouter for Fallbacks
+include("core/events.jl")     # Uses Router for Fallbacks
 include("core/lifecycle.jl")
 
 # 5. Protocol Handlers
@@ -49,8 +49,5 @@ include("servers/async.jl")
 include("middleware/cors.jl")
 include("middleware/rate_limit.jl")
 include("middleware/auth.jl")
-
-# 8. User-Facing API
-include("server.jl")          # route!/ws!/use! on AbstractServer
 
 end # module Mongoose

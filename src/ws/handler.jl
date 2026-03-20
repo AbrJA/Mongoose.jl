@@ -12,7 +12,6 @@ end
 
 @inline _dispatch_ws_message(router::WsRouter, request) = _handle_dynamic_ws_message(router, request)
 @inline _dispatch_ws_message(router::StaticWsRouter, request) = _handle_static_ws_message(router, request)
-@inline _dispatch_ws_message(router::NoWsRouter, request) = nothing
 
 function _handle_static_ws_message(static::StaticWsRouter, request::IdWsMessage)
     endpoint = static_ws_upgrade(static, request.uri)
@@ -67,7 +66,6 @@ end
 
 @inline _get_ws_endpoint(router::WsRouter, uri) = get(router.routes, uri, nothing)
 @inline _get_ws_endpoint(router::StaticWsRouter, uri) = static_ws_upgrade(router, uri)
-@inline _get_ws_endpoint(router::NoWsRouter, uri) = nothing
 
 function _do_ws_upgrade(server, conn, ev_data, uri, endpoint)
     mg_ws_upgrade(conn, ev_data, C_NULL)

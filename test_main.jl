@@ -8,7 +8,7 @@ function echo(req, name)
     Response(200, "Content-Type: text/plain\r\n", "Hello $(String(name))!")
 end
 
-@router MyApp begin
+@static_router MyApp begin
     GET("/hello", greet)
     GET("/echo/:name", echo)
 end

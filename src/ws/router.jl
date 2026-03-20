@@ -17,11 +17,6 @@ end
 """
 abstract type StaticWsRouter <: AbstractWsRouter end
 
-"""
-    NoWsRouter — Sentinel type indicating no WebSocket support.
-"""
-struct NoWsRouter <: AbstractWsRouter end
-
 # --- Registration ---
 
 function ws!(router::WsRouter, path::AbstractString;
@@ -32,5 +27,23 @@ function ws!(router::WsRouter, path::AbstractString;
     return router
 end
 
+function ws!(router::Router, path::AbstractString;
+             on_message::Function,
+             on_open::Union{Function,Nothing}=nothing,
+             on_close::Union{Function,Nothing}=nothing)
+    router.ws_routes[path] = WsEndpoint(on_message=on_message, on_open=on_open, on_close=on_close)
+    return router
+end
+
 # (Macro-generated stubs...)
 function static_ws_upgrade(::StaticWsRouter, ::String) nothing end
+
+# --- WsRouter factory for server constructors ---
+
+function _build_ws_router(http::Router)
+    ws = WsRouter()
+    merge!(ws.routes, http.ws_routes)
+    return ws
+end
+
+_build_ws_router(::AbstractHttpRouter) = WsRouter()

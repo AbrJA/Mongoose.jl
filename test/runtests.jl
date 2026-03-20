@@ -21,7 +21,7 @@ using Test
 
     # --- Test 1: SyncServer ---
     @testset "SyncServer" begin
-        router = HttpRouter()
+        router = Router()
         route!(router, :get, "/hello", greet)
 
         server = SyncServer(router)
@@ -38,7 +38,7 @@ using Test
 
     # --- Test 2: AsyncServer (Default) ---
     @testset "AsyncServer" begin
-        router = HttpRouter()
+        router = Router()
         route!(router, :get, "/hello", greet)
         route!(router, :get, "/echo/:name", echo)
         route!(router, :get, "/error", error_handler)
@@ -75,7 +75,7 @@ using Test
 
     # --- Test 3: Typed Route Parameters ---
     @testset "Typed Route Parameters" begin
-        router = HttpRouter()
+        router = Router()
         route!(router, :get, "/users/:id::Int", (req, id) -> begin
             Response(200, Dict("Content-Type" => "text/plain"), "User $(id) type=$(typeof(id))")
         end)
@@ -119,7 +119,7 @@ using Test
         n_threads = Threads.nthreads()
         @info "Running multithreading tests with $n_threads threads"
 
-        router = HttpRouter()
+        router = Router()
         route!(router, :get, "/echo/:name", echo)
 
         server = AsyncServer(router; workers=4)
@@ -147,9 +147,9 @@ using Test
 
     # --- Test 4: Multiple Instances ---
     @testset "Multiple Instances" begin
-        router1 = HttpRouter()
+        router1 = Router()
         route!(router1, :get, "/s1", (req) -> Response(200, Dict{String,String}(), "Server 1"))
-        router2 = HttpRouter()
+        router2 = Router()
         route!(router2, :get, "/s2", (req) -> Response(200, Dict{String,String}(), "Server 2"))
 
         server1 = AsyncServer(router1; workers=1)
@@ -173,7 +173,7 @@ using Test
 
     # --- Test 5: CORS Middleware ---
     @testset "CORS Middleware" begin
-        router = HttpRouter()
+        router = Router()
         route!(router, :get, "/api/data", (req) -> Response(200, Dict("Content-Type" => "application/json"), "{\"ok\":true}"))
 
         server = AsyncServer(router; workers=1)
@@ -199,7 +199,7 @@ using Test
 
     # --- Test 6: JSON Integration ---
     @testset "JSON Integration" begin
-        router = HttpRouter()
+        router = Router()
         route!(router, :get, "/api/json", (req) -> json_response(Dict("message" => "hello", "count" => 42)))
         route!(router, :post, "/api/echo", (req) -> begin
             data = json_body(req)
@@ -253,7 +253,7 @@ using Test
 
     # --- Test 8: Body Size Limit ---
     @testset "Body Size Limit" begin
-        router = HttpRouter()
+        router = Router()
         route!(router, :post, "/upload", (req) -> Response(200, "", "OK"))
 
         server = AsyncServer(router; workers=1, max_body_size=100)
@@ -276,8 +276,8 @@ using Test
 
     # --- WebSocket Tests ---
     @testset "WebSocket Tests" begin
-        ws_router = WsRouter()
-        ws!(ws_router, "/chat", on_message=function (msg::WsMessage)
+        router = Router()
+        ws!(router, "/chat", on_message=function (msg::WsMessage)
                 if msg isa WsTextMessage
                     println("Server received text: ", msg.data)
                     return "Echo: " * msg.data
@@ -291,7 +291,7 @@ using Test
                 println("Server closed WS connection!")
             end)
 
-        server = AsyncServer(ws_router=ws_router, workers=1)
+        server = AsyncServer(router, workers=1)
         start!(server, port=8097, blocking=false)
         sleep(0.5)
 
@@ -311,7 +311,7 @@ using Test
 
     # --- Test: SyncServer with pre-built router ---
     @testset "SyncServer with Router" begin
-        router = HttpRouter()
+        router = Router()
         route!(router, :get, "/hello", greet)
         route!(router, :get, "/echo/:name", echo)
 
@@ -333,7 +333,7 @@ using Test
 
     # --- Test: AsyncServer with pre-built router ---
     @testset "AsyncServer with Router" begin
-        router = HttpRouter()
+        router = Router()
         route!(router, :get, "/hello", greet)
         route!(router, :get, "/echo/:name", echo)
         route!(router, :get, "/error", error_handler)
@@ -362,7 +362,7 @@ using Test
 
     # --- Test: Restart with shared router ---
     @testset "Restart with Shared Router" begin
-        router = HttpRouter()
+        router = Router()
         route!(router, :get, "/ping", (req) -> Response(200, "", "pong"))
 
         # Start as sync
@@ -401,7 +401,7 @@ using Test
 
     # --- Test: AsyncServer with middleware ---
     @testset "AsyncServer Middleware" begin
-        router = HttpRouter()
+        router = Router()
         route!(router, :get, "/api/data", (req) -> Response(200, "Content-Type: application/json\r\n", "{\"ok\":true}"))
 
         server = AsyncServer(router; workers=2)
@@ -421,7 +421,7 @@ using Test
 
     # --- Test: route! on Router directly ---
     @testset "route! on Router" begin
-        router = HttpRouter()
+        router = Router()
         ret = route!(router, :get, "/test", (req) -> Response(200, "", "ok"))
         @test ret === router  # returns the router for chaining
 

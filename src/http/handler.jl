@@ -62,7 +62,7 @@ function _dispatch_http(server::AbstractServer, req::AbstractRequest)::AbstractR
     return execute_middleware(server.core.middlewares, req, Any[], final)
 end
 
-@inline function _dispatch_to_router(router::HttpRouter, req)
+@inline function _dispatch_to_router(router::Router, req)
     matched = match_route(router, req.method, req.uri)
     if matched !== nothing
         handler = get(matched.handlers, req.method, nothing)
@@ -76,10 +76,6 @@ end
 
 @inline function _dispatch_to_router(router::StaticHttpRouter, req)
     return static_dispatch(router, req)
-end
-
-@inline function _dispatch_to_router(::NoStaticHttpRouter, req)
-    return Response(404, "Content-Type: text/plain\r\n", "404 Not Found")
 end
 
 # --- Response serialization ---

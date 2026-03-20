@@ -10,11 +10,6 @@
 abstract type StaticHttpRouter <: AbstractHttpRouter end
 
 """
-    NoStaticHttpRouter — Sentinel type indicating no static HTTP app is configured.
-"""
-struct NoStaticHttpRouter <: StaticHttpRouter end
-
-"""
     static_dispatch(app, request) → Response
 """
 function static_dispatch end
@@ -248,19 +243,19 @@ function _extract_routes(block)
 end
 
 """
-    @router AppType block
+    @static_router AppType block
 
 Generate a static router for `AppType`.
 Routes are defined as: `METHOD("/path", handler)`
 Example:
 ```julia
-@router MyApp begin
+@static_router MyApp begin
     GET("/", (req) -> Response(200, "OK"))
     GET("/users/{id::Int}", (req, id) -> Response(200, "User \$id"))
 end
 ```
 """
-macro router(app_type::Symbol, block)
+macro static_router(app_type::Symbol, block)
     http_routes, ws_routes = _extract_routes(block)
     (isempty(http_routes) && isempty(ws_routes)) && error("@router: no routes found in block")
 
