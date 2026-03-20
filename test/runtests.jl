@@ -21,9 +21,10 @@ using Test
 
     # --- Test 1: SyncServer ---
     @testset "SyncServer" begin
-        server = SyncServer()
-        route!(server, :get, "/hello", greet)
+        router = HttpRouter()
+        route!(router, :get, "/hello", greet)
 
+        server = SyncServer(router)
         start!(server, port=8091, blocking=false)
 
         try
@@ -37,11 +38,12 @@ using Test
 
     # --- Test 2: AsyncServer (Default) ---
     @testset "AsyncServer" begin
-        server = AsyncServer(; workers=1)
-        route!(server, :get, "/hello", greet)
-        route!(server, :get, "/echo/:name", echo)
-        route!(server, :get, "/error", error_handler)
+        router = HttpRouter()
+        route!(router, :get, "/hello", greet)
+        route!(router, :get, "/echo/:name", echo)
+        route!(router, :get, "/error", error_handler)
 
+        server = AsyncServer(router; workers=1)
         start!(server, port=8092, blocking=false)
 
         try
@@ -73,17 +75,18 @@ using Test
 
     # --- Test 3: Typed Route Parameters ---
     @testset "Typed Route Parameters" begin
-        server = AsyncServer(; workers=1)
-        route!(server, :get, "/users/:id::Int", (req, id) -> begin
+        router = HttpRouter()
+        route!(router, :get, "/users/:id::Int", (req, id) -> begin
             Response(200, Dict("Content-Type" => "text/plain"), "User $(id) type=$(typeof(id))")
         end)
-        route!(server, :get, "/score/:val::Float64", (req, val) -> begin
+        route!(router, :get, "/score/:val::Float64", (req, val) -> begin
             Response(200, Dict("Content-Type" => "text/plain"), "Score $(val) type=$(typeof(val))")
         end)
-        route!(server, :get, "/greet/:name", (req, name) -> begin
+        route!(router, :get, "/greet/:name", (req, name) -> begin
             Response(200, Dict("Content-Type" => "text/plain"), "Hello $(name) type=$(typeof(name))")
         end)
 
+        server = AsyncServer(router; workers=1)
         start!(server, port=8100, blocking=false)
         sleep(0.5)
 
@@ -116,8 +119,10 @@ using Test
         n_threads = Threads.nthreads()
         @info "Running multithreading tests with $n_threads threads"
 
-        server = AsyncServer(; workers=4)
-        route!(server, :get, "/echo/:name", echo)
+        router = HttpRouter()
+        route!(router, :get, "/echo/:name", echo)
+
+        server = AsyncServer(router; workers=4)
         start!(server, port=8093, blocking=false)
 
         try
@@ -142,11 +147,13 @@ using Test
 
     # --- Test 4: Multiple Instances ---
     @testset "Multiple Instances" begin
-        server1 = AsyncServer(; workers=1)
-        server2 = AsyncServer(; workers=1)
+        router1 = HttpRouter()
+        route!(router1, :get, "/s1", (req) -> Response(200, Dict{String,String}(), "Server 1"))
+        router2 = HttpRouter()
+        route!(router2, :get, "/s2", (req) -> Response(200, Dict{String,String}(), "Server 2"))
 
-        route!(server1, :get, "/s1", (req) -> Response(200, Dict{String,String}(), "Server 1"))
-        route!(server2, :get, "/s2", (req) -> Response(200, Dict{String,String}(), "Server 2"))
+        server1 = AsyncServer(router1; workers=1)
+        server2 = AsyncServer(router2; workers=1)
 
         start!(server1, port=8094, blocking=false)
         start!(server2, port=8095, blocking=false)
@@ -166,10 +173,11 @@ using Test
 
     # --- Test 5: CORS Middleware ---
     @testset "CORS Middleware" begin
-        server = AsyncServer(; workers=1)
-        use!(server, cors_middleware(origins="https://example.com"))
-        route!(server, :get, "/api/data", (req) -> Response(200, Dict("Content-Type" => "application/json"), "{\"ok\":true}"))
+        router = HttpRouter()
+        route!(router, :get, "/api/data", (req) -> Response(200, Dict("Content-Type" => "application/json"), "{\"ok\":true}"))
 
+        server = AsyncServer(router; workers=1)
+        use!(server, cors_middleware(origins="https://example.com"))
         start!(server, port=8096, blocking=false)
         sleep(0.5)
 
@@ -191,13 +199,14 @@ using Test
 
     # --- Test 6: JSON Integration ---
     @testset "JSON Integration" begin
-        server = AsyncServer(; workers=1)
-        route!(server, :get, "/api/json", (req) -> json_response(Dict("message" => "hello", "count" => 42)))
-        route!(server, :post, "/api/echo", (req) -> begin
+        router = HttpRouter()
+        route!(router, :get, "/api/json", (req) -> json_response(Dict("message" => "hello", "count" => 42)))
+        route!(router, :post, "/api/echo", (req) -> begin
             data = json_body(req)
             json_response(data)
         end)
 
+        server = AsyncServer(router; workers=1)
         start!(server, port=8097, blocking=false)
         sleep(0.5)
 
@@ -244,9 +253,10 @@ using Test
 
     # --- Test 8: Body Size Limit ---
     @testset "Body Size Limit" begin
-        server = AsyncServer(; workers=1, max_body_size=100)
-        route!(server, :post, "/upload", (req) -> Response(200, "", "OK"))
+        router = HttpRouter()
+        route!(router, :post, "/upload", (req) -> Response(200, "", "OK"))
 
+        server = AsyncServer(router; workers=1, max_body_size=100)
         start!(server, port=8099, blocking=false)
         sleep(0.5)
 
@@ -266,9 +276,8 @@ using Test
 
     # --- WebSocket Tests ---
     @testset "WebSocket Tests" begin
-        server = AsyncServer(ws_router=WsRouter(), workers=1)
-
-        ws!(server, "/chat", on_message=function (msg::WsMessage)
+        ws_router = WsRouter()
+        ws!(ws_router, "/chat", on_message=function (msg::WsMessage)
                 if msg isa WsTextMessage
                     println("Server received text: ", msg.data)
                     return "Echo: " * msg.data
@@ -282,6 +291,7 @@ using Test
                 println("Server closed WS connection!")
             end)
 
+        server = AsyncServer(ws_router=ws_router, workers=1)
         start!(server, port=8097, blocking=false)
         sleep(0.5)
 
