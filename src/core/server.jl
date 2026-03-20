@@ -29,9 +29,9 @@ function cleanup!(manager::Manager)
 end
 
 """
-    ServerCore{H, W} — Shared state. H <: HttpRouter, W <: WsRouter
+    ServerCore{H, W} — Shared state. H <: AbstractHttpRouter, W <: AbstractWsRouter
 """
-mutable struct ServerCore{H <: HttpRouter, W <: WsRouter}
+mutable struct ServerCore{H <: AbstractHttpRouter, W <: AbstractWsRouter}
     manager::Manager
     handler::Ptr{Cvoid}
     timeout::Cint
@@ -44,10 +44,10 @@ mutable struct ServerCore{H <: HttpRouter, W <: WsRouter}
     max_body_size::Int
     drain_timeout_ms::Int
 
-    function ServerCore(timeout::Integer, http::H, ws::W; 
-                        max_body_size::Integer=DEFAULT_MAX_BODY_SIZE, 
-                        drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS, 
-                        c_handler::Ptr{Cvoid}=C_NULL) where {H <: HttpRouter, W <: WsRouter}
+    function ServerCore(timeout::Integer, http::H, ws::W;
+                        max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
+                        drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS,
+                        c_handler::Ptr{Cvoid}=C_NULL) where {H <: AbstractHttpRouter, W <: AbstractWsRouter}
         return new{H, W}(
             Manager(empty=true), c_handler, Cint(timeout), nothing,
             http, ws, Dict{Int,String}(),
@@ -62,14 +62,14 @@ end
 """
     SyncServer — Single-threaded blocking server.
 """
-mutable struct SyncServer{H <: HttpRouter, W <: WsRouter} <: AbstractServer
+mutable struct SyncServer{H <: AbstractHttpRouter, W <: AbstractWsRouter} <: AbstractServer
     core::ServerCore{H, W}
 end
 
 """
     AsyncServer — Multi-threaded server using worker tasks.
 """
-mutable struct AsyncServer{H <: HttpRouter, W <: WsRouter} <: AbstractServer
+mutable struct AsyncServer{H <: AbstractHttpRouter, W <: AbstractWsRouter} <: AbstractServer
     core::ServerCore{H, W}
     workers::Vector{Task}
     http_requests::Channel{IdRequest{Request}}

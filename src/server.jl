@@ -2,8 +2,8 @@
     User-facing Server — unified API that wraps AsyncServer / SyncServer internals.
 """
 mutable struct Server
-    http::HttpRouter
-    ws::WsRouter
+    http::AbstractHttpRouter
+    ws::AbstractWsRouter
     middlewares::Vector{Function}
     timeout::Int
     max_body_size::Int
@@ -17,10 +17,10 @@ end
 
 Create a server with the given HTTP and WebSocket routers.
 Routers can be either dynamic or static (generated via macros).
-`HttpRouter()` and `WsRouter()` return dynamic routers by default.
+`HttpRouter()` and `WsRouter()` create dynamic routers.
 """
-function Server(router::HttpRouter=HttpRouter();
-                ws_router::WsRouter=NoWsRouter(),
+function Server(router::AbstractHttpRouter=HttpRouter();
+                ws_router::AbstractWsRouter=NoWsRouter(),
                 timeout::Integer=0,
                 max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
                 drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS,
@@ -32,7 +32,7 @@ end
 # --- Delegation methods ---
 
 function route!(server::Server, method::Symbol, path::AbstractString, handler::Function)
-    if server.http isa DynamicHttpRouter
+    if server.http isa HttpRouter
         route!(server.http, method, path, handler)
     else
         throw(ArgumentError("Cannot add dynamic routes to a static HTTP router. Use HttpRouter() instead."))
@@ -41,7 +41,7 @@ function route!(server::Server, method::Symbol, path::AbstractString, handler::F
 end
 
 function ws!(server::Server, path::AbstractString; on_message::Function, on_open::Union{Function,Nothing}=nothing, on_close::Union{Function,Nothing}=nothing)
-    if server.ws isa DynamicWsRouter
+    if server.ws isa WsRouter
         ws!(server.ws, path; on_message=on_message, on_open=on_open, on_close=on_close)
     else
         throw(ArgumentError("Cannot add dynamic WebSocket routes to a static or missing WS router. Use WsRouter() instead."))

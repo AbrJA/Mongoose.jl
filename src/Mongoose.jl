@@ -2,11 +2,11 @@ module Mongoose
 
 using Mongoose_jll
 
-export Server, AsyncServer, SyncServer, HttpRouter, DynamicHttpRouter, StaticHttpRouter,
+export Server, AsyncServer, SyncServer, HttpRouter, StaticHttpRouter,
        Request, Response, NoStaticHttpRouter,
        start!, shutdown!, route!, use!,
        parse_into, format_headers,
-       ws!, WsTextMessage, WsBinaryMessage, WsMessage, WsRouter, DynamicWsRouter, StaticWsRouter, NoWsRouter,
+       ws!, WsTextMessage, WsBinaryMessage, WsMessage, WsRouter, StaticWsRouter, NoWsRouter,
        header, body, query,
        cors_middleware, rate_limit_middleware, bearer_auth_middleware, api_key_middleware,
        json_response, json_body,

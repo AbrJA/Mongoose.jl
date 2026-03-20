@@ -5,35 +5,28 @@
 # WsRouter and WsEndpoint are defined in types.jl
 
 """
-    DynamicWsRouter — Top-level router for dynamic WebSocket registration.
+    WsRouter — Dynamic WebSocket router.
 """
-struct DynamicWsRouter <: WsRouter
+struct WsRouter <: AbstractWsRouter
     routes::Dict{String,WsEndpoint}
-    DynamicWsRouter() = new(Dict{String,WsEndpoint}())
-end
-
-"""
-    WsRouter() — Factory to create a DynamicWsRouter.
-"""
-function WsRouter()
-    return DynamicWsRouter()
+    WsRouter() = new(Dict{String,WsEndpoint}())
 end
 
 """
     StaticWsRouter — Base type for macro-generated static WebSocket routers.
 """
-abstract type StaticWsRouter <: WsRouter end
+abstract type StaticWsRouter <: AbstractWsRouter end
 
 """
     NoWsRouter — Sentinel type indicating no WebSocket support.
 """
-struct NoWsRouter <: WsRouter end
+struct NoWsRouter <: AbstractWsRouter end
 
 # --- Registration ---
 
-function ws!(router::DynamicWsRouter, path::AbstractString; 
-             on_message::Function, 
-             on_open::Union{Function,Nothing}=nothing, 
+function ws!(router::WsRouter, path::AbstractString;
+             on_message::Function,
+             on_open::Union{Function,Nothing}=nothing,
              on_close::Union{Function,Nothing}=nothing)
     router.routes[path] = WsEndpoint(on_message=on_message, on_open=on_open, on_close=on_close)
     return router

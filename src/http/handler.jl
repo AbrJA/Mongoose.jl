@@ -62,7 +62,7 @@ function _dispatch_http(server::AbstractServer, req::AbstractRequest)::AbstractR
     return execute_middleware(server.core.middlewares, req, Any[], final)
 end
 
-@inline function _dispatch_to_router(router::DynamicHttpRouter, req)
+@inline function _dispatch_to_router(router::HttpRouter, req)
     matched = match_route(router, req.method, req.uri)
     if matched !== nothing
         handler = get(matched.handlers, req.method, nothing)

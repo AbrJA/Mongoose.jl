@@ -2,7 +2,7 @@
     SyncServer — Single-threaded blocking server methods.
 """
 
-function build_SyncServer(http::HttpRouter, ws::WsRouter, c_handler::Ptr{Cvoid}, timeout::Integer, max_body_size::Integer, drain_timeout_ms::Integer)
+function build_SyncServer(http::AbstractHttpRouter, ws::AbstractWsRouter, c_handler::Ptr{Cvoid}, timeout::Integer, max_body_size::Integer, drain_timeout_ms::Integer)
     if c_handler == C_NULL
         c_handler = Mongoose.get_c_handler_sync(typeof(http))
     end

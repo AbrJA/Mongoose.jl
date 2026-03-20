@@ -2,7 +2,7 @@
     AsyncServer — Multi-threaded server methods.
 """
 
-function build_AsyncServer(http::HttpRouter, ws::WsRouter, c_handler::Ptr{Cvoid}, timeout::Integer, nworkers::Integer, nqueue::Integer, max_body_size::Integer, drain_timeout_ms::Integer)
+function build_AsyncServer(http::AbstractHttpRouter, ws::AbstractWsRouter, c_handler::Ptr{Cvoid}, timeout::Integer, nworkers::Integer, nqueue::Integer, max_body_size::Integer, drain_timeout_ms::Integer)
     if c_handler == C_NULL
         c_handler = Mongoose.get_c_handler_async(typeof(http))
     end

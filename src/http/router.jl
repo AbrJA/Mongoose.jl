@@ -26,19 +26,12 @@ struct FixedRoute
 end
 
 """
-    DynamicHttpRouter — Top-level router for dynamic registration.
+    HttpRouter — Trie-based dynamic HTTP router.
 """
-struct DynamicHttpRouter <: HttpRouter
+struct HttpRouter <: AbstractHttpRouter
     node::Node
     fixed::Dict{String, FixedRoute}
-    DynamicHttpRouter() = new(Node(), Dict{String, FixedRoute}())
-end
-
-"""
-    HttpRouter() — Factory to create a DynamicHttpRouter.
-"""
-function HttpRouter()
-    return DynamicHttpRouter()
+    HttpRouter() = new(Node(), Dict{String, FixedRoute}())
 end
 
 # (Matched, match_route, route!, etc...)
@@ -56,7 +49,7 @@ const PARAM_TYPES = Dict{String,Type}(
     "UInt" => UInt, "UInt64" => UInt64
 )
 
-function match_route(router::DynamicHttpRouter, method::Symbol, path::AbstractString)
+function match_route(router::HttpRouter, method::Symbol, path::AbstractString)
     if (route = get(router.fixed, path, nothing)) !== nothing
         return Matched(route.handlers, EMPTY_PARAMS)
     end
@@ -87,7 +80,7 @@ end
     return nothing
 end
 
-function route!(router::DynamicHttpRouter, method::Symbol, path::AbstractString, handler::Function)
+function route!(router::HttpRouter, method::Symbol, path::AbstractString, handler::Function)
     if method ∉ VALID_METHODS
         throw(RouteError("Invalid HTTP method: $(String(method))"))
     end
@@ -95,7 +88,7 @@ function route!(router::DynamicHttpRouter, method::Symbol, path::AbstractString,
     return router
 end
 
-function _register_route!(router::DynamicHttpRouter, method::Symbol, path::AbstractString, wrapped::Handler)
+function _register_route!(router::HttpRouter, method::Symbol, path::AbstractString, wrapped::Handler)
     if !occursin(':', path)
         if !haskey(router.fixed, path)
             router.fixed[path] = FixedRoute()

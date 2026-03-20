@@ -1,7 +1,7 @@
 """
     WebSocket message types and handler definitions.
 """
-abstract type WsRouter end
+abstract type AbstractWsRouter end
 
 """
     WsTextMessage — A text WebSocket message (opcode 1).
