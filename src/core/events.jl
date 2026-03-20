@@ -10,7 +10,11 @@ function event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})::Cvoid
     fn_data == C_NULL && return nothing
 
     server = Base.unsafe_pointer_to_objref(fn_data)
-    _invoke_dispatch(server, ev, conn, ev_data)
+    try
+        _invoke_dispatch(server, ev, conn, ev_data)
+    catch e
+        @error "Event handler error" exception = (e, catch_backtrace())
+    end
 
     return nothing
 end

@@ -41,7 +41,7 @@ struct WsEndpoint
     has_on_close::Bool
 end
 
-function WsEndpoint(; on_message::Function, on_open::Function=nothing, on_close::Function=nothing)
+function WsEndpoint(; on_message::Function, on_open::Union{Function,Nothing}=nothing, on_close::Union{Function,Nothing}=nothing)
     noop_open(_) = nothing
     noop_close() = nothing
     return WsEndpoint(

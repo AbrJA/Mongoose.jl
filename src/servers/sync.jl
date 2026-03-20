@@ -7,6 +7,8 @@
 
 Create a single-threaded blocking server. Compatible with `juliac --trim=safe`.
 """
+SyncServer(::Type{T}; kwargs...) where {T <: StaticRouter} = SyncServer(T(); kwargs...)
+
 function SyncServer(router::AbstractRouter=Router();
                     timeout::Integer=0,
                     max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,

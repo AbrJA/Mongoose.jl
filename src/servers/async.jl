@@ -8,6 +8,8 @@
 Create a multi-threaded server with `workers` background tasks.
 Not compatible with `juliac --trim=safe`.
 """
+AsyncServer(::Type{T}; kwargs...) where {T <: StaticRouter} = AsyncServer(T(); kwargs...)
+
 function AsyncServer(router::AbstractRouter=Router();
                      workers::Integer=4,
                      nqueue::Integer=1024,
@@ -98,13 +100,13 @@ function worker_loop(server::AsyncServer)
                     @error "Handler error" exception=(e, catch_backtrace())
                     Response(500, "Content-Type: text/plain\r\n", "500 Internal Server Error")
                 end
-                put!(server.http_responses, IdResponse(req.id, res))
+                isopen(server.http_responses) && put!(server.http_responses, IdResponse(req.id, res))
             # Try WS
             elseif isready(server.ws_requests)
                 req = take!(server.ws_requests)
                 res = handle_ws_message!(server, req)
                 if res !== nothing
-                    put!(server.ws_responses, res)
+                    isopen(server.ws_responses) && put!(server.ws_responses, res)
                 end
             else
                 sleep(0.0001)

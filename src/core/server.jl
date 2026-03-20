@@ -110,6 +110,7 @@ function start_master!(server::AbstractServer)
                 @error "Server event loop error: $e" exception = (e, catch_backtrace())
             end
         finally
+            server.core.running[] = false
             @info "Server event loop task finished."
         end
     end

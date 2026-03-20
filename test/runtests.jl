@@ -298,10 +298,10 @@ end
             end)
 
         server = AsyncServer(router, workers=1)
-        start!(server, port=8097, blocking=false)
+        start!(server, port=8098, blocking=false)
         sleep(0.5)
 
-        HTTP.WebSockets.open("ws://localhost:8097/chat") do ws
+        HTTP.WebSockets.open("ws://localhost:8098/chat") do ws
             HTTP.WebSockets.send(ws, "Hello WebSockets!")
             response = HTTP.WebSockets.receive(ws)
             println("Client received: ", String(response))
@@ -486,7 +486,7 @@ end
         try
             @test HTTP.get("http://localhost:8107/limited").status == 200
             @test HTTP.get("http://localhost:8107/limited").status == 200
-            
+
             # Third request should be limited
             resp = HTTP.get("http://localhost:8107/limited"; status_exception=false)
             @test resp.status == 429
@@ -498,7 +498,7 @@ end
 
     # --- Test: Static Router (@router) ---
     @testset "Static Router (@router)" begin
-        server = SyncServer(TestApp())
+        server = SyncServer(TestApp)
         start!(server; port=8108, blocking=false)
         sleep(0.5)
 

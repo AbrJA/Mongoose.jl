@@ -103,7 +103,7 @@ function handle_event!(server::AsyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnect
     conn_id = Int(conn)
     uri = get(server.core.ws_connections, conn_id, "")
     server.connections[conn_id] = conn
-    put!(server.ws_requests, IdWsMessage(conn_id, ws_msg, uri))
+    isopen(server.ws_requests) && put!(server.ws_requests, IdWsMessage(conn_id, ws_msg, uri))
     return
 end
 
