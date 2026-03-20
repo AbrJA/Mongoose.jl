@@ -21,7 +21,7 @@ using Test
 
     # --- Test 1: SyncServer ---
     @testset "SyncServer" begin
-        server = SyncServer()
+        server = Server()
         route!(server, :get, "/hello", greet)
 
         start!(server, port=8091, blocking=false)
@@ -37,12 +37,12 @@ using Test
 
     # --- Test 2: AsyncServer (Default) ---
     @testset "AsyncServer" begin
-        server = AsyncServer()
+        server = Server()
         route!(server, :get, "/hello", greet)
         route!(server, :get, "/echo/:name", echo)
         route!(server, :get, "/error", error_handler)
 
-        start!(server, port=8092, blocking=false)
+        start!(server, port=8092, blocking=false, workers=1)
 
         try
             # Basic GET
@@ -73,7 +73,7 @@ using Test
 
     # --- Test 3: Typed Route Parameters ---
     @testset "Typed Route Parameters" begin
-        server = AsyncServer()
+        server = Server()
         route!(server, :get, "/users/:id::Int", (req, id) -> begin
             Response(200, Dict("Content-Type" => "text/plain"), "User $(id) type=$(typeof(id))")
         end)
@@ -84,7 +84,7 @@ using Test
             Response(200, Dict("Content-Type" => "text/plain"), "Hello $(name) type=$(typeof(name))")
         end)
 
-        start!(server, port=8100, blocking=false)
+        start!(server, port=8100, blocking=false, workers=1)
         sleep(0.5)
 
         try
@@ -116,9 +116,9 @@ using Test
         n_threads = Threads.nthreads()
         @info "Running multithreading tests with $n_threads threads"
 
-        server = AsyncServer(nworkers=4)
+        server = Server()
         route!(server, :get, "/echo/:name", echo)
-        start!(server, port=8093, blocking=false)
+        start!(server, port=8093, blocking=false, workers=4)
 
         try
             results = Channel{Tuple{Int,Int,String}}(10)
@@ -142,14 +142,14 @@ using Test
 
     # --- Test 4: Multiple Instances ---
     @testset "Multiple Instances" begin
-        server1 = AsyncServer()
-        server2 = AsyncServer()
+        server1 = Server()
+        server2 = Server()
 
         route!(server1, :get, "/s1", (req) -> Response(200, Dict{String,String}(), "Server 1"))
         route!(server2, :get, "/s2", (req) -> Response(200, Dict{String,String}(), "Server 2"))
 
-        start!(server1, port=8094, blocking=false)
-        start!(server2, port=8095, blocking=false)
+        start!(server1, port=8094, blocking=false, workers=1)
+        start!(server2, port=8095, blocking=false, workers=1)
         sleep(1)
 
         try
@@ -166,11 +166,11 @@ using Test
 
     # --- Test 5: CORS Middleware ---
     @testset "CORS Middleware" begin
-        server = AsyncServer()
+        server = Server()
         use!(server, cors_middleware(origins="https://example.com"))
         route!(server, :get, "/api/data", (req) -> Response(200, Dict("Content-Type" => "application/json"), "{\"ok\":true}"))
 
-        start!(server, port=8096, blocking=false)
+        start!(server, port=8096, blocking=false, workers=1)
         sleep(0.5)
 
         try
@@ -191,14 +191,14 @@ using Test
 
     # --- Test 6: JSON Integration ---
     @testset "JSON Integration" begin
-        server = AsyncServer()
+        server = Server()
         route!(server, :get, "/api/json", (req) -> json_response(Dict("message" => "hello", "count" => 42)))
         route!(server, :post, "/api/echo", (req) -> begin
             data = json_body(req)
             json_response(data)
         end)
 
-        start!(server, port=8097, blocking=false)
+        start!(server, port=8097, blocking=false, workers=1)
         sleep(0.5)
 
         try
@@ -244,10 +244,10 @@ using Test
 
     # --- Test 8: Body Size Limit ---
     @testset "Body Size Limit" begin
-        server = AsyncServer(max_body_size=100)
+        server = Server(max_body_size=100)
         route!(server, :post, "/upload", (req) -> Response(200, "", "OK"))
 
-        start!(server, port=8099, blocking=false)
+        start!(server, port=8099, blocking=false, workers=1)
         sleep(0.5)
 
         try
@@ -266,7 +266,7 @@ using Test
 
     # --- WebSocket Tests ---
     @testset "WebSocket Tests" begin
-        server = AsyncServer(NoStaticRouter(), WsRouter(), nworkers=4)
+        server = Server(NoStaticHttpRouter(), ws_router=WsRouter())
 
         ws!(server, "/chat", on_message=function (msg::WsMessage)
                 if msg isa WsTextMessage
@@ -282,7 +282,7 @@ using Test
                 println("Server closed WS connection!")
             end)
 
-        start!(server, port=8097, blocking=false)
+        start!(server, port=8097, blocking=false, workers=1)
         sleep(0.5)
 
         HTTP.WebSockets.open("ws://localhost:8097/chat") do ws
@@ -301,7 +301,7 @@ using Test
 
     # --- Test: Server (unified API, sync mode) ---
     @testset "Server Sync Mode" begin
-        router = DynamicRouter()
+        router = HttpRouter()
         route!(router, :get, "/hello", greet)
         route!(router, :get, "/echo/:name", echo)
 
@@ -323,7 +323,7 @@ using Test
 
     # --- Test: Server (unified API, async mode with workers) ---
     @testset "Server Async Mode" begin
-        router = DynamicRouter()
+        router = HttpRouter()
         route!(router, :get, "/hello", greet)
         route!(router, :get, "/echo/:name", echo)
         route!(router, :get, "/error", error_handler)
@@ -352,7 +352,7 @@ using Test
 
     # --- Test: Server restart with different worker counts ---
     @testset "Server Restart" begin
-        router = DynamicRouter()
+        router = HttpRouter()
         route!(router, :get, "/ping", (req) -> Response(200, "", "pong"))
 
         server = Server(router)
@@ -390,7 +390,7 @@ using Test
 
     # --- Test: Server with middleware ---
     @testset "Server Middleware" begin
-        router = DynamicRouter()
+        router = HttpRouter()
         route!(router, :get, "/api/data", (req) -> Response(200, "Content-Type: application/json\r\n", "{\"ok\":true}"))
 
         server = Server(router)
@@ -410,7 +410,7 @@ using Test
 
     # --- Test: route! on Router directly ---
     @testset "route! on Router" begin
-        router = DynamicRouter()
+        router = HttpRouter()
         ret = route!(router, :get, "/test", (req) -> Response(200, "", "ok"))
         @test ret === router  # returns the router for chaining
 

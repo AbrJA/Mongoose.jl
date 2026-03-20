@@ -1,12 +1,7 @@
 """
-    Event dispatching — single C callback that dispatches to typed handlers.
-"""
-
-"""
     event_handler(conn, ev, ev_data) → Cvoid
 
 The single C callback registered with Mongoose via `@cfunction`.
-Uses manual union splitting for trim-safe AOT compilation.
 """
 function event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})::Cvoid
     ev == MG_EV_POLL && return nothing
@@ -15,10 +10,6 @@ function event_handler(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})::Cvoid
     fn_data == C_NULL && return nothing
 
     server = Base.unsafe_pointer_to_objref(fn_data)
-
-    # This generic handler is only used in JIT mode (no @routes macro).
-    # For AOT builds, the @routes macro generates type-specific C-handlers
-    # that bypass this function entirely via get_c_handler_async/sync.
     _invoke_dispatch(server, ev, conn, ev_data)
 
     return nothing
@@ -26,9 +17,6 @@ end
 
 """
     _invoke_dispatch(server, ev, conn, ev_data)
-
-Route events to typed `handle_event!` methods.
-Only known event codes are dispatched to avoid dynamic Val instantiation.
 """
 @inline function _invoke_dispatch(server, ev::Cint, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid})
     if ev == MG_EV_HTTP_MSG
@@ -47,7 +35,6 @@ end
 
 handle_event!(server::AbstractServer, ::Val, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid}) = nothing
 
-# JIT-only fallbacks for dynamic routing (NoStaticRouter). These are never compiled in AOT
-# because @routes-based builds never instantiate NoStaticRouter, so juliac tree-shakes them.
-get_c_handler_async(::Type{NoStaticRouter}) = @cfunction(event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
-get_c_handler_sync(::Type{NoStaticRouter}) = @cfunction(event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+# JIT-only fallbacks
+get_c_handler_async(::Type{HttpRouter}) = @cfunction(event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+get_c_handler_sync(::Type{HttpRouter}) = @cfunction(event_handler, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))

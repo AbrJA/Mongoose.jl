@@ -2,60 +2,56 @@ module Mongoose
 
 using Mongoose_jll
 
-export Server, AsyncServer, SyncServer, Router, DynamicRouter, StaticRouter,
-       Request, Response, NoStaticRouter,
+export Server, AsyncServer, SyncServer, HttpRouter, DynamicHttpRouter, StaticHttpRouter,
+       Request, Response, NoStaticHttpRouter,
        start!, shutdown!, route!, use!,
        parse_into, format_headers,
-       ws!, WsTextMessage, WsBinaryMessage, WsMessage, WsRouter,
+       ws!, WsTextMessage, WsBinaryMessage, WsMessage, WsRouter, DynamicWsRouter, StaticWsRouter, NoStaticWsRouter,
        header, body, query,
        cors_middleware, rate_limit_middleware, bearer_auth_middleware, api_key_middleware,
        json_response, json_body,
-       @router
+       @router, @wsrouter
 
-# FFI Layer
+# 1. FFI Layer (Constants, Structs, Bindings)
 include("ffi/constants.jl")
 include("ffi/structs.jl")
 include("ffi/bindings.jl")
 
-# Core Layer Types
+# 2. Base Types and Errors
 include("core/types.jl")
 include("core/errors.jl")
+include("http/types.jl")      # Defines AbstractRouter
+include("ws/types.jl")        # Defines AbstractWsRouter
 
-# Static Router (must be before server.jl which uses NoStaticRouter/StaticRouter)
-include("http/static_router.jl")
+# 3. Router Implementations
+include("http/static_router.jl") # Define StaticHttpRouter first
+include("http/router.jl")        # HttpRouter
+include("ws/router.jl")          # WsRouter, StaticWsRouter, CompositeWsRouter
 
-# WS Types and Router (needed by ServerCore)
-include("ws/types.jl")
-include("ws/router.jl")
-
-# Core Server Implementation
-include("core/server.jl")
+# 4. Core Server Logic
+include("core/server.jl")     # ServerCore
 include("core/registry.jl")
 include("core/middleware.jl")
-include("core/events.jl")
+include("core/events.jl")     # Uses HttpRouter for Fallbacks
 include("core/lifecycle.jl")
 
-# HTTP Layer
-include("http/types.jl")
-include("http/router.jl")
+# 5. Protocol Handlers
 include("http/builder.jl")
 include("http/handler.jl")
 include("http/utils.jl")
 include("http/json.jl")
+include("ws/handler.jl")
 
-# Server Implementations
+# 6. Server Implementations
 include("servers/sync.jl")
 include("servers/async.jl")
 
-# WS Handler
-include("ws/handler.jl")
-
-# Built-in Middleware
+# 7. Middleware
 include("middleware/cors.jl")
 include("middleware/rate_limit.jl")
 include("middleware/auth.jl")
 
-# User-facing Server API (wraps AsyncServer / SyncServer)
-include("server.jl")
+# 8. User-Facing API
+include("server.jl")          # Unified Server struct
 
-end
+end # module Mongoose

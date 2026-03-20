@@ -1,43 +1,43 @@
 """
-    WebSocket router — maps URI paths to WebSocket handler callbacks.
+    WebSocket router implementation and factories.
 """
 
-abstract type AbstractWsRouter end
+# WsRouter and WsEndpoint are defined in types.jl
 
 """
-    WsRouter — A path-based router for WebSocket endpoints.
-    Maps URI strings to `WsEndpoint` callbacks.
+    DynamicWsRouter — Top-level router for dynamic WebSocket registration.
 """
-struct WsRouter <: AbstractWsRouter
+struct DynamicWsRouter <: WsRouter
     routes::Dict{String,WsEndpoint}
-    WsRouter() = new(Dict{String,WsEndpoint}())
+    DynamicWsRouter() = new(Dict{String,WsEndpoint}())
 end
 
 """
-    NoWsRouter — Sentinel type indicating no WebSocket support is configured.
+    WsRouter() — Factory to create a DynamicWsRouter.
 """
-struct NoWsRouter <: AbstractWsRouter end
-
-"""
-    ws!(server, path; on_message, on_open, on_close)
-
-Register a WebSocket endpoint at the given `path`.
-
-# Arguments
-- `server::AbstractServer`: The server instance to register the endpoint on.
-- `path::AbstractString`: The URI path for the WebSocket endpoint.
-- `on_message::Function`: Called when a WebSocket message is received. Receives `WsMessage`.
-- `on_open::Union{Function, Nothing}`: Called when a connection opens. Receives `Request`.
-- `on_close::Union{Function, Nothing}`: Called when a connection closes. No arguments.
-
-# Returns
-The server instance for chaining.
-"""
-function ws!(server::AbstractServer, path::AbstractString; on_message::Function, on_open::Union{Function,Nothing}=nothing, on_close::Union{Function,Nothing}=nothing)
-    router_obj = server.core.ws_router
-    if router_obj isa NoWsRouter
-        throw(ArgumentError("WebSocket support not configured. Pass WsRouter() when creating the server, e.g. AsyncServer(NoApp(), WsRouter())"))
-    end
-    router_obj.routes[path] = WsEndpoint(on_message=on_message, on_open=on_open, on_close=on_close)
-    return server
+function WsRouter()
+    return DynamicWsRouter()
 end
+
+"""
+    StaticWsRouter — Base type for macro-generated static WebSocket routers.
+"""
+abstract type StaticWsRouter <: WsRouter end
+
+"""
+    NoWsRouter — Sentinel type indicating no WebSocket support.
+"""
+struct NoWsRouter <: WsRouter end
+
+# --- Registration ---
+
+function ws!(router::DynamicWsRouter, path::AbstractString; 
+             on_message::Function, 
+             on_open::Union{Function,Nothing}=nothing, 
+             on_close::Union{Function,Nothing}=nothing)
+    router.routes[path] = WsEndpoint(on_message=on_message, on_open=on_open, on_close=on_close)
+    return router
+end
+
+# (Macro-generated stubs...)
+function static_ws_upgrade(::StaticWsRouter, ::String) nothing end

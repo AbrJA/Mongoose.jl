@@ -1,7 +1,7 @@
 """
     WebSocket message types and handler definitions.
-    Uses separate types for text and binary messages for type stability.
 """
+abstract type WsRouter end
 
 """
     WsTextMessage — A text WebSocket message (opcode 1).
@@ -33,9 +33,6 @@ end
 
 """
     WsEndpoint — Callbacks for a WebSocket endpoint.
-    on_open: called when a new WebSocket connection is established (receives the HTTP upgrade request).
-    on_message: called when a WebSocket message is received.
-    on_close: called when a WebSocket connection is closed.
 """
 struct WsEndpoint
     on_open::Function
@@ -59,9 +56,6 @@ end
 
 """
     decode_ws_message(msg::MgWsMessage) → WsMessage
-
-Decode a C-level WebSocket message into either a `WsTextMessage` or `WsBinaryMessage`.
-For binary messages, the data is copied since the C buffer is only valid during the callback.
 """
 function decode_ws_message(msg::MgWsMessage)
     opcode = msg.flags & 0x0F
@@ -73,7 +67,7 @@ function decode_ws_message(msg::MgWsMessage)
         else
             ptr = msg.data.buf
             data = unsafe_wrap(Array, ptr, msg.data.len)
-            return WsBinaryMessage(copy(data))  # Must copy — C buffer invalidated after callback
+            return WsBinaryMessage(copy(data))
         end
     else
         return is_text ? WsTextMessage("") : WsBinaryMessage(UInt8[])

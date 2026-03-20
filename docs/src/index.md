@@ -16,7 +16,7 @@ Here is a simple example of how to create a synchronous server and define a basi
 using Mongoose
 
 # Define your routes
-router = Router()
+router = HttpRouter()
 route!(router, :get, "/hello", (req) -> Response(200, "Hello!"))
 
 # Create and start the server

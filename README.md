@@ -22,8 +22,8 @@ Mongoose.jl uses a decoupled architecture: define your **Router**, then pass it 
 ```julia
 using Mongoose
 
-# 1. Define your routes using a DynamicRouter
-router = Router()
+# 1. Define your routes using an HttpRouter
+router = HttpRouter()
 
 route!(router, :get, "/hello", (req) -> begin
     Response(200, "Hello from Mongoose.jl!")
@@ -44,18 +44,23 @@ start!(server, port=8080, workers=4)
 ## ✨ Core Concepts
 
 ### 1. Routers
-Mongoose.jl provides two ways to handle routing:
+Mongoose.jl provides two ways to handle routing for both HTTP and WebSockets:
 
-*   **DynamicRouter (aliased as `Router`)**: Standard path-based routing. Routes can be added or modified at runtime using `route!`.
-*   **StaticRouter**: Created via the `@router` macro. It uses compile-time dispatch and is required for **AOT compilation** with `juliac --trim=safe`.
+*   **HttpRouter / WsRouter**: Standard dynamic path-based routing. Routes can be added or modified at runtime using `route!` or `ws!`.
+*   **StaticHttpRouter / StaticWsRouter**: Created via the `@router` and `@wsrouter` macros. They use compile-time dispatch and are required for **AOT compilation** with `juliac --trim=safe`.
 
 ```julia
-# Static Router Example
+# Static HTTP Router Example
 @router MyApi begin
     GET("/", (req) -> Response(200, "Static Hello"))
 end
 
-server = Server(MyApi())
+# Static WS Router Example
+@wsrouter MyWs begin
+    WS("/chat", on_message=(msg) -> "Echo: $(msg.data)")
+end
+
+server = Server(MyApi(), static_ws=MyWs())
 start!(server, port=8081)
 ```
 
