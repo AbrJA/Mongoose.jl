@@ -29,28 +29,27 @@ function cleanup!(manager::Manager)
 end
 
 """
-    ServerCore{H, W} — Shared state. H <: AbstractHttpRouter, W <: AbstractWsRouter
+    ServerCore{R} — Shared state. R <: AbstractRouter
 """
-mutable struct ServerCore{H <: AbstractHttpRouter, W <: AbstractWsRouter}
+mutable struct ServerCore{R <: AbstractRouter}
     manager::Manager
     handler::Ptr{Cvoid}
     timeout::Cint
     master::Union{Nothing,Task}
-    http::H
-    ws::W
+    router::R
     ws_connections::Dict{Int,String}
     running::Threads.Atomic{Bool}
     middlewares::Vector{Function}
     max_body_size::Int
     drain_timeout_ms::Int
 
-    function ServerCore(timeout::Integer, http::H, ws::W;
+    function ServerCore(timeout::Integer, router::R;
                         max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
                         drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS,
-                        c_handler::Ptr{Cvoid}=C_NULL) where {H <: AbstractHttpRouter, W <: AbstractWsRouter}
-        return new{H, W}(
+                        c_handler::Ptr{Cvoid}=C_NULL) where {R <: AbstractRouter}
+        return new{R}(
             Manager(empty=true), c_handler, Cint(timeout), nothing,
-            http, ws, Dict{Int,String}(),
+            router, Dict{Int,String}(),
             Threads.Atomic{Bool}(false), Function[],
             max_body_size, drain_timeout_ms
         )
@@ -62,15 +61,15 @@ end
 """
     SyncServer — Single-threaded blocking server.
 """
-mutable struct SyncServer{H <: AbstractHttpRouter, W <: AbstractWsRouter} <: AbstractServer
-    core::ServerCore{H, W}
+mutable struct SyncServer{R <: AbstractRouter} <: AbstractServer
+    core::ServerCore{R}
 end
 
 """
     AsyncServer — Multi-threaded server using worker tasks.
 """
-mutable struct AsyncServer{H <: AbstractHttpRouter, W <: AbstractWsRouter} <: AbstractServer
-    core::ServerCore{H, W}
+mutable struct AsyncServer{R <: AbstractRouter} <: AbstractServer
+    core::ServerCore{R}
     workers::Vector{Task}
     http_requests::Channel{IdRequest{Request}}
     ws_requests::Channel{IdWsMessage}

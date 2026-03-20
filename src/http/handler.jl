@@ -55,7 +55,7 @@ end
     _dispatch_http(server, request) → Response
 """
 function _dispatch_http(server::AbstractServer, req::AbstractRequest)::AbstractResponse
-    final = (r, args...) -> _dispatch_to_router(server.core.http, r)
+    final = (r, args...) -> _dispatch_to_router(server.core.router, r)
     if isempty(server.core.middlewares)
         return final(req)
     end
@@ -74,7 +74,7 @@ end
     return Response(404, "Content-Type: text/plain\r\n", "404 Not Found")
 end
 
-@inline function _dispatch_to_router(router::StaticHttpRouter, req)
+@inline function _dispatch_to_router(router::StaticRouter, req)
     return static_dispatch(router, req)
 end
 

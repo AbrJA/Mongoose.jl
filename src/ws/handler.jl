@@ -6,14 +6,14 @@
     handle_ws_message!(server, request) → IdWsMessage or nothing
 """
 function handle_ws_message!(server::AbstractServer, request::IdWsMessage)
-    router = server.core.ws
+    router = server.core.router
     return _dispatch_ws_message(router, request)
 end
 
-@inline _dispatch_ws_message(router::WsRouter, request) = _handle_dynamic_ws_message(router, request)
-@inline _dispatch_ws_message(router::StaticWsRouter, request) = _handle_static_ws_message(router, request)
+@inline _dispatch_ws_message(router::Router, request) = _handle_dynamic_ws_message(router, request)
+@inline _dispatch_ws_message(router::StaticRouter, request) = _handle_static_ws_message(router, request)
 
-function _handle_static_ws_message(static::StaticWsRouter, request::IdWsMessage)
+function _handle_static_ws_message(static::StaticRouter, request::IdWsMessage)
     endpoint = static_ws_upgrade(static, request.uri)
     if endpoint !== nothing
         return _execute_ws_endpoint(endpoint, request)
@@ -21,8 +21,8 @@ function _handle_static_ws_message(static::StaticWsRouter, request::IdWsMessage)
     return nothing
 end
 
-function _handle_dynamic_ws_message(router::WsRouter, request::IdWsMessage)
-    endpoint = get(router.routes, request.uri, nothing)
+function _handle_dynamic_ws_message(router::Router, request::IdWsMessage)
+    endpoint = get(router.ws_routes, request.uri, nothing)
     if endpoint !== nothing
         return _execute_ws_endpoint(endpoint, request)
     end
@@ -51,7 +51,7 @@ end
     check_ws_upgrade(server, conn, ev_data) → Bool
 """
 function check_ws_upgrade(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
-    router = server.core.ws
+    router = server.core.router
     message = MgHttpMessage(ev_data)
     uri = to_string(message.uri)
 
@@ -64,8 +64,8 @@ function check_ws_upgrade(server::AbstractServer, conn::MgConnection, ev_data::P
     return false
 end
 
-@inline _get_ws_endpoint(router::WsRouter, uri) = get(router.routes, uri, nothing)
-@inline _get_ws_endpoint(router::StaticWsRouter, uri) = static_ws_upgrade(router, uri)
+@inline _get_ws_endpoint(router::Router, uri) = get(router.ws_routes, uri, nothing)
+@inline _get_ws_endpoint(router::StaticRouter, uri) = static_ws_upgrade(router, uri)
 
 function _do_ws_upgrade(server, conn, ev_data, uri, endpoint)
     mg_ws_upgrade(conn, ev_data, C_NULL)
@@ -127,7 +127,7 @@ function cleanup_ws_connection!(server::AbstractServer, conn::MgConnection)
     uri = get(server.core.ws_connections, conn_id, nothing)
 
     if uri !== nothing
-        endpoint = _get_ws_endpoint(server.core.ws, uri)
+        endpoint = _get_ws_endpoint(server.core.router, uri)
         if endpoint !== nothing && endpoint.has_on_close
             try
                 endpoint.on_close()

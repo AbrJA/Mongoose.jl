@@ -7,14 +7,13 @@
 
 Create a single-threaded blocking server. Compatible with `juliac --trim=safe`.
 """
-function SyncServer(http::AbstractHttpRouter=Router();
+function SyncServer(router::AbstractRouter=Router();
                     timeout::Integer=0,
                     max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
                     drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
-    ws_router = _build_ws_router(http)
-    c_handler = Mongoose.get_c_handler_sync(typeof(http))
-    core = ServerCore(timeout, http, ws_router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
-    server = SyncServer{typeof(http), typeof(ws_router)}(core)
+    c_handler = Mongoose.get_c_handler_sync(typeof(router))
+    core = ServerCore(timeout, router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
+    server = SyncServer{typeof(router)}(core)
     finalizer(free_resources!, server)
     return server
 end

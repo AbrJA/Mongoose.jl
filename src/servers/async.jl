@@ -8,16 +8,15 @@
 Create a multi-threaded server with `workers` background tasks.
 Not compatible with `juliac --trim=safe`.
 """
-function AsyncServer(http::AbstractHttpRouter=Router();
+function AsyncServer(router::AbstractRouter=Router();
                      workers::Integer=4,
                      nqueue::Integer=1024,
                      timeout::Integer=0,
                      max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
                      drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
-    ws_router = _build_ws_router(http)
-    c_handler = Mongoose.get_c_handler_async(typeof(http))
-    core = ServerCore(timeout, http, ws_router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
-    server = AsyncServer{typeof(http), typeof(ws_router)}(
+    c_handler = Mongoose.get_c_handler_async(typeof(router))
+    core = ServerCore(timeout, router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
+    server = AsyncServer{typeof(router)}(
         core, Task[],
         Channel{IdRequest{Request}}(nqueue), Channel{IdWsMessage}(nqueue),
         Channel{IdResponse{Response}}(nqueue), Channel{IdWsMessage}(nqueue),

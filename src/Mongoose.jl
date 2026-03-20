@@ -19,13 +19,13 @@ include("ffi/bindings.jl")
 # 2. Base Types and Errors
 include("core/types.jl")
 include("core/errors.jl")
-include("http/types.jl")      # Defines AbstractHttpRouter
-include("ws/types.jl")        # Defines AbstractWsRouter
+include("http/types.jl")      # Defines AbstractRouter
+include("ws/types.jl")        # WsEndpoint, WsMessage types
 
 # 3. Router Implementations
-include("http/static_router.jl") # Define StaticHttpRouter first
+include("http/static_router.jl") # Define StaticRouter first
 include("http/router.jl")        # Router
-include("ws/router.jl")          # WsRouter, StaticWsRouter
+include("ws/router.jl")          # ws! registration, static_ws_upgrade
 
 # 4. Core Server Logic
 include("core/server.jl")     # ServerCore

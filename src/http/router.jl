@@ -28,7 +28,7 @@ end
 """
     Router — Trie-based dynamic HTTP + WebSocket router.
 """
-struct Router <: AbstractHttpRouter
+struct Router <: AbstractRouter
     node::Node
     fixed::Dict{String, FixedRoute}
     ws_routes::Dict{String, WsEndpoint}

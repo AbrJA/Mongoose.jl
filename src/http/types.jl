@@ -1,7 +1,7 @@
 """
     HTTP request/response types and abstract bases.
 """
-abstract type AbstractHttpRouter end
+abstract type AbstractRouter end
 
 """
     Request — Full HTTP request with owned string data.
