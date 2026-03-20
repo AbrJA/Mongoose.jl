@@ -22,7 +22,7 @@ end
 function run_event_loop(server::SyncServer)
     server.core.running[] = true
     while server.core.running[]
-        mg_mgr_poll!(server.core.manager.ptr, server.core.timeout)
+        mg_mgr_poll(server.core.manager.ptr, server.core.timeout)
         yield()
     end
 end

@@ -47,8 +47,8 @@ stop_workers!(::AbstractServer) = nothing
 function run_event_loop(server::AsyncServer)
     server.core.running[] = true
     while server.core.running[]
-        mg_mgr_poll!(server.core.manager.ptr, server.core.timeout)
-        
+        mg_mgr_poll(server.core.manager.ptr, server.core.timeout)
+
         # Dispatch responses from workers back to C library
         while isready(server.http_responses)
             id_res = take!(server.http_responses)
