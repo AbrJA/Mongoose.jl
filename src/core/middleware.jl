@@ -30,6 +30,11 @@ function route!(server::AbstractServer, method::Symbol, path::AbstractString, @n
     return server
 end
 
+function route!(server::AbstractServer, method::AbstractString, path::AbstractString, @nospecialize(handler::Function))
+    route!(server.core.router, Symbol(lowercase(method)), path, handler)
+    return server
+end
+
 function ws!(server::AbstractServer, path::AbstractString; kwargs...)
     ws!(server.core.router, path; kwargs...)
     return server

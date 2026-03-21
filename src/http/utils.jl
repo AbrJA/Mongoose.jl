@@ -150,3 +150,16 @@ function format_headers(headers::Dict{String,String})
     end
     return String(take!(io))
 end
+
+"""
+    query(req, key::String) → Union{String, Nothing}
+
+Lookup a single query-string parameter by key, URL-decoded.
+Returns `nothing` if the key is absent.
+"""
+function query(req::AbstractRequest, key::String)
+    q = query(req)
+    isempty(q) && return nothing
+    params = parse_params(q)
+    return get(params, key, nothing)
+end

@@ -20,8 +20,8 @@ function AsyncServer(router::AbstractRouter=Router();
     core = ServerCore(timeout, router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
     server = AsyncServer{typeof(router)}(
         core, Task[],
-        Channel{IdRequest{Request}}(nqueue), Channel{IdWsMessage}(nqueue),
-        Channel{IdResponse{Response}}(nqueue), Channel{IdWsMessage}(nqueue),
+        Channel{Tagged{Request}}(nqueue), Channel{IdWsMessage}(nqueue),
+        Channel{Tagged{Response}}(nqueue), Channel{IdWsMessage}(nqueue),
         Dict{Int,MgConnection}(), Int(workers), Int(nqueue)
     )
     finalizer(free_resources!, server)
@@ -98,9 +98,9 @@ function worker_loop(server::AsyncServer)
                     _dispatch_http(server, req.payload)
                 catch e
                     @error "Handler error" exception=(e, catch_backtrace())
-                    Response(500, "Content-Type: text/plain\r\n", "500 Internal Server Error")
+                    Response(500, CONTENT_TYPE_TEXT, "500 Internal Server Error")
                 end
-                isopen(server.http_responses) && put!(server.http_responses, IdResponse(req.id, res))
+                isopen(server.http_responses) && put!(server.http_responses, Tagged(req.id, res))
             # Try WS
             elseif isready(server.ws_requests)
                 req = take!(server.ws_requests)

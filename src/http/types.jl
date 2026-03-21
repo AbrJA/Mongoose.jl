@@ -12,6 +12,7 @@ struct Request <: AbstractRequest
     query::String
     headers::Dict{String,String}
     body::String
+    context::Dict{Symbol,Any}
 end
 
 """
@@ -21,6 +22,7 @@ struct ViewRequest <: AbstractRequest
     method::Symbol
     uri::String
     message::MgHttpMessage
+    context::Dict{Symbol,Any}
 end
 
 """
@@ -40,19 +42,11 @@ struct PreRenderedResponse <: AbstractResponse
 end
 
 """
-    IdRequest{R} — Connection-tagged request.
+    Tagged{T} — Connection-tagged payload for async queue routing.
 """
-struct IdRequest{R <: AbstractRequest}
+struct Tagged{T}
     id::Int
-    payload::R
-end
-
-"""
-    IdResponse{R} — Connection-tagged response.
-"""
-struct IdResponse{R <: AbstractResponse}
-    id::Int
-    payload::R
+    payload::T
 end
 
 # --- Constructors ---
@@ -61,12 +55,14 @@ function Response(status::Int, headers::Dict{String,String}, body::String)
     return Response(status, format_headers(headers), body)
 end
 
+const CONTENT_TYPE_TEXT = "Content-Type: text/plain\r\n"
+
 function Request(message::MgHttpMessage)
-    return Request(_method(message), _uri(message), _query(message), _headers(message), _body(message))
+    return Request(_method(message), _uri(message), _query(message), _headers(message), _body(message), Dict{Symbol,Any}())
 end
 
 function ViewRequest(message::MgHttpMessage)
-    return ViewRequest(_method(message), _uri(message), message)
+    return ViewRequest(_method(message), _uri(message), message, Dict{Symbol,Any}())
 end
 
 # (Accessors and FFI helpers...)
@@ -96,6 +92,9 @@ end
 
 body(req::Request) = req.body
 body(req::ViewRequest) = to_string(req.message.body)
+
+context(req::Request) = req.context
+context(req::ViewRequest) = req.context
 
 query(req::Request) = req.query
 query(req::ViewRequest) = to_string(req.message.query)

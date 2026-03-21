@@ -72,9 +72,9 @@ end
 mutable struct AsyncServer{R <: AbstractRouter} <: AbstractServer
     core::ServerCore{R}
     workers::Vector{Task}
-    http_requests::Channel{IdRequest{Request}}
+    http_requests::Channel{Tagged{Request}}
     ws_requests::Channel{IdWsMessage}
-    http_responses::Channel{IdResponse{Response}}
+    http_responses::Channel{Tagged{Response}}
     ws_responses::Channel{IdWsMessage}
     connections::Dict{Int,MgConnection}
     nworkers::Int

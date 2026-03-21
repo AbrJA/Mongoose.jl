@@ -607,4 +607,187 @@ end
         end
     end
 
+    # --- Test: Query String Stripping in Dynamic Router ---
+    @testset "Query String Stripping" begin
+        router = Router()
+        route!(router, :get, "/search", (req) -> Response(200, "", "found"))
+        route!(router, :get, "/users/:id::Int", (req, id) -> Response(200, "", "user $id"))
+
+        server = SyncServer(router)
+        start!(server; port=8112, blocking=false)
+
+        try
+            # Fixed route with query string
+            resp = HTTP.get("http://localhost:8112/search?q=hello&page=1")
+            @test resp.status == 200
+            @test String(resp.body) == "found"
+
+            # Dynamic route with query string
+            resp = HTTP.get("http://localhost:8112/users/42?expand=true")
+            @test resp.status == 200
+            @test String(resp.body) == "user 42"
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: HEAD Auto-Handling ---
+    @testset "HEAD Auto from GET" begin
+        router = Router()
+        route!(router, :get, "/page", (req) -> Response(200, "X-Custom: yes\r\n", "body content"))
+
+        server = SyncServer(router)
+        start!(server; port=8113, blocking=false)
+
+        try
+            resp = HTTP.head("http://localhost:8113/page")
+            @test resp.status == 200
+            @test isempty(resp.body)
+            @test HTTP.header(resp, "X-Custom") == "yes"
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: query(req, key) ---
+    @testset "Query Param Lookup" begin
+        router = Router()
+        route!(router, :get, "/search", (req) -> begin
+            q = query(req, "q")
+            page = query(req, "page")
+            missing_key = query(req, "nope")
+            Response(200, "", "q=$(something(q, "")),page=$(something(page, "")),nope=$(something(missing_key, "nil"))")
+        end)
+
+        server = SyncServer(router)
+        start!(server; port=8114, blocking=false)
+
+        try
+            resp = HTTP.get("http://localhost:8114/search?q=hello&page=2")
+            @test resp.status == 200
+            @test String(resp.body) == "q=hello,page=2,nope=nil"
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: String Method Route Registration ---
+    @testset "String Method Route" begin
+        server = SyncServer(Router())
+        route!(server, "GET", "/a", (req) -> Response(200, "", "from get"))
+        route!(server, "POST", "/a", (req) -> Response(200, "", "from post"))
+        start!(server; port=8115, blocking=false)
+
+        try
+            resp = HTTP.get("http://localhost:8115/a")
+            @test resp.status == 200
+            @test String(resp.body) == "from get"
+
+            resp = HTTP.post("http://localhost:8115/a")
+            @test resp.status == 200
+            @test String(resp.body) == "from post"
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: Request Context ---
+    @testset "Request Context" begin
+        router = Router()
+        route!(router, :get, "/ctx", (req) -> begin
+            # Context should be an empty dict by default
+            @assert context(req) isa Dict{Symbol,Any}
+            req.context[:user] = "alice"
+            Response(200, "", "user=$(req.context[:user])")
+        end)
+
+        server = SyncServer(router)
+        start!(server; port=8116, blocking=false)
+
+        try
+            resp = HTTP.get("http://localhost:8116/ctx")
+            @test resp.status == 200
+            @test String(resp.body) == "user=alice"
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: parse_params Export ---
+    @testset "parse_params Export" begin
+        params = parse_params("name=alice&age=30&city=new+york")
+        @test params["name"] == "alice"
+        @test params["age"] == "30"
+        @test params["city"] == "new york"
+    end
+
+    # --- Test: Static File Serving ---
+    @testset "Static Files" begin
+        # Create temp directory with test files
+        mktempdir() do dir
+            write(joinpath(dir, "index.html"), "<h1>Home</h1>")
+            write(joinpath(dir, "style.css"), "body { color: red; }")
+            mkdir(joinpath(dir, "sub"))
+            write(joinpath(dir, "sub", "page.html"), "<p>Sub</p>")
+
+            router = Router()
+            route!(router, :get, "/api/hello", (req) -> Response(200, "", "hello"))
+
+            server = SyncServer(router)
+            use!(server, static_files(dir; prefix="/assets"))
+            start!(server; port=8117, blocking=false)
+
+            try
+                # Serve index on prefix root
+                resp = HTTP.get("http://localhost:8117/assets")
+                @test resp.status == 200
+                @test String(resp.body) == "<h1>Home</h1>"
+                @test occursin("text/html", HTTP.header(resp, "Content-Type"))
+
+                # Serve CSS with correct MIME
+                resp = HTTP.get("http://localhost:8117/assets/style.css")
+                @test resp.status == 200
+                @test String(resp.body) == "body { color: red; }"
+                @test occursin("text/css", HTTP.header(resp, "Content-Type"))
+
+                # Serve from subdirectory
+                resp = HTTP.get("http://localhost:8117/assets/sub/page.html")
+                @test resp.status == 200
+                @test String(resp.body) == "<p>Sub</p>"
+
+                # Non-existent file falls through to route/404
+                resp = HTTP.get("http://localhost:8117/assets/missing.txt"; status_exception=false)
+                @test resp.status == 404
+
+                # Path traversal attempt
+                resp = HTTP.get("http://localhost:8117/assets/../../../etc/passwd"; status_exception=false)
+                @test resp.status in (403, 404)
+
+                # Normal route still works
+                resp = HTTP.get("http://localhost:8117/api/hello")
+                @test resp.status == 200
+                @test String(resp.body) == "hello"
+            finally
+                shutdown!(server)
+            end
+        end
+    end
+
+    # --- Test: Body with Percent Sign (mg_http_reply %s fix) ---
+    @testset "Body Percent Sign" begin
+        router = Router()
+        route!(router, :get, "/pct", (req) -> Response(200, "", "100% done"))
+
+        server = SyncServer(router)
+        start!(server; port=8118, blocking=false)
+
+        try
+            resp = HTTP.get("http://localhost:8118/pct")
+            @test resp.status == 200
+            @test String(resp.body) == "100% done"
+        finally
+            shutdown!(server)
+        end
+    end
+
 end

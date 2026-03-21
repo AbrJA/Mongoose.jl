@@ -5,11 +5,12 @@ using PrecompileTools
 
 export SyncServer, AsyncServer, Router, Request, Response,
        start!, shutdown!, route!, use!,
-       parse_into,
+       parse_into, parse_params,
        ws!, WsTextMessage, WsBinaryMessage, WsMessage,
-       header, body, query,
+       header, body, query, context,
        cors, rate_limit, auth_bearer, auth_api_key, logger,
        json_response, json_body,
+       static_files,
        @router
 
 # 1. FFI Layer (Constants, Structs, Bindings)
@@ -50,6 +51,7 @@ include("middleware/cors.jl")
 include("middleware/rate_limit.jl")
 include("middleware/auth.jl")
 include("middleware/logger.jl")
+include("middleware/static_files.jl")
 
 # 8. Precompilation
 @setup_workload begin
@@ -79,6 +81,14 @@ include("middleware/logger.jl")
         rate_limit()
         auth_bearer(t -> true)
         auth_api_key(keys=Set(["k"]))
+
+        # HTTP dispatch pipeline
+        req = Request(:get, "/", "", Dict{String,String}(), "", Dict{Symbol,Any}())
+        _dispatch_to_router(router, req)
+
+        # Middleware pipeline
+        mw = cors()
+        execute_middleware(Middleware[mw], req, Any[], (r, args...) -> Response(200, "", ""))
     end
 end
 

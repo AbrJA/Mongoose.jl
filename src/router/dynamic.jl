@@ -51,11 +51,12 @@ const PARAM_TYPES = Dict{String,Type}(
 )
 
 function match_route(router::Router, method::Symbol, path::AbstractString)
-    if (route = get(router.fixed, path, nothing)) !== nothing
+    clean = strip_query(path)
+    if (route = get(router.fixed, clean, nothing)) !== nothing
         return Matched(route.handlers, EMPTY_PARAMS)
     end
     params = Any[]
-    return _match(router.node, path, 1, method, params)
+    return _match(router.node, clean, 1, method, params)
 end
 
 @inline function _match(node::Node, path::AbstractString, path_idx::Int, method::Symbol, params::Vector{Any})

@@ -35,7 +35,7 @@ end
     mg_http_reply(conn, status, headers, body) — Send an HTTP response.
 """
 function mg_http_reply(conn::MgConnection, status::Int, headers::String, body::String)
-    ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring), conn, Cint(status), headers, body)
+    ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring, Cstring), conn, Cint(status), headers, "%s", body)
 end
 
 """
