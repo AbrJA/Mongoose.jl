@@ -79,12 +79,38 @@ You can choose the execution model that fits your needs:
 ## 🛠 Features
 
 ### Middleware
-Mongoose.jl includes built-in middleware for common tasks like CORS and Rate Limiting.
+
+Mongoose.jl includes built-in middleware for common tasks. Middleware can be added to any server using `use!`.
 
 ```julia
-server = AsyncServer(router)
+# Logging: logs method, URI, status, and time (ms)
+use!(server, logger())
+
+# CORS: handles OPTIONS and adds headers
 use!(server, cors(origins="*"))
-use!(server, rate_limit(requests=100, window=60))
+
+# Rate Limiting: 100 requests per 60s per client IP
+use!(server, rate_limit(max_requests=100, window_seconds=60))
+
+# Serving Static Files
+use!(server, static_files("public"; prefix="/static"))
+
+# Authentication
+use!(server, auth_bearer(token -> token == "secret-123"))
+```
+
+### Request Utilities
+
+Handlers receive a `Request` or `ViewRequest`. Use these helpers to access data efficiently:
+
+```julia
+route!(router, :get, "/search", (req) -> begin
+    q = query(req, "q")          # Get ?q=... (URL-decoded)
+    user = context(req)[:user]   # Access request context
+    println("Body: ", body(req)) # Raw request body
+    
+    Response(200, ContentType.json, "{\"ok\": true}")
+end)
 ```
 
 ### WebSocket Support
@@ -99,14 +125,15 @@ start!(server, port=8080)
 ```
 
 ### JSON Support
-Utilities for handling JSON payloads and responses.
+
+Utilities for handling JSON payloads. These are optimized to use `JSON.jl` when available.
 
 ```julia
-# Parse JSON body
+# Parse JSON body into a Dict
 data = json_body(request)
 
-# Send JSON response
-json_response(Dict("key" => "value"))
+# Send JSON response with correct Content-Type
+json_response(Dict("status" => "ok"))
 ```
 
 ## 🏗 Ahead-of-Time (AOT) Compilation

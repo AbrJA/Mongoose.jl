@@ -10,7 +10,7 @@ using Mongoose
 
 ## GET Endpoint with Query Parameters
 
-This example demonstrates how to parse query parameters from the request URI.
+This example demonstrates how to lookup query parameters from the request URI using the `query` helper.
 
 ```julia
 using Mongoose
@@ -18,11 +18,9 @@ using Mongoose
 router = Router()
 
 function greet(req::Request)
-    # req.query contains the raw query string "name=Guest"
-    # parse_into turns it into a Dict or a Struct
-    params = parse_into(Dict, req.query)
-    name = get(params, "name", "Guest")
-    return Response(200, "Hi $name")
+    # Use query() to get parameters from "?name=Guest"
+    name = query(req, "name")
+    return Response(200, ContentType.text, "Hi $(something(name, "Guest"))")
 end
 
 route!(router, :get, "/greet", greet)
@@ -33,20 +31,32 @@ start!(server, port=8080, blocking=false)
 
 ## POST Endpoint with JSON Body
 
-This example shows how to handle a POST request and parse a JSON body.
+This example shows how to handle a POST request and parse a JSON body into a Dict or a Struct.
 
 ```julia
 using Mongoose
 
-router = Router()
-
-function saygoodbye(req::Request)
-    data = json_body(req)
-    name = get(data, "name", "Friend")
-    return json_response(Dict("message" => "Goodbye, $name!"))
+# Define a struct for your data
+struct UserProfile
+    username::String
+    age::Int
+    active::Bool
 end
 
-route!(router, :post, "/saygoodbye", saygoodbye)
+router = Router()
+
+# Example 1: Parsing into a Dict
+route!(router, :post, "/user/dict", (req) -> begin
+    data = json_body(req)
+    name = get(data, "username", "Guest")
+    return json_response(Dict("message" => "Hello $name"))
+end)
+
+# Example 2: Parsing into a Struct (requires JSON.jl loaded)
+route!(router, :post, "/user/struct", (req) -> begin
+    profile = json_body(req, UserProfile)
+    return json_response(Dict("received" => profile.username))
+end)
 
 server = AsyncServer(router)
 start!(server, port=8081, blocking=false)
@@ -88,12 +98,12 @@ router = Router()
 
 # Basic string parameter
 route!(router, :get, "/users/:id", (req, id) -> begin
-    Response(200, "User ID (String): $id")
+    Response(200, ContentType.text, "User ID: $id")
 end)
 
-# Typed parameter (Int)
+# Typed parameter (Int) - path segment is auto-parsed
 route!(router, :get, "/items/:id::Int", (req, id) -> begin
-    Response(200, "Item ID (Int): $id")
+    Response(200, ContentType.text, "Item ID (Int): $id")
 end)
 
 server = AsyncServer(router)
@@ -121,24 +131,43 @@ start!(server, port=8084, blocking=false)
 ```
 ## Middleware
 
-Mongoose.jl includes built-in middleware for common tasks.
+Mongoose.jl includes built-in middleware for logging, security, and performance.
 
 ```julia
 using Mongoose
 
 router = Router()
-route!(router, :get, "/api/data", (req) -> Response(200, "Data"))
+route!(router, :get, "/api/data", (req) -> Response(200, ContentType.json, "{\"status\":\"ok\"}"))
 
 server = AsyncServer(router)
 
-# Add CORS support
+# 1. Logging all requests
+use!(server, logger())
+
+# 2. CORS support
 use!(server, cors(origins="*"))
 
-# Add Rate Limiting (100 requests per 60 seconds)
+# 3. Rate Limiting (100 requests per 60 seconds per IP)
 use!(server, rate_limit(max_requests=100, window_seconds=60))
 
-# Add Bearer Token Auth
-use!(server, auth_bearer(token -> token == "secret"))
+# 4. Bearer Token Auth
+use!(server, auth_bearer(token -> token == "secret-123"))
 
 start!(server, port=8085, blocking=false)
+```
+
+## Serving Static Files
+
+Use the `static_files` middleware to serve a directory of HTML, CSS, and JS files.
+
+```julia
+using Mongoose
+
+# Serves all files in the "public" directory under the "/static" prefix
+# e.g., GET /static/style.css -> public/style.css
+# e.g., GET /static/           -> public/index.html
+server = SyncServer(Router())
+use!(server, static_files("public"; prefix="/static", index="index.html"))
+
+start!(server, port=8086)
 ```
