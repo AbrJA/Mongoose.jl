@@ -1,6 +1,7 @@
 module Mongoose
 
 using Mongoose_jll
+using PrecompileTools
 
 export SyncServer, AsyncServer, Router, Request, Response,
        start!, shutdown!, route!, use!,
@@ -50,5 +51,36 @@ include("middleware/cors.jl")
 include("middleware/rate_limit.jl")
 include("middleware/auth.jl")
 include("middleware/logger.jl")
+
+# 8. Precompilation
+@setup_workload begin
+    @compile_workload begin
+        # Router construction and route registration
+        router = Router()
+        route!(router, :get, "/", req -> Response(200, "", ""))
+        route!(router, :get, "/users/:id::Int", (req, id) -> Response(200, "", ""))
+        route!(router, :post, "/data", req -> Response(200, "", ""))
+
+        # Route matching (hot path)
+        match_route(router, :get, "/")
+        match_route(router, :get, "/users/1")
+        match_route(router, :post, "/data")
+        match_route(router, :get, "/nonexistent")
+
+        # Response construction
+        Response(200, "Content-Type: text/plain\r\n", "ok")
+        Response(404, "", "")
+
+        # JSON helpers
+        json_response(Dict("key" => "value"))
+
+        # Middleware construction
+        cors()
+        logger()
+        rate_limit()
+        auth_bearer(t -> true)
+        auth_api_key(keys=Set(["k"]))
+    end
+end
 
 end # module Mongoose
