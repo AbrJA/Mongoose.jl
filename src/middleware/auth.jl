@@ -10,17 +10,17 @@ function (mw::BearerAuth)(request::AbstractRequest, params::Vector{Any}, next)
     auth_header = header(request, "Authorization")
 
     if auth_header === nothing
-        return Response(401, "Content-Type: text/plain\r\nWWW-Authenticate: Bearer\r\n", "401 Unauthorized")
+        return Response(401, ContentType.text * "WWW-Authenticate: Bearer\r\n", "401 Unauthorized")
     end
 
     if !startswith(auth_header, "Bearer ")
-        return Response(401, "Content-Type: text/plain\r\nWWW-Authenticate: Bearer\r\n", "401 Unauthorized: Invalid scheme")
+        return Response(401, ContentType.text * "WWW-Authenticate: Bearer\r\n", "401 Unauthorized: Invalid scheme")
     end
 
     token = auth_header[8:end]
 
     if !mw.validator(token)
-        return Response(403, "Content-Type: text/plain\r\n", "403 Forbidden: Invalid token")
+        return Response(403, ContentType.text, "403 Forbidden: Invalid token")
     end
 
     return next()
@@ -48,7 +48,7 @@ function (mw::ApiKeyAuth)(request::AbstractRequest, params::Vector{Any}, next)
     api_key = header(request, mw.header_name)
 
     if api_key === nothing || api_key ∉ mw.keys
-        return Response(401, "Content-Type: text/plain\r\n", "401 Unauthorized: Invalid API key")
+        return Response(401, ContentType.text, "401 Unauthorized: Invalid API key")
     end
 
     return next()

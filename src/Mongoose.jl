@@ -10,7 +10,7 @@ export SyncServer, AsyncServer, Router, Request, Response,
        header, body, query, context,
        cors, rate_limit, auth_bearer, auth_api_key, logger,
        json_response, json_body,
-       static_files,
+       static_files, ContentType,
        @router
 
 # 1. FFI Layer (Constants, Structs, Bindings)
@@ -72,7 +72,7 @@ function json_body end
         _match_route(router, :get, "/nonexistent")
 
         # Response construction
-        Response(200, "Content-Type: text/plain\r\n", "ok")
+        Response(200, ContentType.text, "ok")
         Response(404, "", "")
 
         # Middleware construction

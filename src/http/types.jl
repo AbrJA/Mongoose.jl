@@ -55,7 +55,26 @@ function Response(status::Int, headers::Dict{String,String}, body::String)
     return Response(status, _format_headers(headers), body)
 end
 
-const CONTENT_TYPE_TEXT = "Content-Type: text/plain\r\n"
+"""
+    ContentType — Pre-formatted Content-Type headers for common MIME types.
+
+# Usage
+```julia
+Response(200, ContentType.json, "{\"ok\":true}")
+Response(200, ContentType.html, "<h1>Hi</h1>")
+Response(200, ContentType.text, "hello")
+```
+"""
+const ContentType = (
+    text  = "Content-Type: text/plain\r\n",
+    html  = "Content-Type: text/html\r\n",
+    json  = "Content-Type: application/json\r\n",
+    xml   = "Content-Type: application/xml\r\n",
+    css   = "Content-Type: text/css\r\n",
+    js    = "Content-Type: application/javascript\r\n",
+    form  = "Content-Type: application/x-www-form-urlencoded\r\n",
+    octet = "Content-Type: application/octet-stream\r\n",
+)
 
 function Request(message::MgHttpMessage)
     return Request(_method(message), _uri(message), _query(message), _headers(message), _body(message), Dict{Symbol,Any}())

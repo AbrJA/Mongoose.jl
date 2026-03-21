@@ -59,7 +59,7 @@ function (mw::StaticFiles)(request::AbstractRequest, params::Vector{Any}, next)
 
     # Resolve and guard against path traversal
     filepath = normpath(joinpath(mw.directory, rel))
-    startswith(filepath, mw.directory) || return Response(403, CONTENT_TYPE_TEXT, "403 Forbidden")
+    startswith(filepath, mw.directory) || return Response(403, ContentType.text, "403 Forbidden")
 
     isfile(filepath) || return next()
 

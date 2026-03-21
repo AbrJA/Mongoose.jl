@@ -98,7 +98,7 @@ function worker_loop(server::AsyncServer)
                     _dispatch_http(server, req.payload)
                 catch e
                     @error "Handler error" exception=(e, catch_backtrace())
-                    Response(500, CONTENT_TYPE_TEXT, "500 Internal Server Error")
+                    Response(500, ContentType.text, "500 Internal Server Error")
                 end
                 isopen(server.http_responses) && put!(server.http_responses, Tagged(req.id, res))
             # Try WS

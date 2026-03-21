@@ -317,7 +317,7 @@ macro router(app_type::Symbol, block)
 
             $(dispatch_body)
 
-            return Mongoose.Response(404, Mongoose.CONTENT_TYPE_TEXT, "404 Not Found")
+            return Mongoose.Response(404, Mongoose.ContentType.text, "404 Not Found")
         end
 
         # --- Static WebSocket Dispatch ---

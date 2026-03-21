@@ -13,7 +13,7 @@ function handle_event!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnec
 
     # Body size limit check
     if message.body.len > server.core.max_body_size
-        _send!(conn, Response(413, CONTENT_TYPE_TEXT, "413 Payload Too Large"))
+        _send!(conn, Response(413, ContentType.text, "413 Payload Too Large"))
         return
     end
 
@@ -22,7 +22,7 @@ function handle_event!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnec
         _dispatch_http(server, req)
     catch e
         @error "Handler error" exception=(e, catch_backtrace())
-        Response(500, CONTENT_TYPE_TEXT, "500 Internal Server Error")
+        Response(500, ContentType.text, "500 Internal Server Error")
     end
     _send!(conn, res)
     return
@@ -39,7 +39,7 @@ function handle_event!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConne
 
     # Body size limit check
     if message.body.len > server.core.max_body_size
-        _send!(conn, Response(413, CONTENT_TYPE_TEXT, "413 Payload Too Large"))
+        _send!(conn, Response(413, ContentType.text, "413 Payload Too Large"))
         return
     end
 
@@ -77,9 +77,9 @@ end
                 return Response(resp.status, resp.headers, "")
             end
         end
-        return Response(405, CONTENT_TYPE_TEXT, "405 Method Not Allowed")
+        return Response(405, ContentType.text, "405 Method Not Allowed")
     end
-    return Response(404, CONTENT_TYPE_TEXT, "404 Not Found")
+    return Response(404, ContentType.text, "404 Not Found")
 end
 
 @inline function _dispatch_to_router(router::StaticRouter, req)
