@@ -156,10 +156,12 @@ end
 
 Lookup a single query-string parameter by key, URL-decoded.
 Returns `nothing` if the key is absent.
+Parsed parameters are cached in `context[:_query_params]` for subsequent lookups.
 """
 function query(req::AbstractRequest, key::String)
-    q = query(req)
-    isempty(q) && return nothing
-    params = parse_params(q)
+    params = get!(req.context, :_query_params) do
+        q = query(req)
+        isempty(q) ? Dict{String,String}() : parse_params(q)
+    end::Dict{String,String}
     return get(params, key, nothing)
 end
