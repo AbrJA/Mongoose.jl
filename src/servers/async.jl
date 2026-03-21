@@ -68,7 +68,7 @@ function run_event_loop(server::AsyncServer)
             id_res = take!(server.http_responses)
             conn = get(server.connections, id_res.id, nothing)
             if conn !== nothing
-                send_response!(conn, id_res.payload)
+                _send!(conn, id_res.payload)
                 delete!(server.connections, id_res.id)
             end
         end

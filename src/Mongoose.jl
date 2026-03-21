@@ -63,10 +63,10 @@ include("middleware/static_files.jl")
         route!(router, :post, "/data", req -> Response(200, "", ""))
 
         # Route matching (hot path)
-        match_route(router, :get, "/")
-        match_route(router, :get, "/users/1")
-        match_route(router, :post, "/data")
-        match_route(router, :get, "/nonexistent")
+        _match_route(router, :get, "/")
+        _match_route(router, :get, "/users/1")
+        _match_route(router, :post, "/data")
+        _match_route(router, :get, "/nonexistent")
 
         # Response construction
         Response(200, "Content-Type: text/plain\r\n", "ok")

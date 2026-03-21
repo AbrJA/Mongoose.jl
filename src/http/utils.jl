@@ -4,11 +4,11 @@
 """
 
 """
-    decode_range(bytes, start_i, end_i) → String
+    _urldecode(bytes, start_i, end_i) → String
 
 Decode a URL-encoded byte range, handling `+` (space) and `%XX` hex escapes.
 """
-function decode_range(bytes::AbstractVector{<:UInt8}, start_i::Int, end_i::Int)
+function _urldecode(bytes::AbstractVector{<:UInt8}, start_i::Int, end_i::Int)
     out = IOBuffer()
     i = start_i
     while i <= end_i
@@ -19,7 +19,7 @@ function decode_range(bytes::AbstractVector{<:UInt8}, start_i::Int, end_i::Int)
         elseif b == UInt8('%') && i + 2 <= end_i
             c1 = bytes[i+1]
             c2 = bytes[i+2]
-            if _is_hex(c1) && _is_hex(c2)
+            if _ishex(c1) && _ishex(c2)
                 hi = c1 <= UInt8('9') ? c1 - UInt8('0') : (c1 | 0x20) - UInt8('a') + 10
                 lo = c2 <= UInt8('9') ? c2 - UInt8('0') : (c2 | 0x20) - UInt8('a') + 10
                 decoded_byte = (hi << 4) | lo
@@ -38,7 +38,7 @@ function decode_range(bytes::AbstractVector{<:UInt8}, start_i::Int, end_i::Int)
     return String(take!(out))
 end
 
-@inline function _is_hex(b::UInt8)
+@inline function _ishex(b::UInt8)
     return (UInt8('0') <= b <= UInt8('9')) || (UInt8('a') <= b <= UInt8('f')) || (UInt8('A') <= b <= UInt8('F'))
 end
 
@@ -64,11 +64,11 @@ function parse_params(query::AbstractString)
 
         if isnothing(eq_idx) || eq_idx > pair_end
             k_end, v_start = pair_end, pair_end + 1
-            k_str, v_str = decode_range(bytes, i, k_end), ""
+            k_str, v_str = _urldecode(bytes, i, k_end), ""
         else
             k_end, v_start = eq_idx - 1, eq_idx + 1
             v_end = pair_end
-            k_str, v_str = decode_range(bytes, i, k_end), decode_range(bytes, v_start, v_end)
+            k_str, v_str = _urldecode(bytes, i, k_end), _urldecode(bytes, v_start, v_end)
         end
         if !isempty(k_str)
             params[k_str] = v_str
@@ -138,12 +138,12 @@ Missing keys default to empty string, zero, `false`, or `nothing` as appropriate
 end
 
 """
-    format_headers(headers::Dict{String,String}) → String
+    _format_headers(headers::Dict{String,String}) → String
 
 Serialize a dictionary of headers into the `"Key: Value\\r\\n"` format
 expected by the Mongoose C library's `mg_http_reply`.
 """
-function format_headers(headers::Dict{String,String})
+function _format_headers(headers::Dict{String,String})
     io = IOBuffer()
     for (k, v) in headers
         print(io, k, ": ", v, "\r\n")

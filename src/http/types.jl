@@ -52,7 +52,7 @@ end
 # --- Constructors ---
 
 function Response(status::Int, headers::Dict{String,String}, body::String)
-    return Response(status, format_headers(headers), body)
+    return Response(status, _format_headers(headers), body)
 end
 
 const CONTENT_TYPE_TEXT = "Content-Type: text/plain\r\n"

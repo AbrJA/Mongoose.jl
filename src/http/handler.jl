@@ -13,7 +13,7 @@ function handle_event!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnec
 
     # Body size limit check
     if message.body.len > server.core.max_body_size
-        send_response!(conn, Response(413, CONTENT_TYPE_TEXT, "413 Payload Too Large"))
+        _send!(conn, Response(413, CONTENT_TYPE_TEXT, "413 Payload Too Large"))
         return
     end
 
@@ -24,7 +24,7 @@ function handle_event!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnec
         @error "Handler error" exception=(e, catch_backtrace())
         Response(500, CONTENT_TYPE_TEXT, "500 Internal Server Error")
     end
-    send_response!(conn, res)
+    _send!(conn, res)
     return
 end
 
@@ -39,7 +39,7 @@ function handle_event!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConne
 
     # Body size limit check
     if message.body.len > server.core.max_body_size
-        send_response!(conn, Response(413, CONTENT_TYPE_TEXT, "413 Payload Too Large"))
+        _send!(conn, Response(413, CONTENT_TYPE_TEXT, "413 Payload Too Large"))
         return
     end
 
@@ -63,7 +63,7 @@ function _dispatch_http(server::AbstractServer, req::AbstractRequest)::AbstractR
 end
 
 @inline function _dispatch_to_router(router::Router, req)
-    matched = match_route(router, req.method, req.uri)
+    matched = _match_route(router, req.method, req.uri)
     if matched !== nothing
         handler = get(matched.handlers, req.method, nothing)
         if handler !== nothing
@@ -89,12 +89,12 @@ end
 # --- Response serialization ---
 
 """
-    send_response!(conn, response)
+    _send!(conn, response)
 """
-function send_response!(conn::MgConnection, res::Response)
+function _send!(conn::MgConnection, res::Response)
     mg_http_reply(conn, res.status, res.headers, res.body)
 end
 
-function send_response!(conn::MgConnection, res::PreRenderedResponse)
+function _send!(conn::MgConnection, res::PreRenderedResponse)
     mg_send(conn, res.bytes)
 end

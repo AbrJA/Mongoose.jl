@@ -26,11 +26,3 @@ struct BindError <: MongooseError
     msg::String
 end
 Base.showerror(io::IO, e::BindError) = print(io, "BindError: ", e.msg)
-
-"""
-    PayloadTooLargeError — Thrown when a request body exceeds the configured limit.
-"""
-struct PayloadTooLargeError <: MongooseError
-    msg::String
-end
-Base.showerror(io::IO, e::PayloadTooLargeError) = print(io, "PayloadTooLargeError: ", e.msg)

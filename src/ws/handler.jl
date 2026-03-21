@@ -57,7 +57,7 @@ function check_ws_upgrade(server::AbstractServer, conn::MgConnection, ev_data::P
 
     endpoint = _get_ws_endpoint(router, uri)
     if endpoint !== nothing
-        _do_ws_upgrade(server, conn, ev_data, uri, endpoint, message)
+        _ws_upgrade!(server, conn, ev_data, uri, endpoint, message)
         return true
     end
 
@@ -67,7 +67,7 @@ end
 @inline _get_ws_endpoint(router::Router, uri) = get(router.ws_routes, uri, nothing)
 @inline _get_ws_endpoint(router::StaticRouter, uri) = static_ws_upgrade(router, uri)
 
-function _do_ws_upgrade(server, conn, ev_data, uri, endpoint, message)
+function _ws_upgrade!(server, conn, ev_data, uri, endpoint, message)
     mg_ws_upgrade(conn, ev_data, C_NULL)
     server.core.ws_connections[Int(conn)] = uri
     if endpoint.on_open !== nothing
