@@ -27,7 +27,7 @@ end
 Iterative middleware pipeline execution. Builds the call chain from the inside out,
 then invokes it once.
 """
-function execute_middleware(middlewares::Vector{Middleware}, request::AbstractRequest, params::Vector{Any}, final_handler::Function)
+function execute_middleware(middlewares::Vector{Middleware}, request::AbstractRequest, params::Vector{Any}, @nospecialize(final_handler::Function))
     isempty(middlewares) && return final_handler(request, params...)
 
     # Build the chain from the innermost (final handler) outward

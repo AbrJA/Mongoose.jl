@@ -22,7 +22,7 @@ end
 """
     _invoke_dispatch(server, ev, conn, ev_data)
 """
-@inline function _invoke_dispatch(server, ev::Cint, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid})
+@inline function _invoke_dispatch(@nospecialize(server), ev::Cint, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid})
     if ev == MG_EV_HTTP_MSG
         handle_event!(server, Val(MG_EV_HTTP_MSG), conn, ev_data)
     elseif ev == MG_EV_WS_OPEN

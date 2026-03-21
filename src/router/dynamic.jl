@@ -81,7 +81,7 @@ end
     return nothing
 end
 
-function route!(router::Router, method::Symbol, path::AbstractString, handler::Function)
+function route!(router::Router, method::Symbol, path::AbstractString, @nospecialize(handler::Function))
     if method ∉ VALID_METHODS
         throw(RouteError("Invalid HTTP method: $(String(method))"))
     end
@@ -89,7 +89,7 @@ function route!(router::Router, method::Symbol, path::AbstractString, handler::F
     return router
 end
 
-function _register_route!(router::Router, method::Symbol, path::AbstractString, wrapped::Handler)
+function _register_route!(router::Router, method::Symbol, path::AbstractString, @nospecialize(wrapped::Handler))
     if !occursin(':', path)
         if !haskey(router.fixed, path)
             router.fixed[path] = FixedRoute()
