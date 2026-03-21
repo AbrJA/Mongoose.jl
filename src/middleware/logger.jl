@@ -4,6 +4,25 @@
     Uses `time_ns()` for minimal overhead (~20ns per call).
 """
 
+struct Logger <: Middleware
+    threshold_ns::Int
+    output::IO
+end
+
+function (mw::Logger)(request::AbstractRequest, params::Vector{Any}, next)
+    t0 = time_ns()
+    response = next()
+    elapsed_ns = time_ns() - t0
+
+    if elapsed_ns >= mw.threshold_ns
+        elapsed_ms = elapsed_ns / 1_000_000
+        status = response isa AbstractResponse ? response.status : 0
+        println(mw.output, uppercase(String(request.method)), " ", request.uri, " → ", status, " (", round(elapsed_ms; digits=2), "ms)")
+    end
+
+    return response
+end
+
 """
     logger(; threshold_ms=0, output=stderr)
 
@@ -19,20 +38,4 @@ use!(server, logger())                     # log all requests
 use!(server, logger(threshold_ms=100))     # only log slow requests (>100ms)
 ```
 """
-function logger(; threshold_ms::Int=0, output::IO=stderr)
-    threshold_ns = threshold_ms * 1_000_000
-
-    return function(request::AbstractRequest, params::Vector{Any}, next)
-        t0 = time_ns()
-        response = next()
-        elapsed_ns = time_ns() - t0
-
-        if elapsed_ns >= threshold_ns
-            elapsed_ms = elapsed_ns / 1_000_000
-            status = response isa AbstractResponse ? response.status : 0
-            println(output, uppercase(String(request.method)), " ", request.uri, " → ", status, " (", round(elapsed_ms; digits=2), "ms)")
-        end
-
-        return response
-    end
-end
+logger(; threshold_ms::Int=0, output::IO=stderr) = Logger(threshold_ms * 1_000_000, output)

@@ -1,7 +1,61 @@
 """
-    Rate limiting middleware using a token-bucket algorithm.
+    Rate limiting middleware using a fixed-window counter.
     Tracks requests per client IP with automatic cleanup.
 """
+
+struct RateLimit <: Middleware
+    max_requests::Int
+    window_seconds::Int
+    tracker::Dict{String, Tuple{Int, Float64}}
+    tracker_lock::ReentrantLock
+    last_cleanup::Base.RefValue{Float64}
+    cleanup_interval::Float64
+end
+
+function (mw::RateLimit)(request::AbstractRequest, params::Vector{Any}, next)
+    client_id = if request isa Request
+        get(request.headers, "x-forwarded-for", get(request.headers, "x-real-ip", "unknown"))
+    elseif request isa ViewRequest
+        h = header(request, "X-Forwarded-For")
+        h === nothing ? (let h2 = header(request, "X-Real-IP"); h2 === nothing ? "unknown" : h2 end) : h
+    else
+        "unknown"
+    end
+
+    now_t = time()
+    allowed = lock(mw.tracker_lock) do
+        if (now_t - mw.last_cleanup[]) > mw.cleanup_interval
+            for (k, v) in collect(mw.tracker)
+                if (now_t - v[2]) > mw.window_seconds
+                    delete!(mw.tracker, k)
+                end
+            end
+            mw.last_cleanup[] = now_t
+        end
+
+        entry = get(mw.tracker, client_id, nothing)
+
+        if entry === nothing || (now_t - entry[2]) > mw.window_seconds
+            mw.tracker[client_id] = (1, now_t)
+            return true
+        else
+            count, start = entry
+            if count >= mw.max_requests
+                return false
+            else
+                mw.tracker[client_id] = (count + 1, start)
+                return true
+            end
+        end
+    end
+
+    if !allowed
+        retry_after = string(mw.window_seconds)
+        return Response(429, "Content-Type: text/plain\r\nRetry-After: $retry_after\r\n", "429 Too Many Requests")
+    end
+
+    return next()
+end
 
 """
     rate_limit(; max_requests, window_seconds)
@@ -19,56 +73,11 @@ use!(server, rate_limit(max_requests=50, window_seconds=30))
 ```
 """
 function rate_limit(; max_requests::Int=100, window_seconds::Int=60)
-    # Per-IP request tracking: ip → (count, window_start_time)
-    tracker = Dict{String, Tuple{Int, Float64}}()
-    tracker_lock = ReentrantLock()
-    last_cleanup = Ref(time())
-    cleanup_interval = max(window_seconds * 2.0, 60.0)
-
-    return function(request::AbstractRequest, params::Vector{Any}, next)
-        client_id = if request isa Request
-            get(request.headers, "x-forwarded-for", get(request.headers, "x-real-ip", "unknown"))
-        elseif request isa ViewRequest
-            h = header(request, "X-Forwarded-For")
-            h === nothing ? (let h2 = header(request, "X-Real-IP"); h2 === nothing ? "unknown" : h2 end) : h
-        else
-            "unknown"
-        end
-
-        now_t = time()
-        allowed = lock(tracker_lock) do
-            # Periodic cleanup of stale entries
-            if (now_t - last_cleanup[]) > cleanup_interval
-                for (k, v) in collect(tracker)
-                    if (now_t - v[2]) > window_seconds
-                        delete!(tracker, k)
-                    end
-                end
-                last_cleanup[] = now_t
-            end
-
-            entry = get(tracker, client_id, nothing)
-
-            if entry === nothing || (now_t - entry[2]) > window_seconds
-                # New window
-                tracker[client_id] = (1, now_t)
-                return true
-            else
-                count, start = entry
-                if count >= max_requests
-                    return false
-                else
-                    tracker[client_id] = (count + 1, start)
-                    return true
-                end
-            end
-        end
-
-        if !allowed
-            retry_after = string(window_seconds)
-            return Response(429, "Content-Type: text/plain\r\nRetry-After: $retry_after\r\n", "429 Too Many Requests")
-        end
-
-        return next()
-    end
+    return RateLimit(
+        max_requests, window_seconds,
+        Dict{String, Tuple{Int, Float64}}(),
+        ReentrantLock(),
+        Ref(time()),
+        max(window_seconds * 2.0, 60.0)
+    )
 end

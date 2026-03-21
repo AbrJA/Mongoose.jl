@@ -3,10 +3,27 @@
     Handles preflight OPTIONS requests and adds CORS headers to all responses.
 """
 
-"""
-    cors_middleware(; origins, methods, headers, max_age)
+struct Cors <: Middleware
+    headers::String
+end
 
-Create a CORS middleware function.
+function (mw::Cors)(request::AbstractRequest, params::Vector{Any}, next)
+    if request.method === :options
+        return Response(204, mw.headers, "")
+    end
+
+    response = next()
+    if response isa Response
+        merged = isempty(response.headers) ? mw.headers : mw.headers * response.headers
+        return Response(response.status, merged, response.body)
+    end
+    return response
+end
+
+"""
+    cors(; origins, methods, headers, max_age)
+
+Create a CORS middleware.
 
 # Keyword Arguments
 - `origins::String`: Allowed origins (default: `"*"`).
@@ -31,23 +48,5 @@ function cors(;
         "Access-Control-Allow-Headers: ", headers, "\r\n",
         "Access-Control-Max-Age: ", max_age, "\r\n"
     )
-
-    return function(request::AbstractRequest, params::Vector{Any}, next)
-        # Handle preflight OPTIONS
-        if request.method === :options
-            return Response(204, cors_headers, "")
-        end
-
-        # Call next and add CORS headers to response
-        response = next()
-        if response isa Response
-            merged = if isempty(response.headers)
-                cors_headers
-            else
-                cors_headers * response.headers
-            end
-            return Response(response.status, merged, response.body)
-        end
-        return response
-    end
+    return Cors(cors_headers)
 end

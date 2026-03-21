@@ -40,7 +40,7 @@ mutable struct ServerCore{R <: AbstractRouter}
     router::R
     ws_connections::Dict{Int,String}
     running::Threads.Atomic{Bool}
-    middlewares::Vector{Function}
+    middlewares::Vector{Middleware}
     max_body_size::Int
     drain_timeout_ms::Int
 
@@ -51,7 +51,7 @@ mutable struct ServerCore{R <: AbstractRouter}
         return new{R}(
             Manager(empty=true), c_handler, Cint(timeout), nothing,
             router, Dict{Int,String}(),
-            Threads.Atomic{Bool}(false), Function[],
+            Threads.Atomic{Bool}(false), Middleware[],
             max_body_size, drain_timeout_ms
         )
     end
