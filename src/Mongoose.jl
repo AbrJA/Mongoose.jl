@@ -36,7 +36,6 @@ include("core/events.jl")     # Uses Router for Fallbacks
 include("core/lifecycle.jl")
 
 # 5. Protocol Handlers
-include("http/builder.jl")
 include("http/handler.jl")
 include("http/utils.jl")
 include("http/json.jl")

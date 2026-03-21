@@ -23,3 +23,14 @@ function use!(server::AbstractServer, middleware::Middleware)
     push!(server.core.middlewares, middleware)
     return server
 end
+
+# Server convenience — forward to underlying router
+function route!(server::AbstractServer, method::Symbol, path::AbstractString, @nospecialize(handler::Function))
+    route!(server.core.router, method, path, handler)
+    return server
+end
+
+function ws!(server::AbstractServer, path::AbstractString; kwargs...)
+    ws!(server.core.router, path; kwargs...)
+    return server
+end

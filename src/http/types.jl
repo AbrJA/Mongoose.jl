@@ -72,14 +72,23 @@ end
 # (Accessors and FFI helpers...)
 header(req::Request, name::String) = get(req.headers, lowercase(name), nothing)
 
+@inline function _mg_str_eq_ci(s::MgStr, target::String)
+    s.len != ncodeunits(target) && return false
+    for i in 1:s.len
+        a = unsafe_load(s.buf, i)
+        b = codeunit(target, i)
+        (a | 0x20) != (b | 0x20) && return false
+    end
+    return true
+end
+
 function header(req::ViewRequest, name::String)
     name_lower = lowercase(name)
     for h in req.message.headers
-        if h.name.buf != C_NULL && h.name.len > 0 && h.val.buf != C_NULL && h.val.len > 0
-            h_name = to_view(h.name)
-            if lowercase(String(h_name)) == name_lower
-                return to_string(h.val)
-            end
+        h.name.buf == C_NULL && continue
+        h.name.len == 0 && continue
+        if _mg_str_eq_ci(h.name, name_lower)
+            return to_string(h.val)
         end
     end
     return nothing
@@ -112,7 +121,7 @@ function _method_to_symbol(str::MgStr)
         elseif len == 4
             unsafe_load(ptr, 2) == 0x4F && unsafe_load(ptr, 3) == 0x53 && unsafe_load(ptr, 4) == 0x54 && return :post
         elseif len == 5
-            unsafe_load(ptr, 2) == 0x41 && unsafe_load(ptr, 3) == 0x41 && unsafe_load(ptr, 4) == 0x43 && unsafe_load(ptr, 5) == 0x48 && return :patch
+            unsafe_load(ptr, 2) == 0x41 && unsafe_load(ptr, 3) == 0x54 && unsafe_load(ptr, 4) == 0x43 && unsafe_load(ptr, 5) == 0x48 && return :patch
         end
     elseif b1 == 0x44  # 'D'
         if len == 6

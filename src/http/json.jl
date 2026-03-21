@@ -43,14 +43,7 @@ end)
 ```
 """
 function json_body(request::AbstractRequest)
-    b = if request isa Request
-        request.body
-    elseif request isa ViewRequest
-        body(request)
-    else
-        ""
-    end
-    return JSON.parse(b)
+    return JSON.parse(body(request))
 end
 
 """

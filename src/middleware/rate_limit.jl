@@ -13,13 +13,10 @@ struct RateLimit <: Middleware
 end
 
 function (mw::RateLimit)(request::AbstractRequest, params::Vector{Any}, next)
-    client_id = if request isa Request
-        get(request.headers, "x-forwarded-for", get(request.headers, "x-real-ip", "unknown"))
-    elseif request isa ViewRequest
-        h = header(request, "X-Forwarded-For")
-        h === nothing ? (let h2 = header(request, "X-Real-IP"); h2 === nothing ? "unknown" : h2 end) : h
-    else
-        "unknown"
+    client_id = let h = header(request, "X-Forwarded-For")
+        h !== nothing ? h : let h2 = header(request, "X-Real-IP")
+            h2 !== nothing ? h2 : "unknown"
+        end
     end
 
     now_t = time()

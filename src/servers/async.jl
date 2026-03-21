@@ -109,7 +109,7 @@ function worker_loop(server::AsyncServer)
                     isopen(server.ws_responses) && put!(server.ws_responses, res)
                 end
             else
-                sleep(0.0001)
+                sleep(0.001)
             end
         end
     catch e

@@ -7,13 +7,7 @@ struct BearerAuth <: Middleware
 end
 
 function (mw::BearerAuth)(request::AbstractRequest, params::Vector{Any}, next)
-    auth_header = if request isa Request
-        get(request.headers, "authorization", nothing)
-    elseif request isa ViewRequest
-        header(request, "Authorization")
-    else
-        nothing
-    end
+    auth_header = header(request, "Authorization")
 
     if auth_header === nothing
         return Response(401, "Content-Type: text/plain\r\nWWW-Authenticate: Bearer\r\n", "401 Unauthorized")
@@ -47,18 +41,11 @@ auth_bearer(validator::Function) = BearerAuth(validator)
 
 struct ApiKeyAuth <: Middleware
     header_name::String
-    header_name_lower::String
     keys::Set{String}
 end
 
 function (mw::ApiKeyAuth)(request::AbstractRequest, params::Vector{Any}, next)
-    api_key = if request isa Request
-        get(request.headers, mw.header_name_lower, nothing)
-    elseif request isa ViewRequest
-        header(request, mw.header_name)
-    else
-        nothing
-    end
+    api_key = header(request, mw.header_name)
 
     if api_key === nothing || api_key ∉ mw.keys
         return Response(401, "Content-Type: text/plain\r\n", "401 Unauthorized: Invalid API key")
@@ -81,4 +68,4 @@ Create an API key authentication middleware.
 use!(server, auth_api_key(keys=Set(["key-123"])))
 ```
 """
-auth_api_key(; header_name::String="X-API-Key", keys::Set{String}) = ApiKeyAuth(header_name, lowercase(header_name), keys)
+auth_api_key(; header_name::String="X-API-Key", keys::Set{String}) = ApiKeyAuth(header_name, keys)

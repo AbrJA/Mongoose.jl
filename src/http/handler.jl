@@ -88,5 +88,5 @@ function send_response!(conn::MgConnection, res::Response)
 end
 
 function send_response!(conn::MgConnection, res::PreRenderedResponse)
-    mg_send(conn, res.bytes, length(res.bytes))
+    mg_send(conn, res.bytes)
 end

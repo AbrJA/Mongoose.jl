@@ -57,7 +57,7 @@ function check_ws_upgrade(server::AbstractServer, conn::MgConnection, ev_data::P
 
     endpoint = _get_ws_endpoint(router, uri)
     if endpoint !== nothing
-        _do_ws_upgrade(server, conn, ev_data, uri, endpoint)
+        _do_ws_upgrade(server, conn, ev_data, uri, endpoint, message)
         return true
     end
 
@@ -67,11 +67,11 @@ end
 @inline _get_ws_endpoint(router::Router, uri) = get(router.ws_routes, uri, nothing)
 @inline _get_ws_endpoint(router::StaticRouter, uri) = static_ws_upgrade(router, uri)
 
-function _do_ws_upgrade(server, conn, ev_data, uri, endpoint)
+function _do_ws_upgrade(server, conn, ev_data, uri, endpoint, message)
     mg_ws_upgrade(conn, ev_data, C_NULL)
     server.core.ws_connections[Int(conn)] = uri
-    if endpoint.has_on_open
-        req = Request(MgHttpMessage(ev_data))
+    if endpoint.on_open !== nothing
+        req = Request(message)
         try endpoint.on_open(req) catch e end
     end
 end
@@ -128,7 +128,7 @@ function cleanup_ws_connection!(server::AbstractServer, conn::MgConnection)
 
     if uri !== nothing
         endpoint = _get_ws_endpoint(server.core.router, uri)
-        if endpoint !== nothing && endpoint.has_on_close
+        if endpoint !== nothing && endpoint.on_close !== nothing
             try
                 endpoint.on_close()
             catch e
