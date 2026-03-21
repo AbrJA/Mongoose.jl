@@ -15,6 +15,10 @@ abstract type StaticRouter <: AbstractRouter end
 function static_dispatch end
 function static_ws_dispatch end
 
+# Interface fallback — @router generates the real methods
+static_dispatch(app::T, ::AbstractRequest) where {T <: StaticRouter} =
+    error("$(T) must implement static_dispatch via the @router macro")
+
 # --- Path matching helpers (used by generated code) ---
 
 @inline function static_next_segment(path::AbstractString, start_idx::Int)
