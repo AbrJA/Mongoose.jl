@@ -557,4 +557,54 @@ end
         @test matched !== nothing
     end
 
+    # --- Test: Logger Middleware ---
+    @testset "Logger Middleware" begin
+        router = Router()
+        route!(router, :get, "/logged", (req) -> Response(200, "", "OK"))
+
+        log_buf = IOBuffer()
+        server = AsyncServer(router; workers=1)
+        use!(server, logger(output=log_buf))
+        start!(server; port=8110, blocking=false)
+        sleep(0.5)
+
+        try
+            resp = HTTP.get("http://localhost:8110/logged")
+            @test resp.status == 200
+            sleep(0.2)  # let worker flush log
+
+            log_output = String(take!(log_buf))
+            @test occursin("GET", log_output)
+            @test occursin("/logged", log_output)
+            @test occursin("200", log_output)
+            @test occursin("ms)", log_output)
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: Logger Middleware with Threshold ---
+    @testset "Logger Threshold" begin
+        router = Router()
+        route!(router, :get, "/fast", (req) -> Response(200, "", "OK"))
+
+        log_buf = IOBuffer()
+        server = AsyncServer(router; workers=1)
+        use!(server, logger(threshold_ms=5000, output=log_buf))
+        start!(server; port=8111, blocking=false)
+        sleep(0.5)
+
+        try
+            resp = HTTP.get("http://localhost:8111/fast")
+            @test resp.status == 200
+            sleep(0.2)
+
+            # Fast request should NOT be logged (threshold=5000ms)
+            log_output = String(take!(log_buf))
+            @test isempty(log_output)
+        finally
+            shutdown!(server)
+        end
+    end
+
 end

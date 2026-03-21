@@ -7,7 +7,7 @@ export SyncServer, AsyncServer, Router, Request, Response,
        parse_into,
        ws!, WsTextMessage, WsBinaryMessage, WsMessage,
        header, body, query,
-       cors, rate_limit, auth_bearer, auth_api_key,
+       cors, rate_limit, auth_bearer, auth_api_key, logger,
        json_response, json_body,
        @router
 
@@ -49,5 +49,6 @@ include("servers/async.jl")
 include("middleware/cors.jl")
 include("middleware/rate_limit.jl")
 include("middleware/auth.jl")
+include("middleware/logger.jl")
 
 end # module Mongoose

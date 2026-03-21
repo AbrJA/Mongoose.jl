@@ -11,6 +11,7 @@ mutable struct Manager
         empty && return new(C_NULL)
         ptr = Libc.calloc(1, Csize_t(MG_MGR_SIZE))
         ptr == C_NULL && throw(ServerError("Failed to allocate manager memory"))
+        mg_log_set_level(MG_LL_ERROR) # Set level before initializing
         mg_mgr_init!(ptr)
         return new(ptr)
     end
@@ -92,7 +93,6 @@ function free_resources!(server::AbstractServer)
 end
 
 function setup_listener!(server::AbstractServer, host::AbstractString, port::Integer)
-    mg_log_set_level(Cint(0))
     url = "http://$host:$port"
     fn_data = pointer_from_objref(server)
     is_listen = mg_http_listen(server.core.manager.ptr, url, server.core.handler, fn_data)

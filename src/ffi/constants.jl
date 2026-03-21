@@ -11,6 +11,13 @@ const MG_EV_WS_OPEN = Cint(12)     # WebSocket connection opened
 const MG_EV_WS_MSG = Cint(13)      # WebSocket message received
 const MG_EV_WS_CTL = Cint(14)      # WebSocket control frame
 
+# Mongoose Log Levels
+const MG_LL_NONE = Cint(0)
+const MG_LL_ERROR = Cint(1)
+const MG_LL_INFO = Cint(2)
+const MG_LL_DEBUG = Cint(3)
+const MG_LL_VERBOSE = Cint(4)
+
 const MG_MAX_HTTP_HEADERS = 30      # Maximum number of HTTP headers (from mongoose.h)
 
 # Upper bound for mg_mgr struct size in bytes.
