@@ -5,140 +5,211 @@
     <img width="300px" src="logo.png"/>
 </p>
 
-# 🚀 Mongoose.jl: A Lightweight HTTP Server for Julia
+# Mongoose.jl
 
-**Mongoose.jl** is a Julia package that provides a lightweight and efficient interface for building HTTP servers and web applications. It leverages the [Mongoose C library](https://github.com/cesanta/mongoose) to deliver fast, embeddable web server capabilities directly from Julia code.
+**Mongoose.jl** is a lightweight, high-performance HTTP & WebSocket server for Julia, built on the [Mongoose C library](https://github.com/cesanta/mongoose). It features a minimal dependency footprint (only `Mongoose_jll` + `PrecompileTools`), sub-100ms time-to-first-response via precompilation, and full compatibility with `juliac --trim=safe` for ahead-of-time compiled binaries.
 
-## 📦 Installation
+## Installation
 
 ```julia
 ] add Mongoose
 ```
 
-## ⚡ Quick Start: Your First Server
+For JSON support, also install `JSON.jl` — it will be loaded automatically as a package extension:
 
-Mongoose.jl uses a decoupled architecture: define your **Router**, then pass it to a **Server** types (`AsyncServer` or `SyncServer`).
+```julia
+] add JSON
+```
+
+## Quick Start
 
 ```julia
 using Mongoose
 
-# 1. Define your routes using a Router
+# Define routes on a Router
 router = Router()
 
-route!(router, :get, "/hello", (req) -> begin
-    Response(200, "Hello from Mongoose.jl!")
-end)
-
-# Capture path parameters with type annotations
-route!(router, :get, "/greet/:name", (req, name) -> begin
-    body = Dict("message" => "Hello $name!", "status" => "ok")
-    json_response(body)
-end)
+route!(router, :get, "/", req -> Response(200, ContentType.text, "Hello from Mongoose.jl!"))
 
 route!(router, :get, "/users/:id::Int", (req, id) -> begin
-    Response(200, "User ID is $id (type $(typeof(id)))")
+    Response(200, ContentType.json, """{"id": $id}""")
 end)
 
-# 2. Create the server and start it
-# AsyncServer runs in background worker threads (default 4)
+# Create an async server with 4 worker threads
 server = AsyncServer(router; workers=4)
-
-# Start the server. blocking=true blocks the current thread (useful for AOT).
 start!(server, port=8080, blocking=false)
+
+# ... later
+shutdown!(server)
 ```
 
-## ✨ Core Concepts
+## Architecture
 
-### 1. Routers
-Mongoose.jl provides a flexible `Router` that handles both HTTP and WebSockets:
+Mongoose.jl uses a **decoupled** design: routes live on a `Router`, and the `Server` handles networking and concurrency.
 
-*   **Router**: Dynamic path-based routing. Routes can be added or modified at runtime using `route!` or `ws!`.
-*   **@router**: A macro to generate a static router. This uses compile-time dispatch and is required for **AOT compilation** with `juliac --trim=safe`.
-
-```julia
-# Static Router Example
-@router MyApi begin
-    get("/", (req) -> Response(200, "Static Hello"))
-    ws("/chat", on_message=(msg) -> "Echo: $(msg.data)")
-end
-
-# Use with SyncServer for AOT compatibility
-server = SyncServer(MyApi())
-start!(server, port=8081)
+```
+Router (defines routes)  ──►  Server (runs event loop)
+                                 │
+                         ┌───────┼───────┐
+                         ▼       ▼       ▼
+                      Worker  Worker  Worker   (AsyncServer only)
 ```
 
-### 2. Server Types
-You can choose the execution model that fits your needs:
-*   **AsyncServer**: Processes requests in a background worker pool.
-*   **SyncServer**: Processes requests in the main thread (blocking). Ideal for low-latency, simple scripts, or AOT-compiled binaries.
+### Server Types
 
-### 3. Request and Response
-- **`Request`**: Contains `method`, `uri`, `headers`, and `body`.
-- **`Response`**: Constructed with a status code, optional headers (Dict or String), and a body.
+| Type | Concurrency | Use Case |
+|------|-------------|----------|
+| `AsyncServer(router; workers=4)` | Background worker pool via channels | Production apps, APIs |
+| `SyncServer(router)` | Main-thread event loop (blocking) | Scripts, AOT binaries |
 
-## 🛠 Features
-
-### Middleware
-
-Mongoose.jl includes built-in middleware for common tasks. Middleware can be added to any server using `use!`.
+Both accept these keyword arguments:
 
 ```julia
-# Logging: logs method, URI, status, and time (ms)
-use!(server, logger())
+AsyncServer(router;
+    workers=4,              # Number of worker tasks
+    nqueue=1024,            # Channel buffer size
+    timeout=0,              # Poll timeout (ms), 0 = default
+    max_body_size=1048576,  # Max request body (bytes, default 1MB)
+    drain_timeout_ms=5000   # Graceful shutdown drain timeout
+)
 
-# CORS: handles OPTIONS and adds headers
-use!(server, cors(origins="*"))
-
-# Rate Limiting: 100 requests per 60s per client IP
-use!(server, rate_limit(max_requests=100, window_seconds=60))
-
-# Serving Static Files
-use!(server, static_files("public"; prefix="/static"))
-
-# Authentication
-use!(server, auth_bearer(token -> token == "secret-123"))
+SyncServer(router;
+    timeout=0,
+    max_body_size=1048576,
+    drain_timeout_ms=5000
+)
 ```
 
-### Request Utilities
+### Routing
 
-Handlers receive a `Request` or `ViewRequest`. Use these helpers to access data efficiently:
+Routes can use Symbol or String methods, and support typed path parameters:
 
 ```julia
-route!(router, :get, "/search", (req) -> begin
-    q = query(req, "q")          # Get ?q=... (URL-decoded)
-    user = context(req)[:user]   # Access request context
-    println("Body: ", body(req)) # Raw request body
-    
-    Response(200, ContentType.json, "{\"ok\": true}")
+router = Router()
+
+# Symbol method
+route!(router, :get, "/hello", req -> Response(200, ContentType.text, "hi"))
+
+# String method
+route!(router, "POST", "/data", req -> Response(200, ContentType.text, "ok"))
+
+# Path parameters with type annotations
+route!(router, :get, "/users/:name", (req, name) -> ...)           # name::String
+route!(router, :get, "/items/:id::Int", (req, id) -> ...)          # id::Int
+route!(router, :get, "/price/:val::Float64", (req, val) -> ...)    # val::Float64
+
+# Routes can also be added directly on a server
+route!(server, :get, "/health", req -> Response(200, ContentType.text, "ok"))
+```
+
+GET routes automatically respond to HEAD requests.
+
+### ContentType Headers
+
+Pre-formatted Content-Type headers are available via the `ContentType` constant:
+
+```julia
+ContentType.text   # text/plain
+ContentType.json   # application/json
+ContentType.html   # text/html
+ContentType.xml    # application/xml
+ContentType.css    # text/css
+ContentType.js     # application/javascript
+ContentType.form   # application/x-www-form-urlencoded
+ContentType.octet  # application/octet-stream
+```
+
+### Request Helpers
+
+```julia
+route!(router, :post, "/search", req -> begin
+    body(req)                    # Raw body string
+    header(req, "Authorization") # Header lookup (case-insensitive)
+    query(req)                   # Full query string
+    query(req, "q")              # Single param lookup (cached, URL-decoded)
+    context(req)                 # Dict{Symbol,Any} for middleware data
+
+    # Parse query string into a Dict
+    params = parse_params("name=Alice&age=30")
+
+    # Parse into a struct
+    struct Search; q::String; page::Int end
+    s = parse_into(Search, "q=julia&page=1")
+
+    Response(200, ContentType.text, "ok")
 end)
 ```
 
 ### WebSocket Support
-Seamlessly integrate WebSockets into your application.
 
 ```julia
-router = Router()
-ws!(router, "/chat", on_message=(msg) -> "Echo: $(msg.data)")
+ws!(router, "/chat",
+    on_message = msg -> "Echo: $(msg.data)",
+    on_open    = () -> println("Client connected"),
+    on_close   = () -> println("Client disconnected")
+)
+```
 
+Message handlers receive `WsTextMessage` or `WsBinaryMessage`. Return a `String` to send a text reply, `Vector{UInt8}` for binary, or `nothing` to send no reply.
+
+### Middleware
+
+Built-in middleware is added with `use!` and runs in registration order:
+
+```julia
 server = AsyncServer(router)
+
+# Request/response logging (logs method, URI, status, duration)
+use!(server, logger(threshold_ms=100))      # Only log requests slower than 100ms
+
+# CORS headers + OPTIONS preflight handling
+use!(server, cors(origins="https://example.com", max_age=86400))
+
+# Rate limiting (fixed-window per client IP)
+use!(server, rate_limit(max_requests=100, window_seconds=60))
+
+# Authentication
+use!(server, auth_bearer(token -> token == "secret-123"))
+use!(server, auth_api_key(header_name="X-API-Key", keys=Set(["key1", "key2"])))
+
+# Static file serving
+use!(server, static_files("public"; prefix="/static", index="index.html"))
+```
+
+### JSON (Package Extension)
+
+When `JSON.jl` is loaded, these functions become available:
+
+```julia
+using Mongoose, JSON
+
+route!(router, :post, "/api", req -> begin
+    data = json_body(req)                        # Parse body → Dict/Array
+    profile = json_body(req, UserProfile)         # Parse body → struct
+    return json_response(Dict("ok" => true))      # Serialize → JSON response
+end)
+```
+
+### Static Router (AOT Compilation)
+
+The `@router` macro generates a zero-allocation, compile-time dispatch function compatible with `juliac --trim=safe`:
+
+```julia
+@router MyApi begin
+    get("/", req -> Response(200, ContentType.text, "Hello"))
+    get("/users/:id::Int", (req, id) -> Response(200, ContentType.text, "User $id"))
+    post("/data", req -> Response(200, ContentType.text, "received"))
+    ws("/chat", on_message = msg -> "Echo: $(msg.data)")
+end
+
+server = SyncServer(MyApi())
 start!(server, port=8080)
 ```
 
-### JSON Support
+## Documentation
 
-Utilities for handling JSON payloads. These are optimized to use `JSON.jl` when available.
+Full documentation with more examples is available at [AbrJA.github.io/Mongoose.jl](https://AbrJA.github.io/Mongoose.jl/dev).
 
-```julia
-# Parse JSON body into a Dict
-data = json_body(request)
+## License
 
-# Send JSON response with correct Content-Type
-json_response(Dict("status" => "ok"))
-```
-
-## 🏗 Ahead-of-Time (AOT) Compilation
-Mongoose.jl is designed to be fully compatible with `juliac --trim=safe`. By using the `@router` macro and `SyncServer`, you can compile your entire web application into a tiny, standalone binary with no dynamic dispatch.
-
-## 📚 Documentation
-
-For more information, see the [Mongoose.jl documentation](https://AbrJA.github.io/Mongoose.jl/dev).
+Distributed under the GPL-2 License. See `LICENSE` for details.
