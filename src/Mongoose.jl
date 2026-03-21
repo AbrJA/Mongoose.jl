@@ -39,7 +39,6 @@ include("core/lifecycle.jl")
 # 5. Protocol Handlers
 include("http/handler.jl")
 include("http/utils.jl")
-include("http/json.jl")
 include("ws/handler.jl")
 
 # 6. Server Implementations
@@ -52,6 +51,10 @@ include("middleware/rate_limit.jl")
 include("middleware/auth.jl")
 include("middleware/logger.jl")
 include("middleware/static_files.jl")
+
+# 8. JSON stubs — implementations loaded by ext/MongooseJSONExt.jl
+function json_response end
+function json_body end
 
 # 8. Precompilation
 @setup_workload begin
@@ -71,9 +74,6 @@ include("middleware/static_files.jl")
         # Response construction
         Response(200, "Content-Type: text/plain\r\n", "ok")
         Response(404, "", "")
-
-        # JSON helpers
-        json_response(Dict("key" => "value"))
 
         # Middleware construction
         cors()

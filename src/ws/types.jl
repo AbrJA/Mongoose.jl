@@ -22,11 +22,10 @@ end
 const WsMessage = Union{WsTextMessage, WsBinaryMessage}
 
 """
-    IdWsMessage — Connection-tagged WebSocket message for async queue routing.
+    WsRouted — WebSocket message bundled with its endpoint URI for routing.
 """
-struct IdWsMessage
-    id::Int
-    payload::WsMessage
+struct WsRouted
+    message::WsMessage
     uri::String
 end
 

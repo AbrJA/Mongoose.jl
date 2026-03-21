@@ -1,9 +1,7 @@
 """
     FFI struct mappings for the Mongoose C library.
-    Provides Julia representations of C structs and zero-copy string views.
+    Provides Julia representations of C structs.
 """
-
-using StringViews
 
 const MgConnection = Ptr{Cvoid}
 
@@ -16,22 +14,9 @@ struct MgStr
 end
 
 """
-    to_view(str::MgStr) → StringView
-
-Zero-copy view into the C string buffer. The returned view is only valid
-during the current event callback — do NOT store it beyond that scope.
-"""
-@inline function to_view(str::MgStr)
-    (str.buf == C_NULL || str.len == 0) && return StringView(UInt8[])
-    buf = unsafe_wrap(Vector{UInt8}, str.buf, str.len; own=false)
-    return StringView(buf)
-end
-
-"""
     to_string(str::MgStr) → String
 
 Allocating conversion from C string to owned Julia String.
-Use `to_view` when you only need temporary read access.
 """
 @inline function to_string(str::MgStr)
     (str.buf == C_NULL || str.len == 0) && return ""

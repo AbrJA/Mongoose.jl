@@ -3,9 +3,9 @@
 """
 
 """
-    handle_ws_message!(server, request) → IdWsMessage or nothing
+    handle_ws_message!(server, request) → Tagged{WsMessage} or nothing
 """
-function handle_ws_message!(server::AbstractServer, request::IdWsMessage)
+function handle_ws_message!(server::AbstractServer, request::Tagged{WsRouted})
     router = server.core.router
     return _dispatch_ws_message(router, request)
 end
@@ -13,33 +13,33 @@ end
 @inline _dispatch_ws_message(router::Router, request) = _handle_dynamic_ws_message(router, request)
 @inline _dispatch_ws_message(router::StaticRouter, request) = _handle_static_ws_message(router, request)
 
-function _handle_static_ws_message(static::StaticRouter, request::IdWsMessage)
-    endpoint = static_ws_upgrade(static, request.uri)
+function _handle_static_ws_message(static::StaticRouter, request::Tagged{WsRouted})
+    endpoint = static_ws_upgrade(static, request.payload.uri)
     if endpoint !== nothing
         return _execute_ws_endpoint(endpoint, request)
     end
     return nothing
 end
 
-function _handle_dynamic_ws_message(router::Router, request::IdWsMessage)
-    endpoint = get(router.ws_routes, request.uri, nothing)
+function _handle_dynamic_ws_message(router::Router, request::Tagged{WsRouted})
+    endpoint = get(router.ws_routes, request.payload.uri, nothing)
     if endpoint !== nothing
         return _execute_ws_endpoint(endpoint, request)
     end
     return nothing
 end
 
-function _execute_ws_endpoint(endpoint::WsEndpoint, request::IdWsMessage)
+function _execute_ws_endpoint(endpoint::WsEndpoint, request::Tagged{WsRouted})
     try
-        res = endpoint.on_message(request.payload)
+        res = endpoint.on_message(request.payload.message)
         if res isa WsTextMessage
-            return IdWsMessage(request.id, res, request.uri)
+            return Tagged{WsMessage}(request.id, res)
         elseif res isa WsBinaryMessage
-            return IdWsMessage(request.id, res, request.uri)
+            return Tagged{WsMessage}(request.id, res)
         elseif res isa String
-            return IdWsMessage(request.id, WsTextMessage(res), request.uri)
+            return Tagged{WsMessage}(request.id, WsTextMessage(res))
         elseif res isa Vector{UInt8}
-            return IdWsMessage(request.id, WsBinaryMessage(res), request.uri)
+            return Tagged{WsMessage}(request.id, WsBinaryMessage(res))
         end
     catch e
         @error "WebSocket on_message error" exception = (e, catch_backtrace())
@@ -84,8 +84,8 @@ function handle_event!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnecti
     ws_msg = decode_ws_message(msg)
     conn_id = Int(conn)
     uri = get(server.core.ws_connections, conn_id, "")
-    id_msg = IdWsMessage(conn_id, ws_msg, uri)
-    result = handle_ws_message!(server, id_msg)
+    tagged = Tagged(conn_id, WsRouted(ws_msg, uri))
+    result = handle_ws_message!(server, tagged)
     if result !== nothing
         if result.payload isa WsTextMessage
             mg_ws_send(conn, result.payload.data, WS_OP_TEXT)
@@ -103,7 +103,7 @@ function handle_event!(server::AsyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnect
     conn_id = Int(conn)
     uri = get(server.core.ws_connections, conn_id, "")
     server.connections[conn_id] = conn
-    isopen(server.ws_requests) && put!(server.ws_requests, IdWsMessage(conn_id, ws_msg, uri))
+    isopen(server.ws_requests) && put!(server.ws_requests, Tagged(conn_id, WsRouted(ws_msg, uri)))
     return
 end
 
