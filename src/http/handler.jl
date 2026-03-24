@@ -63,7 +63,7 @@ function _dispatch_http(server::AbstractServer, req::AbstractRequest)::AbstractR
 end
 
 @inline function _dispatch_to_router(router::Router, req)
-    matched = _match_route(router, req.method, req.uri)
+    matched = match_route(router, req.method, req.uri)
     if matched !== nothing
         handler = get(matched.handlers, req.method, nothing)
         if handler !== nothing

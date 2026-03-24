@@ -21,19 +21,19 @@ include("ffi/bindings.jl")
 # 2. Base Types and Errors
 include("core/types.jl")
 include("core/errors.jl")
-include("http/types.jl")      # Defines AbstractRouter
-include("ws/types.jl")        # WsEndpoint, WsMessage types
+include("http/types.jl")
+include("ws/types.jl")
 
 # 3. Router Implementations
-include("router/static.jl") # Define StaticRouter first
-include("router/dynamic.jl")        # Router
-include("ws/router.jl")          # ws! registration, static_ws_upgrade
+include("router/static.jl")
+include("router/dynamic.jl")
+include("ws/router.jl")
 
 # 4. Core Server Logic
-include("core/server.jl")     # ServerCore
+include("core/server.jl")
 include("core/registry.jl")
 include("core/middleware.jl")
-include("core/events.jl")     # Uses Router for Fallbacks
+include("core/events.jl")
 include("core/lifecycle.jl")
 
 # 5. Protocol Handlers
@@ -66,10 +66,10 @@ function json_body end
         route!(router, :post, "/data", req -> Response(200, "", ""))
 
         # Route matching (hot path)
-        _match_route(router, :get, "/")
-        _match_route(router, :get, "/users/1")
-        _match_route(router, :post, "/data")
-        _match_route(router, :get, "/nonexistent")
+        match_route(router, :get, "/")
+        match_route(router, :get, "/users/1")
+        match_route(router, :post, "/data")
+        match_route(router, :get, "/nonexistent")
 
         # Response construction
         Response(200, ContentType.text, "ok")

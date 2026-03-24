@@ -554,7 +554,7 @@ end
         @test ret === router  # returns the router for chaining
 
         # Verify it registered correctly
-        matched = Mongoose._match_route(router, :get, "/test")
+        matched = Mongoose.match_route(router, :get, "/test")
         @test matched !== nothing
     end
 

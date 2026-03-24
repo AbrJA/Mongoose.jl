@@ -50,7 +50,7 @@ const PARAM_TYPES = Dict{String,Type}(
     "UInt" => UInt, "UInt64" => UInt64
 )
 
-function _match_route(router::Router, method::Symbol, path::AbstractString)
+function match_route(router::Router, method::Symbol, path::AbstractString)
     clean = strip_query(path)
     if (route = get(router.fixed, clean, nothing)) !== nothing
         return Matched(route.handlers, EMPTY_PARAMS)
