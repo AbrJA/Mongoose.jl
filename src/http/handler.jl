@@ -62,6 +62,13 @@ function _dispatch_http(server::AbstractServer, req::AbstractRequest)::AbstractR
     return execute_middleware(server.core.middlewares, req, Any[], final)
 end
 
+# Trim-safe specialization: StaticRouter dispatches directly, bypassing
+# the middleware pipeline which uses abstract Function types and closures
+# that cannot be resolved by --trim=safe.
+@inline function _dispatch_http(server::SyncServer{<:StaticRouter}, req::AbstractRequest)::AbstractResponse
+    return static_dispatch(server.core.router, req)
+end
+
 @inline function _dispatch_to_router(router::Router, req)
     matched = match_route(router, req.method, req.uri)
     if matched !== nothing
