@@ -108,8 +108,8 @@ route!(router, :put, "/update", req -> Response(200, ContentType.text, "updated"
 route!(router, :patch, "/patch", req -> Response(200, ContentType.text, "patched"))
 route!(router, :delete, "/remove", req -> Response(200, ContentType.text, "deleted"))
 
-# String methods also work
-route!(router, "GET", "/alt", req -> Response(200, ContentType.text, "ok"))
+# Other HTTP methods
+route!(router, :options, "/alt", req -> Response(200, ContentType.text, "ok"))
 ```
 
 GET routes automatically respond to HEAD requests (body omitted).

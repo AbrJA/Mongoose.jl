@@ -12,6 +12,7 @@ SyncServer
 ```@docs
 start!
 shutdown!
+use!
 ```
 
 ## Routing
@@ -44,6 +45,7 @@ parse_into
 ## WebSocket Types
 
 ```@docs
+WsMessage
 WsTextMessage
 WsBinaryMessage
 ```

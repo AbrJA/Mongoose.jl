@@ -30,9 +30,9 @@ end
 """
 struct Router <: AbstractRouter
     node::Node
-    fixed::Dict{String, FixedRoute}
-    ws_routes::Dict{String, WsEndpoint}
-    Router() = new(Node(), Dict{String, FixedRoute}(), Dict{String, WsEndpoint}())
+    fixed::Dict{String,FixedRoute}
+    ws_routes::Dict{String,WsEndpoint}
+    Router() = new(Node(), Dict{String,FixedRoute}(), Dict{String,WsEndpoint}())
 end
 
 # (Matched, match_route, route!, etc...)
@@ -71,7 +71,11 @@ end
     end
 
     if (dyn = node.dynamic) !== nothing
-        parsed = try _parse_param_value(seg, dyn.param_type) catch; nothing end
+        parsed = try
+            _parse_param_value(seg, dyn.param_type)
+        catch
+            nothing
+        end
         if parsed !== nothing
             push!(params, parsed)
             result = _match(dyn, path, next_idx, method, params)

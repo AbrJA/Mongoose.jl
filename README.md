@@ -90,8 +90,8 @@ router = Router()
 # Symbol method
 route!(router, :get, "/hello", req -> Response(200, ContentType.text, "hi"))
 
-# String method
-route!(router, "POST", "/data", req -> Response(200, ContentType.text, "ok"))
+# Other HTTP methods
+route!(router, :post, "/data", req -> Response(200, ContentType.text, "ok"))
 
 # Path parameters with type annotations
 route!(router, :get, "/users/:name", (req, name) -> ...)           # name::String
