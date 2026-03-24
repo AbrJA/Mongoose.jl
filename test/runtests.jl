@@ -207,10 +207,10 @@ end
     # --- Test 6: JSON Integration ---
     @testset "JSON Integration" begin
         router = Router()
-        route!(router, :get, "/api/json", (req) -> json_response(Dict("message" => "hello", "count" => 42)))
+        route!(router, :get, "/api/json", (req) -> JsonResponse(Dict("message" => "hello", "count" => 42)))
         route!(router, :post, "/api/echo", (req) -> begin
             data = json_body(req)
-            json_response(data)
+            JsonResponse(data)
         end)
 
         server = AsyncServer(router; workers=1)

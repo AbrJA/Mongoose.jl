@@ -64,7 +64,7 @@ static_files
 ## JSON (Extension)
 
 ```@docs
-json_response
+JsonResponse
 json_body
 ```
 

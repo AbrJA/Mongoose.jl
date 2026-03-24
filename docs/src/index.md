@@ -310,7 +310,7 @@ route!(router, :post, "/api", req -> begin
     user = json_body(req, UserProfile)
 
     # Send JSON response (auto Content-Type, default status 200)
-    json_response(Dict("ok" => true); status=201)
+    JsonResponse(Dict("ok" => true); status=201)
 end)
 ```
 

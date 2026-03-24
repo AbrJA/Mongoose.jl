@@ -4,22 +4,27 @@
 module MongooseJSONExt
 
 import JSON
-import Mongoose: json_response, json_body, Response, AbstractRequest, body, _format_headers
+import Mongoose: json_response, json_body, AbstractResponse, AbstractRequest, body, _format_headers
 
 """
-    json_response(data; status=200, headers=Dict{String,String}())
+    JsonResponse(data; status=200, headers=Dict{String,String}())
 
 Create an HTTP response with JSON-serialized body and appropriate Content-Type header.
 
 # Example
 ```julia
-route!(server, :get, "/api/data", req -> json_response(Dict("message" => "Hello!")))
+route!(server, :get, "/api/data", req -> JsonResponse(Dict("message" => "Hello!")))
 ```
 """
-function json_response(data; status::Int=200, headers::Dict{String,String}=Dict{String,String}())
-    headers["Content-Type"] = "application/json"
-    body = JSON.json(data)
-    return Response(status, _format_headers(headers), body)
+struct JsonResponse <: AbstractResponse
+    status::Int
+    headers::String
+    body::String
+    function JsonResponse(data; status::Int=200, headers::Dict{String,String}=Dict{String,String}())
+        headers["Content-Type"] = "application/json"
+        body = JSON.json(data)
+        return new(status, _format_headers(headers), body)
+    end
 end
 
 """

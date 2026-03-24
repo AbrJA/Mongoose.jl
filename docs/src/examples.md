@@ -85,19 +85,19 @@ router = Router()
 route!(router, :post, "/user/dict", req -> begin
     data = json_body(req)
     name = get(data, "username", "Guest")
-    json_response(Dict("message" => "Hello, $name"))
+    JsonResponse(Dict("message" => "Hello, $name"))
 end)
 
 # Parse JSON body into a struct
 route!(router, :post, "/user/struct", req -> begin
     profile = json_body(req, UserProfile)
-    json_response(Dict("received" => profile.username, "age" => profile.age))
+    JsonResponse(Dict("received" => profile.username, "age" => profile.age))
 end)
 
 # Custom status code
 route!(router, :post, "/user/create", req -> begin
     data = json_body(req)
-    json_response(Dict("id" => 42, "created" => true); status=201)
+    JsonResponse(Dict("id" => 42, "created" => true); status=201)
 end)
 
 server = AsyncServer(router)
@@ -333,12 +333,12 @@ route!(router, :get, "/health", req -> Response(200, ContentType.text, "ok"))
 
 # JSON API
 route!(router, :get, "/api/users/:id::Int", (req, id) -> begin
-    json_response(Dict("id" => id, "name" => "User $id"))
+    JsonResponse(Dict("id" => id, "name" => "User $id"))
 end)
 
 route!(router, :post, "/api/users", req -> begin
     user = json_body(req, CreateUser)
-    json_response(Dict("created" => user.name); status=201)
+    JsonResponse(Dict("created" => user.name); status=201)
 end)
 
 # WebSocket

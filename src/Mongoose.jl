@@ -52,8 +52,7 @@ include("middleware/auth.jl")
 include("middleware/logger.jl")
 include("middleware/static_files.jl")
 
-# 8. JSON stubs — implementations loaded by ext/MongooseJSONExt.jl
-function json_response end
+# 8. JSON stub — implementation loaded by ext/MongooseJSONExt.jl
 function json_body end
 
 # 8. Precompilation
