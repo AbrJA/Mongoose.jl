@@ -73,17 +73,22 @@ function run_event_loop(server::AsyncServer)
             end
         end
 
+        # Dispatch WS responses — flush immediately after sending
+        local did_ws_send = false
         while isopen(server.ws_responses) && isready(server.ws_responses)
             id_res = take!(server.ws_responses)
             conn = get(server.connections, id_res.id, nothing)
             if conn !== nothing
-                if id_res.payload isa WsTextMessage
-                    mg_ws_send(conn, id_res.payload.data, WS_OP_TEXT)
-                elseif id_res.payload isa WsBinaryMessage
-                    mg_ws_send(conn, id_res.payload.data, WS_OP_BINARY)
+                try
+                    _send_ws_native(conn, id_res.payload)
+                    did_ws_send = true
+                catch e
+                    @error "WebSocket send error" exception=(e, catch_backtrace())
                 end
             end
         end
+        # Extra poll to flush mg_ws_send buffers immediately
+        did_ws_send && mg_mgr_poll(server.core.manager.ptr, 1)
         yield()
     end
 end
