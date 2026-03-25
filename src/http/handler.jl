@@ -72,15 +72,15 @@ end
 @inline function _dispatch_to_router(router::Router, req)
     matched = match_route(router, req.method, req.uri)
     if matched !== nothing
-        handler = get(matched.handlers, req.method, nothing)
+        handler = _get_handler(matched.handlers, req.method)
         if handler !== nothing
             return handler(req, matched.params...)
         end
         # Auto HEAD: use GET handler, return headers only
         if req.method === :head
-            get_handler = get(matched.handlers, :get, nothing)
-            if get_handler !== nothing
-                resp = get_handler(req, matched.params...)
+            get_h = matched.handlers.get
+            if get_h !== nothing
+                resp = get_h(req, matched.params...)
                 return Response(resp.status, resp.headers, "")
             end
         end
@@ -102,6 +102,6 @@ function _send!(conn::MgConnection, res::Response)
     mg_http_reply(conn, res.status, res.headers, res.body)
 end
 
-function _send!(conn::MgConnection, res::PreRenderedResponse)
+function _send!(conn::MgConnection, res::BinaryResponse)
     mg_send(conn, res.bytes)
 end
