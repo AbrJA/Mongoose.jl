@@ -55,6 +55,33 @@ function Response(status::Int, headers::Dict{String,String}, body::String)
     return Response(status, _format_headers(headers), body)
 end
 
+struct Json end
+function json end
+
+struct Html end
+function html end
+
+struct Text end
+function text end
+
+function html(body::String; status=200, headers=Dict{String,String}())
+    h = merge(Dict("Content-Type" => "text/html; charset=utf-8"), headers)
+    return Response(status, h, body)
+end
+
+function text(body::String; status=200, headers=Dict{String,String}())
+    h = merge(Dict("Content-Type" => "text/plain; charset=utf-8"), headers)
+    return Response(status, h, body)
+end
+
+"""
+    Response(::Type{Format}, body::String; status=200, headers=Dict{String,String}())    
+"""
+
+Response(::Type{Html}, body::String; status=200, headers=Dict{String,String}()) = html(body; status=status, headers=headers)
+
+Response(::Type{Text}, body::String; status=200, headers=Dict{String,String}()) = text(body; status=status, headers=headers)
+
 """
     ContentType — Pre-formatted Content-Type headers for common MIME types.
 
@@ -66,14 +93,14 @@ Response(200, ContentType.text, "hello")
 ```
 """
 const ContentType = (
-    text  = "Content-Type: text/plain\r\n",
-    html  = "Content-Type: text/html\r\n",
-    json  = "Content-Type: application/json\r\n",
-    xml   = "Content-Type: application/xml\r\n",
-    css   = "Content-Type: text/css\r\n",
-    js    = "Content-Type: application/javascript\r\n",
-    form  = "Content-Type: application/x-www-form-urlencoded\r\n",
-    octet = "Content-Type: application/octet-stream\r\n",
+    text="Content-Type: text/plain\r\n",
+    html="Content-Type: text/html\r\n",
+    json="Content-Type: application/json\r\n",
+    xml="Content-Type: application/xml\r\n",
+    css="Content-Type: text/css\r\n",
+    js="Content-Type: application/javascript\r\n",
+    form="Content-Type: application/x-www-form-urlencoded\r\n",
+    octet="Content-Type: application/octet-stream\r\n",
 )
 
 function Request(message::MgHttpMessage)

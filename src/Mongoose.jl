@@ -4,14 +4,15 @@ using Mongoose_jll
 using PrecompileTools
 
 export SyncServer, AsyncServer, Router, Request, Response,
-       start!, shutdown!, route!, use!,
-       parse_into, parse_params,
-       ws!, WsTextMessage, WsBinaryMessage, WsMessage,
-       header, body, query, context,
-       cors, rate_limit, auth_bearer, auth_api_key, logger,
-       json_response, json_body,
-       static_files, ContentType,
-       @router
+    start!, shutdown!, route!, use!,
+    parse_into, parse_params,
+    ws!, WsTextMessage, WsBinaryMessage, WsMessage,
+    header, body, query, context,
+    cors, rate_limit, auth_bearer, auth_api_key, logger, health,
+    Json, Html, Text,
+    json, html, text,
+    static_files, ContentType,
+    @router
 
 # 1. FFI Layer (Constants, Structs, Bindings)
 include("ffi/constants.jl")
@@ -52,10 +53,10 @@ include("middleware/auth.jl")
 include("middleware/logger.jl")
 include("middleware/static_files.jl")
 
-# 8. JSON stub — implementation loaded by ext/MongooseJSONExt.jl
-function json_body end
+# 8. Extensions
+include("extensions.jl")
 
-# 8. Precompilation
+# 9. Precompilation
 @setup_workload begin
     @compile_workload begin
         # Router construction and route registration

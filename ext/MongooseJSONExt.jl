@@ -4,72 +4,49 @@
 module MongooseJSONExt
 
 import JSON
-import Mongoose: json_response, json_body, AbstractResponse, AbstractRequest, body, _format_headers
+import Mongoose: AbstractResponse, Response, AbstractRequest, Json, body, _format_headers
 
 """
-    JsonResponse(data; status=200, headers=Dict{String,String}())
+    Response(Json, Dict("message" => "Hello!"); status=200, headers=Dict{String,String}())
 
 Create an HTTP response with JSON-serialized body and appropriate Content-Type header.
+This returns a regular Response struct with JSON content.
 
 # Example
 ```julia
-route!(server, :get, "/api/data", req -> JsonResponse(Dict("message" => "Hello!")))
+route!(server, :get, "/api/data", req -> Response(Json, Dict("message" => "Hello!")))
 ```
 """
-struct JsonResponse <: AbstractResponse
-    status::Int
-    headers::String
-    body::String
-    function JsonResponse(data; status::Int=200, headers::Dict{String,String}=Dict{String,String}())
-        headers["Content-Type"] = "application/json"
-        body = JSON.json(data)
-        return new(status, _format_headers(headers), body)
-    end
+function Mongoose.Response(::Type{Json}, data; status=200, headers=Dict{String,String}())
+    return json(data; status=status, headers=headers)
 end
 
 """
-    json_body(request) → Any
+    json(data; status=200, headers=Dict{String,String}())
+
+Create a JSON response.
+"""
+function json(data; status=200, headers=Dict{String,String}())
+    h = merge(Dict("Content-Type" => "application/json"), headers)
+    return Response(status, _format_headers(h), JSON.json(data))
+end
+
+"""
+    json(request) → Any
 
 Parse the request body as JSON.
 """
-function json_body(request::AbstractRequest)
+function json(request::AbstractRequest)
     return JSON.parse(body(request))
 end
 
 """
-    json_body(request, ::Type{T}) where T → T
+    json(request, ::Type{T}) where T → T
 
 Parse the request body as JSON and deserialize into struct `T`.
 """
-function json_body(request::AbstractRequest, ::Type{T}) where T
-    dict = json_body(request)
-    return _dict_to_struct(T, dict)
-end
-
-@generated function _dict_to_struct(::Type{T}, dict::Dict{String,Any}) where T
-    fnames = fieldnames(T)
-    ftypes = fieldtypes(T)
-    exprs = [:(
-        let val = get(dict, $(string(fname)), nothing)
-            $(
-                if ftype === String
-                    :(val === nothing ? "" : string(val))
-                elseif ftype === Bool
-                    :(val === nothing ? false : Bool(val))
-                elseif ftype === Int || ftype === Int64
-                    :(val === nothing ? 0 : Int(val))
-                elseif ftype === Float64
-                    :(val === nothing ? 0.0 : Float64(val))
-                elseif ftype isa Union && Nothing <: ftype
-                    :(val === nothing ? nothing : val)
-                else
-                    :(val === nothing ? error("Cannot create default value for field type $($ftype) — provide a value in JSON") : convert($ftype, val))
-                end
-            )
-        end
-    ) for (fname, ftype) in zip(fnames, ftypes)]
-
-    return :(T($(exprs...)))
+function json(request::AbstractRequest, ::Type{T}) where T
+    JSON.parse(body(request), T)
 end
 
 end # module
