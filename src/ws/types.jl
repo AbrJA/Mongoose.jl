@@ -2,24 +2,14 @@
     WebSocket message types and handler definitions.
 """
 
-"""
-    WsTextMessage — A text WebSocket message (opcode 1).
-"""
-struct WsTextMessage <: AbstractMessage
-    data::String
+struct WsMessage{Format,T}
+    data::T
 end
 
-"""
-    WsBinaryMessage — A binary WebSocket message (opcode 2).
-"""
-struct WsBinaryMessage <: AbstractMessage
-    data::Vector{UInt8}
-end
+WsMessage(::Type{Format}, data::T) where {Format,T} = WsMessage{Format,T}(data)
 
-"""
-    WsMessage — Union type for all WebSocket message variants.
-"""
-const WsMessage = Union{WsTextMessage, WsBinaryMessage}
+const WsTextMessage = WsMessage{Text,String}
+const WsBinaryMessage = WsMessage{Binary,Vector{UInt8}}
 
 """
     WsRouted — WebSocket message bundled with its endpoint URI for routing.
@@ -46,18 +36,15 @@ end
     decode_ws_message(msg::MgWsMessage) → WsMessage
 """
 function decode_ws_message(msg::MgWsMessage)
-    opcode = msg.flags & 0x0F
-    is_text = opcode == 1
+    is_text = (msg.flags & 0x0F) == 1
 
     if msg.data.len > 0 && msg.data.buf != C_NULL
         if is_text
-            return WsTextMessage(unsafe_string(msg.data.buf, msg.data.len))
+            return WsMessage(Text, unsafe_string(msg.data.buf, msg.data.len))
         else
-            ptr = msg.data.buf
-            data = unsafe_wrap(Array, ptr, msg.data.len)
-            return WsBinaryMessage(copy(data))
+            data = unsafe_wrap(Array, msg.data.buf, msg.data.len)
+            return WsMessage(Binary, copy(data))
         end
-    else
-        return is_text ? WsTextMessage("") : WsBinaryMessage(UInt8[])
     end
+    return is_text ? WsMessage(Text, "") : WsMessage(Binary, UInt8[])
 end

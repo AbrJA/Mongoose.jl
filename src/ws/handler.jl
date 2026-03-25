@@ -29,18 +29,16 @@ function _handle_dynamic_ws_message(router::Router, request::Tagged{WsRouted})
     return nothing
 end
 
+# The dispatch helpers:
+_format_ws_response(id, res::WsMessage) = Tagged{WsMessage}(id, res)
+_format_ws_response(id, res::String) = Tagged{WsMessage}(id, WsMessage(Text, res))
+_format_ws_response(id, res::Vector{UInt8}) = Tagged{WsMessage}(id, WsMessage(Binary, res))
+_format_ws_response(id, ::Nothing) = nothing
+
 function _execute_ws_endpoint(endpoint::WsEndpoint, request::Tagged{WsRouted})
     try
         res = endpoint.on_message(request.payload.message)
-        if res isa WsTextMessage
-            return Tagged{WsMessage}(request.id, res)
-        elseif res isa WsBinaryMessage
-            return Tagged{WsMessage}(request.id, res)
-        elseif res isa String
-            return Tagged{WsMessage}(request.id, WsTextMessage(res))
-        elseif res isa Vector{UInt8}
-            return Tagged{WsMessage}(request.id, WsBinaryMessage(res))
-        end
+        return _format_ws_response(request.id, res)
     catch e
         @error "WebSocket on_message error" exception = (e, catch_backtrace())
     end
@@ -72,9 +70,15 @@ function _ws_upgrade!(server, conn, ev_data, uri, endpoint, message)
     server.core.ws_connections[Int(conn)] = uri
     if endpoint.on_open !== nothing
         req = Request(message)
-        try endpoint.on_open(req) catch e end
+        try
+            endpoint.on_open(req)
+        catch e
+        end
     end
 end
+
+_send_ws_native(conn, msg::WsMessage{Text}) = mg_ws_send(conn, msg.data, WS_OP_TEXT)
+_send_ws_native(conn, msg::WsMessage{Binary}) = mg_ws_send(conn, msg.data, WS_OP_BINARY)
 
 # --- WS event handlers ---
 
@@ -87,11 +91,7 @@ function handle_event!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnecti
     tagged = Tagged(conn_id, WsRouted(ws_msg, uri))
     result = handle_ws_message!(server, tagged)
     if result !== nothing
-        if result.payload isa WsTextMessage
-            mg_ws_send(conn, result.payload.data, WS_OP_TEXT)
-        elseif result.payload isa WsBinaryMessage
-            mg_ws_send(conn, result.payload.data, WS_OP_BINARY)
-        end
+        _send_ws_native(conn, result.payload)
     end
     return
 end
