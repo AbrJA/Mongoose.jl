@@ -53,19 +53,19 @@ function (mw::HealthMiddleware)(request::AbstractRequest, params::Vector{Any}, n
 
         # Simple response without timestamp for now
         body = "status: $(status == 200 ? "healthy" : "unhealthy")\nchecks: health=$healthy, ready=$ready, alive=$alive\n"
-        return Response(status, Dict("Content-Type" => "text/plain"), body)
+        return Response(status, ContentType.text, body)
 
     elseif uri == "/readyz"
         ready = mw.ready_check()
         status = ready ? 200 : 503
         body = "status: $(ready ? "ready" : "not ready")\n"
-        return Response(status, Dict("Content-Type" => "text/plain"), body)
+        return Response(status, ContentType.text, body)
 
     elseif uri == "/livez"
         alive = mw.live_check()
         status = alive ? 200 : 503
         body = "status: $(alive ? "alive" : "dead")\n"
-        return Response(status, Dict("Content-Type" => "text/plain"), body)
+        return Response(status, ContentType.text, body)
     end
 
     # Not a health endpoint, continue to next middleware/handler

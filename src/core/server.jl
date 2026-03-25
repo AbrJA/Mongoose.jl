@@ -35,7 +35,7 @@ end
 mutable struct ServerCore{R <: AbstractRouter}
     manager::Manager
     handler::Ptr{Cvoid}
-    timeout::Cint
+    timeout::Int
     master::Union{Nothing,Task}
     router::R
     ws_connections::Dict{Int,String}
@@ -49,7 +49,7 @@ mutable struct ServerCore{R <: AbstractRouter}
                         drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS,
                         c_handler::Ptr{Cvoid}=C_NULL) where {R <: AbstractRouter}
         return new{R}(
-            Manager(empty=true), c_handler, Cint(timeout), nothing,
+            Manager(empty=true), c_handler, timeout, nothing,
             router, Dict{Int,String}(),
             Threads.Atomic{Bool}(false), Middleware[],
             max_body_size, drain_timeout_ms

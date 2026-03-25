@@ -27,8 +27,8 @@ end
 """
     mg_mgr_poll(mgr, timeout_ms) — Poll the manager for events within the given timeout.
 """
-function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Cint)
-    ccall((:mg_mgr_poll, libmongoose), Cint, (Ptr{Cvoid}, Cint), mgr, timeout_ms)
+function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Int)
+    ccall((:mg_mgr_poll, libmongoose), Cint, (Ptr{Cvoid}, Cint), mgr, Cint(timeout_ms))
 end
 
 """
@@ -66,9 +66,9 @@ end
 """
     mg_log_set_level(level) — Set the Mongoose C library log level.
 """
-function mg_log_set_level(level::Cint)
+function mg_log_set_level(level::Int)
     ptr = cglobal((:mg_log_level, libmongoose), Cint)
-    unsafe_store!(ptr, level)
+    unsafe_store!(ptr, Cint(level))
 end
 
 """
