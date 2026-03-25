@@ -1,6 +1,7 @@
 using HTTP
 using JSON
 using Mongoose
+using Mongoose: json
 using Test
 
 @router TestApp begin
@@ -14,12 +15,12 @@ end
     # --- Helper Functions ---
     function greet(request)
         body = "{\"message\":\"Hello World from Julia!\"}"
-        Response(200, Dict("Content-Type" => "application/json"), body)
+        Response(200, ContentType.json, body)
     end
 
     function echo(request, name)
         body = "Hello $name from Julia!"
-        Response(200, Dict("Content-Type" => "text/plain"), body)
+        Response(200, ContentType.text, body)
     end
 
     function error_handler(request, args...)
@@ -84,13 +85,13 @@ end
     @testset "Typed Route Parameters" begin
         router = Router()
         route!(router, :get, "/users/:id::Int", (req, id) -> begin
-            Response(200, Dict("Content-Type" => "text/plain"), "User $(id) type=$(typeof(id))")
+            Response(200, ContentType.text, "User $(id) type=$(typeof(id))")
         end)
         route!(router, :get, "/score/:val::Float64", (req, val) -> begin
-            Response(200, Dict("Content-Type" => "text/plain"), "Score $(val) type=$(typeof(val))")
+            Response(200, ContentType.text, "Score $(val) type=$(typeof(val))")
         end)
         route!(router, :get, "/greet/:name", (req, name) -> begin
-            Response(200, Dict("Content-Type" => "text/plain"), "Hello $(name) type=$(typeof(name))")
+            Response(200, ContentType.text, "Hello $(name) type=$(typeof(name))")
         end)
 
         server = AsyncServer(router; workers=1)
@@ -155,9 +156,9 @@ end
     # --- Test 4: Multiple Instances ---
     @testset "Multiple Instances" begin
         router1 = Router()
-        route!(router1, :get, "/s1", (req) -> Response(200, Dict{String,String}(), "Server 1"))
+        route!(router1, :get, "/s1", (req) -> Response(200, "", "Server 1"))
         router2 = Router()
-        route!(router2, :get, "/s2", (req) -> Response(200, Dict{String,String}(), "Server 2"))
+        route!(router2, :get, "/s2", (req) -> Response(200, "", "Server 2"))
 
         server1 = AsyncServer(router1; workers=1)
         server2 = AsyncServer(router2; workers=1)
@@ -181,7 +182,7 @@ end
     # --- Test 5: CORS Middleware ---
     @testset "CORS Middleware" begin
         router = Router()
-        route!(router, :get, "/api/data", (req) -> Response(200, Dict("Content-Type" => "application/json"), "{\"ok\":true}"))
+        route!(router, :get, "/api/data", (req) -> Response(200, ContentType.json, "{\"ok\":true}"))
 
         server = AsyncServer(router; workers=1)
         use!(server, cors(origins="https://example.com"))
@@ -207,10 +208,10 @@ end
     # --- Test 6: JSON Integration ---
     @testset "JSON Integration" begin
         router = Router()
-        route!(router, :get, "/api/json", (req) -> JsonResponse(Dict("message" => "hello", "count" => 42)))
+        route!(router, :get, "/api/json", (req) -> json(Dict("message" => "hello", "count" => 42)))
         route!(router, :post, "/api/echo", (req) -> begin
-            data = json_body(req)
-            JsonResponse(data)
+            data = json(req)
+            json(data)
         end)
 
         server = AsyncServer(router; workers=1)
@@ -302,18 +303,20 @@ end
         start!(server, port=8098, blocking=false)
         sleep(0.5)
 
-        HTTP.WebSockets.open("ws://localhost:8098/chat") do ws
-            HTTP.WebSockets.send(ws, "Hello WebSockets!")
-            response = HTTP.WebSockets.receive(ws)
-            println("Client received: ", String(response))
+        try
+            HTTP.WebSockets.open("ws://localhost:8098/chat") do ws
+                HTTP.WebSockets.send(ws, "Hello WebSockets!")
+                response = HTTP.WebSockets.receive(ws)
+                @test String(response) == "Echo: Hello WebSockets!"
 
-            # Send binary
-            HTTP.WebSockets.send(ws, UInt8[1, 2, 3])
-            response = HTTP.WebSockets.receive(ws)
-            println("Client received binary: ", response)
+                # Send binary
+                HTTP.WebSockets.send(ws, UInt8[1, 2, 3])
+                response = HTTP.WebSockets.receive(ws)
+                @test response == UInt8[1, 2, 3]
+            end
+        finally
+            shutdown!(server)
         end
-
-        shutdown!(server)
     end
 
     # --- Test: SyncServer with pre-built router ---
