@@ -3,6 +3,40 @@
 """
 abstract type AbstractRouter end
 
+# --- Headers ---
+
+"""
+    Headers — Ordered key-value pairs for HTTP headers.
+
+Uses `Vector{Pair{String,String}}` internally for cache-friendly linear access,
+which outperforms Dict for the typical 5-15 header entries in HTTP requests.
+Preserves insertion order and supports duplicate keys (e.g. Set-Cookie).
+
+# Usage
+```julia
+Headers()                                         # empty
+Headers(["Content-Type" => "text/plain"])          # from pairs
+```
+"""
+struct Headers
+    pairs::Vector{Pair{String,String}}
+end
+
+Headers() = Headers(Pair{String,String}[])
+
+function Base.get(h::Headers, key::String, default)
+    @inbounds for i in 1:length(h.pairs)
+        h.pairs[i].first == key && return h.pairs[i].second
+    end
+    return default
+end
+
+Base.isempty(h::Headers) = isempty(h.pairs)
+Base.length(h::Headers) = length(h.pairs)
+Base.iterate(h::Headers) = iterate(h.pairs)
+Base.iterate(h::Headers, state) = iterate(h.pairs, state)
+Base.push!(h::Headers, pair::Pair{String,String}) = push!(h.pairs, pair)
+
 """
     Request — Full HTTP request with owned string data.
 """
@@ -10,7 +44,7 @@ struct Request <: AbstractRequest
     method::Symbol
     uri::String
     query::String
-    headers::Dict{String,String}
+    headers::Headers
     body::String
     context::Dict{Symbol,Any}
 end
@@ -35,11 +69,13 @@ struct Response <: AbstractResponse
 end
 
 """
-    PreRenderedResponse — Pre-formatted raw bytes.
+    BinaryResponse — Pre-formatted raw bytes.
 """
-struct PreRenderedResponse <: AbstractResponse
+struct BinaryResponse <: AbstractResponse
     bytes::Vector{UInt8}
 end
+
+## Add Factory here
 
 """
     Tagged{T} — Connection-tagged payload for async queue routing.
@@ -51,27 +87,33 @@ end
 
 # --- Constructors ---
 
-struct Html end
-struct Text end
-struct Json end
+abstract type ResponseFormat end
+struct Html <: ResponseFormat end
+struct Json <: ResponseFormat end
+struct Text <: ResponseFormat end
+struct Xml <: ResponseFormat end
+struct Css <: ResponseFormat end
+struct Js <: ResponseFormat end
+struct Form <: ResponseFormat end
+struct Octet <: ResponseFormat end
+
+render_body(::Type{T}, body) where T = String(body)
 
 # Mapping: This is the only place you need to update when adding new types
 content_type(::Type{Html}) = "text/html; charset=utf-8"
 content_type(::Type{Text}) = "text/plain; charset=utf-8"
 content_type(::Type{Json}) = "application/json; charset=utf-8"
 
-function Response(::Type{T}, body::String; status=200, headers=Dict{String,String}())
-    h = merge(Dict("Content-Type" => content_type(T)), headers)
-    return Response(status, _format_headers(h), body)
+function Response(::Type{T}, body; status=200, headers=Headers()) where T
+    h = "Content-Type: " * content_type(T) * "\r\n"
+    isempty(headers) && return Response(status, h, render_body(T, body))
+    return Response(status, h * _format_headers(headers), render_body(T, body))
 end
 
-function Response(::Type{T}, body::String; status=200)
-    return Response(status, content_type(T), body)
-end
+Response(status::Int, headers::Headers, body::String) = Response(status, _format_headers(headers), body)
 
 Text(body::String; status=200) = Response(Text, body; status=status)
 Html(body::String; status=200) = Response(Html, body; status=status)
-Json(body::String; status=200) = Response(Json, body; status=status)
 
 """
     ContentType — Pre-formatted Content-Type headers for common MIME types.
@@ -97,6 +139,9 @@ const ContentType = (
 function Request(message::MgHttpMessage)
     return Request(_method(message), _uri(message), _query(message), _headers(message), _body(message), Dict{Symbol,Any}())
 end
+
+Request(method::Symbol, uri::String, query::String, headers::Dict{String,String}, body::String, context::Dict{Symbol,Any}) =
+    Request(method, uri, query, Headers([k => v for (k, v) in headers]), body, context)
 
 function ViewRequest(message::MgHttpMessage)
     return ViewRequest(_method(message), _uri(message), message, Dict{Symbol,Any}())
@@ -126,6 +171,9 @@ function req_header(req::ViewRequest, name::String)
     end
     return nothing
 end
+
+# Public alias
+const header = req_header
 
 _body(req::Request) = req.body
 _body(req::ViewRequest) = to_string(req.message.body)
@@ -177,13 +225,13 @@ function _method_to_symbol(str::MgStr)
 end
 
 function _headers(message::MgHttpMessage)
-    headers = Dict{String,String}()
+    pairs = Pair{String,String}[]
     for h in message.headers
         if h.name.buf != C_NULL && h.name.len > 0 && h.val.buf != C_NULL && h.val.len > 0
             name = lowercase(to_string(h.name))
             value = to_string(h.val)
-            headers[name] = value
+            push!(pairs, name => value)
         end
     end
-    return headers
+    return Headers(pairs)
 end
