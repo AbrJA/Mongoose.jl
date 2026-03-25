@@ -130,7 +130,7 @@ route!(router, :post, "/search", req -> begin
     context(req)                 # Dict{Symbol,Any} for middleware data
 
     # Parse query string into a Dict
-    params = parse_params("name=Alice&age=30")
+    params = req_query("name=Alice&age=30")
 
     # Parse into a struct
     struct Search; q::String; page::Int end
@@ -184,9 +184,9 @@ When `JSON.jl` is loaded, these functions become available:
 using Mongoose, JSON
 
 route!(router, :post, "/api", req -> begin
-    data = json_body(req)                        # Parse body → Dict/Array
-    profile = json_body(req, UserProfile)         # Parse body → struct
-    return json_response(Dict("ok" => true))      # Serialize → JSON response
+    data = json(req)                             # Parse body → Dict/Array
+    profile = json(req, UserProfile)              # Parse body → struct
+    return json(Dict("ok" => true))               # Serialize → JSON response
 end)
 ```
 
