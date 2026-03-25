@@ -5,14 +5,14 @@ using PrecompileTools
 
 export SyncServer, AsyncServer, Router, Request, Response,
     start!, shutdown!, route!, use!,
-    parse_into, parse_params,
+    parse_header, parse_query, parse_body, parse_context,
     ws!, WsTextMessage, WsBinaryMessage, WsMessage,
-    header, body, query, context,
     cors, rate_limit, auth_bearer, auth_api_key, logger, health,
     Json, Html, Text,
-    json, html, text,
     static_files, ContentType,
     @router
+
+# Maybe is good to have parse_ and req_
 
 # 1. FFI Layer (Constants, Structs, Bindings)
 include("ffi/constants.jl")

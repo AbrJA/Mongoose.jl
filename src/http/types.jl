@@ -51,36 +51,27 @@ end
 
 # --- Constructors ---
 
-function Response(status::Int, headers::Dict{String,String}, body::String)
-    return Response(status, _format_headers(headers), body)
-end
-
-struct Json end
-function json end
-
 struct Html end
-function html end
-
 struct Text end
-function text end
+struct Json end
 
-function html(body::String; status=200, headers=Dict{String,String}())
-    h = merge(Dict("Content-Type" => "text/html; charset=utf-8"), headers)
-    return Response(status, h, body)
+# Mapping: This is the only place you need to update when adding new types
+content_type(::Type{Html}) = "text/html; charset=utf-8"
+content_type(::Type{Text}) = "text/plain; charset=utf-8"
+content_type(::Type{Json}) = "application/json; charset=utf-8"
+
+function Response(::Type{T}, body::String; status=200, headers=Dict{String,String}())
+    h = merge(Dict("Content-Type" => content_type(T)), headers)
+    return Response(status, _format_headers(h), body)
 end
 
-function text(body::String; status=200, headers=Dict{String,String}())
-    h = merge(Dict("Content-Type" => "text/plain; charset=utf-8"), headers)
-    return Response(status, h, body)
+function Response(::Type{T}, body::String; status=200)
+    return Response(status, content_type(T), body)
 end
 
-"""
-    Response(::Type{Format}, body::String; status=200, headers=Dict{String,String}())    
-"""
-
-Response(::Type{Html}, body::String; status=200, headers=Dict{String,String}()) = html(body; status=status, headers=headers)
-
-Response(::Type{Text}, body::String; status=200, headers=Dict{String,String}()) = text(body; status=status, headers=headers)
+Text(body::String; status=200) = Response(Text, body; status=status)
+Html(body::String; status=200) = Response(Html, body; status=status)
+Json(body::String; status=200) = Response(Json, body; status=status)
 
 """
     ContentType — Pre-formatted Content-Type headers for common MIME types.
@@ -112,7 +103,7 @@ function ViewRequest(message::MgHttpMessage)
 end
 
 # (Accessors and FFI helpers...)
-header(req::Request, name::String) = get(req.headers, lowercase(name), nothing)
+req_header(req::Request, name::String) = get(req.headers, lowercase(name), nothing)
 
 @inline function _mg_str_eq_ci(s::MgStr, target::String)
     s.len != ncodeunits(target) && return false
@@ -124,7 +115,7 @@ header(req::Request, name::String) = get(req.headers, lowercase(name), nothing)
     return true
 end
 
-function header(req::ViewRequest, name::String)
+function req_header(req::ViewRequest, name::String)
     name_lower = lowercase(name)
     for h in req.message.headers
         h.name.buf == C_NULL && continue
@@ -136,14 +127,14 @@ function header(req::ViewRequest, name::String)
     return nothing
 end
 
-body(req::Request) = req.body
-body(req::ViewRequest) = to_string(req.message.body)
+_body(req::Request) = req.body
+_body(req::ViewRequest) = to_string(req.message.body)
 
-context(req::Request) = req.context
-context(req::ViewRequest) = req.context
+_context(req::Request) = req.context
+_context(req::ViewRequest) = req.context
 
-query(req::Request) = req.query
-query(req::ViewRequest) = to_string(req.message.query)
+_query(req::Request) = req.query
+_query(req::ViewRequest) = to_string(req.message.query)
 
 _method(m::MgHttpMessage) = _method_to_symbol(m.method)
 _uri(m::MgHttpMessage) = to_string(m.uri)
