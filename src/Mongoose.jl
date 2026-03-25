@@ -3,16 +3,19 @@ module Mongoose
 using Mongoose_jll
 using PrecompileTools
 
-export SyncServer, AsyncServer, Router, Request, Response,
+export SyncServer, AsyncServer, Router, Request, Response, Headers,
     start!, shutdown!, route!, use!,
-    parse_header, parse_query, parse_body, parse_context,
+    header, req_header, query, context, parse_query, parse_into, parse_params,
     ws!, WsTextMessage, WsBinaryMessage, WsMessage,
-    cors, rate_limit, auth_bearer, auth_api_key, logger, health,
-    Json, Html, Text,
+    cors, rate_limit, auth_bearer, auth_api_key, logger,
+    Json, Html, Text, json,
     static_files, ContentType,
     @router
 
 # Maybe is good to have parse_ and req_
+
+# JSON stub — extended by MongooseJSONExt when JSON.jl is loaded
+function json end
 
 # 1. FFI Layer (Constants, Structs, Bindings)
 include("ffi/constants.jl")
@@ -53,10 +56,7 @@ include("middleware/auth.jl")
 include("middleware/logger.jl")
 include("middleware/static_files.jl")
 
-# 8. Extensions
-include("extensions.jl")
-
-# 9. Precompilation
+# 8. Precompilation
 @setup_workload begin
     @compile_workload begin
         # Router construction and route registration
@@ -83,7 +83,7 @@ include("extensions.jl")
         auth_api_key(keys=Set(["k"]))
 
         # HTTP dispatch pipeline
-        req = Request(:get, "/", "", Dict{String,String}(), "", Dict{Symbol,Any}())
+        req = Request(:get, "/", "", Headers(), "", Dict{Symbol,Any}())
         _dispatch_to_router(router, req)
 
         # Middleware pipeline

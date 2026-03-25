@@ -100,6 +100,7 @@ struct Octet <: ResponseFormat end
 render_body(::Type{T}, body) where T = String(body)
 
 # Mapping: This is the only place you need to update when adding new types
+content_type(::Type{<:ResponseFormat}) = "application/octet-stream"
 content_type(::Type{Html}) = "text/html; charset=utf-8"
 content_type(::Type{Text}) = "text/plain; charset=utf-8"
 content_type(::Type{Json}) = "application/json; charset=utf-8"

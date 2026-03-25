@@ -43,12 +43,14 @@ end
 end
 
 """
-    parse_params(query) → Dict{String,String}
+    parse_query(req) → Dict{String,String}
 
 Parse a URL-encoded query string into key-value pairs.
 Handles `key=value&key2=value2` format with URL decoding.
 """
-function parse_params(query::AbstractString)
+parse_query(req::AbstractRequest) = _parse_query_string(_query(req))
+
+function _parse_query_string(query)
     bytes = codeunits(query)
     len = length(bytes)
     params = Dict{String,String}()
@@ -82,8 +84,10 @@ function parse_params(query::AbstractString)
     return params
 end
 
+parse_query(::Type{T}, req::AbstractRequest) where T = parse_query(T, _query(req))
+
 """
-    parse_into(::Type{T}, query::AbstractString) where T
+    parse_query(::Type{T}, query::AbstractString) where T
 
 Deserialize a URL-encoded query string into a struct of type `T`.
 Parses the query string first, then maps key-value pairs to struct fields.
@@ -96,20 +100,22 @@ struct SearchParams
     limit::Int
 end
 
-params = parse_into(SearchParams, "q=hello&page=1&limit=10")
+params = parse_query(SearchParams, "q=hello&page=1&limit=10")
 # SearchParams("hello", 1, 10)
 ```
 """
-parse_into(::Type{T}, query::AbstractString) where T = parse_into(T, parse_params(query))
+function parse_query(::Type{T}, query::AbstractString) where T
+    parse_query(T, _parse_query_string(query))
+end
 
 """
-    parse_into(::Type{T}, dict::Dict{String,String}) where T
+    parse_query(::Type{T}, dict::Dict{String,String}) where T
 
 Deserialize a dictionary of strings into a struct of type `T`.
 Handles `String`, `Bool`, `Union{T, Nothing}` (optional), and numeric types.
 Missing keys default to empty string, zero, `false`, or `nothing` as appropriate.
 """
-@generated function parse_into(::Type{T}, dict::Dict{String,String}) where T
+@generated function parse_query(::Type{T}, dict::Dict{String,String}) where T
     fnames = fieldnames(T)
     ftypes = fieldtypes(T)
     exprs = [:(
@@ -138,12 +144,13 @@ Missing keys default to empty string, zero, `false`, or `nothing` as appropriate
 end
 
 """
-    _format_headers(headers::Dict{String,String}) → String
+    _format_headers(headers::Headers) → String
 
-Serialize a dictionary of headers into the `"Key: Value\\r\\n"` format
+Serialize headers into the `"Key: Value\\r\\n"` format
 expected by the Mongoose C library's `mg_http_reply`.
 """
-function _format_headers(headers::Dict{String,String})
+function _format_headers(headers::Headers)
+    isempty(headers) && return ""
     io = IOBuffer()
     for (k, v) in headers
         print(io, k, ": ", v, "\r\n")
@@ -151,17 +158,38 @@ function _format_headers(headers::Dict{String,String})
     return String(take!(io))
 end
 
-"""
-    query(req, key::String) → Union{String, Nothing}
+# parse_into: convenience alias for struct deserialization from query strings
+const parse_into = parse_query
 
-Lookup a single query-string parameter by key, URL-decoded.
-Returns `nothing` if the key is absent.
-Parsed parameters are cached in `context[:_query_params]` for subsequent lookups.
+# parse_params: convenience alias for parsing a query string into Dict{String,String}
+parse_params(query::AbstractString) = _parse_query_string(query)
+
+"""
+    query(req) → String
+
+Return the raw query string from the request.
+"""
+query(req::AbstractRequest) = _query(req)
+
+"""
+    query(req, key) → Union{String, Nothing}
+
+Lookup a single URL-decoded query parameter by key.
+Parsed parameters are cached in the request context on first access.
 """
 function query(req::AbstractRequest, key::String)
-    params = get!(req.context, :_query_params) do
-        q = query(req)
-        isempty(q) ? Dict{String,String}() : parse_params(q)
-    end::Dict{String,String}
-    return get(params, key, nothing)
+    ctx = _context(req)
+    parsed = get(ctx, :_parsed_query, nothing)
+    if parsed === nothing
+        parsed = _parse_query_string(_query(req))
+        ctx[:_parsed_query] = parsed
+    end
+    return get(parsed::Dict{String,String}, key, nothing)
 end
+
+"""
+    context(req) → Dict{Symbol,Any}
+
+Return the mutable context dictionary attached to the request.
+"""
+context(req::AbstractRequest) = _context(req)
