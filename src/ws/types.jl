@@ -2,6 +2,8 @@
     WebSocket message types and handler definitions.
 """
 
+struct Binary <: AbstractFormat end
+
 struct WsMessage{Format,T}
     data::T
 end

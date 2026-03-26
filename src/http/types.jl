@@ -62,20 +62,20 @@ end
 """
     Response — HTTP response.
 """
-struct Response <: AbstractResponse
+struct Response{Format} <: AbstractResponse
     status::Int
     headers::String
     body::String
 end
 
 """
-    BinaryResponse — Pre-formatted raw bytes.
+    RawResponse — Pre-formatted raw bytes.
 """
-struct BinaryResponse <: AbstractResponse
+struct RawResponse <: AbstractResponse
     bytes::Vector{UInt8}
 end
 
-## Add Factory here
+# Maybe add factory here
 
 """
     Tagged{T} — Connection-tagged payload for async queue routing.
@@ -87,34 +87,36 @@ end
 
 # --- Constructors ---
 
-abstract type ResponseFormat end
-struct Html <: ResponseFormat end
-struct Json <: ResponseFormat end
-struct Text <: ResponseFormat end
-struct Xml <: ResponseFormat end
-struct Css <: ResponseFormat end
-struct Js <: ResponseFormat end
-struct Form <: ResponseFormat end
-struct Octet <: ResponseFormat end
+abstract type AbstractFormat end
+struct Raw <: AbstractFormat end
+struct Html <: AbstractFormat end
+struct Css <: AbstractFormat end
+struct Js <: AbstractFormat end
+struct Text <: AbstractFormat end
+# Extensions can define their own types, e.g. Json in MongooseJSONExt.jl
+struct Json <: AbstractFormat end
 
-render_body(::Type{T}, body) where T = String(body)
+const JsonResponse = Response{Json}
+const HtmlResponse = Response{Html}
+const TextResponse = Response{Text}
+const JsResponse = Response{Js}
+const CssResponse = Response{Css}
+
+render_body(::Type{T}, body::String) where T = body
 
 # Mapping: This is the only place you need to update when adding new types
-content_type(::Type{<:ResponseFormat}) = "application/octet-stream"
-content_type(::Type{Html}) = "text/html; charset=utf-8"
-content_type(::Type{Text}) = "text/plain; charset=utf-8"
-content_type(::Type{Json}) = "application/json; charset=utf-8"
+content_type(::Type{<:AbstractFormat}) = error("Unsupported format type: $T")
+content_type(::Type{Html}) = "Content-Type: text/html; charset=utf-8\r\n"
+content_type(::Type{Css}) = "Content-Type: text/css; charset=utf-8\r\n"
+content_type(::Type{Js}) = "Content-Type: application/javascript; charset=utf-8\r\n"
+content_type(::Type{Text}) = "Content-Type: text/plain; charset=utf-8\r\n"
 
-function Response(::Type{T}, body; status=200, headers=Headers()) where T
-    h = "Content-Type: " * content_type(T) * "\r\n"
-    isempty(headers) && return Response(status, h, render_body(T, body))
-    return Response(status, h * _format_headers(headers), render_body(T, body))
+function Response(::Type{T}, body; status::Int=200, headers::Headers=Headers()) where T
+    isempty(headers) && return Response(status, content_type(T), render_body(T, body))
+    return Response(status, content_type(T) * _format_headers(headers), render_body(T, body))
 end
 
-Response(status::Int, headers::Headers, body::String) = Response(status, _format_headers(headers), body)
-
-Text(body::String; status=200) = Response(Text, body; status=status)
-Html(body::String; status=200) = Response(Html, body; status=status)
+Response(status::Int, headers::String, body::String) = Response{Raw}(status, headers, body)
 
 """
     ContentType — Pre-formatted Content-Type headers for common MIME types.

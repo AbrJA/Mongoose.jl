@@ -98,10 +98,10 @@ end
 """
     _send!(conn, response)
 """
-function _send!(conn::MgConnection, res::Response)
+function _send!(conn::MgConnection, res::Response{<:AbstractFormat})
     mg_http_reply(conn, res.status, res.headers, res.body)
 end
 
-function _send!(conn::MgConnection, res::BinaryResponse)
+function _send!(conn::MgConnection, res::RawResponse)
     mg_send(conn, res.bytes)
 end

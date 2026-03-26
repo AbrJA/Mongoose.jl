@@ -3,12 +3,12 @@ module Mongoose
 using Mongoose_jll
 using PrecompileTools
 
-export SyncServer, AsyncServer, Router, Request, Response, Headers,
+export SyncServer, AsyncServer, Router, Request, Response, Headers, 
+    JsonResponse, HtmlResponse, TextResponse, JsResponse, CssResponse,
     start!, shutdown!, route!, use!,
     header, req_header, query, context, parse_query, parse_into, parse_params,
     ws!, WsTextMessage, WsBinaryMessage, WsMessage,
     cors, rate_limit, auth_bearer, auth_api_key, logger,
-    Json, Html, Text, json,
     static_files, ContentType,
     @router
 
