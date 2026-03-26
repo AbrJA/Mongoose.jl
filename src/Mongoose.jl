@@ -3,19 +3,16 @@ module Mongoose
 using Mongoose_jll
 using PrecompileTools
 
-export SyncServer, AsyncServer, Router, Request, Response, Headers, 
+export SyncServer, AsyncServer, Router, Request, Response, Headers,
     JsonResponse, HtmlResponse, TextResponse, JsResponse, CssResponse,
     start!, shutdown!, route!, use!,
     header, req_header, query, context, parse_query, parse_into, parse_params,
     ws!, WsTextMessage, WsBinaryMessage, WsMessage,
-    cors, rate_limit, auth_bearer, auth_api_key, logger,
-    static_files, ContentType,
+    cors, rate_limit, auth_bearer, auth_api_key, logger, static_files,
+    ContentType,
     @router
 
 # Maybe is good to have parse_ and req_
-
-# JSON stub — extended by MongooseJSONExt when JSON.jl is loaded
-function json end
 
 # 1. FFI Layer (Constants, Structs, Bindings)
 include("ffi/constants.jl")
@@ -88,7 +85,7 @@ include("middleware/static_files.jl")
 
         # Middleware pipeline
         mw = cors()
-        execute_middleware(Middleware[mw], req, Any[], (r, args...) -> Response(200, "", ""))
+        execute_middleware(AbstractMiddleware[mw], req, Any[], (r, args...) -> Response(200, "", ""))
     end
 end
 

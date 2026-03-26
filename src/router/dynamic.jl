@@ -10,16 +10,16 @@
     MethodHandlers — Fixed-slot storage for HTTP method handlers.
 
 Uses struct fields instead of Dict for O(1) branch-predicted dispatch
-with zero allocation. Each field is `Union{Nothing,Handler}`.
+with zero allocation. Each field is `Union{Nothing,Function}`.
 """
 mutable struct MethodHandlers
-    get::Union{Nothing,Handler}
-    post::Union{Nothing,Handler}
-    put::Union{Nothing,Handler}
-    delete::Union{Nothing,Handler}
-    patch::Union{Nothing,Handler}
-    options::Union{Nothing,Handler}
-    head::Union{Nothing,Handler}
+    get::Union{Nothing,Function}
+    post::Union{Nothing,Function}
+    put::Union{Nothing,Function}
+    delete::Union{Nothing,Function}
+    patch::Union{Nothing,Function}
+    options::Union{Nothing,Function}
+    head::Union{Nothing,Function}
     MethodHandlers() = new(nothing, nothing, nothing, nothing, nothing, nothing, nothing)
 end
 
@@ -34,7 +34,7 @@ end
     return nothing
 end
 
-@inline function _set_handler!(mh::MethodHandlers, method::Symbol, @nospecialize(handler::Handler))
+@inline function _set_handler!(mh::MethodHandlers, method::Symbol, @nospecialize(handler::Function))
     method === :get     && (mh.get = handler; return)
     method === :post    && (mh.post = handler; return)
     method === :put     && (mh.put = handler; return)
@@ -153,7 +153,7 @@ function route!(router::Router, method::Symbol, path::AbstractString, @nospecial
     return router
 end
 
-function _register_route!(router::Router, method::Symbol, path::AbstractString, @nospecialize(wrapped::Handler))
+function _register_route!(router::Router, method::Symbol, path::AbstractString, @nospecialize(wrapped::Function))
     if !occursin(':', path)
         if !haskey(router.fixed, path)
             router.fixed[path] = FixedRoute()
