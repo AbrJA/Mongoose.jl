@@ -3,7 +3,7 @@
     Handles preflight OPTIONS requests and adds CORS headers to all responses.
 """
 
-struct Cors <: Middleware
+struct Cors <: AbstractMiddleware
     headers::String
 end
 

@@ -4,7 +4,7 @@
     Uses `time_ns()` for minimal overhead (~20ns per call).
 """
 
-struct Logger <: Middleware
+struct Logger <: AbstractMiddleware
     threshold_ns::Int
     output::IO
 end

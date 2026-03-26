@@ -2,7 +2,7 @@
     Authentication middleware — Bearer token and API key authentication.
 """
 
-struct BearerAuth <: Middleware
+struct BearerAuth <: AbstractMiddleware
     validator::Function
 end
 
@@ -39,7 +39,7 @@ use!(server, auth_bearer(token -> token == "my-secret-token"))
 """
 auth_bearer(validator::Function) = BearerAuth(validator)
 
-struct ApiKeyAuth <: Middleware
+struct ApiKeyAuth <: AbstractMiddleware
     header_name::String
     keys::Set{String}
 end

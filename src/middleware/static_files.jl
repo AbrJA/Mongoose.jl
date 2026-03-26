@@ -27,12 +27,12 @@ const DEFAULT_MIME_TYPES = Dict{String,String}(
 )
 
 """
-    StaticFiles <: Middleware
+    StaticFiles <: AbstractMiddleware
 
 Middleware that serves static files from a directory.
 Created via the [`static_files`](@ref) factory function.
 """
-struct StaticFiles <: Middleware
+struct StaticFiles <: AbstractMiddleware
     url_prefix::String
     directory::String
     index_file::String

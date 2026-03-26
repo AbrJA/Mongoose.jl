@@ -3,7 +3,7 @@
     Provides `/healthz`, `/readyz`, and `/livez` endpoints for Kubernetes.
 """
 
-struct HealthMiddleware <: Middleware
+struct HealthMiddleware <: AbstractMiddleware
     health_check::Function
     ready_check::Function
     live_check::Function

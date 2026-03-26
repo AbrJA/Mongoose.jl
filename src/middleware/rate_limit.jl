@@ -3,7 +3,7 @@
     Tracks requests per client IP with automatic cleanup.
 """
 
-struct RateLimit <: Middleware
+struct RateLimit <: AbstractMiddleware
     max_requests::Int
     window_seconds::Int
     tracker::Dict{String, Tuple{Int, Float64}}
