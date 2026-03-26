@@ -27,14 +27,14 @@ end
 """
     mg_mgr_poll(mgr, timeout_ms) — Poll the manager for events within the given timeout.
 """
-function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Int)
+function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Integer)
     ccall((:mg_mgr_poll, libmongoose), Cint, (Ptr{Cvoid}, Cint), mgr, Cint(timeout_ms))
 end
 
 """
     mg_http_reply(conn, status, headers, body) — Send an HTTP response.
 """
-function mg_http_reply(conn::MgConnection, status::Int, headers::String, body::String)
+function mg_http_reply(conn::MgConnection, status::Integer, headers::String, body::String)
     ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring, Cstring), conn, Cint(status), headers, "%s", body)
 end
 
@@ -66,7 +66,7 @@ end
 """
     mg_log_set_level(level) — Set the Mongoose C library log level.
 """
-function mg_log_set_level(level::Int)
+function mg_log_set_level(level::Integer)
     ptr = cglobal((:mg_log_level, libmongoose), Cint)
     unsafe_store!(ptr, Cint(level))
 end
