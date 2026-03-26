@@ -111,9 +111,9 @@ content_type(::Type{Css}) = "Content-Type: text/css; charset=utf-8\r\n"
 content_type(::Type{Js}) = "Content-Type: application/javascript; charset=utf-8\r\n"
 content_type(::Type{Text}) = "Content-Type: text/plain; charset=utf-8\r\n"
 
-function Response(::Type{T}, body; status::Int=200, headers::Headers=Headers()) where T
-    isempty(headers) && return Response(status, content_type(T), render_body(T, body))
-    return Response(status, content_type(T) * _format_headers(headers), render_body(T, body))
+function (::Type{Response{T}})(body::String; status::Int=200, headers::Headers=Headers()) where T
+    h = content_type(T) * (isempty(headers) ? "" : _format_headers(headers))
+    Response{T}(status, h, render_body(T, body))
 end
 
 Response(status::Int, headers::String, body::String) = Response{Raw}(status, headers, body)
