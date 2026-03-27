@@ -89,13 +89,13 @@ function LazyRequest(message::MgHttpMessage)
 end
 
 body(req::Request) = getfield(req, :body)
-body(req::LazyRequest) = to_string(getfield(req, :message).body)
+body(req::LazyRequest) = _tostring(getfield(req, :message).body)
 
 context(req::Request) = getfield(req, :context)
 context(req::LazyRequest) = getfield(req, :context)
 
 query(req::Request) = getfield(req, :query)
-query(req::LazyRequest) = to_string(getfield(req, :message).query)
+query(req::LazyRequest) = _tostring(getfield(req, :message).query)
 
 headers(req::Request) = getfield(req, :headers)
 headers(req::LazyRequest) = _headers(getfield(req, :message))
@@ -109,9 +109,9 @@ function Base.getproperty(req::AbstractRequest, s::Symbol)
 end
 
 _method(m::MgHttpMessage) = _method2symbol(m.method)
-_uri(m::MgHttpMessage) = to_string(m.uri)
-_query(m::MgHttpMessage) = to_string(m.query)
-_body(m::MgHttpMessage) = to_string(m.body)
+_uri(m::MgHttpMessage) = _tostring(m.uri)
+_query(m::MgHttpMessage) = _tostring(m.query)
+_body(m::MgHttpMessage) = _tostring(m.body)
 
 function _method2symbol(str::MgStr)
     (str.buf == C_NULL || str.len == 0) && return :unknown

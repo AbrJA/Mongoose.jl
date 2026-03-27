@@ -11,7 +11,7 @@ function _eventcb(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})::Cvoid
 
     server = Base.unsafe_pointer_to_objref(fn_data)
     try
-        _invoke_dispatch(server, ev, conn, ev_data)
+        _dispatchev(server, ev, conn, ev_data)
     catch e
         @error "Event handler error" exception = (e, catch_backtrace())
     end
@@ -20,9 +20,9 @@ function _eventcb(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})::Cvoid
 end
 
 """
-    _invoke_dispatch(server, ev, conn, ev_data)
+    _dispatchev(server, ev, conn, ev_data)
 """
-@inline function _invoke_dispatch(@nospecialize(server), ev::Cint, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid})
+@inline function _dispatchev(@nospecialize(server), ev::Cint, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid})
     if ev == MG_EV_HTTP_MSG
         _onevent!(server, Val(MG_EV_HTTP_MSG), conn, ev_data)
     elseif ev == MG_EV_WS_OPEN

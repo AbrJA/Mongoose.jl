@@ -51,7 +51,7 @@ end
 function _tryupgrade(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
     router = server.core.router
     message = MgHttpMessage(ev_data)
-    uri = to_string(message.uri)
+    uri = _tostring(message.uri)
 
     endpoint = _get_ws_endpoint(router, uri)
     if endpoint !== nothing

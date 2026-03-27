@@ -23,7 +23,7 @@ mutable struct MethodMap
     MethodMap() = new(nothing, nothing, nothing, nothing, nothing, nothing, nothing)
 end
 
-@inline function _get_handler(mh::MethodMap, method::Symbol)
+@inline function _gethandler(mh::MethodMap, method::Symbol)
     method === :get     && return mh.get
     method === :post    && return mh.post
     method === :put     && return mh.put
@@ -34,7 +34,7 @@ end
     return nothing
 end
 
-@inline function _set_handler!(mh::MethodMap, method::Symbol, @nospecialize(handler::Function))
+@inline function _sethandler!(mh::MethodMap, method::Symbol, @nospecialize(handler::Function))
     method === :get     && (mh.get = handler; return)
     method === :post    && (mh.post = handler; return)
     method === :put     && (mh.put = handler; return)
@@ -45,7 +45,7 @@ end
     throw(RouteError("Invalid HTTP method: $method"))
 end
 
-@inline function _has_handlers(mh::MethodMap)
+@inline function _hashandlers(mh::MethodMap)
     return mh.get !== nothing || mh.post !== nothing || mh.put !== nothing ||
            mh.delete !== nothing || mh.patch !== nothing || mh.options !== nothing ||
            mh.head !== nothing
@@ -68,7 +68,7 @@ end
 
 # --- Vector-based child lookup (faster than Dict for <10 children) ---
 
-@inline function _find_child(children::Vector{Pair{String,Node}}, key::AbstractString)
+@inline function _findchild(children::Vector{Pair{String,Node}}, key::AbstractString)
     @inbounds for i in 1:length(children)
         children[i].first == key && return children[i].second
     end
@@ -120,10 +120,10 @@ end
 @inline function _match(node::Node, path::AbstractString, path_idx::Int, method::Symbol, params::Vector{Any})
     seg, next_idx = _nextseg(path, path_idx)
     if seg === nothing
-        return _has_handlers(node.handlers) ? Match(node.handlers, params) : nothing
+        return _hashandlers(node.handlers) ? Match(node.handlers, params) : nothing
     end
 
-    static_node = _find_child(node.children, seg)
+    static_node = _findchild(node.children, seg)
     if static_node !== nothing
         result = _match(static_node, path, next_idx, method, params)
         result !== nothing && return result
@@ -131,7 +131,7 @@ end
 
     if (dyn = node.dynamic) !== nothing
         parsed = try
-            _parse_param_value(seg, dyn.param_type)
+            _paramvalue(seg, dyn.param_type)
         catch
             nothing
         end
@@ -158,7 +158,7 @@ function _register_route!(router::Router, method::Symbol, path::AbstractString, 
         if !haskey(router.fixed, path)
             router.fixed[path] = FixedRoute()
         end
-        _set_handler!(router.fixed[path].handlers, method, wrapped)
+        _sethandler!(router.fixed[path].handlers, method, wrapped)
         return router
     end
 
@@ -167,7 +167,7 @@ function _register_route!(router::Router, method::Symbol, path::AbstractString, 
     for seg in segments
         if startswith(seg, ':')
             spec = seg[2:end]
-            param, ptype = _parse_param_spec(spec)
+            param, ptype = _paramspec(spec)
             push!(node.param_names, param)
             if (dyn = node.dynamic) === nothing
                 dyn = Node()
@@ -179,7 +179,7 @@ function _register_route!(router::Router, method::Symbol, path::AbstractString, 
             end
             node = dyn
         else
-            child = _find_child(node.children, seg)
+            child = _findchild(node.children, seg)
             if child === nothing
                 child = Node()
                 push!(node.children, String(seg) => child)
@@ -187,7 +187,7 @@ function _register_route!(router::Router, method::Symbol, path::AbstractString, 
             node = child
         end
     end
-    _set_handler!(node.handlers, method, wrapped)
+    _sethandler!(node.handlers, method, wrapped)
     return router
 end
 
@@ -204,7 +204,7 @@ function _nextseg(path::AbstractString, start_idx::Int)
     return SubString(path, start_idx, prevind(path, end_idx)), end_idx
 end
 
-function _parse_param_spec(spec::AbstractString)
+function _paramspec(spec::AbstractString)
     idx = findfirst("::", spec)
     if idx === nothing
         return String(spec), String
@@ -215,5 +215,5 @@ function _parse_param_spec(spec::AbstractString)
     return String(name), T
 end
 
-@inline _parse_param_value(value::AbstractString, ::Type{String}) = String(value)
-@inline _parse_param_value(value::AbstractString, ::Type{T}) where {T} = Base.parse(T, String(value))
+@inline _paramvalue(value::AbstractString, ::Type{String}) = String(value)
+@inline _paramvalue(value::AbstractString, ::Type{T}) where {T} = Base.parse(T, String(value))

@@ -55,7 +55,7 @@ end
     _dispatch_http(server, request) → Response
 """
 function _dispatch_http(server::AbstractServer, req::AbstractRequest)::AbstractResponse
-    final = (r, args...) -> _dispatch_to_router(server.core.router, r)
+    final = (r, args...) -> _dispatchreq(server.core.router, r)
     if isempty(server.core.middlewares)
         return final(req)
     end
@@ -69,10 +69,10 @@ end
     return static_dispatch(server.core.router, req)
 end
 
-@inline function _dispatch_to_router(router::Router, req)
+@inline function _dispatchreq(router::Router, req)
     matched = match_route(router, req.method, req.uri)
     if matched !== nothing
-        handler = _get_handler(matched.handlers, req.method)
+        handler = _gethandler(matched.handlers, req.method)
         if handler !== nothing
             return handler(req, matched.params...)
         end
@@ -89,7 +89,7 @@ end
     return Response(404, ContentType.text, "404 Not Found")
 end
 
-@inline function _dispatch_to_router(router::StaticRouter, req)
+@inline function _dispatchreq(router::StaticRouter, req)
     return static_dispatch(router, req)
 end
 

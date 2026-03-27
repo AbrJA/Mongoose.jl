@@ -6,6 +6,7 @@ using PrecompileTools
 export SyncServer, AsyncServer, Router, Request, Response, RawResponse,
     Text, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, use!,
+    render_body, content_type,
     ws!, WsTextMessage, WsBinaryMessage, WsMessage,
     cors, rate_limit, bearer_token, api_key, logger, static_files,
     ContentType,
@@ -80,7 +81,7 @@ include("middleware/static_files.jl")
 
         # HTTP dispatch pipeline
         req = Request(:get, "/", "", Pair{String,String}[], "", Dict{Symbol,Any}())
-        _dispatch_to_router(router, req)
+        _dispatchreq(router, req)
 
         # Middleware pipeline
         mw = cors()

@@ -67,7 +67,7 @@ mutable struct RouterNode
     RouterNode() = new(Dict{String, RouterNode}(), nothing, nothing, nothing)
 end
 
-function parse_route_template(path::String)
+function _parseroute(path::String)
     segments = RouteSegment[]
     parts = split(path, '/', keepempty=false)
     for part in parts
@@ -96,7 +96,7 @@ end
 function build_trie(routes)
     root = RouterNode()
     for (method_sym, path, handler) in routes
-        segments = parse_route_template(path)
+        segments = _parseroute(path)
         # We model the method as the first segment essentially, to share the trie.
         method_seg = RouteSegment(false, String(method_sym), Nothing)
         segments = [method_seg; segments]
@@ -127,7 +127,7 @@ function build_trie(routes)
     return root
 end
 
-function generate_dispatch_node(node::RouterNode, seg_sym::Symbol, idx_sym::Symbol, path_sym::Symbol, req_sym::Symbol, parsed_vars::Vector{Symbol})
+function _generatenode(node::RouterNode, seg_sym::Symbol, idx_sym::Symbol, path_sym::Symbol, req_sym::Symbol, parsed_vars::Vector{Symbol})
     exprs = []
 
     # 1. Exact match reached
@@ -146,7 +146,7 @@ function generate_dispatch_node(node::RouterNode, seg_sym::Symbol, idx_sym::Symb
         for (val, child) in node.static_children
             next_seg = gensym("seg")
             next_idx = gensym("idx")
-            child_expr = generate_dispatch_node(child, next_seg, next_idx, path_sym, req_sym, parsed_vars)
+            child_expr = _generatenode(child, next_seg, next_idx, path_sym, req_sym, parsed_vars)
 
             push!(static_blocks, quote
                 if $(seg_sym) == $val
@@ -168,7 +168,7 @@ function generate_dispatch_node(node::RouterNode, seg_sym::Symbol, idx_sym::Symb
         new_parsed_vars = copy(parsed_vars)
         push!(new_parsed_vars, var_sym)
 
-        child_expr = generate_dispatch_node(child, next_seg, next_idx, path_sym, req_sym, new_parsed_vars)
+        child_expr = _generatenode(child, next_seg, next_idx, path_sym, req_sym, new_parsed_vars)
 
         # In Mongoose, we default variables to SubString (zero-copy) for performance
         parse_expr = if seg.type == SubString{String} || seg.type == String || seg.type == :String
@@ -272,7 +272,7 @@ macro router(app_type::Symbol, block)
     method_seg_sym = gensym("method_seg")
     method_idx_sym = gensym("method_idx")
 
-    dispatch_body = generate_dispatch_node(root, method_seg_sym, method_idx_sym, path_sym, req_sym, Symbol[])
+    dispatch_body = _generatenode(root, method_seg_sym, method_idx_sym, path_sym, req_sym, Symbol[])
 
     async_handler_sym = Symbol("_async_", app_type, "_c_handler")
     sync_handler_sym = Symbol("_sync_", app_type, "_c_handler")
@@ -284,7 +284,7 @@ macro router(app_type::Symbol, block)
             fn_data == C_NULL && return nothing
             # Fully inferred AsyncServer recovery prevents dynamic dispatch errors in AOT
             server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.AsyncServer{$app_type}
-            Mongoose._invoke_dispatch(server, ev, conn, ev_data)
+            Mongoose._dispatchev(server, ev, conn, ev_data)
             return nothing
         end
 
@@ -294,7 +294,7 @@ macro router(app_type::Symbol, block)
             fn_data == C_NULL && return nothing
             # Fully inferred SyncServer recovery
             server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.SyncServer{$app_type}
-            Mongoose._invoke_dispatch(server, ev, conn, ev_data)
+            Mongoose._dispatchev(server, ev, conn, ev_data)
             return nothing
         end
 
