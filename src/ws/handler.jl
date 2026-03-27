@@ -83,7 +83,7 @@ _send_ws_native(conn, msg::WsMessage{Binary}) = mg_ws_send(conn, msg.data, WS_OP
 # --- WS event handlers ---
 
 # SyncServer: process WS message directly on event-loop thread
-function handle_event!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
+function _onevent!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
     ws_msg = decode_ws_message(msg)
     conn_id = Int(conn)
@@ -97,7 +97,7 @@ function handle_event!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnecti
 end
 
 # AsyncServer: queue WS message to worker channels
-function handle_event!(server::AsyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
+function _onevent!(server::AsyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
     ws_msg = decode_ws_message(msg)
     conn_id = Int(conn)
@@ -108,12 +108,12 @@ function handle_event!(server::AsyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnect
 end
 
 # Connection close — cleanup WS state
-function handle_event!(server::AbstractServer, ::Val{MG_EV_CLOSE}, conn::MgConnection, ev_data::Ptr{Cvoid})
+function _onevent!(server::AbstractServer, ::Val{MG_EV_CLOSE}, conn::MgConnection, ev_data::Ptr{Cvoid})
     cleanup_ws_connection!(server, conn)
     return
 end
 
-function handle_event!(server::AsyncServer, ::Val{MG_EV_CLOSE}, conn::MgConnection, ev_data::Ptr{Cvoid})
+function _onevent!(server::AsyncServer, ::Val{MG_EV_CLOSE}, conn::MgConnection, ev_data::Ptr{Cvoid})
     cleanup_ws_connection!(server, conn)
     delete!(server.connections, Int(conn))
     return
