@@ -77,10 +77,10 @@ function _drain_in_flight(server::AbstractServer)
     timeout_s = server.core.drain_timeout_ms / 1000.0
     deadline = time() + timeout_s
     while time() < deadline
-        _has_pending(server) || break
+        _haspending(server) || break
         sleep(0.01)
     end
     return
 end
 
-_has_pending(::AbstractServer) = false
+_haspending(::AbstractServer) = false

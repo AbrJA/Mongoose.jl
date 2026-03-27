@@ -145,15 +145,15 @@ function _method2symbol(str::MgStr)
         end
     end
 
-    return Symbol(lowercase(to_string(str)))
+    return Symbol(lowercase(_tostring(str)))
 end
 
 function _headers(message::MgHttpMessage)
     pairs = Pair{String,String}[]
     for h in message.headers
         if h.name.buf != C_NULL && h.name.len > 0 && h.val.buf != C_NULL && h.val.len > 0
-            name = lowercase(to_string(h.name))
-            value = to_string(h.val)
+            name = lowercase(_tostring(h.name))
+            value = _tostring(h.val)
             push!(pairs, name => value)
         end
     end
