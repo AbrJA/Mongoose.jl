@@ -4,15 +4,15 @@
 
 # Handler defined in types.jl
 
-# --- MethodHandlers: fixed-slot dispatch for HTTP methods ---
+# --- MethodMap: fixed-slot dispatch for HTTP methods ---
 
 """
-    MethodHandlers — Fixed-slot storage for HTTP method handlers.
+    MethodMap — Fixed-slot storage for HTTP method handlers.
 
 Uses struct fields instead of Dict for O(1) branch-predicted dispatch
 with zero allocation. Each field is `Union{Nothing,Function}`.
 """
-mutable struct MethodHandlers
+mutable struct MethodMap
     get::Union{Nothing,Function}
     post::Union{Nothing,Function}
     put::Union{Nothing,Function}
@@ -20,10 +20,10 @@ mutable struct MethodHandlers
     patch::Union{Nothing,Function}
     options::Union{Nothing,Function}
     head::Union{Nothing,Function}
-    MethodHandlers() = new(nothing, nothing, nothing, nothing, nothing, nothing, nothing)
+    MethodMap() = new(nothing, nothing, nothing, nothing, nothing, nothing, nothing)
 end
 
-@inline function _get_handler(mh::MethodHandlers, method::Symbol)
+@inline function _get_handler(mh::MethodMap, method::Symbol)
     method === :get     && return mh.get
     method === :post    && return mh.post
     method === :put     && return mh.put
@@ -34,7 +34,7 @@ end
     return nothing
 end
 
-@inline function _set_handler!(mh::MethodHandlers, method::Symbol, @nospecialize(handler::Function))
+@inline function _set_handler!(mh::MethodMap, method::Symbol, @nospecialize(handler::Function))
     method === :get     && (mh.get = handler; return)
     method === :post    && (mh.post = handler; return)
     method === :put     && (mh.put = handler; return)
@@ -45,7 +45,7 @@ end
     throw(RouteError("Invalid HTTP method: $method"))
 end
 
-@inline function _has_handlers(mh::MethodHandlers)
+@inline function _has_handlers(mh::MethodMap)
     return mh.get !== nothing || mh.post !== nothing || mh.put !== nothing ||
            mh.delete !== nothing || mh.patch !== nothing || mh.options !== nothing ||
            mh.head !== nothing
@@ -54,7 +54,7 @@ end
 """
     Node — A node in the radix trie for path-segment matching.
     Uses Vector for children (cache-friendly for small fanout) and
-    MethodHandlers for O(1) method dispatch.
+    MethodMap for O(1) method dispatch.
 """
 mutable struct Node
     children::Vector{Pair{String,Node}}          # static segment children
@@ -62,8 +62,8 @@ mutable struct Node
     param::Union{Nothing,String}                 # parameter name (if dynamic node)
     param_type::Type                             # parameter type
     param_names::Vector{String}                  # parameter names in order
-    handlers::MethodHandlers                     # HTTP method → handler
-    Node() = new(Pair{String,Node}[], nothing, nothing, String, String[], MethodHandlers())
+    handlers::MethodMap                          # HTTP method → handler
+    Node() = new(Pair{String,Node}[], nothing, nothing, String, String[], MethodMap())
 end
 
 # --- Vector-based child lookup (faster than Dict for <10 children) ---
@@ -79,8 +79,8 @@ end
     FixedRoute — A leaf node for static routes.
 """
 struct FixedRoute
-    handlers::MethodHandlers
-    FixedRoute() = new(MethodHandlers())
+    handlers::MethodMap
+    FixedRoute() = new(MethodMap())
 end
 
 """
@@ -93,9 +93,9 @@ struct Router <: AbstractRouter
     Router() = new(Node(), Dict{String,FixedRoute}(), Dict{String,WsEndpoint}())
 end
 
-# (Matched, match_route, route!, etc...)
-struct Matched
-    handlers::MethodHandlers
+# (Match, match_route, route!, etc...)
+struct Match
+    handlers::MethodMap
     params::Vector{Any}
 end
 
@@ -111,7 +111,7 @@ const PARAM_TYPES = Dict{String,Type}(
 function match_route(router::Router, method::Symbol, path::AbstractString)
     clean = strip_query(path)
     if (route = get(router.fixed, clean, nothing)) !== nothing
-        return Matched(route.handlers, EMPTY_PARAMS)
+        return Match(route.handlers, EMPTY_PARAMS)
     end
     params = Any[]
     return _match(router.node, clean, 1, method, params)
@@ -120,7 +120,7 @@ end
 @inline function _match(node::Node, path::AbstractString, path_idx::Int, method::Symbol, params::Vector{Any})
     seg, next_idx = next_segment(path, path_idx)
     if seg === nothing
-        return _has_handlers(node.handlers) ? Matched(node.handlers, params) : nothing
+        return _has_handlers(node.handlers) ? Match(node.handlers, params) : nothing
     end
 
     static_node = _find_child(node.children, seg)
