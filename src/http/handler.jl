@@ -5,7 +5,7 @@
 # --- SyncServer: direct dispatch on event-loop thread ---
 
 function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
-    if check_ws_upgrade(server, conn, ev_data)
+    if _tryupgrade(server, conn, ev_data)
         return
     end
 
@@ -31,7 +31,7 @@ end
 # --- AsyncServer: queue to worker channels ---
 
 function _onevent!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
-    if check_ws_upgrade(server, conn, ev_data)
+    if _tryupgrade(server, conn, ev_data)
         return
     end
 

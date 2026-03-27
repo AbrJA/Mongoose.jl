@@ -35,9 +35,9 @@ function WsEndpoint(; on_message::Function, on_open::Union{Function,Nothing}=not
 end
 
 """
-    decode_ws_message(msg::MgWsMessage) → WsMessage
+    _parsewsmsg(msg::MgWsMessage) → WsMessage
 """
-function decode_ws_message(msg::MgWsMessage)
+function _parsewsmsg(msg::MgWsMessage)
     is_text = (msg.flags & 0x0F) == 1
 
     if msg.data.len > 0 && msg.data.buf != C_NULL

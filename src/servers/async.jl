@@ -109,7 +109,7 @@ function worker_loop(server::AsyncServer)
             # Try WS
             elseif isready(server.ws_requests)
                 req = take!(server.ws_requests)
-                res = handle_ws_message!(server, req)
+                res = _handlewsmsg!(server, req)
                 if res !== nothing
                     isopen(server.ws_responses) && put!(server.ws_responses, res)
                 end

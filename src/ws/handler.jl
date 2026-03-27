@@ -3,9 +3,9 @@
 """
 
 """
-    handle_ws_message!(server, request) → Tagged{WsMessage} or nothing
+    _handlewsmsg!(server, request) → Tagged{WsMessage} or nothing
 """
-function handle_ws_message!(server::AbstractServer, request::Tagged{WsRouted})
+function _handlewsmsg!(server::AbstractServer, request::Tagged{WsRouted})
     router = server.core.router
     return _dispatch_ws_message(router, request)
 end
@@ -46,9 +46,9 @@ function _execute_ws_endpoint(endpoint::WsEndpoint, request::Tagged{WsRouted})
 end
 
 """
-    check_ws_upgrade(server, conn, ev_data) → Bool
+    _tryupgrade(server, conn, ev_data) → Bool
 """
-function check_ws_upgrade(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
+function _tryupgrade(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
     router = server.core.router
     message = MgHttpMessage(ev_data)
     uri = to_string(message.uri)
@@ -85,11 +85,11 @@ _send_ws_native(conn, msg::WsMessage{Binary}) = mg_ws_send(conn, msg.data, WS_OP
 # SyncServer: process WS message directly on event-loop thread
 function _onevent!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
-    ws_msg = decode_ws_message(msg)
+    ws_msg = _parsewsmsg(msg)
     conn_id = Int(conn)
     uri = get(server.core.ws_connections, conn_id, "")
     tagged = Tagged(conn_id, WsRouted(ws_msg, uri))
-    result = handle_ws_message!(server, tagged)
+    result = _handlewsmsg!(server, tagged)
     if result !== nothing
         _send_ws_native(conn, result.payload)
     end
@@ -99,7 +99,7 @@ end
 # AsyncServer: queue WS message to worker channels
 function _onevent!(server::AsyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
-    ws_msg = decode_ws_message(msg)
+    ws_msg = _parsewsmsg(msg)
     conn_id = Int(conn)
     uri = get(server.core.ws_connections, conn_id, "")
     server.connections[conn_id] = conn
