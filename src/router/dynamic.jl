@@ -109,7 +109,7 @@ const PARAM_TYPES = Dict{String,Type}(
 )
 
 function match_route(router::Router, method::Symbol, path::AbstractString)
-    clean = strip_query(path)
+    clean = _stripquery(path)
     if (route = get(router.fixed, clean, nothing)) !== nothing
         return Match(route.handlers, EMPTY_PARAMS)
     end
@@ -118,7 +118,7 @@ function match_route(router::Router, method::Symbol, path::AbstractString)
 end
 
 @inline function _match(node::Node, path::AbstractString, path_idx::Int, method::Symbol, params::Vector{Any})
-    seg, next_idx = next_segment(path, path_idx)
+    seg, next_idx = _nextseg(path, path_idx)
     if seg === nothing
         return _has_handlers(node.handlers) ? Match(node.handlers, params) : nothing
     end
@@ -191,7 +191,7 @@ function _register_route!(router::Router, method::Symbol, path::AbstractString, 
     return router
 end
 
-function next_segment(path::AbstractString, start_idx::Int)
+function _nextseg(path::AbstractString, start_idx::Int)
     start_idx > lastindex(path) && return nothing, start_idx
     while start_idx <= lastindex(path) && path[start_idx] == '/'
         start_idx = nextind(path, start_idx)

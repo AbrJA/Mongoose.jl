@@ -21,7 +21,7 @@ static_dispatch(app::T, ::AbstractRequest) where {T <: StaticRouter} =
 
 # --- Path matching helpers (used by generated code) ---
 
-@inline function static_next_segment(path::AbstractString, start_idx::Int)
+@inline function _staticnextseg(path::AbstractString, start_idx::Int)
     len = ncodeunits(path)
     if start_idx > len
         return (view(path, 1:0), start_idx)
@@ -43,7 +43,7 @@ static_dispatch(app::T, ::AbstractRequest) where {T <: StaticRouter} =
     return (view(path, start_idx:end_idx-1), end_idx)
 end
 
-@inline function strip_query(uri::AbstractString)
+@inline function _stripquery(uri::AbstractString)
     len = ncodeunits(uri)
     for i in 1:len
         codeunit(uri, i) == UInt8('?') && return SubString(uri, 1, i - 1)
@@ -150,7 +150,7 @@ function generate_dispatch_node(node::RouterNode, seg_sym::Symbol, idx_sym::Symb
 
             push!(static_blocks, quote
                 if $(seg_sym) == $val
-                    $(next_seg), $(next_idx) = static_next_segment($(path_sym), $(idx_sym))
+                    $(next_seg), $(next_idx) = _staticnextseg($(path_sym), $(idx_sym))
                     $(child_expr)
                 end
             end)
@@ -184,7 +184,7 @@ function generate_dispatch_node(node::RouterNode, seg_sym::Symbol, idx_sym::Symb
         push!(exprs, quote
             if length($(seg_sym)) != 0
                 $(parse_expr)
-                $(next_seg), $(next_idx) = static_next_segment($(path_sym), $(idx_sym))
+                $(next_seg), $(next_idx) = _staticnextseg($(path_sym), $(idx_sym))
                 $(child_expr)
             end
         end)
@@ -298,8 +298,8 @@ macro router(app_type::Symbol, block)
             return nothing
         end
 
-        Mongoose.get_c_handler_async(::Type{$app_type}) = @cfunction($async_handler_sym, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
-        Mongoose.get_c_handler_sync(::Type{$app_type}) = @cfunction($sync_handler_sym, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+        Mongoose.c_handler_async(::Type{$app_type}) = @cfunction($async_handler_sym, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+        Mongoose.c_handler_sync(::Type{$app_type}) = @cfunction($sync_handler_sym, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
     end)
 
     quote
@@ -309,7 +309,7 @@ macro router(app_type::Symbol, block)
 
         # --- Static Router Dispatch ---
         function Mongoose.static_dispatch(::$(esc(app_type)), $(req_sym)::Mongoose.AbstractRequest)::Mongoose.Response
-            $(path_sym) = Mongoose.strip_query($(req_sym).uri)
+            $(path_sym) = Mongoose._stripquery($(req_sym).uri)
 
             # The root expects `method` to be matched as the first segment
             $(method_seg_sym) = view(String($(req_sym).method), 1:length(String($(req_sym).method)))

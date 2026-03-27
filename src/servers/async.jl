@@ -16,7 +16,7 @@ function AsyncServer(router::AbstractRouter=Router();
                      timeout::Integer=0,
                      max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
                      drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
-    c_handler = Mongoose.get_c_handler_async(typeof(router))
+    c_handler = Mongoose.c_handler_async(typeof(router))
     core = ServerCore(timeout, router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
     server = AsyncServer{typeof(router)}(
         core, Task[],

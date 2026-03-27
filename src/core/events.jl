@@ -40,5 +40,5 @@ end
 _onevent!(server::AbstractServer, ::Val, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid}) = nothing
 
 # JIT-only fallbacks — <:AbstractRouter matches Router; @router overrides for specific static types
-get_c_handler_async(::Type{<:AbstractRouter}) = @cfunction(_eventcb, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
-get_c_handler_sync(::Type{<:AbstractRouter}) = @cfunction(_eventcb, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+c_handler_async(::Type{<:AbstractRouter}) = @cfunction(_eventcb, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+c_handler_sync(::Type{<:AbstractRouter}) = @cfunction(_eventcb, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))

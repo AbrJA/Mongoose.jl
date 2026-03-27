@@ -83,8 +83,8 @@ end
 
 # --- Shared Lifecycle Primitives ---
 
-get_c_handler_async(::Type{T}) where {T} = C_NULL
-get_c_handler_sync(::Type{T}) where {T} = C_NULL
+c_handler_async(::Type{T}) where {T} = C_NULL
+c_handler_sync(::Type{T}) where {T} = C_NULL
 
 function free_resources!(server::AbstractServer)
     cleanup!(server.core.manager)
