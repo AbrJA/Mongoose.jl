@@ -3,12 +3,11 @@ module Mongoose
 using Mongoose_jll
 using PrecompileTools
 
-export SyncServer, AsyncServer, Router, Request, Response, Headers,
-    JsonResponse, HtmlResponse, TextResponse, JsResponse, CssResponse,
+export SyncServer, AsyncServer, Router, Request, Response, RawResponse,
+    Text, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, use!,
-    header, req_header, query, context, parse_query, parse_into, parse_params,
     ws!, WsTextMessage, WsBinaryMessage, WsMessage,
-    cors, rate_limit, auth_bearer, auth_api_key, logger, static_files,
+    cors, rate_limit, bearer_token, api_key, logger, static_files,
     ContentType,
     @router
 
@@ -76,11 +75,11 @@ include("middleware/static_files.jl")
         cors()
         logger()
         rate_limit()
-        auth_bearer(t -> true)
-        auth_api_key(keys=Set(["k"]))
+        bearer_token(t -> true)
+        api_key(keys=Set(["k"]))
 
         # HTTP dispatch pipeline
-        req = Request(:get, "/", "", Headers(), "", Dict{Symbol,Any}())
+        req = Request(:get, "/", "", Pair{String,String}[], "", Dict{Symbol,Any}())
         _dispatch_to_router(router, req)
 
         # Middleware pipeline

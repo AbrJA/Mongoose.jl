@@ -1,10 +1,11 @@
 using HTTP
 using JSON
 using Mongoose
-using Mongoose: json
 using Test
 
-@router TestApp begin
+Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+
+@router Routes begin
     get("/hello", (req) -> Response(200, "", "Hello Static"))
     get("/user/:id::Int", (req, id) -> Response(200, "", "User $id"))
     ws("/chat", on_message=(msg) -> "Echo: $(msg.data)")
@@ -208,10 +209,10 @@ end
     # --- Test 6: JSON Integration ---
     @testset "JSON Integration" begin
         router = Router()
-        route!(router, :get, "/api/json", (req) -> json(Dict("message" => "hello", "count" => 42)))
+        route!(router, :get, "/api/json", (req) -> Response(Json, Dict("message" => "hello", "count" => 42)))
         route!(router, :post, "/api/echo", (req) -> begin
-            data = json(req)
-            json(data)
+            data = JSON.parse(req.body)
+            Response(Json, data)
         end)
 
         server = AsyncServer(router; workers=1)
@@ -223,7 +224,7 @@ end
             response = HTTP.get("http://localhost:8097/api/json")
             @test response.status == 200
             headers_dict = Dict(String(h.first) => String(h.second) for h in response.headers)
-            @test headers_dict["Content-Type"] == "application/json"
+            @test headers_dict["Content-Type"] == "application/json; charset=utf-8"
             body_str = String(response.body)
             @test occursin("hello", body_str)
             @test occursin("42", body_str)
@@ -239,21 +240,21 @@ end
         end
     end
 
-    # --- Test 7: parse_into ---
-    @testset "parse_into" begin
+    # --- Test 7: Parse query ---
+    @testset "Parse query" begin
         struct TestParams
             q::String
             page::Int
             active::Bool
         end
 
-        params = parse_into(TestParams, "q=hello+world&page=3&active=true")
+        params = Mongoose.query(TestParams, "q=hello+world&page=3&active=true")
         @test params.q == "hello world"
         @test params.page == 3
         @test params.active == true
 
         # Missing fields default to zero values
-        params2 = parse_into(TestParams, "q=test")
+        params2 = Mongoose.query(TestParams, "q=test")
         @test params2.q == "test"
         @test params2.page == 0
         @test params2.active == false
@@ -436,7 +437,7 @@ end
 
         # 1. Bearer Auth
         server_bearer = AsyncServer(router; workers=1)
-        use!(server_bearer, auth_bearer(token -> token == "magic-token"))
+        use!(server_bearer, bearer_token(token -> token == "magic-token"))
         start!(server_bearer; port=8105, blocking=false)
         sleep(0.5)
 
@@ -459,7 +460,7 @@ end
 
         # 2. API Key Auth
         server_api = AsyncServer(router; workers=1)
-        use!(server_api, auth_api_key(keys=Set(["key123"])))
+        use!(server_api, api_key(keys=Set(["key123"])))
         start!(server_api; port=8106, blocking=false)
         sleep(0.5)
 
@@ -502,7 +503,7 @@ end
 
     # --- Test: Static Router (@router) ---
     @testset "Static Router (@router)" begin
-        server = SyncServer(TestApp)
+        server = SyncServer(Routes)
         start!(server; port=8108, blocking=false)
         sleep(0.5)
 
@@ -531,7 +532,7 @@ end
     @testset "Header Handling" begin
         router = Router()
         route!(router, :get, "/headers", (req) -> begin
-            user_agent = header(req, "User-Agent")
+            user_agent = get(req.headers, "User-Agent", nothing)
             Response(200, "X-Custom: Received\r\n", "UA: $user_agent")
         end)
 
@@ -653,28 +654,6 @@ end
         end
     end
 
-    # --- Test: query(req, key) ---
-    @testset "Query Param Lookup" begin
-        router = Router()
-        route!(router, :get, "/search", (req) -> begin
-            q = query(req, "q")
-            page = query(req, "page")
-            missing_key = query(req, "nope")
-            Response(200, "", "q=$(something(q, "")),page=$(something(page, "")),nope=$(something(missing_key, "nil"))")
-        end)
-
-        server = SyncServer(router)
-        start!(server; port=8114, blocking=false)
-
-        try
-            resp = HTTP.get("http://localhost:8114/search?q=hello&page=2")
-            @test resp.status == 200
-            @test String(resp.body) == "q=hello,page=2,nope=nil"
-        finally
-            shutdown!(server)
-        end
-    end
-
     # --- Test: String Method Route Registration ---
     @testset "String Method Route" begin
         server = SyncServer(Router())
@@ -700,7 +679,7 @@ end
         router = Router()
         route!(router, :get, "/ctx", (req) -> begin
             # Context should be an empty dict by default
-            @assert context(req) isa Dict{Symbol,Any}
+            @assert req.context isa Dict{Symbol,Any}
             req.context[:user] = "alice"
             Response(200, "", "user=$(req.context[:user])")
         end)
@@ -715,14 +694,6 @@ end
         finally
             shutdown!(server)
         end
-    end
-
-    # --- Test: parse_params Export ---
-    @testset "parse_params Export" begin
-        params = parse_params("name=alice&age=30&city=new+york")
-        @test params["name"] == "alice"
-        @test params["age"] == "30"
-        @test params["city"] == "new york"
     end
 
     # --- Test: Static File Serving ---

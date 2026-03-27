@@ -2,12 +2,12 @@
     Authentication middleware — Bearer token and API key authentication.
 """
 
-struct BearerAuth <: AbstractMiddleware
+struct BearerToken <: AbstractMiddleware
     validator::Function
 end
 
-function (mw::BearerAuth)(request::AbstractRequest, params::Vector{Any}, next)
-    auth_header = header(request, "Authorization")
+function (mw::BearerToken)(request::AbstractRequest, params::Vector{Any}, next)
+    auth_header = get(request.headers, "Authorization", nothing)
 
     if auth_header === nothing
         return Response(401, ContentType.text * "WWW-Authenticate: Bearer\r\n", "401 Unauthorized")
@@ -27,25 +27,25 @@ function (mw::BearerAuth)(request::AbstractRequest, params::Vector{Any}, next)
 end
 
 """
-    auth_bearer(validator)
+    bearer_token(validator)
 
 Create a Bearer token authentication middleware.
 The `validator` function receives the token string and must return `true` if valid.
 
 # Example
 ```julia
-use!(server, auth_bearer(token -> token == "my-secret-token"))
+use!(server, bearer_token(token -> token == "my-secret-token"))
 ```
 """
-auth_bearer(validator::Function) = BearerAuth(validator)
+bearer_token(validator::Function) = BearerToken(validator)
 
-struct ApiKeyAuth <: AbstractMiddleware
+struct ApiKey <: AbstractMiddleware
     header_name::String
     keys::Set{String}
 end
 
-function (mw::ApiKeyAuth)(request::AbstractRequest, params::Vector{Any}, next)
-    api_key = header(request, mw.header_name)
+function (mw::ApiKey)(request::AbstractRequest, params::Vector{Any}, next)
+    api_key = get(request.headers, mw.header_name, nothing)
 
     if api_key === nothing || api_key ∉ mw.keys
         return Response(401, ContentType.text, "401 Unauthorized: Invalid API key")
@@ -55,7 +55,7 @@ function (mw::ApiKeyAuth)(request::AbstractRequest, params::Vector{Any}, next)
 end
 
 """
-    auth_api_key(; header_name, keys)
+    api_key(; header_name, keys)
 
 Create an API key authentication middleware.
 
@@ -65,7 +65,7 @@ Create an API key authentication middleware.
 
 # Example
 ```julia
-use!(server, auth_api_key(keys=Set(["key-123"])))
+use!(server, api_key(keys=Set(["key-123"])))
 ```
 """
-auth_api_key(; header_name::String="X-API-Key", keys::Set{String}) = ApiKeyAuth(header_name, keys)
+api_key(; header_name::String="X-API-Key", keys::Set{String}) = ApiKey(header_name, keys)

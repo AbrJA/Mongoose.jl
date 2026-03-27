@@ -13,8 +13,8 @@ struct RateLimit <: AbstractMiddleware
 end
 
 function (mw::RateLimit)(request::AbstractRequest, params::Vector{Any}, next)
-    client_id = let h = header(request, "X-Forwarded-For")
-        h !== nothing ? h : let h2 = header(request, "X-Real-IP")
+    client_id = let h = get(request.headers, "X-Forwarded-For", nothing)
+        h !== nothing ? h : let h2 = get(request.headers, "X-Real-IP", nothing)
             h2 !== nothing ? h2 : "unknown"
         end
     end

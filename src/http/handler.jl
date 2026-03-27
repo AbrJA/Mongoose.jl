@@ -98,7 +98,7 @@ end
 """
     _send!(conn, response)
 """
-function _send!(conn::MgConnection, res::Response{<:AbstractFormat})
+function _send!(conn::MgConnection, res::Response)
     mg_http_reply(conn, res.status, res.headers, res.body)
 end
 

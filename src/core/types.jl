@@ -8,6 +8,7 @@ abstract type AbstractResponse <: AbstractMessage end
 
 abstract type AbstractServer end
 abstract type AbstractMiddleware end
+abstract type AbstractRouter end
 
 # Interface fallback — subtypes must implement the call operator
 function (mw::AbstractMiddleware)(::AbstractRequest, ::Vector{Any}, ::Any)

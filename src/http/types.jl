@@ -1,41 +1,6 @@
 """
     HTTP request/response types and abstract bases.
 """
-abstract type AbstractRouter end
-
-# --- Headers ---
-
-"""
-    Headers — Ordered key-value pairs for HTTP headers.
-
-Uses `Vector{Pair{String,String}}` internally for cache-friendly linear access,
-which outperforms Dict for the typical 5-15 header entries in HTTP requests.
-Preserves insertion order and supports duplicate keys (e.g. Set-Cookie).
-
-# Usage
-```julia
-Headers()                                         # empty
-Headers(["Content-Type" => "text/plain"])          # from pairs
-```
-"""
-struct Headers
-    pairs::Vector{Pair{String,String}}
-end
-
-Headers() = Headers(Pair{String,String}[])
-
-function Base.get(h::Headers, key::String, default)
-    @inbounds for i in 1:length(h.pairs)
-        h.pairs[i].first == key && return h.pairs[i].second
-    end
-    return default
-end
-
-Base.isempty(h::Headers) = isempty(h.pairs)
-Base.length(h::Headers) = length(h.pairs)
-Base.iterate(h::Headers) = iterate(h.pairs)
-Base.iterate(h::Headers, state) = iterate(h.pairs, state)
-Base.push!(h::Headers, pair::Pair{String,String}) = push!(h.pairs, pair)
 
 """
     Request — Full HTTP request with owned string data.
@@ -44,7 +9,7 @@ struct Request <: AbstractRequest
     method::Symbol
     uri::String
     query::String
-    headers::Headers
+    headers::Vector{Pair{String,String}}
     body::String
     context::Dict{Symbol,Any}
 end
@@ -57,15 +22,6 @@ struct ViewRequest <: AbstractRequest
     uri::String
     message::MgHttpMessage
     context::Dict{Symbol,Any}
-end
-
-"""
-    Response — HTTP response.
-"""
-struct Response{Format} <: AbstractResponse
-    status::Int
-    headers::String
-    body::String
 end
 
 """
@@ -85,114 +41,79 @@ struct Tagged{T}
     payload::T
 end
 
-# --- Constructors ---
+"""
+    Response — HTTP response.
+"""
+struct Response <: AbstractResponse
+    status::Int
+    headers::String
+    body::String
+end
 
 abstract type AbstractFormat end
-struct Raw <: AbstractFormat end
+struct Text <: AbstractFormat end
 struct Html <: AbstractFormat end
 struct Css <: AbstractFormat end
 struct Js <: AbstractFormat end
-struct Text <: AbstractFormat end
-# Extensions can define their own types, e.g. Json in MongooseJSONExt.jl
 struct Json <: AbstractFormat end
+struct Xml <: AbstractFormat end
 
-const JsonResponse = Response{Json}
-const HtmlResponse = Response{Html}
-const TextResponse = Response{Text}
-const JsResponse = Response{Js}
-const CssResponse = Response{Css}
-
-render_body(::Type{T}, body::String) where T = body
+render_body(::Type{T}, body) where T<:AbstractFormat = error("render_body not implemented for type $T and body of type $(typeof(body))")
+render_body(::Type{T}, body::String) where T<:AbstractFormat = body
 
 # Mapping: This is the only place you need to update when adding new types
-content_type(::Type{<:AbstractFormat}) = error("Unsupported format type: $T")
+content_type(::Type{T}) where T<:AbstractFormat = error("Unsupported format type: $T")
 content_type(::Type{Html}) = "Content-Type: text/html; charset=utf-8\r\n"
 content_type(::Type{Css}) = "Content-Type: text/css; charset=utf-8\r\n"
 content_type(::Type{Js}) = "Content-Type: application/javascript; charset=utf-8\r\n"
 content_type(::Type{Text}) = "Content-Type: text/plain; charset=utf-8\r\n"
+content_type(::Type{Json}) = "Content-Type: application/json; charset=utf-8\r\n"
+content_type(::Type{Xml}) = "Content-Type: application/xml; charset=utf-8\r\n"
 
-function (::Type{Response{T}})(body::String; status::Int=200, headers::Headers=Headers()) where T
-    h = content_type(T) * (isempty(headers) ? "" : _format_headers(headers))
-    Response{T}(status, h, render_body(T, body))
+function Response(::Type{T}, body; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) where T<:AbstractFormat
+    h = content_type(T) * (isempty(headers) ? "" : _formatheaders(headers))
+    Response(status, h, render_body(T, body))
 end
 
-Response(status::Int, headers::String, body::String) = Response{Raw}(status, headers, body)
-
-"""
-    ContentType — Pre-formatted Content-Type headers for common MIME types.
-
-# Usage
-```julia
-Response(200, ContentType.json, "{\"ok\":true}")
-Response(200, ContentType.html, "<h1>Hi</h1>")
-Response(200, ContentType.text, "hello")
-```
-"""
-const ContentType = (
-    text="Content-Type: text/plain\r\n",
-    html="Content-Type: text/html\r\n",
-    json="Content-Type: application/json\r\n",
-    xml="Content-Type: application/xml\r\n",
-    css="Content-Type: text/css\r\n",
-    js="Content-Type: application/javascript\r\n",
-    form="Content-Type: application/x-www-form-urlencoded\r\n",
-    octet="Content-Type: application/octet-stream\r\n",
-)
+Response(body; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) = Response(Text, body; status=status, headers=headers)
 
 function Request(message::MgHttpMessage)
     return Request(_method(message), _uri(message), _query(message), _headers(message), _body(message), Dict{Symbol,Any}())
 end
 
 Request(method::Symbol, uri::String, query::String, headers::Dict{String,String}, body::String, context::Dict{Symbol,Any}) =
-    Request(method, uri, query, Headers([k => v for (k, v) in headers]), body, context)
+    Request(method, uri, query, [k => v for (k, v) in headers], body, context)
 
 function ViewRequest(message::MgHttpMessage)
     return ViewRequest(_method(message), _uri(message), message, Dict{Symbol,Any}())
 end
 
-# (Accessors and FFI helpers...)
-req_header(req::Request, name::String) = get(req.headers, lowercase(name), nothing)
+body(req::Request) = getfield(req, :body)
+body(req::ViewRequest) = to_string(getfield(req, :message).body)
 
-@inline function _mg_str_eq_ci(s::MgStr, target::String)
-    s.len != ncodeunits(target) && return false
-    for i in 1:s.len
-        a = unsafe_load(s.buf, i)
-        b = codeunit(target, i)
-        (a | 0x20) != (b | 0x20) && return false
-    end
-    return true
+context(req::Request) = getfield(req, :context)
+context(req::ViewRequest) = getfield(req, :context)
+
+query(req::Request) = getfield(req, :query)
+query(req::ViewRequest) = to_string(getfield(req, :message).query)
+
+headers(req::Request) = getfield(req, :headers)
+headers(req::ViewRequest) = _headers(getfield(req, :message))
+
+function Base.getproperty(req::AbstractRequest, s::Symbol)
+    s === :query   && return query(req)
+    s === :body    && return body(req)
+    s === :headers && return headers(req)
+    s === :context && return context(req)
+    return getfield(req, s)
 end
 
-function req_header(req::ViewRequest, name::String)
-    name_lower = lowercase(name)
-    for h in req.message.headers
-        h.name.buf == C_NULL && continue
-        h.name.len == 0 && continue
-        if _mg_str_eq_ci(h.name, name_lower)
-            return to_string(h.val)
-        end
-    end
-    return nothing
-end
-
-# Public alias
-const header = req_header
-
-_body(req::Request) = req.body
-_body(req::ViewRequest) = to_string(req.message.body)
-
-_context(req::Request) = req.context
-_context(req::ViewRequest) = req.context
-
-_query(req::Request) = req.query
-_query(req::ViewRequest) = to_string(req.message.query)
-
-_method(m::MgHttpMessage) = _method_to_symbol(m.method)
+_method(m::MgHttpMessage) = _method2symbol(m.method)
 _uri(m::MgHttpMessage) = to_string(m.uri)
 _query(m::MgHttpMessage) = to_string(m.query)
 _body(m::MgHttpMessage) = to_string(m.body)
 
-function _method_to_symbol(str::MgStr)
+function _method2symbol(str::MgStr)
     (str.buf == C_NULL || str.len == 0) && return :unknown
     len = str.len
     ptr = str.buf
@@ -236,5 +157,14 @@ function _headers(message::MgHttpMessage)
             push!(pairs, name => value)
         end
     end
-    return Headers(pairs)
+    return pairs
 end
+
+const ContentType = (
+    text   = "Content-Type: text/plain; charset=utf-8\r\n",
+    html   = "Content-Type: text/html; charset=utf-8\r\n",
+    json   = "Content-Type: application/json; charset=utf-8\r\n",
+    xml    = "Content-Type: application/xml; charset=utf-8\r\n",
+    css    = "Content-Type: text/css; charset=utf-8\r\n",
+    js     = "Content-Type: application/javascript; charset=utf-8\r\n"
+)

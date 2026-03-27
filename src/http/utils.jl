@@ -42,15 +42,7 @@ end
     return (UInt8('0') <= b <= UInt8('9')) || (UInt8('a') <= b <= UInt8('f')) || (UInt8('A') <= b <= UInt8('F'))
 end
 
-"""
-    parse_query(req) → Dict{String,String}
-
-Parse a URL-encoded query string into key-value pairs.
-Handles `key=value&key2=value2` format with URL decoding.
-"""
-parse_query(req::AbstractRequest) = _parse_query_string(_query(req))
-
-function _parse_query_string(query)
+function _query2dict(query)
     bytes = codeunits(query)
     len = length(bytes)
     params = Dict{String,String}()
@@ -84,38 +76,14 @@ function _parse_query_string(query)
     return params
 end
 
-parse_query(::Type{T}, req::AbstractRequest) where T = parse_query(T, _query(req))
-
 """
-    parse_query(::Type{T}, query::AbstractString) where T
-
-Deserialize a URL-encoded query string into a struct of type `T`.
-Parses the query string first, then maps key-value pairs to struct fields.
-
-# Example
-```julia
-struct SearchParams
-    q::String
-    page::Int
-    limit::Int
-end
-
-params = parse_query(SearchParams, "q=hello&page=1&limit=10")
-# SearchParams("hello", 1, 10)
-```
-"""
-function parse_query(::Type{T}, query::AbstractString) where T
-    parse_query(T, _parse_query_string(query))
-end
-
-"""
-    parse_query(::Type{T}, dict::Dict{String,String}) where T
+    _dict2struct(::Type{T}, dict::Dict{String,String}) where T
 
 Deserialize a dictionary of strings into a struct of type `T`.
 Handles `String`, `Bool`, `Union{T, Nothing}` (optional), and numeric types.
 Missing keys default to empty string, zero, `false`, or `nothing` as appropriate.
 """
-@generated function parse_query(::Type{T}, dict::Dict{String,String}) where T
+@generated function _dict2struct(::Type{T}, dict::Dict{String,String}) where T
     fnames = fieldnames(T)
     ftypes = fieldtypes(T)
     exprs = [:(
@@ -143,13 +111,16 @@ Missing keys default to empty string, zero, `false`, or `nothing` as appropriate
     return :(T($(exprs...)))
 end
 
+query(::Type{T}, req::AbstractRequest) where T = query(T, query(req))
+query(::Type{T}, str::String) where T = _dict2struct(T, _query2dict(str))
+
 """
-    _format_headers(headers::Headers) → String
+    _formatheaders(headers::Vector{Pair{String,String}}) → String
 
 Serialize headers into the `"Key: Value\\r\\n"` format
 expected by the Mongoose C library's `mg_http_reply`.
 """
-function _format_headers(headers::Headers)
+function _formatheaders(headers::Vector{Pair{String,String}})
     isempty(headers) && return ""
     io = IOBuffer()
     for (k, v) in headers
@@ -158,38 +129,9 @@ function _format_headers(headers::Headers)
     return String(take!(io))
 end
 
-# parse_into: convenience alias for struct deserialization from query strings
-const parse_into = parse_query
-
-# parse_params: convenience alias for parsing a query string into Dict{String,String}
-parse_params(query::AbstractString) = _parse_query_string(query)
-
-"""
-    query(req) → String
-
-Return the raw query string from the request.
-"""
-query(req::AbstractRequest) = _query(req)
-
-"""
-    query(req, key) → Union{String, Nothing}
-
-Lookup a single URL-decoded query parameter by key.
-Parsed parameters are cached in the request context on first access.
-"""
-function query(req::AbstractRequest, key::String)
-    ctx = _context(req)
-    parsed = get(ctx, :_parsed_query, nothing)
-    if parsed === nothing
-        parsed = _parse_query_string(_query(req))
-        ctx[:_parsed_query] = parsed
+function Base.get(headers::Vector{Pair{String,String}}, key::String, default)
+    @inbounds for i in eachindex(headers)
+        lowercase(headers[i].first) == lowercase(key) && return headers[i].second
     end
-    return get(parsed::Dict{String,String}, key, nothing)
+    return default
 end
-
-"""
-    context(req) → Dict{Symbol,Any}
-
-Return the mutable context dictionary attached to the request.
-"""
-context(req::AbstractRequest) = _context(req)
