@@ -3,7 +3,7 @@
     Provides `/healthz`, `/readyz`, and `/livez` endpoints for Kubernetes.
 """
 
-struct HealthMiddleware <: AbstractMiddleware
+struct Health <: AbstractMiddleware
     health_check::Function
     ready_check::Function
     live_check::Function
@@ -38,10 +38,10 @@ function health(;
     ready_check::Function = () -> true,
     live_check::Function = () -> true
 )
-    return HealthMiddleware(health_check, ready_check, live_check)
+    return Health(health_check, ready_check, live_check)
 end
 
-function (mw::HealthMiddleware)(request::AbstractRequest, params::Vector{Any}, next)
+function (mw::Health)(request::AbstractRequest, params::Vector{Any}, next)
     uri = request.uri
 
     if uri == "/healthz"

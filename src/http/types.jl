@@ -15,9 +15,9 @@ struct Request <: AbstractRequest
 end
 
 """
-    ViewRequest — Lightweight HTTP request with lazy header access.
+    LazyRequest — Lightweight HTTP request with lazy header access.
 """
-struct ViewRequest <: AbstractRequest
+struct LazyRequest <: AbstractRequest
     method::Symbol
     uri::String
     message::MgHttpMessage
@@ -84,21 +84,21 @@ end
 Request(method::Symbol, uri::String, query::String, headers::Dict{String,String}, body::String, context::Dict{Symbol,Any}) =
     Request(method, uri, query, [k => v for (k, v) in headers], body, context)
 
-function ViewRequest(message::MgHttpMessage)
-    return ViewRequest(_method(message), _uri(message), message, Dict{Symbol,Any}())
+function LazyRequest(message::MgHttpMessage)
+    return LazyRequest(_method(message), _uri(message), message, Dict{Symbol,Any}())
 end
 
 body(req::Request) = getfield(req, :body)
-body(req::ViewRequest) = to_string(getfield(req, :message).body)
+body(req::LazyRequest) = to_string(getfield(req, :message).body)
 
 context(req::Request) = getfield(req, :context)
-context(req::ViewRequest) = getfield(req, :context)
+context(req::LazyRequest) = getfield(req, :context)
 
 query(req::Request) = getfield(req, :query)
-query(req::ViewRequest) = to_string(getfield(req, :message).query)
+query(req::LazyRequest) = to_string(getfield(req, :message).query)
 
 headers(req::Request) = getfield(req, :headers)
-headers(req::ViewRequest) = _headers(getfield(req, :message))
+headers(req::LazyRequest) = _headers(getfield(req, :message))
 
 function Base.getproperty(req::AbstractRequest, s::Symbol)
     s === :query   && return query(req)

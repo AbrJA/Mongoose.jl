@@ -17,7 +17,7 @@ function handle_event!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnec
         return
     end
 
-    req = ViewRequest(message)
+    req = LazyRequest(message)
     res = try
         _dispatch_http(server, req)
     catch e
