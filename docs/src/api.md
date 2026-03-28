@@ -38,8 +38,7 @@ context
 ## Utilities
 
 ```@docs
-parse_params
-parse_into
+Mongoose.query
 ```
 
 ## WebSocket Types
@@ -55,18 +54,22 @@ WsBinaryMessage
 ```@docs
 cors
 rate_limit
-auth_bearer
-auth_api_key
+bearer_token
+api_key
 logger
 static_files
 ```
 
-## JSON (Extension)
+## JSON
 
-```@docs
-JsonResponse
-json_body
+JSON support is enabled by extending `render_body`:
+
+```julia
+using JSON
+Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
 ```
+
+Then use `Response(Json, value)` anywhere in your handlers.
 
 ## Static Router
 

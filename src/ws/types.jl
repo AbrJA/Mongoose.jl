@@ -14,9 +14,9 @@ const WsTextMessage = WsMessage{Text,String}
 const WsBinaryMessage = WsMessage{Binary,Vector{UInt8}}
 
 """
-    WsRouted — WebSocket message bundled with its endpoint URI for routing.
+    WsEnvelope — WebSocket message bundled with its endpoint URI for routing.
 """
-struct WsRouted
+struct WsEnvelope
     message::WsMessage
     uri::String
 end

@@ -115,26 +115,20 @@ ContentType.html   # text/html
 ContentType.xml    # application/xml
 ContentType.css    # text/css
 ContentType.js     # application/javascript
-ContentType.form   # application/x-www-form-urlencoded
-ContentType.octet  # application/octet-stream
 ```
 
 ### Request Helpers
 
 ```julia
 route!(router, :post, "/search", req -> begin
-    body(req)                    # Raw body string
-    header(req, "Authorization") # Header lookup (case-insensitive)
-    query(req)                   # Full query string
-    query(req, "q")              # Single param lookup (cached, URL-decoded)
-    context(req)                 # Dict{Symbol,Any} for middleware data
+    req.body                              # Raw body string
+    get(req.headers, "authorization", nothing)  # Case-insensitive header lookup
+    req.query                             # Full query string
+    req.context                           # Dict{Symbol,Any} for middleware data
 
-    # Parse query string into a Dict
-    params = req_query("name=Alice&age=30")
-
-    # Parse into a struct
+    # Parse query string into a struct
     struct Search; q::String; page::Int end
-    s = parse_into(Search, "q=julia&page=1")
+    s = Mongoose.query(Search, req.query)  # "q=julia&page=1" → Search("julia", 1)
 
     Response(200, ContentType.text, "ok")
 end)
@@ -169,24 +163,29 @@ use!(server, cors(origins="https://example.com", max_age=86400))
 use!(server, rate_limit(max_requests=100, window_seconds=60))
 
 # Authentication
-use!(server, auth_bearer(token -> token == "secret-123"))
-use!(server, auth_api_key(header_name="X-API-Key", keys=Set(["key1", "key2"])))
+use!(server, bearer_token(token -> token == "secret-123"))
+use!(server, api_key(header_name="X-API-Key", keys=Set(["key1", "key2"])))
 
 # Static file serving
 use!(server, static_files("public"; prefix="/static", index="index.html"))
 ```
 
-### JSON (Package Extension)
+### JSON
 
-When `JSON.jl` is loaded, these functions become available:
+JSON support requires `JSON.jl`. Extend `render_body` once at startup to enable `Response(Json, ...)` throughout your app:
 
 ```julia
 using Mongoose, JSON
 
-route!(router, :post, "/api", req -> begin
-    data = json(req)                             # Parse body → Dict/Array
-    profile = json(req, UserProfile)              # Parse body → struct
-    return json(Dict("ok" => true))               # Serialize → JSON response
+Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+
+route!(router, :get, "/api/data", req -> begin
+    Response(200, ContentType.json, JSON.json(Dict("ok" => true)))
+end)
+
+# Or with the Json format type shorthand:
+route!(router, :get, "/api/users", req -> begin
+    Response(Json, Dict("users" => ["Alice", "Bob"]))  # auto Content-Type
 end)
 ```
 

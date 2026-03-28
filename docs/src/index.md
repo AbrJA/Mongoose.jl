@@ -156,15 +156,14 @@ start!(server, port=8080)
 
 ### Request
 
-Handlers receive a `Request` (for `AsyncServer`) or `ViewRequest` (for `SyncServer`). Both implement the same accessor interface:
+Handlers receive a `Request` (for `AsyncServer`) or `LazyRequest` (for `SyncServer`). Both implement the same accessor interface:
 
 | Accessor | Returns | Description |
 |----------|---------|-------------|
-| `body(req)` | `String` | Raw request body |
-| `header(req, "Name")` | `String` or `nothing` | Case-insensitive header lookup |
-| `query(req)` | `String` | Full query string |
-| `query(req, "key")` | `String` or `nothing` | Single query param (cached, URL-decoded) |
-| `context(req)` | `Dict{Symbol,Any}` | Mutable context dict for middleware data |
+| `req.body` | `String` | Raw request body |
+| `get(req.headers, "name", nothing)` | `String` or `nothing` | Case-insensitive header lookup |
+| `req.query` | `String` | Full query string |
+| `req.context` | `Dict{Symbol,Any}` | Mutable context dict for middleware data |
 
 ### Response
 
@@ -196,23 +195,25 @@ Pre-formatted Content-Type header strings:
 | `ContentType.xml` | `application/xml` |
 | `ContentType.css` | `text/css` |
 | `ContentType.js` | `application/javascript` |
-| `ContentType.form` | `application/x-www-form-urlencoded` |
-| `ContentType.octet` | `application/octet-stream` |
+
 
 Headers can be concatenated: `ContentType.text * "X-Custom: value\r\n"`
 
 ### Query String Utilities
 
 ```julia
-# Parse full query string into Dict
-params = parse_params("name=Alice&age=30")  # Dict("name"=>"Alice", "age"=>"30")
-
-# Parse into a struct
+# Parse query string into a struct
 struct SearchQuery
     q::String
     page::Int
 end
-s = parse_into(SearchQuery, "q=julia&page=1")
+s = Mongoose.query(SearchQuery, "q=julia&page=1")  # SearchQuery("julia", 1)
+
+# Also works from a request:
+route!(router, :get, "/search", req -> begin
+    s = Mongoose.query(SearchQuery, req.query)
+    Response(200, ContentType.text, "Searching: $(s.q) page $(s.page)")
+end)
 ```
 
 ## WebSocket Support
@@ -271,7 +272,7 @@ Returns `429 Too Many Requests` with a `Retry-After` header when exceeded.
 **Bearer token:**
 
 ```julia
-use!(server, auth_bearer(token -> token == "secret-123"))
+use!(server, bearer_token(token -> token == "secret-123"))
 ```
 
 Returns `401` with `WWW-Authenticate: Bearer` if missing or invalid scheme, `403` if the validator returns `false`.
@@ -279,7 +280,7 @@ Returns `401` with `WWW-Authenticate: Bearer` if missing or invalid scheme, `403
 **API key:**
 
 ```julia
-use!(server, auth_api_key(header_name="X-API-Key", keys=Set(["key1", "key2"])))
+use!(server, api_key(header_name="X-API-Key", keys=Set(["key1", "key2"])))
 ```
 
 Returns `401` if the header is missing or the key is not in the allowed set.
@@ -295,22 +296,21 @@ use!(server, static_files("public"; prefix="/assets", index="index.html"))
 
 Serves `index.html` for directory requests. Returns `403` for path traversal attempts and `404` for missing files.
 
-## JSON (Package Extension)
+## JSON
 
-JSON support is provided as a package extension that loads automatically when `JSON.jl` is available:
+JSON support requires `JSON.jl`. Extend `render_body` once at startup to enable `Response(Json, ...)` throughout your app:
 
 ```julia
 using Mongoose, JSON
 
+Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+
 route!(router, :post, "/api", req -> begin
-    # Parse JSON body → Dict
-    data = json_body(req)
+    # Parse body manually
+    data = JSON.parse(req.body)
 
-    # Parse JSON body → struct
-    user = json_body(req, UserProfile)
-
-    # Send JSON response (auto Content-Type, default status 200)
-    JsonResponse(Dict("ok" => true); status=201)
+    # Send JSON response (auto Content-Type)
+    Response(Json, Dict("ok" => true); status=201)
 end)
 ```
 

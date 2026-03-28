@@ -1,9 +1,9 @@
 """
-    _eventcb(conn, ev, ev_data) → Cvoid
+    _callbackev(conn, ev, ev_data) → Cvoid
 
 The single C callback registered with Mongoose via `@cfunction`.
 """
-function _eventcb(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})::Cvoid
+function _callbackev(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})::Cvoid
     ev == MG_EV_POLL && return nothing
 
     fn_data = mg_conn_get_fn_data(conn)
@@ -40,5 +40,5 @@ end
 _onevent!(server::AbstractServer, ::Val, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid}) = nothing
 
 # JIT-only fallbacks — <:AbstractRouter matches Router; @router overrides for specific static types
-_cfnasync(::Type{<:AbstractRouter}) = @cfunction(_eventcb, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
-_cfnsync(::Type{<:AbstractRouter}) = @cfunction(_eventcb, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+_cfnasync(::Type{<:AbstractRouter}) = @cfunction(_callbackev, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+_cfnsync(::Type{<:AbstractRouter}) = @cfunction(_callbackev, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))

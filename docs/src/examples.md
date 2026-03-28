@@ -68,10 +68,12 @@ start!(server, port=8080, blocking=false)
 
 ## JSON Request and Response
 
-JSON support requires `JSON.jl` to be installed. It loads automatically as a package extension.
+JSON support requires `JSON.jl`. Extend `render_body` once at the top of your app to enable `Response(Json, ...)` with automatic Content-Type.
 
 ```julia
 using Mongoose, JSON
+
+Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
 
 struct UserProfile
     username::String
@@ -81,23 +83,16 @@ end
 
 router = Router()
 
-# Parse JSON body into a Dict
-route!(router, :post, "/user/dict", req -> begin
-    data = json_body(req)
-    name = get(data, "username", "Guest")
-    JsonResponse(Dict("message" => "Hello, $name"))
+# Return a JSON response
+route!(router, :get, "/user/info", req -> begin
+    Response(Json, Dict("username" => "Alice", "active" => true))
 end)
 
-# Parse JSON body into a struct
-route!(router, :post, "/user/struct", req -> begin
-    profile = json_body(req, UserProfile)
-    JsonResponse(Dict("received" => profile.username, "age" => profile.age))
-end)
-
-# Custom status code
+# Parse JSON from request body
 route!(router, :post, "/user/create", req -> begin
-    data = json_body(req)
-    JsonResponse(Dict("id" => 42, "created" => true); status=201)
+    data = JSON.parse(req.body)
+    name = get(data, "username", "Guest")
+    Response(Json, Dict("message" => "Hello, $name"); status=201)
 end)
 
 server = AsyncServer(router)
@@ -106,7 +101,7 @@ start!(server, port=8080, blocking=false)
 
 ## Parse Query into a Struct
 
-Use `parse_into` to deserialize a query string or `Dict{String,String}` into a typed struct. Supports `String`, numeric types, `Bool`, and `Union{T, Nothing}` for optional fields.
+Use `Mongoose.query(T, str)` to deserialize a query string into a typed struct. Supports `String`, numeric types, `Bool`, and `Union{T, Nothing}` for optional fields.
 
 ```julia
 using Mongoose
@@ -120,8 +115,7 @@ end
 router = Router()
 
 route!(router, :get, "/search", req -> begin
-    params = parse_params(query(req))
-    search = parse_into(SearchQuery, params)
+    search = Mongoose.query(SearchQuery, req.query)
     Response(200, ContentType.text, "Searching '$(search.q)' page $(search.page)")
 end)
 
@@ -179,7 +173,7 @@ use!(server, cors(origins="https://example.com"))
 use!(server, rate_limit(max_requests=100, window_seconds=60))
 
 # 4. Bearer token authentication
-use!(server, auth_bearer(token -> token == "my-secret-token"))
+use!(server, bearer_token(token -> token == "my-secret-token"))
 
 start!(server, port=8080, blocking=false)
 ```
@@ -195,7 +189,7 @@ router = Router()
 route!(router, :get, "/internal", req -> Response(200, ContentType.text, "Internal data"))
 
 server = AsyncServer(router)
-use!(server, auth_api_key(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
+use!(server, api_key(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
 
 start!(server, port=8080, blocking=false)
 ```
@@ -246,16 +240,16 @@ Middleware can attach data to the request context, which handlers can access:
 ```julia
 using Mongoose
 
-struct UserLookup <: Mongoose.Middleware
+struct UserLookup <: Mongoose.AbstractMiddleware
     db::Dict{String, String}
 end
 
 function (mw::UserLookup)(request, params, next)
-    token = header(request, "Authorization")
+    token = get(request.headers, "authorization", nothing)
     if token !== nothing
         user = get(mw.db, replace(token, "Bearer " => ""), nothing)
         if user !== nothing
-            context(request)[:user] = user
+            request.context[:user] = user
         end
     end
     return next()
@@ -263,7 +257,7 @@ end
 
 router = Router()
 route!(router, :get, "/me", req -> begin
-    user = get(context(req), :user, "anonymous")
+    user = get(req.context, :user, "anonymous")
     Response(200, ContentType.text, "Hello, $user!")
 end)
 
@@ -333,12 +327,13 @@ route!(router, :get, "/health", req -> Response(200, ContentType.text, "ok"))
 
 # JSON API
 route!(router, :get, "/api/users/:id::Int", (req, id) -> begin
-    JsonResponse(Dict("id" => id, "name" => "User $id"))
+    Response(Json, Dict("id" => id, "name" => "User $id"))
 end)
 
 route!(router, :post, "/api/users", req -> begin
-    user = json_body(req, CreateUser)
-    JsonResponse(Dict("created" => user.name); status=201)
+    data = JSON.parse(req.body)
+    name = get(data, "name", "")
+    Response(Json, Dict("created" => name); status=201)
 end)
 
 # WebSocket

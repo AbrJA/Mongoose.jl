@@ -20,7 +20,7 @@ function AsyncServer(router::AbstractRouter=Router();
     core = ServerCore(timeout, router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
     server = AsyncServer{typeof(router)}(
         core, Task[],
-        Channel{Tagged{Request}}(nqueue), Channel{Tagged{WsRouted}}(nqueue),
+        Channel{Tagged{Request}}(nqueue), Channel{Tagged{WsEnvelope}}(nqueue),
         Channel{Tagged{Response}}(nqueue), Channel{Tagged{WsMessage}}(nqueue),
         Dict{Int,MgConnection}(), Int(workers), Int(nqueue)
     )

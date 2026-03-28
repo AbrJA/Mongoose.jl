@@ -154,7 +154,7 @@ end
         end
     end
 
-    # --- Test 4: Multiple Instances ---
+    # --- Test 5: Multiple Instances ---
     @testset "Multiple Instances" begin
         router1 = Router()
         route!(router1, :get, "/s1", (req) -> Response(200, "", "Server 1"))
