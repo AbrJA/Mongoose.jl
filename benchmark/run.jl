@@ -1,9 +1,7 @@
-"""
-    Benchmark runner — runs all benchmark suites and generates a report.
-
-Usage:
-    julia --project=benchmark benchmark/run.jl
-"""
+# Benchmark runner — runs all benchmark suites and generates a report.
+#
+# Usage:
+#   julia --project=benchmark benchmark/run.jl
 
 using BenchmarkTools
 using Mongoose
@@ -18,32 +16,28 @@ println("Julia: ", VERSION)
 println("Date:  ", Dates.format(now(), "yyyy-mm-dd HH:MM"))
 println()
 
-# --- Run each suite ---
-for (name, file) in [
-    ("Router", "router.jl"),
-    ("Headers", "headers.jl"),
-]
-    println("Running $name benchmarks...")
-    mod = Module(Symbol(name, "Bench"))
-    suite = Base.eval(mod, quote
-        include(joinpath(@__DIR__, $file))
-        SUITE
-    end)
-    results = run(suite; verbose=false, seconds=3)
-    RESULTS[name] = results
-    println("  Done.\n")
-end
+# --- Run Router suite ---
+println("Running Router benchmarks...")
+include(joinpath(@__DIR__, "router.jl"))
+RESULTS["Router"] = run(SUITE; verbose=false, seconds=3)
+println("  Done.\n")
+
+# --- Run Headers suite ---
+println("Running Headers benchmarks...")
+include(joinpath(@__DIR__, "headers.jl"))
+RESULTS["Headers"] = run(SUITE; verbose=false, seconds=3)
+println("  Done.\n")
 
 # --- Print Results ---
 println("=" ^ 60)
 println("RESULTS")
 println("=" ^ 60)
 
-for (suite_name, results) in sort(collect(RESULTS))
+for (suite_name, results) in sort(collect(RESULTS), by=first)
     println("\n## $suite_name\n")
-    for (group_name, group) in sort(collect(results))
+    for (group_name, group) in sort(collect(results), by=first)
         println("### $group_name\n")
-        for (bench_name, trial) in sort(collect(group))
+        for (bench_name, trial) in sort(collect(group), by=first)
             med = median(trial)
             mn = minimum(trial)
             println("  $bench_name:")
@@ -64,13 +58,13 @@ open(report_path, "w") do io
     println(io, "- **Threads**: $(Threads.nthreads())")
     println(io, "")
 
-    for (suite_name, results) in sort(collect(RESULTS))
+    for (suite_name, results) in sort(collect(RESULTS), by=first)
         println(io, "## $suite_name\n")
-        for (group_name, group) in sort(collect(results))
+        for (group_name, group) in sort(collect(results), by=first)
             println(io, "### $group_name\n")
             println(io, "| Benchmark | Median | Min | Allocs | Memory |")
             println(io, "|-----------|--------|-----|--------|--------|")
-            for (bench_name, trial) in sort(collect(group))
+            for (bench_name, trial) in sort(collect(group), by=first)
                 med = median(trial)
                 mn = minimum(trial)
                 println(io, "| $bench_name | $(BenchmarkTools.prettytime(time(med))) | $(BenchmarkTools.prettytime(time(mn))) | $(allocs(med)) | $(BenchmarkTools.prettymemory(memory(med))) |")

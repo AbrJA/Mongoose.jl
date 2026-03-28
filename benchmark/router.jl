@@ -1,10 +1,8 @@
-"""
-    Router benchmarks — registration, matching, and dispatch.
-"""
+# Router benchmarks — registration, matching, and dispatch.
 using BenchmarkTools
 using Mongoose
 
-const SUITE = BenchmarkGroup()
+SUITE = BenchmarkGroup()
 
 # --- Route Registration ---
 SUITE["register"] = BenchmarkGroup()
@@ -49,24 +47,24 @@ end
 const ROUTER = build_router()
 
 # Fixed route (fast path)
-SUITE["match"]["fixed_root"] = @benchmarkable Mongoose.match_route($ROUTER, :get, "/")
-SUITE["match"]["fixed_about"] = @benchmarkable Mongoose.match_route($ROUTER, :get, "/about")
-SUITE["match"]["fixed_deep"] = @benchmarkable Mongoose.match_route($ROUTER, :get, "/api/v1/users")
+SUITE["match"]["fixed_root"]  = @benchmarkable Mongoose._matchroute($ROUTER, :get, "/")
+SUITE["match"]["fixed_about"] = @benchmarkable Mongoose._matchroute($ROUTER, :get, "/about")
+SUITE["match"]["fixed_deep"]  = @benchmarkable Mongoose._matchroute($ROUTER, :get, "/api/v1/users")
 
 # Dynamic route (trie traversal + parameter parsing)
-SUITE["match"]["dynamic_1param"] = @benchmarkable Mongoose.match_route($ROUTER, :get, "/api/v1/users/42")
-SUITE["match"]["dynamic_deep"] = @benchmarkable Mongoose.match_route($ROUTER, :get, "/api/v1/users/42/posts")
+SUITE["match"]["dynamic_1param"] = @benchmarkable Mongoose._matchroute($ROUTER, :get, "/api/v1/users/42")
+SUITE["match"]["dynamic_deep"]   = @benchmarkable Mongoose._matchroute($ROUTER, :get, "/api/v1/users/42/posts")
 
 # Miss (404)
-SUITE["match"]["miss_shallow"] = @benchmarkable Mongoose.match_route($ROUTER, :get, "/nonexistent")
-SUITE["match"]["miss_deep"] = @benchmarkable Mongoose.match_route($ROUTER, :get, "/api/v1/missing/path")
+SUITE["match"]["miss_shallow"] = @benchmarkable Mongoose._matchroute($ROUTER, :get, "/nonexistent")
+SUITE["match"]["miss_deep"]    = @benchmarkable Mongoose._matchroute($ROUTER, :get, "/api/v1/missing/path")
 
 # --- Dispatch (full pipeline) ---
 SUITE["dispatch"] = BenchmarkGroup()
 
-const REQ_ROOT = Request(:get, "/", "", Headers(), "", Dict{Symbol,Any}())
-const REQ_USERS = Request(:get, "/api/v1/users/42", "", Headers(), "", Dict{Symbol,Any}())
-const REQ_MISS = Request(:get, "/nonexistent", "", Headers(), "", Dict{Symbol,Any}())
+const REQ_ROOT  = Request(:get, "/",               "", Pair{String,String}[], "", Dict{Symbol,Any}())
+const REQ_USERS = Request(:get, "/api/v1/users/42", "", Pair{String,String}[], "", Dict{Symbol,Any}())
+const REQ_MISS  = Request(:get, "/nonexistent",      "", Pair{String,String}[], "", Dict{Symbol,Any}())
 
 SUITE["dispatch"]["fixed"] = @benchmarkable Mongoose._dispatchreq($ROUTER, $REQ_ROOT)
 SUITE["dispatch"]["dynamic"] = @benchmarkable Mongoose._dispatchreq($ROUTER, $REQ_USERS)
