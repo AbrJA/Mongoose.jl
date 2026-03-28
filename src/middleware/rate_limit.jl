@@ -14,8 +14,13 @@ end
 
 function (mw::RateLimit)(request::AbstractRequest, params::Vector{Any}, next)
     client_id = let h = get(request.headers, "X-Forwarded-For", nothing)
-        h !== nothing ? h : let h2 = get(request.headers, "X-Real-IP", nothing)
-            h2 !== nothing ? h2 : "unknown"
+        if h !== nothing
+            # X-Forwarded-For may be "client, proxy1, proxy2" — use first IP only
+            ci = findfirst(',', h)
+            ci !== nothing ? String(strip(h[1:ci-1])) : String(strip(h))
+        else
+            h2 = get(request.headers, "X-Real-IP", nothing)
+            h2 !== nothing ? String(strip(h2)) : "unknown"
         end
     end
 

@@ -176,6 +176,8 @@ function _addroute!(router::Router, method::Symbol, path::AbstractString, @nospe
                 node.dynamic = dyn
             elseif dyn.param != param
                 throw(RouteError("Parameter conflict: :$param vs existing :$(dyn.param)"))
+            elseif dyn.param_type != ptype
+                throw(RouteError("Parameter type conflict for :$param: $ptype vs existing $(dyn.param_type)"))
             end
             node = dyn
         else

@@ -39,6 +39,14 @@ function mg_http_reply(conn::MgConnection, status::Integer, headers::String, bod
 end
 
 """
+    mg_http_reply(conn, status, headers, body) — Send an HTTP response with binary body.
+    Uses `%.*s` format with an explicit byte count — null-byte safe.
+"""
+function mg_http_reply(conn::MgConnection, status::Integer, headers::String, body::Vector{UInt8})
+    ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring, Cint, Ptr{UInt8}), conn, Cint(status), headers, "%.*s", Cint(length(body)), pointer(body))
+end
+
+"""
     mg_ws_send(conn, buf, op) — Send a WebSocket frame (text or binary).
 """
 function mg_ws_send(conn::MgConnection, buf::String, op::Cint)

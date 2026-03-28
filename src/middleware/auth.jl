@@ -13,7 +13,7 @@ function (mw::BearerToken)(request::AbstractRequest, params::Vector{Any}, next)
         return Response(401, ContentType.text * "WWW-Authenticate: Bearer\r\n", "401 Unauthorized")
     end
 
-    if !startswith(auth_header, "Bearer ")
+    if length(auth_header) < 7 || lowercase(auth_header[1:7]) != "bearer "
         return Response(401, ContentType.text * "WWW-Authenticate: Bearer\r\n", "401 Unauthorized: Invalid scheme")
     end
 

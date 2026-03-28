@@ -29,8 +29,14 @@ function AsyncServer(router::AbstractRouter=Router();
 end
 
 function _init!(server::AsyncServer)
-    server.core.manager = Manager()
-    return
+   server.core.manager = Manager()
+   server.http_requests  = Channel{Tagged{Request}}(server.nqueue)
+   server.ws_requests    = Channel{Tagged{WsEnvelope}}(server.nqueue)
+   server.http_responses = Channel{Tagged{Response}}(server.nqueue)
+   server.ws_responses   = Channel{Tagged{WsMessage}}(server.nqueue)
+   empty!(server.connections)
+   empty!(server.core.ws_connections)
+   return
 end
 
 function _spawnworkers!(server::AsyncServer)

@@ -11,7 +11,7 @@ mutable struct Manager
         empty && return new(C_NULL)
         ptr = Libc.calloc(1, Csize_t(MG_MGR_SIZE))
         ptr == C_NULL && throw(ServerError("Failed to allocate manager memory"))
-        mg_log_set_level(MG_LL_ERROR) # Set level before initializing
+        mg_log_set_level(MG_LL_NONE) # Set level before initializing
         mg_mgr_init!(ptr)
         return new(ptr)
     end
@@ -88,7 +88,6 @@ _cfnsync(::Type{T}) where {T} = C_NULL
 
 function _teardown!(server::AbstractServer)
     free!(server.core.manager)
-    server.core.handler = C_NULL
     return
 end
 

@@ -22,6 +22,7 @@ end
 
 function _init!(server::SyncServer)
     server.core.manager = Manager()
+    empty!(server.core.ws_connections)
     return
 end
 

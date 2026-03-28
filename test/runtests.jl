@@ -765,4 +765,236 @@ end
         end
     end
 
+    # --- Test: SyncServer Same-Instance Restart ---
+    @testset "SyncServer Same-Instance Restart" begin
+        router = Router()
+        route!(router, :get, "/ping", (req) -> Response(200, "", "pong"))
+
+        server = SyncServer(router)
+        start!(server; port=8119, blocking=false)
+        try
+            resp = HTTP.get("http://localhost:8119/ping")
+            @test resp.status == 200
+            @test String(resp.body) == "pong"
+        finally
+            shutdown!(server)
+        end
+
+        # Restart the SAME instance
+        start!(server; port=8119, blocking=false)
+        try
+            resp = HTTP.get("http://localhost:8119/ping")
+            @test resp.status == 200
+            @test String(resp.body) == "pong"
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: AsyncServer Same-Instance Restart ---
+    @testset "AsyncServer Same-Instance Restart" begin
+        router = Router()
+        route!(router, :get, "/ping", (req) -> Response(200, "", "pong"))
+
+        server = AsyncServer(router; workers=2)
+        start!(server; port=8120, blocking=false)
+        try
+            resp = HTTP.get("http://localhost:8120/ping")
+            @test resp.status == 200
+            @test String(resp.body) == "pong"
+        finally
+            shutdown!(server)
+        end
+
+        # Restart the SAME instance
+        start!(server; port=8120, blocking=false)
+        try
+            resp = HTTP.get("http://localhost:8120/ping")
+            @test resp.status == 200
+            @test String(resp.body) == "pong"
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: BindError on Occupied Port ---
+    @testset "BindError on Occupied Port" begin
+        router = Router()
+        route!(router, :get, "/", (req) -> Response(200, "", "ok"))
+
+        server1 = SyncServer(router)
+        start!(server1; port=8121, blocking=false)
+        try
+            server2 = SyncServer(router)
+            @test_throws BindError start!(server2; port=8121, blocking=false)
+            # server2 must be clean after the error
+            @test !server2.core.running[]
+        finally
+            shutdown!(server1)
+        end
+    end
+
+    # --- Test: Double start! is a no-op ---
+    @testset "Double start! is no-op" begin
+        router = Router()
+        route!(router, :get, "/", (req) -> Response(200, "", "ok"))
+
+        server = SyncServer(router)
+        start!(server; port=8122, blocking=false)
+        try
+            start!(server; port=8123, blocking=false)  # different port — should be ignored
+            # original port still works, 8123 never opened
+            resp = HTTP.get("http://localhost:8122/")
+            @test resp.status == 200
+            @test_throws Exception HTTP.get("http://localhost:8123/")
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: Health Middleware ---
+    @testset "Health Middleware" begin
+        router = Router()
+        route!(router, :get, "/api", (req) -> Response(200, "", "ok"))
+
+        # Healthy server
+        s1 = SyncServer(router)
+        use!(s1, health(health_check=() -> true, ready_check=() -> true, live_check=() -> true))
+        start!(s1; port=8124, blocking=false)
+        try
+            resp = HTTP.get("http://localhost:8124/healthz")
+            @test resp.status == 200
+            @test occursin("healthy", String(resp.body))
+
+            resp = HTTP.get("http://localhost:8124/readyz")
+            @test resp.status == 200
+            @test occursin("ready", String(resp.body))
+
+            resp = HTTP.get("http://localhost:8124/livez")
+            @test resp.status == 200
+            @test occursin("alive", String(resp.body))
+
+            # Normal route still works
+            resp = HTTP.get("http://localhost:8124/api")
+            @test resp.status == 200
+        finally
+            shutdown!(s1)
+        end
+
+        # Unhealthy server
+        s2 = SyncServer(router)
+        use!(s2, health(health_check=() -> false))
+        start!(s2; port=8125, blocking=false)
+        try
+            resp = HTTP.get("http://localhost:8125/healthz"; status_exception=false)
+            @test resp.status == 503
+            @test occursin("unhealthy", String(resp.body))
+        finally
+            shutdown!(s2)
+        end
+    end
+
+    # --- Test: RouteError on Invalid Method ---
+    @testset "RouteError on Invalid Method" begin
+        router = Router()
+        @test_throws RouteError route!(router, :connect, "/path", (req) -> Response(200, "", ""))
+        @test_throws RouteError route!(router, :trace, "/path", (req) -> Response(200, "", ""))
+    end
+
+    # --- Test: RouteError on Dynamic Param Type Conflict ---
+    @testset "RouteError on Param Type Conflict" begin
+        router = Router()
+        route!(router, :get, "/users/:id::Int", (req, id) -> Response(200, "", ""))
+        # Same name, different type — must throw
+        @test_throws RouteError route!(router, :post, "/users/:id::String", (req, id) -> Response(200, "", ""))
+    end
+
+    # --- Test: URL Percent-Decode ---
+    @testset "URL Percent-Decode" begin
+        struct PctParams
+            q::String
+            msg::String
+        end
+
+        p = Mongoose.query(PctParams, "q=hello%20world&msg=100%25+done")
+        @test p.q == "hello world"
+        @test p.msg == "100% done"
+
+        # Invalid hex escape is passed through literally
+        p2 = Mongoose.query(PctParams, "q=%ZZtest&msg=ok")
+        @test p2.q == "%ZZtest"
+        @test p2.msg == "ok"
+    end
+
+    # --- Test: Global shutdown!() ---
+    @testset "Global shutdown!()" begin
+        r1 = Router()
+        route!(r1, :get, "/", (req) -> Response(200, "", "s1"))
+        r2 = Router()
+        route!(r2, :get, "/", (req) -> Response(200, "", "s2"))
+
+        s1 = SyncServer(r1)
+        s2 = SyncServer(r2)
+        start!(s1; port=8126, blocking=false)
+        start!(s2; port=8127, blocking=false)
+
+        @test HTTP.get("http://localhost:8126/").status == 200
+        @test HTTP.get("http://localhost:8127/").status == 200
+
+        Mongoose.shutdown!()
+
+        @test !s1.core.running[]
+        @test !s2.core.running[]
+    end
+
+    # --- Test: Bearer Token Case-Insensitive Scheme ---
+    @testset "Bearer Token Case-Insensitive Scheme" begin
+        router = Router()
+        route!(router, :get, "/secure", (req) -> Response(200, "", "ok"))
+
+        server = SyncServer(router)
+        use!(server, bearer_token(token -> token == "secret"))
+        start!(server; port=8128, blocking=false)
+        try
+            # Lowercase scheme must be accepted (RFC 7235)
+            resp = HTTP.get("http://localhost:8128/secure"; headers=["Authorization" => "bearer secret"])
+            @test resp.status == 200
+
+            # UPPERCASE scheme must be accepted
+            resp = HTTP.get("http://localhost:8128/secure"; headers=["Authorization" => "BEARER secret"])
+            @test resp.status == 200
+
+            # Wrong token still rejected regardless of scheme casing
+            resp = HTTP.get("http://localhost:8128/secure"; headers=["Authorization" => "bearer wrong"], status_exception=false)
+            @test resp.status == 403
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # --- Test: Rate Limit with X-Forwarded-For Multi-IP ---
+    @testset "Rate Limit X-Forwarded-For" begin
+        router = Router()
+        route!(router, :get, "/limited", (req) -> Response(200, "", "OK"))
+
+        server = AsyncServer(router; workers=1)
+        use!(server, rate_limit(max_requests=2, window_seconds=60))
+        start!(server; port=8129, blocking=false)
+        sleep(0.5)
+
+        try
+            # Same client IP via different proxy chains must share the same bucket
+            headers1 = ["X-Forwarded-For" => "10.0.0.1"]
+            headers2 = ["X-Forwarded-For" => "10.0.0.1, proxy1.example.com"]
+
+            @test HTTP.get("http://localhost:8129/limited"; headers=headers1).status == 200
+            @test HTTP.get("http://localhost:8129/limited"; headers=headers2).status == 200
+
+            # Third request from same client is rate-limited
+            resp = HTTP.get("http://localhost:8129/limited"; headers=headers1, status_exception=false)
+            @test resp.status == 429
+        finally
+            shutdown!(server)
+        end
+    end
 end

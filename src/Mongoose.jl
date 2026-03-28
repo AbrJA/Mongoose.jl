@@ -3,13 +3,14 @@ module Mongoose
 using Mongoose_jll
 using PrecompileTools
 
-export SyncServer, AsyncServer, Router, Request, Response, RawResponse,
+export SyncServer, AsyncServer, Router, Request, Response, RawResponse, BinaryResponse,
     Text, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, use!,
     render_body, content_type,
     ws!, WsTextMessage, WsBinaryMessage, WsMessage,
-    cors, rate_limit, bearer_token, api_key, logger, static_files,
+    cors, rate_limit, bearer_token, api_key, logger, static_files, health,
     ContentType,
+    RouteError, ServerError, BindError,
     @router
 
 # Maybe is good to have parse_ and req_
@@ -52,6 +53,7 @@ include("middleware/rate_limit.jl")
 include("middleware/auth.jl")
 include("middleware/logger.jl")
 include("middleware/static_files.jl")
+include("middleware/health.jl")
 
 # 8. Precompilation
 @setup_workload begin
