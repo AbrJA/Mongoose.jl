@@ -63,12 +63,12 @@ function (mw::StaticFiles)(request::AbstractRequest, params::Vector{Any}, next)
 
     isfile(filepath) || return next()
 
-    mime = _mime_type(filepath)
+    mime = _mimetype(filepath)
     content = read(filepath, String)
     return Response(200, "Content-Type: $mime\r\n", content)
 end
 
-function _mime_type(filepath::String)
+function _mimetype(filepath::String)
     idx = findlast('.', filepath)
     idx === nothing && return "application/octet-stream"
     ext = lowercase(filepath[idx:end])

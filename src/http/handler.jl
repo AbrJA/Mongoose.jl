@@ -19,7 +19,7 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
 
     req = LazyRequest(message)
     res = try
-        _dispatch_http(server, req)
+        _servehttp(server, req)
     catch e
         @error "Handler error" exception=(e, catch_backtrace())
         Response(500, ContentType.text, "500 Internal Server Error")
@@ -52,25 +52,25 @@ end
 # --- Dispatch pipeline (used by both sync handler and async workers) ---
 
 """
-    _dispatch_http(server, request) → Response
+    _servehttp(server, request) → Response
 """
-function _dispatch_http(server::AbstractServer, req::AbstractRequest)::AbstractResponse
+function _servehttp(server::AbstractServer, req::AbstractRequest)::AbstractResponse
     final = (r, args...) -> _dispatchreq(server.core.router, r)
     if isempty(server.core.middlewares)
         return final(req)
     end
-    return execute_middleware(server.core.middlewares, req, Any[], final)
+    return _pipeline(server.core.middlewares, req, Any[], final)
 end
 
 # Trim-safe specialization: StaticRouter dispatches directly, bypassing
 # the middleware pipeline which uses abstract Function types and closures
 # that cannot be resolved by --trim=safe.
-@inline function _dispatch_http(server::SyncServer{<:StaticRouter}, req::AbstractRequest)::AbstractResponse
+@inline function _servehttp(server::SyncServer{<:StaticRouter}, req::AbstractRequest)::AbstractResponse
     return static_dispatch(server.core.router, req)
 end
 
 @inline function _dispatchreq(router::Router, req)
-    matched = match_route(router, req.method, req.uri)
+    matched = _matchroute(router, req.method, req.uri)
     if matched !== nothing
         handler = _gethandler(matched.handlers, req.method)
         if handler !== nothing

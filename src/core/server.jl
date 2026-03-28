@@ -18,9 +18,9 @@ mutable struct Manager
 end
 
 """
-    cleanup!(manager) — Free the Mongoose manager and its allocated memory.
+    free!(manager) — Free the Mongoose manager and its allocated memory.
 """
-function cleanup!(manager::Manager)
+function free!(manager::Manager)
     if manager.ptr != C_NULL
         mg_mgr_free!(manager.ptr)
         Libc.free(manager.ptr)
@@ -83,16 +83,16 @@ end
 
 # --- Shared Lifecycle Primitives ---
 
-c_handler_async(::Type{T}) where {T} = C_NULL
-c_handler_sync(::Type{T}) where {T} = C_NULL
+_cfnasync(::Type{T}) where {T} = C_NULL
+_cfnsync(::Type{T}) where {T} = C_NULL
 
-function free_resources!(server::AbstractServer)
-    cleanup!(server.core.manager)
+function _teardown!(server::AbstractServer)
+    free!(server.core.manager)
     server.core.handler = C_NULL
     return
 end
 
-function setup_listener!(server::AbstractServer, host::AbstractString, port::Integer)
+function _bind!(server::AbstractServer, host::AbstractString, port::Integer)
     url = "http://$host:$port"
     fn_data = pointer_from_objref(server)
     is_listen = mg_http_listen(server.core.manager.ptr, url, server.core.handler, fn_data)
@@ -101,10 +101,10 @@ function setup_listener!(server::AbstractServer, host::AbstractString, port::Int
     return
 end
 
-function start_master!(server::AbstractServer)
+function _spawnloop!(server::AbstractServer)
     server.core.master = Threads.@spawn begin
         try
-            run_event_loop(server)
+            _eventloop(server)
         catch e
             if !isa(e, InterruptException)
                 @error "Server event loop error: $e" exception = (e, catch_backtrace())
@@ -117,7 +117,7 @@ function start_master!(server::AbstractServer)
     return
 end
 
-function stop_master!(server::AbstractServer)
+function _stoploop!(server::AbstractServer)
     if !isnothing(server.core.master)
         try wait(server.core.master) catch end
         server.core.master = nothing

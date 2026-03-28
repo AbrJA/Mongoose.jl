@@ -7,38 +7,38 @@
 """
 function _handlewsmsg!(server::AbstractServer, request::Tagged{WsRouted})
     router = server.core.router
-    return _dispatch_ws_message(router, request)
+    return _routews(router, request)
 end
 
-@inline _dispatch_ws_message(router::Router, request) = _handle_dynamic_ws_message(router, request)
-@inline _dispatch_ws_message(router::StaticRouter, request) = _handle_static_ws_message(router, request)
+@inline _routews(router::Router, request) = _dynws(router, request)
+@inline _routews(router::StaticRouter, request) = _staticws(router, request)
 
-function _handle_static_ws_message(static::StaticRouter, request::Tagged{WsRouted})
+function _staticws(static::StaticRouter, request::Tagged{WsRouted})
     endpoint = static_ws_upgrade(static, request.payload.uri)
     if endpoint !== nothing
-        return _execute_ws_endpoint(endpoint, request)
+        return _callep(endpoint, request)
     end
     return nothing
 end
 
-function _handle_dynamic_ws_message(router::Router, request::Tagged{WsRouted})
+function _dynws(router::Router, request::Tagged{WsRouted})
     endpoint = get(router.ws_routes, request.payload.uri, nothing)
     if endpoint !== nothing
-        return _execute_ws_endpoint(endpoint, request)
+        return _callep(endpoint, request)
     end
     return nothing
 end
 
 # The dispatch helpers:
-_format_ws_response(id, res::WsMessage) = Tagged{WsMessage}(id, res)
-_format_ws_response(id, res::String) = Tagged{WsMessage}(id, WsMessage(Text, res))
-_format_ws_response(id, res::Vector{UInt8}) = Tagged{WsMessage}(id, WsMessage(Binary, res))
-_format_ws_response(id, ::Nothing) = nothing
+_tagws(id, res::WsMessage) = Tagged{WsMessage}(id, res)
+_tagws(id, res::String) = _tagws(id, WsMessage(Text, res))
+_tagws(id, res::Vector{UInt8}) = _tagws(id, WsMessage(Binary, res))
+_tagws(id, ::Nothing) = nothing
 
-function _execute_ws_endpoint(endpoint::WsEndpoint, request::Tagged{WsRouted})
+function _callep(endpoint::WsEndpoint, request::Tagged{WsRouted})
     try
         res = endpoint.on_message(request.payload.message)
-        return _format_ws_response(request.id, res)
+        return _tagws(request.id, res)
     catch e
         @error "WebSocket on_message error" exception = (e, catch_backtrace())
     end
@@ -53,19 +53,19 @@ function _tryupgrade(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cv
     message = MgHttpMessage(ev_data)
     uri = _tostring(message.uri)
 
-    endpoint = _get_ws_endpoint(router, uri)
+    endpoint = _wsep(router, uri)
     if endpoint !== nothing
-        _ws_upgrade!(server, conn, ev_data, uri, endpoint, message)
+        _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
         return true
     end
 
     return false
 end
 
-@inline _get_ws_endpoint(router::Router, uri) = get(router.ws_routes, uri, nothing)
-@inline _get_ws_endpoint(router::StaticRouter, uri) = static_ws_upgrade(router, uri)
+@inline _wsep(router::Router, uri) = get(router.ws_routes, uri, nothing)
+@inline _wsep(router::StaticRouter, uri) = static_ws_upgrade(router, uri)
 
-function _ws_upgrade!(server, conn, ev_data, uri, endpoint, message)
+function _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
     mg_ws_upgrade(conn, ev_data, C_NULL)
     server.core.ws_connections[Int(conn)] = uri
     if endpoint.on_open !== nothing
@@ -77,8 +77,8 @@ function _ws_upgrade!(server, conn, ev_data, uri, endpoint, message)
     end
 end
 
-_send_ws_native(conn, msg::WsMessage{Text}) = mg_ws_send(conn, msg.data, WS_OP_TEXT)
-_send_ws_native(conn, msg::WsMessage{Binary}) = mg_ws_send(conn, msg.data, WS_OP_BINARY)
+_wssend!(conn, msg::WsMessage{Text}) = mg_ws_send(conn, msg.data, WS_OP_TEXT)
+_wssend!(conn, msg::WsMessage{Binary}) = mg_ws_send(conn, msg.data, WS_OP_BINARY)
 
 # --- WS event handlers ---
 
@@ -91,7 +91,7 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, 
     tagged = Tagged(conn_id, WsRouted(ws_msg, uri))
     result = _handlewsmsg!(server, tagged)
     if result !== nothing
-        _send_ws_native(conn, result.payload)
+        _wssend!(conn, result.payload)
     end
     return
 end
@@ -109,25 +109,25 @@ end
 
 # Connection close — cleanup WS state
 function _onevent!(server::AbstractServer, ::Val{MG_EV_CLOSE}, conn::MgConnection, ev_data::Ptr{Cvoid})
-    cleanup_ws_connection!(server, conn)
+    _closews!(server, conn)
     return
 end
 
 function _onevent!(server::AsyncServer, ::Val{MG_EV_CLOSE}, conn::MgConnection, ev_data::Ptr{Cvoid})
-    cleanup_ws_connection!(server, conn)
+    _closews!(server, conn)
     delete!(server.connections, Int(conn))
     return
 end
 
 """
-    cleanup_ws_connection!(server, conn)
+    _closews!(server, conn)
 """
-function cleanup_ws_connection!(server::AbstractServer, conn::MgConnection)
+function _closews!(server::AbstractServer, conn::MgConnection)
     conn_id = Int(conn)
     uri = get(server.core.ws_connections, conn_id, nothing)
 
     if uri !== nothing
-        endpoint = _get_ws_endpoint(server.core.router, uri)
+        endpoint = _wsep(server.core.router, uri)
         if endpoint !== nothing && endpoint.on_close !== nothing
             try
                 endpoint.on_close()

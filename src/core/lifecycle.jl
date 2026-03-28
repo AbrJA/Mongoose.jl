@@ -19,16 +19,16 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
     end
 
     try
-        register!(server)
-        setup_resources!(server)
-        setup_listener!(server, host, port)
-        start_workers!(server)
+        _register!(server)
+        _init!(server)
+        _bind!(server, host, port)
+        _spawnworkers!(server)
 
         if blocking
             # Run event loop directly on main thread (required for AOT executables)
-            run_event_loop(server)
+            _eventloop(server)
         else
-            start_master!(server)
+            _spawnloop!(server)
         end
     catch e
         shutdown!(server)
@@ -58,10 +58,10 @@ function shutdown!(server::AbstractServer)
     # Drain in-flight requests up to drain_timeout_ms
     _drain_in_flight(server)
 
-    stop_workers!(server)
-    stop_master!(server)
-    free_resources!(server)
-    unregister!(server)
+    _stopworkers!(server)
+    _stoploop!(server)
+    _teardown!(server)
+    _unregister!(server)
 
     @info "Server stopped successfully."
     return

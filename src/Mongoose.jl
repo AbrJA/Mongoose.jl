@@ -63,10 +63,10 @@ include("middleware/static_files.jl")
         route!(router, :post, "/data", req -> Response(200, "", ""))
 
         # Route matching (hot path)
-        match_route(router, :get, "/")
-        match_route(router, :get, "/users/1")
-        match_route(router, :post, "/data")
-        match_route(router, :get, "/nonexistent")
+        _matchroute(router, :get, "/")
+        _matchroute(router, :get, "/users/1")
+        _matchroute(router, :post, "/data")
+        _matchroute(router, :get, "/nonexistent")
 
         # Response construction
         Response(200, ContentType.text, "ok")
@@ -85,7 +85,7 @@ include("middleware/static_files.jl")
 
         # Middleware pipeline
         mw = cors()
-        execute_middleware(AbstractMiddleware[mw], req, Any[], (r, args...) -> Response(200, "", ""))
+        _pipeline(AbstractMiddleware[mw], req, Any[], (r, args...) -> Response(200, "", ""))
     end
 end
 

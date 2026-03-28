@@ -58,13 +58,13 @@ struct RouteSegment
     type::Union{Type, Symbol}
 end
 
-mutable struct RouterNode
-    static_children::Dict{String, RouterNode}
-    variable_child::Union{Tuple{RouteSegment, RouterNode}, Nothing}
-    wildcard_child::Union{Tuple{String, RouterNode}, Nothing}
+mutable struct StaticNode
+    static_children::Dict{String, StaticNode}
+    variable_child::Union{Tuple{RouteSegment, StaticNode}, Nothing}
+    wildcard_child::Union{Tuple{String, StaticNode}, Nothing}
     handler::Union{Expr, Symbol, Nothing}
 
-    RouterNode() = new(Dict{String, RouterNode}(), nothing, nothing, nothing)
+    StaticNode() = new(Dict{String, StaticNode}(), nothing, nothing, nothing)
 end
 
 function _parseroute(path::String)
@@ -93,8 +93,8 @@ function _parseroute(path::String)
     return segments
 end
 
-function build_trie(routes)
-    root = RouterNode()
+function _buildtrie(routes)
+    root = StaticNode()
     for (method_sym, path, handler) in routes
         segments = _parseroute(path)
         # We model the method as the first segment essentially, to share the trie.
@@ -106,18 +106,18 @@ function build_trie(routes)
             if seg.is_variable
                 if seg.type == Vector{String}
                     if node.wildcard_child === nothing
-                        node.wildcard_child = (seg.value, RouterNode())
+                        node.wildcard_child = (seg.value, StaticNode())
                     end
                     node = node.wildcard_child[2]
                 else
                     if node.variable_child === nothing
-                        node.variable_child = (seg, RouterNode())
+                        node.variable_child = (seg, StaticNode())
                     end
                     node = node.variable_child[2]
                 end
             else
                 if !haskey(node.static_children, seg.value)
-                    node.static_children[seg.value] = RouterNode()
+                    node.static_children[seg.value] = StaticNode()
                 end
                 node = node.static_children[seg.value]
             end
@@ -127,7 +127,7 @@ function build_trie(routes)
     return root
 end
 
-function _generatenode(node::RouterNode, seg_sym::Symbol, idx_sym::Symbol, path_sym::Symbol, req_sym::Symbol, parsed_vars::Vector{Symbol})
+function _gendispatch(node::StaticNode, seg_sym::Symbol, idx_sym::Symbol, path_sym::Symbol, req_sym::Symbol, parsed_vars::Vector{Symbol})
     exprs = []
 
     # 1. Exact match reached
@@ -146,7 +146,7 @@ function _generatenode(node::RouterNode, seg_sym::Symbol, idx_sym::Symbol, path_
         for (val, child) in node.static_children
             next_seg = gensym("seg")
             next_idx = gensym("idx")
-            child_expr = _generatenode(child, next_seg, next_idx, path_sym, req_sym, parsed_vars)
+            child_expr = _gendispatch(child, next_seg, next_idx, path_sym, req_sym, parsed_vars)
 
             push!(static_blocks, quote
                 if $(seg_sym) == $val
@@ -168,7 +168,7 @@ function _generatenode(node::RouterNode, seg_sym::Symbol, idx_sym::Symbol, path_
         new_parsed_vars = copy(parsed_vars)
         push!(new_parsed_vars, var_sym)
 
-        child_expr = _generatenode(child, next_seg, next_idx, path_sym, req_sym, new_parsed_vars)
+        child_expr = _gendispatch(child, next_seg, next_idx, path_sym, req_sym, new_parsed_vars)
 
         # In Mongoose, we default variables to SubString (zero-copy) for performance
         parse_expr = if seg.type == SubString{String} || seg.type == String || seg.type == :String
@@ -213,7 +213,7 @@ function _generatenode(node::RouterNode, seg_sym::Symbol, idx_sym::Symbol, path_
     return Expr(:block, exprs...)
 end
 
-function _extract_routes(block)
+function _extractroutes(block)
     http_routes = []
     ws_routes = []
     for line in block.args
@@ -260,10 +260,10 @@ end
 ```
 """
 macro router(app_type::Symbol, block)
-    http_routes, ws_routes = _extract_routes(block)
+    http_routes, ws_routes = _extractroutes(block)
     (isempty(http_routes) && isempty(ws_routes)) && error("@router: no routes found in block")
 
-    root = build_trie(http_routes)
+    root = _buildtrie(http_routes)
 
     path_sym = gensym("path")
     req_sym = gensym("req")
@@ -272,7 +272,7 @@ macro router(app_type::Symbol, block)
     method_seg_sym = gensym("method_seg")
     method_idx_sym = gensym("method_idx")
 
-    dispatch_body = _generatenode(root, method_seg_sym, method_idx_sym, path_sym, req_sym, Symbol[])
+    dispatch_body = _gendispatch(root, method_seg_sym, method_idx_sym, path_sym, req_sym, Symbol[])
 
     async_handler_sym = Symbol("_async_", app_type, "_c_handler")
     sync_handler_sym = Symbol("_sync_", app_type, "_c_handler")
@@ -298,8 +298,8 @@ macro router(app_type::Symbol, block)
             return nothing
         end
 
-        Mongoose.c_handler_async(::Type{$app_type}) = @cfunction($async_handler_sym, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
-        Mongoose.c_handler_sync(::Type{$app_type}) = @cfunction($sync_handler_sym, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+        Mongoose._cfnasync(::Type{$app_type}) = @cfunction($async_handler_sym, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+        Mongoose._cfnsync(::Type{$app_type}) = @cfunction($sync_handler_sym, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
     end)
 
     quote

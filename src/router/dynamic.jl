@@ -52,23 +52,23 @@ end
 end
 
 """
-    Node — A node in the radix trie for path-segment matching.
+    TrieNode — A node in the radix trie for path-segment matching.
     Uses Vector for children (cache-friendly for small fanout) and
     MethodMap for O(1) method dispatch.
 """
-mutable struct Node
-    children::Vector{Pair{String,Node}}          # static segment children
-    dynamic::Union{Nothing,Node}                 # parameter segment child (:param)
+mutable struct TrieNode
+    children::Vector{Pair{String,TrieNode}}          # static segment children
+    dynamic::Union{Nothing,TrieNode}                 # parameter segment child (:param)
     param::Union{Nothing,String}                 # parameter name (if dynamic node)
     param_type::Type                             # parameter type
     param_names::Vector{String}                  # parameter names in order
     handlers::MethodMap                          # HTTP method → handler
-    Node() = new(Pair{String,Node}[], nothing, nothing, String, String[], MethodMap())
+    TrieNode() = new(Pair{String,TrieNode}[], nothing, nothing, String, String[], MethodMap())
 end
 
 # --- Vector-based child lookup (faster than Dict for <10 children) ---
 
-@inline function _findchild(children::Vector{Pair{String,Node}}, key::AbstractString)
+@inline function _findchild(children::Vector{Pair{String,TrieNode}}, key::AbstractString)
     @inbounds for i in 1:length(children)
         children[i].first == key && return children[i].second
     end
@@ -87,13 +87,13 @@ end
     Router — Trie-based dynamic HTTP + WebSocket router.
 """
 struct Router <: AbstractRouter
-    node::Node
+    node::TrieNode
     fixed::Dict{String,FixedRoute}
     ws_routes::Dict{String,WsEndpoint}
-    Router() = new(Node(), Dict{String,FixedRoute}(), Dict{String,WsEndpoint}())
+    Router() = new(TrieNode(), Dict{String,FixedRoute}(), Dict{String,WsEndpoint}())
 end
 
-# (Match, match_route, route!, etc...)
+# (Match, _matchroute, route!, etc...)
 struct Match
     handlers::MethodMap
     params::Vector{Any}
@@ -108,7 +108,7 @@ const PARAM_TYPES = Dict{String,Type}(
     "UInt" => UInt, "UInt64" => UInt64
 )
 
-function match_route(router::Router, method::Symbol, path::AbstractString)
+function _matchroute(router::Router, method::Symbol, path::AbstractString)
     clean = _stripquery(path)
     if (route = get(router.fixed, clean, nothing)) !== nothing
         return Match(route.handlers, EMPTY_PARAMS)
@@ -117,7 +117,7 @@ function match_route(router::Router, method::Symbol, path::AbstractString)
     return _match(router.node, clean, 1, method, params)
 end
 
-@inline function _match(node::Node, path::AbstractString, path_idx::Int, method::Symbol, params::Vector{Any})
+@inline function _match(node::TrieNode, path::AbstractString, path_idx::Int, method::Symbol, params::Vector{Any})
     seg, next_idx = _nextseg(path, path_idx)
     if seg === nothing
         return _hashandlers(node.handlers) ? Match(node.handlers, params) : nothing
@@ -149,11 +149,11 @@ function route!(router::Router, method::Symbol, path::AbstractString, @nospecial
     if method ∉ VALID_METHODS
         throw(RouteError("Invalid HTTP method: $(String(method))"))
     end
-    _register_route!(router, method, path, handler)
+    _addroute!(router, method, path, handler)
     return router
 end
 
-function _register_route!(router::Router, method::Symbol, path::AbstractString, @nospecialize(wrapped::Function))
+function _addroute!(router::Router, method::Symbol, path::AbstractString, @nospecialize(wrapped::Function))
     if !occursin(':', path)
         if !haskey(router.fixed, path)
             router.fixed[path] = FixedRoute()
@@ -170,7 +170,7 @@ function _register_route!(router::Router, method::Symbol, path::AbstractString, 
             param, ptype = _paramspec(spec)
             push!(node.param_names, param)
             if (dyn = node.dynamic) === nothing
-                dyn = Node()
+                dyn = TrieNode()
                 dyn.param = param
                 dyn.param_type = ptype
                 node.dynamic = dyn
@@ -181,7 +181,7 @@ function _register_route!(router::Router, method::Symbol, path::AbstractString, 
         else
             child = _findchild(node.children, seg)
             if child === nothing
-                child = Node()
+                child = TrieNode()
                 push!(node.children, String(seg) => child)
             end
             node = child

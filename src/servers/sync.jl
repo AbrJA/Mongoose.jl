@@ -13,19 +13,19 @@ function SyncServer(router::AbstractRouter=Router();
                     timeout::Integer=0,
                     max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
                     drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
-    c_handler = Mongoose.c_handler_sync(typeof(router))
+    c_handler = Mongoose._cfnsync(typeof(router))
     core = ServerCore(timeout, router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
     server = SyncServer{typeof(router)}(core)
-    finalizer(free_resources!, server)
+    finalizer(_teardown!, server)
     return server
 end
 
-function setup_resources!(server::SyncServer)
+function _init!(server::SyncServer)
     server.core.manager = Manager()
     return
 end
 
-function run_event_loop(server::SyncServer)
+function _eventloop(server::SyncServer)
     server.core.running[] = true
     while server.core.running[]
         mg_mgr_poll(server.core.manager.ptr, server.core.timeout)

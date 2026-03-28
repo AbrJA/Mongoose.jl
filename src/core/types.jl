@@ -16,12 +16,12 @@ function (mw::AbstractMiddleware)(::AbstractRequest, ::Vector{Any}, ::Any)
 end
 
 """
-    execute_middleware(middlewares, request, params, final_handler)
+    _pipeline(middlewares, request, params, final_handler)
 
 Iterative middleware pipeline execution. Builds the call chain from the inside out,
 then invokes it once.
 """
-function execute_middleware(middlewares::Vector{AbstractMiddleware}, request::AbstractRequest, params::Vector{Any}, @nospecialize(final_handler::Function))
+function _pipeline(middlewares::Vector{AbstractMiddleware}, request::AbstractRequest, params::Vector{Any}, @nospecialize(final_handler::Function))
     isempty(middlewares) && return final_handler(request, params...)
 
     # Build the chain from the innermost (final handler) outward

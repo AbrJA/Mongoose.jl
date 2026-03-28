@@ -16,7 +16,7 @@ function AsyncServer(router::AbstractRouter=Router();
                      timeout::Integer=0,
                      max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
                      drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
-    c_handler = Mongoose.c_handler_async(typeof(router))
+    c_handler = Mongoose._cfnasync(typeof(router))
     core = ServerCore(timeout, router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
     server = AsyncServer{typeof(router)}(
         core, Task[],
@@ -24,26 +24,26 @@ function AsyncServer(router::AbstractRouter=Router();
         Channel{Tagged{Response}}(nqueue), Channel{Tagged{WsMessage}}(nqueue),
         Dict{Int,MgConnection}(), Int(workers), Int(nqueue)
     )
-    finalizer(free_resources!, server)
+    finalizer(_teardown!, server)
     return server
 end
 
-function setup_resources!(server::AsyncServer)
+function _init!(server::AsyncServer)
     server.core.manager = Manager()
     return
 end
 
-function start_workers!(server::AsyncServer)
+function _spawnworkers!(server::AsyncServer)
     empty!(server.workers)
     for i in 1:server.nworkers
-        t = Threads.@spawn worker_loop(server)
+        t = Threads.@spawn _workloop(server)
         push!(server.workers, t)
     end
 end
 
-start_workers!(::AbstractServer) = nothing
+_spawnworkers!(::AbstractServer) = nothing
 
-function stop_workers!(server::AsyncServer)
+function _stopworkers!(server::AsyncServer)
     # Close channels to unblock any workers stuck on take!
     close(server.http_requests)
     close(server.ws_requests)
@@ -56,9 +56,9 @@ function stop_workers!(server::AsyncServer)
     empty!(server.workers)
 end
 
-stop_workers!(::AbstractServer) = nothing
+_stopworkers!(::AbstractServer) = nothing
 
-function run_event_loop(server::AsyncServer)
+function _eventloop(server::AsyncServer)
     server.core.running[] = true
     while server.core.running[]
         mg_mgr_poll(server.core.manager.ptr, server.core.timeout)
@@ -80,7 +80,7 @@ function run_event_loop(server::AsyncServer)
             conn = get(server.connections, id_res.id, nothing)
             if conn !== nothing
                 try
-                    _send_ws_native(conn, id_res.payload)
+                    _wssend!(conn, id_res.payload)
                     did_ws_send = true
                 catch e
                     @error "WebSocket send error" exception=(e, catch_backtrace())
@@ -93,14 +93,14 @@ function run_event_loop(server::AsyncServer)
     end
 end
 
-function worker_loop(server::AsyncServer)
+function _workloop(server::AsyncServer)
     try
         while server.core.running[]
             # Try HTTP
             if isready(server.http_requests)
                 req = take!(server.http_requests)
                 res = try
-                    _dispatch_http(server, req.payload)
+                    _servehttp(server, req.payload)
                 catch e
                     @error "Handler error" exception=(e, catch_backtrace())
                     Response(500, ContentType.text, "500 Internal Server Error")
