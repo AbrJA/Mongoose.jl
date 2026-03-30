@@ -72,8 +72,8 @@ end
 mutable struct AsyncServer{R <: AbstractRouter} <: AbstractServer
     core::ServerCore{R}
     workers::Vector{Task}
-    requests::Channel{Call}
-    responses::Channel{Reply}
+    calls::Channel{Call}
+    replies::Channel{Reply}
     connections::Dict{Int,MgConnection}
     nworkers::Int
     nqueue::Int

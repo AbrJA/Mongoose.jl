@@ -321,11 +321,11 @@ macro router(app_type::Symbol, block)
         end
 
         # --- Static WebSocket Dispatch ---
-        function Mongoose.static_ws_upgrade(::$(esc(app_type)), uri::String)::Union{Mongoose.Handler,Nothing}
+        function Mongoose.static_ws_upgrade(::$(esc(app_type)), uri::String)::Union{Mongoose.Endpoint,Nothing}
             $(Expr(:block, [
                 quote
                     if uri == $path
-                        return Mongoose.WsEndpoint(; $([Expr(:kw, k, esc(v)) for (k, v) in kwargs]...))
+                        return Mongoose.Endpoint(; $([Expr(:kw, k, esc(v)) for (k, v) in kwargs]...))
                     end
                 end for (path, kwargs) in ws_routes
             ]...))

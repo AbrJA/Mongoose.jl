@@ -45,7 +45,7 @@ function _onevent!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnectio
 
     id = Int(conn)
     server.connections[id] = conn
-    isopen(server.http_requests) && put!(server.http_requests, Tagged(id, Request(message)))
+    isopen(server.calls) && put!(server.calls, Tagged(id, Request(message)))
     return
 end
 
