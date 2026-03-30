@@ -3,9 +3,9 @@
 """
 
 """
-    _handlewsmsg!(server, request) → Tagged{WsMessage} or nothing
+    _handlewsmsg!(server, request) → Tagged{Message} or nothing
 """
-function _handlewsmsg!(server::AbstractServer, request::Tagged{WsEnvelope})
+function _handlewsmsg!(server::AbstractServer, request::Tagged{Message})
     router = server.core.router
     return _routews(router, request)
 end
@@ -13,7 +13,7 @@ end
 @inline _routews(router::Router, request) = _dynws(router, request)
 @inline _routews(router::StaticRouter, request) = _staticws(router, request)
 
-function _staticws(static::StaticRouter, request::Tagged{WsEnvelope})
+function _staticws(static::StaticRouter, request::Tagged{Message})
     endpoint = static_ws_upgrade(static, request.payload.uri)
     if endpoint !== nothing
         return _callep(endpoint, request)
@@ -21,7 +21,7 @@ function _staticws(static::StaticRouter, request::Tagged{WsEnvelope})
     return nothing
 end
 
-function _dynws(router::Router, request::Tagged{WsEnvelope})
+function _dynws(router::Router, request::Tagged{Message})
     endpoint = get(router.ws_routes, request.payload.uri, nothing)
     if endpoint !== nothing
         return _callep(endpoint, request)
@@ -30,14 +30,14 @@ function _dynws(router::Router, request::Tagged{WsEnvelope})
 end
 
 # The dispatch helpers:
-_tagws(id, res::WsMessage) = Tagged{WsMessage}(id, res)
-_tagws(id, res::String) = _tagws(id, WsMessage(Text, res))
-_tagws(id, res::Vector{UInt8}) = _tagws(id, WsMessage(Binary, res))
+_tagws(id, res::WsResponse)      = Tagged{WsResponse}(id, res)
+_tagws(id, res::String)          = _tagws(id, WsResponse(res))
+_tagws(id, res::Vector{UInt8})   = _tagws(id, WsResponse(res))
 _tagws(id, ::Nothing) = nothing
 
-function _callep(endpoint::WsEndpoint, request::Tagged{WsEnvelope})
+function _callep(endpoint::WsEndpoint, request::Tagged{Message})
     try
-        res = endpoint.on_message(request.payload.message)
+        res = endpoint.on_message(request.payload.body)
         return _tagws(request.id, res)
     catch e
         @error "WebSocket on_message error" exception = (e, catch_backtrace())
@@ -77,8 +77,9 @@ function _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
     end
 end
 
-_wssend!(conn, msg::WsMessage{Text}) = mg_ws_send(conn, msg.data, WS_OP_TEXT)
-_wssend!(conn, msg::WsMessage{Binary}) = mg_ws_send(conn, msg.data, WS_OP_BINARY)
+_wssend!(conn, data::String)        = mg_ws_send(conn, data, WS_OP_TEXT)
+_wssend!(conn, data::Vector{UInt8}) = mg_ws_send(conn, data, WS_OP_BINARY)
+_wssend!(conn, msg::WsResponse)     = _wssend!(conn, msg.data)
 
 # --- WS event handlers ---
 
@@ -88,7 +89,7 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, 
     ws_msg = _parsewsmsg(msg)
     conn_id = Int(conn)
     uri = get(server.core.ws_connections, conn_id, "")
-    tagged = Tagged(conn_id, WsEnvelope(ws_msg, uri))
+    tagged = Tagged(conn_id, Message(ws_msg, uri))
     result = _handlewsmsg!(server, tagged)
     if result !== nothing
         _wssend!(conn, result.payload)
@@ -103,7 +104,7 @@ function _onevent!(server::AsyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection,
     conn_id = Int(conn)
     uri = get(server.core.ws_connections, conn_id, "")
     server.connections[conn_id] = conn
-    isopen(server.ws_requests) && put!(server.ws_requests, Tagged(conn_id, WsEnvelope(ws_msg, uri)))
+    isopen(server.ws_requests) && put!(server.ws_requests, Tagged(conn_id, Message(ws_msg, uri)))
     return
 end
 

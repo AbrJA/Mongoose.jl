@@ -22,17 +22,32 @@ struct Tagged{T}
     payload::T
 end
 
-const Call  = Union{Tagged{Request}, Tagged{Envelope}}
-const Reply = Union{Tagged{Response}, Tagged{Message}}
+"""
+    WsResponse — WebSocket outgoing message (text or binary body).
+"""
+struct WsResponse
+    data::Union{String,Vector{UInt8}}
+end
 
 """
     Response — HTTP response.
 """
-struct Response <: AbstractResponse
+struct Response
     status::Int
     headers::String
-    body::String
+    body::Union{String,Vector{UInt8}}
 end
+
+"""
+    Message — WebSocket message bundled with its endpoint URI for routing.
+"""
+struct Message
+    body::WsResponse
+    uri::String
+end
+
+const Call  = Union{Tagged{Request}, Tagged{Message}}
+const Reply = Union{Tagged{Response}, Tagged{WsResponse}}
 
 abstract type AbstractFormat end
 struct Text <: AbstractFormat end

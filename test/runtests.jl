@@ -286,13 +286,13 @@ end
     # --- WebSocket Tests ---
     @testset "WebSocket Tests" begin
         router = Router()
-        ws!(router, "/chat", on_message=function (msg::WsMessage)
-                if msg isa WsTextMessage
-                    println("Server received text: ", msg.data)
-                    return "Echo: " * msg.data
+        ws!(router, "/chat", on_message=function (msg::Message)
+                if msg.body isa String
+                    println("Server received text: ", msg.body)
+                    return "Echo: " * msg.body
                 else
-                    println("Server received binary of length: ", length(msg.data))
-                    return msg.data
+                    println("Server received binary of length: ", length(msg.body))
+                    return msg.body
                 end
             end, on_open=function (req::Request)
                 println("Server opened WS connection! Headers: ", req.headers)

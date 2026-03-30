@@ -20,8 +20,7 @@ function AsyncServer(router::AbstractRouter=Router();
     core = ServerCore(timeout, router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
     server = AsyncServer{typeof(router)}(
         core, Task[],
-        Channel{Tagged{Request}}(nqueue), Channel{Tagged{WsEnvelope}}(nqueue),
-        Channel{Tagged{Response}}(nqueue), Channel{Tagged{WsMessage}}(nqueue),
+        Channel{Call}(nqueue), Channel{Reply}(nqueue),
         Dict{Int,MgConnection}(), Int(workers), Int(nqueue)
     )
     finalizer(_teardown!, server)
@@ -30,10 +29,8 @@ end
 
 function _init!(server::AsyncServer)
    server.core.manager = Manager()
-   server.http_requests  = Channel{Tagged{Request}}(server.nqueue)
-   server.ws_requests    = Channel{Tagged{WsEnvelope}}(server.nqueue)
-   server.http_responses = Channel{Tagged{Response}}(server.nqueue)
-   server.ws_responses   = Channel{Tagged{WsMessage}}(server.nqueue)
+   server.calls  = Channel{Call}(server.nqueue)
+   server.replies   = Channel{Reply}(server.nqueue)
    empty!(server.connections)
    empty!(server.core.ws_connections)
    return
@@ -51,10 +48,8 @@ _spawnworkers!(::AbstractServer) = nothing
 
 function _stopworkers!(server::AsyncServer)
     # Close channels to unblock any workers stuck on take!
-    close(server.http_requests)
-    close(server.ws_requests)
-    close(server.http_responses)
-    close(server.ws_responses)
+    close(server.calls)
+    close(server.replies)
 
     for t in server.workers
         try wait(t) catch end
@@ -69,27 +64,22 @@ function _eventloop(server::AsyncServer)
     while server.core.running[]
         mg_mgr_poll(server.core.manager.ptr, server.core.timeout)
 
-        # Dispatch responses from workers back to C library
-        while isopen(server.http_responses) && isready(server.http_responses)
-            id_res = take!(server.http_responses)
-            conn = get(server.connections, id_res.id, nothing)
-            if conn !== nothing
-                _send!(conn, id_res.payload)
-                delete!(server.connections, id_res.id)
-            end
-        end
-
-        # Dispatch WS responses — flush immediately after sending
+        # Dispatch replies from workers back to C library
         local did_ws_send = false
-        while isopen(server.ws_responses) && isready(server.ws_responses)
-            id_res = take!(server.ws_responses)
+        while isopen(server.replies) && isready(server.replies)
+            id_res = take!(server.replies)
             conn = get(server.connections, id_res.id, nothing)
             if conn !== nothing
-                try
-                    _wssend!(conn, id_res.payload)
-                    did_ws_send = true
-                catch e
-                    @error "WebSocket send error" exception=(e, catch_backtrace())
+                if id_res.payload isa Response
+                    _send!(conn, id_res.payload)
+                    delete!(server.connections, id_res.id)
+                else  # WsResponse
+                    try
+                        _wssend!(conn, id_res.payload)
+                        did_ws_send = true
+                    catch e
+                        @error "WebSocket send error" exception=(e, catch_backtrace())
+                    end
                 end
             end
         end
@@ -101,26 +91,18 @@ end
 
 function _workloop(server::AsyncServer)
     try
-        while server.core.running[]
-            # Try HTTP
-            if isready(server.http_requests)
-                req = take!(server.http_requests)
+        for req in server.calls     # blocks properly — no sleep needed
+            if req.payload isa Request
                 res = try
                     _servehttp(server, req.payload)
                 catch e
                     @error "Handler error" exception=(e, catch_backtrace())
                     Response(500, ContentType.text, "500 Internal Server Error")
                 end
-                isopen(server.http_responses) && put!(server.http_responses, Tagged(req.id, res))
-            # Try WS
-            elseif isready(server.ws_requests)
-                req = take!(server.ws_requests)
+                isopen(server.replies) && put!(server.replies, Tagged(req.id, res))
+            else  # Message
                 res = _handlewsmsg!(server, req)
-                if res !== nothing
-                    isopen(server.ws_responses) && put!(server.ws_responses, res)
-                end
-            else
-                sleep(0.001)
+                res !== nothing && isopen(server.replies) && put!(server.replies, res)
             end
         end
     catch e
@@ -128,4 +110,4 @@ function _workloop(server::AsyncServer)
     end
 end
 
-_haspending(server::AsyncServer) = isready(server.http_requests) || isready(server.http_responses) || isready(server.ws_requests) || isready(server.ws_responses)
+_haspending(server::AsyncServer) = isready(server.calls) || isready(server.replies)

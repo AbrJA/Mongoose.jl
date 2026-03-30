@@ -16,7 +16,7 @@ function (mw::Logger)(request::AbstractRequest, params::Vector{Any}, next)
 
     if elapsed_ns >= mw.threshold_ns
         elapsed_ms = elapsed_ns / 1_000_000
-        status = response isa AbstractResponse ? response.status : 0
+        status = response isa Response ? response.status : 0
         println(mw.output, uppercase(String(request.method)), " ", request.uri, " → ", status, " (", round(elapsed_ms; digits=2), "ms)")
     end
 

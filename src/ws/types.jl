@@ -1,27 +1,4 @@
 """
-    WebSocket message types and handler definitions.
-"""
-
-struct Binary <: AbstractFormat end
-
-struct WsMessage{Format,T}
-    data::T
-end
-
-WsMessage(::Type{Format}, data::T) where {Format,T} = WsMessage{Format,T}(data)
-
-const WsTextMessage = WsMessage{Text,String}
-const WsBinaryMessage = WsMessage{Binary,Vector{UInt8}}
-
-"""
-    WsEnvelope — WebSocket message bundled with its endpoint URI for routing.
-"""
-struct WsEnvelope
-    message::WsMessage
-    uri::String
-end
-
-"""
     WsEndpoint — Callbacks for a WebSocket endpoint.
 """
 struct WsEndpoint
@@ -35,18 +12,17 @@ function WsEndpoint(; on_message::Function, on_open::Union{Function,Nothing}=not
 end
 
 """
-    _parsewsmsg(msg::MgWsMessage) → WsMessage
+    _parsewsmsg(msg::MgWsMessage) → WsResponse
 """
 function _parsewsmsg(msg::MgWsMessage)
     is_text = (msg.flags & 0x0F) == 1
-
     if msg.data.len > 0 && msg.data.buf != C_NULL
         if is_text
-            return WsMessage(Text, unsafe_string(msg.data.buf, msg.data.len))
+            return WsResponse(unsafe_string(msg.data.buf, msg.data.len))
         else
             data = unsafe_wrap(Array, msg.data.buf, msg.data.len)
-            return WsMessage(Binary, copy(data))
+            return WsResponse(copy(data))
         end
     end
-    return is_text ? WsMessage(Text, "") : WsMessage(Binary, UInt8[])
+    return is_text ? WsResponse("") : WsResponse(UInt8[])
 end

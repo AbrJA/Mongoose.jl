@@ -54,7 +54,7 @@ end
 """
     _servehttp(server, request) → Response
 """
-function _servehttp(server::AbstractServer, req::AbstractRequest)::AbstractResponse
+function _servehttp(server::AbstractServer, req::AbstractRequest)::Response
     final = (r, args...) -> _dispatchreq(server.core.router, r)
     if isempty(server.core.middlewares)
         return final(req)
@@ -65,7 +65,7 @@ end
 # Trim-safe specialization: StaticRouter dispatches directly, bypassing
 # the middleware pipeline which uses abstract Function types and closures
 # that cannot be resolved by --trim=safe.
-@inline function _servehttp(server::SyncServer{<:StaticRouter}, req::AbstractRequest)::AbstractResponse
+@inline function _servehttp(server::SyncServer{<:StaticRouter}, req::AbstractRequest)::Response
     return static_dispatch(server.core.router, req)
 end
 

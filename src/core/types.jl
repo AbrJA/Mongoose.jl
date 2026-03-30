@@ -2,9 +2,7 @@
     Core abstract types and the middleware pipeline.
 """
 
-abstract type AbstractMessage end
-abstract type AbstractRequest <: AbstractMessage end
-abstract type AbstractResponse <: AbstractMessage end
+abstract type AbstractRequest end
 
 abstract type AbstractServer end
 abstract type AbstractMiddleware end
