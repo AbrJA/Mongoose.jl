@@ -16,7 +16,7 @@ function static_dispatch end
 function static_ws_dispatch end
 
 # Interface fallback — @router generates the real methods
-static_dispatch(app::T, ::AbstractRequest) where {T <: StaticRouter} =
+static_dispatch(app::T, ::AbstractRequest) where {T<:StaticRouter} =
     error("$(T) must implement static_dispatch via the @router macro")
 
 # --- Path matching helpers (used by generated code) ---
@@ -55,16 +55,16 @@ end
 struct RouteSegment
     is_variable::Bool
     value::String
-    type::Union{Type, Symbol}
+    type::Union{Type,Symbol}
 end
 
 mutable struct StaticNode
-    static_children::Dict{String, StaticNode}
-    variable_child::Union{Tuple{RouteSegment, StaticNode}, Nothing}
-    wildcard_child::Union{Tuple{String, StaticNode}, Nothing}
-    handler::Union{Expr, Symbol, Nothing}
+    static_children::Dict{String,StaticNode}
+    variable_child::Union{Tuple{RouteSegment,StaticNode},Nothing}
+    wildcard_child::Union{Tuple{String,StaticNode},Nothing}
+    handler::Union{Expr,Symbol,Nothing}
 
-    StaticNode() = new(Dict{String, StaticNode}(), nothing, nothing, nothing)
+    StaticNode() = new(Dict{String,StaticNode}(), nothing, nothing, nothing)
 end
 
 function _parseroute(path::String)
@@ -204,7 +204,7 @@ function _gendispatch(node::StaticNode, seg_sym::Symbol, idx_sym::Symbol, path_s
                 # reconstruct remaining path from current idx
                 # seg_sym is a view, and idx_sym is the NEXT index.
                 # To get everything from the start of the current segment:
-                $(var_sym) = view($(path_sym), ($(idx_sym) - length($(seg_sym)) - 1):sizeof($(path_sym)))
+                $(var_sym) = view($(path_sym), ($(idx_sym)-length($(seg_sym))-1):sizeof($(path_sym)))
                 return $(handler_call)
             end
         end)
@@ -225,7 +225,7 @@ function _extractroutes(block)
             method_sym = Symbol(lowercase(String(method_name)))
             if method_sym == :ws
                 # WS("/chat", on_message=..., on_open=..., on_close=...)
-                kwargs = Dict{Symbol, Any}()
+                kwargs = Dict{Symbol,Any}()
                 for i in 3:length(line.args)
                     arg = line.args[i]
                     if arg isa Expr && arg.head == :kw
@@ -321,12 +321,14 @@ macro router(app_type::Symbol, block)
         end
 
         # --- Static WebSocket Dispatch ---
-        function Mongoose.static_ws_upgrade(::$(esc(app_type)), uri::String)::Union{Mongoose.WsEndpoint, Nothing}
-            $(Expr(:block, [quote
-                if uri == $path
-                    return Mongoose.WsEndpoint(; $([Expr(:kw, k, esc(v)) for (k,v) in kwargs]...))
-                end
-            end for (path, kwargs) in ws_routes]...))
+        function Mongoose.static_ws_upgrade(::$(esc(app_type)), uri::String)::Union{Mongoose.Handler,Nothing}
+            $(Expr(:block, [
+                quote
+                    if uri == $path
+                        return Mongoose.WsEndpoint(; $([Expr(:kw, k, esc(v)) for (k, v) in kwargs]...))
+                    end
+                end for (path, kwargs) in ws_routes
+            ]...))
             return nothing
         end
     end

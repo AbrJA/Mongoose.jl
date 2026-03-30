@@ -15,31 +15,15 @@ struct Request <: AbstractRequest
 end
 
 """
-    LazyRequest — Lightweight HTTP request with lazy header access.
-"""
-struct LazyRequest <: AbstractRequest
-    method::Symbol
-    uri::String
-    message::MgHttpMessage
-    context::Dict{Symbol,Any}
-end
-
-"""
-    RawResponse — Pre-formatted raw bytes.
-"""
-struct RawResponse <: AbstractResponse
-    bytes::Vector{UInt8}
-end
-
-# Maybe add factory here
-
-"""
     Tagged{T} — Connection-tagged payload for async queue routing.
 """
 struct Tagged{T}
     id::Int
     payload::T
 end
+
+const Call  = Union{Tagged{Request}, Tagged{Envelope}}
+const Reply = Union{Tagged{Response}, Tagged{Message}}
 
 """
     Response — HTTP response.
@@ -83,30 +67,6 @@ end
 
 Request(method::Symbol, uri::String, query::String, headers::Dict{String,String}, body::String, context::Dict{Symbol,Any}) =
     Request(method, uri, query, [k => v for (k, v) in headers], body, context)
-
-function LazyRequest(message::MgHttpMessage)
-    return LazyRequest(_method(message), _uri(message), message, Dict{Symbol,Any}())
-end
-
-body(req::Request) = getfield(req, :body)
-body(req::LazyRequest) = _tostring(getfield(req, :message).body)
-
-context(req::Request) = getfield(req, :context)
-context(req::LazyRequest) = getfield(req, :context)
-
-query(req::Request) = getfield(req, :query)
-query(req::LazyRequest) = _tostring(getfield(req, :message).query)
-
-headers(req::Request) = getfield(req, :headers)
-headers(req::LazyRequest) = _headers(getfield(req, :message))
-
-function Base.getproperty(req::AbstractRequest, s::Symbol)
-    s === :query   && return query(req)
-    s === :body    && return body(req)
-    s === :headers && return headers(req)
-    s === :context && return context(req)
-    return getfield(req, s)
-end
 
 _method(m::MgHttpMessage) = _method2symbol(m.method)
 _uri(m::MgHttpMessage) = _tostring(m.uri)

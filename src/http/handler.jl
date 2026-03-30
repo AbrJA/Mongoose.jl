@@ -17,7 +17,7 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
         return
     end
 
-    req = LazyRequest(message)
+    req = Request(message)
     res = try
         _servehttp(server, req)
     catch e
@@ -100,8 +100,4 @@ end
 """
 function _send!(conn::MgConnection, res::Response)
     mg_http_reply(conn, res.status, res.headers, res.body)
-end
-
-function _send!(conn::MgConnection, res::RawResponse)
-    mg_send(conn, res.bytes)
 end
