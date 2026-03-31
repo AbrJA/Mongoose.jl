@@ -8,6 +8,9 @@
 Start the Mongoose HTTP server. Initializes the manager, binds an HTTP listener,
 starts worker threads (for AsyncServer), and begins the event loop.
 
+When `blocking=true`, `InterruptException` (Ctrl+C) is caught and triggers a
+graceful shutdown automatically — no wrapper code needed in the caller.
+
 # Keyword Arguments
 - `host::AbstractString`: IP address to bind to (default: `"127.0.0.1"`).
 - `port::Integer`: Port number to listen on (default: `8080`).
@@ -32,7 +35,8 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
         end
     catch e
         shutdown!(server)
-        rethrow(e)
+        # InterruptException (Ctrl+C) is the normal shutdown signal — don't propagate it
+        e isa InterruptException || rethrow(e)
     end
     return
 end

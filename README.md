@@ -95,17 +95,7 @@ route!(router, :get, "/posts/:slug",          (req, slug) -> ...)  # slug::SubSt
 
 ### Query String
 
-```julia
-route!(router, :get, "/search", req -> begin
-    q    = query(req, "q")
-    page = query(req, "page")
-
-    q === nothing && return Response(400, "Missing ?q=")
-    Response(200, "Searching: $q, page $(something(page, "1"))")
-end)
-```
-
-Or parse a query string directly into a typed struct:
+Define a struct and parse the whole query string at once:
 
 ```julia
 struct SearchParams
@@ -114,9 +104,13 @@ struct SearchParams
     limit::Union{Int, Nothing}
 end
 
-# "q=julia&page=1" → SearchParams("julia", 1, nothing)
-s = Mongoose.query(SearchParams, req.query)
+route!(router, :get, "/search", req -> begin
+    p = query(SearchParams, req.query)  # "q=julia&page=2" → SearchParams("julia", 2, nothing)
+    Response(200, "Searching: $(p.q), page $(p.page)")
+end)
 ```
+
+Missing fields default to `""`, `0`, `false`, or `nothing` depending on their type.
 
 ### Request Helpers
 
@@ -125,6 +119,7 @@ s = Mongoose.query(SearchParams, req.query)
 | `req.body` | `String` | Raw request body |
 | `get(req.headers, "authorization", nothing)` | `String \| nothing` | Case-insensitive header lookup |
 | `req.query` | `String` | Raw query string (e.g. `"q=test&page=2"`) |
+| `query(T, req)` | `T` | Parse query string into struct `T` |
 | `getcontext!(req)` | `Dict{Symbol,Any}` | Lazily-allocated context dict (set by middleware) |
 
 ---
@@ -250,16 +245,16 @@ use!(server, RequestTimer())
 
 ```julia
 ws!(router, "/chat",
-    on_message = (msg::Message) -> begin
-        # msg.data is String (text) or Vector{UInt8} (binary)
-        Message("Echo: $(msg.data)")
-    end,
-    on_open  = (req::Request) -> @info "Client connected" uri=req.uri,
-    on_close = ()             -> @info "Client disconnected"
+    on_message = (msg::Message) -> Message("Echo: $(msg.data)"),
+    on_open    = (req::Request) -> @info "Connected" uri=req.uri headers=req.headers,
+    on_close   = ()             -> @info "Disconnected"
 )
 ```
 
-Return `nothing` from `on_message` to send no reply. WebSocket endpoints share the same port and router as HTTP.
+- `on_open(req::Request)` — receives the HTTP upgrade request. Use it to inspect headers, auth tokens, query params, or client IP before accepting the connection.
+- `on_message(msg::Message)` — receives each frame. `msg.data` is `String` (text) or `Vector{UInt8}` (binary). Return a `Message`, `String`, or `Vector{UInt8}` to reply; `nothing` for no reply.
+- `on_close()` — called when the connection closes. No arguments — the connection is already gone.
+- All three callbacks are optional.
 
 ---
 
@@ -346,7 +341,7 @@ end)
 # WebSocket
 ws!(router, "/ws",
     on_message = (msg::Message) -> Message("""{"ack":true}"""),
-    on_open    = (req::Request) -> @info "WS connected",
+    on_open    = (req::Request) -> @info "WS connected" uri=req.uri,
     on_close   = ()             -> @info "WS disconnected"
 )
 
@@ -359,21 +354,13 @@ server = AsyncServer(router; workers=4, request_timeout_ms=10_000)
 use!(server, logger(structured=true))
 use!(server, cors(origins="https://myapp.com"))
 use!(server, rate_limit(max_requests=300, window_seconds=60))
-use!(server, bearer_token(t -> t == ENV["API_TOKEN"]); paths=["/api"])
+use!(server, bearer_token(t -> t == get(ENV, "API_TOKEN", "secret")); paths=["/api"])
 use!(server, static_files("public"; prefix="/static"))
 
 error_response!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500))
 
-start!(server, port=8080, blocking=false)
-@info "Listening on http://0.0.0.0:8080"
-
-try
-    wait()
-catch e
-    e isa InterruptException || rethrow()
-finally
-    shutdown!(server)
-end
+# blocking=true: start! handles Ctrl+C automatically and shuts down gracefully
+start!(server, port=8080)
 ```
 
 ---

@@ -111,11 +111,8 @@ Missing keys default to empty string, zero, `false`, or `nothing` as appropriate
     return :(T($(exprs...)))
 end
 
-query(::Type{T}, req::AbstractRequest) where T = query(T, query(req))
+query(::Type{T}, req::AbstractRequest) where T = query(T, req.query)
 query(::Type{T}, str::String) where T = _dict2struct(T, _query2dict(str))
-
-# Alias for clarity: parse_query avoids confusion with req.query (the raw string)
-const parse_query = query
 
 """
     _formatheaders(headers::Vector{Pair{String,String}}) → String
