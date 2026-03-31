@@ -59,7 +59,6 @@ rate_limit
 bearer_token
 api_key
 logger
-static_files
 ```
 
 ## JSON

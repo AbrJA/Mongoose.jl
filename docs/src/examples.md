@@ -217,17 +217,18 @@ start!(server, port=8080, blocking=false)
 
 ## Serving Static Files
 
-Serve a directory of HTML, CSS, JS, and other assets:
+Serve a directory of HTML, CSS, JS, and other assets using the C-level file server
+(supports Range, ETag, Last-Modified, and gzip):
 
 ```julia
 using Mongoose
 
 server = AsyncServer(Router())
 
-# Serve files from "public/" directory under the "/static" URL prefix
-# GET /static/style.css  →  public/style.css
-# GET /static/            →  public/index.html
-use!(server, static_files("public"; prefix="/static", index="index.html"))
+# Serve files from "public/" directory
+# GET /style.css  →  public/style.css
+# GET /            →  public/index.html
+serve_dir!(server, "public")
 
 start!(server, port=8080, blocking=false)
 ```
@@ -346,7 +347,7 @@ server = AsyncServer(router; workers=4)
 use!(server, logger(threshold_ms=100))
 use!(server, cors(origins="https://myapp.com"))
 use!(server, rate_limit(max_requests=200, window_seconds=60))
-use!(server, static_files("public"; prefix="/static"))
+serve_dir!(server, "public")
 
 start!(server, port=8080, blocking=false)
 ```

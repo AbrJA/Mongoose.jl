@@ -8,7 +8,7 @@ export SyncServer, AsyncServer, Router, Request, Response,
     start!, shutdown!, route!, use!, serve_dir!, error_response!,
     render_body, content_type, getcontext!,
     ws!, Message,
-    cors, rate_limit, bearer_token, api_key, logger, static_files, health,
+    cors, rate_limit, bearer_token, api_key, logger, health,
     ContentType,
     RouteError, ServerError, BindError,
     @router
@@ -50,7 +50,6 @@ include("middleware/cors.jl")
 include("middleware/rate_limit.jl")
 include("middleware/auth.jl")
 include("middleware/logger.jl")
-include("middleware/static_files.jl")
 include("middleware/health.jl")
 
 # 8. Precompilation

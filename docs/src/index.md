@@ -318,14 +318,13 @@ Returns `401` if the header is missing or the key is not in the allowed set.
 
 ### Static Files
 
-Serve a directory of static assets.
+Serve a directory of static assets using the C-level file server (supports Range, ETag, Last-Modified, and gzip):
 
 ```julia
-use!(server, static_files("public"))                              # Serve under /static
-use!(server, static_files("public"; prefix="/assets", index="index.html"))
+serve_dir!(server, "public")
 ```
 
-Serves `index.html` for directory requests. Returns `403` for path traversal attempts and `404` for missing files.
+Serves `index.html` for directory requests. Returns `404` for missing files. Path traversal is blocked at the C level.
 
 ## Error Handling
 

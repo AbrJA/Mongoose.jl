@@ -8,40 +8,110 @@
 </head>
 <body>
   <header>
-    <h1>🦦 Mongoose.jl Production Demo</h1>
-    <p class="subtitle">HTTP · REST · WebSocket · Static Files · Middleware</p>
+    <h1>🦦 Mongoose.jl Comprehensive Demo</h1>
+    <p class="subtitle">AsyncServer · CRUD REST · Query Structs · Generated Binary · Auth-Gated Files · Downloads · WebSocket · Middleware · Metrics</p>
+    <div class="api-key-bar">
+      <label for="apiKeyInput">API Key</label>
+      <input id="apiKeyInput" type="text" placeholder="X-API-Key value…" value="demo-key-1234" spellcheck="false" />
+      <label for="bearerInput" style="margin-left:0.75rem">Bearer token</label>
+      <input id="bearerInput" type="text" placeholder="Authorization token…" spellcheck="false" />
+      <button onclick="applyAuth()">Apply</button>
+      <span id="apiKeyStatus" class="badge badge-on">key: demo-key-1234</span>
+    </div>
   </header>
 
   <main>
+
+    <!-- ─── Health & Ping ────────────────────────────────────────── -->
     <section class="card">
-      <h2>REST API</h2>
+      <h2>Health &amp; Ping</h2>
       <div class="btn-row">
-        <button onclick="ping()">Ping</button>
-        <button onclick="getUsers()">GET /api/users</button>
-        <button onclick="getUser(1)">GET /api/users/1</button>
-        <button onclick="createUser()">POST /api/users</button>
-        <button onclick="updateUser(1)">PUT /api/users/1</button>
-        <button onclick="deleteUser(1)">DELETE /api/users/1</button>
+        <button onclick="ping()">GET /api/ping</button>
+        <button onclick="checkHealth()">GET /healthz</button>
+      </div>
+      <pre id="ping-output">—</pre>
+    </section>
+
+    <!-- ─── CRUD Users ──────────────────────────────────────────── -->
+    <section class="card">
+      <h2>CRUD — /api/users</h2>
+      <div class="btn-row">
+        <button onclick="getUsers()">GET all</button>
+        <button onclick="getUsersFiltered()">GET ?role=admin</button>
+        <button onclick="getUsersLimited()">GET ?limit=2</button>
+        <button onclick="getUser(1)">GET /1</button>
+        <button onclick="createUser()">POST (create)</button>
+        <button onclick="updateUser(1)">PUT /1</button>
+        <button onclick="deleteUser(99)">DELETE /99</button>
       </div>
       <pre id="rest-output">Results will appear here…</pre>
     </section>
 
+    <!-- ─── Binary Image ────────────────────────────────────────── -->
     <section class="card">
-      <h2>WebSocket Live Chat</h2>
+      <h2>Binary Image Response</h2>
+      <p>Server generates a solid-colour 8×8 PNG in Julia — no disk I/O, no external libs.</p>
+      <div class="btn-row">
+        <label>R <input id="imgR" type="number" value="255" min="0" max="255" style="width:60px"/></label>
+        <label>G <input id="imgG" type="number" value="128" min="0" max="255" style="width:60px"/></label>
+        <label>B <input id="imgB" type="number" value="0"   min="0" max="255" style="width:60px"/></label>
+        <button onclick="fetchImage()">GET /api/image</button>
+      </div>
+      <div id="img-container" style="margin-top:0.5rem">
+        <img id="img-preview" style="width:128px;height:128px;image-rendering:pixelated;display:none;border:1px solid #888" />
+        <span id="img-status">—</span>
+      </div>
+    </section>
+
+    <!-- ─── File Download ───────────────────────────────────────── -->
+    <section class="card">
+      <h2>File Download</h2>
+      <p>Server streams users.csv from memory with <code>Content-Disposition: attachment</code>.</p>
+      <div class="btn-row">
+        <button onclick="downloadCSV()">Download users.csv</button>
+        <a id="csv-link" style="display:none"></a>
+      </div>
+      <pre id="download-output">—</pre>
+    </section>
+
+    <!-- ─── Asset Files (protected, auth-gated binary response) ───────── -->
+    <section class="card">
+      <h2>Protected Files <small style="color:#888;font-weight:normal">(auth-gated binary response)</small></h2>
+      <p>
+        Files in <code>example/public/assets/</code> served through a Julia route handler (<code>GET /api/protected/:name</code>),
+        not <code>serve_dir!</code>.  Auth is checked by the middleware pipeline before any file I/O runs.
+        Bytes are returned as <code>Vector{UInt8}</code> and sent via <code>mg_send</code>.
+      </p>
+      <div class="btn-row">
+        <button onclick="listProtected()">Refresh list</button>
+      </div>
+      <div id="asset-list" style="margin-bottom:0.75rem"></div>
+      <pre id="asset-status" style="min-height:1.5rem"></pre>
+      <div id="asset-preview"></div>
+    </section>
+
+    <!-- ─── WebSocket ───────────────────────────────────────────── -->
+    <section class="card">
+      <h2>WebSocket Echo Chat</h2>
       <div class="btn-row">
         <button onclick="wsConnect()">Connect</button>
         <button onclick="wsDisconnect()">Disconnect</button>
+        <span id="ws-status" class="badge badge-off">Disconnected</span>
       </div>
-      <input id="ws-input" type="text" placeholder="Type a message…" />
-      <button onclick="wsSend()">Send</button>
-      <pre id="ws-output">Disconnected.</pre>
+      <div class="input-row">
+        <input id="ws-input" type="text" placeholder="Type a message…" />
+        <button onclick="wsSend()">Send</button>
+      </div>
+      <pre id="ws-output">—</pre>
     </section>
 
+    <!-- ─── Metrics ─────────────────────────────────────────────── -->
     <section class="card">
-      <h2>Metrics</h2>
+      <h2>Prometheus Metrics</h2>
       <button onclick="getMetrics()">GET /metrics</button>
       <pre id="metrics-output">—</pre>
     </section>
+
   </main>
 
   <script src="/static/app.js"></script>

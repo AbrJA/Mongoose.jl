@@ -13,6 +13,16 @@ header {
   background: #1a1a2e;
 }
 
+.api-key-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+.api-key-bar label { color: #aaa; font-size: 0.85rem; white-space: nowrap; }
+.api-key-bar input[type="text"] { width: 220px; font-family: monospace; }
+
 header h1 { font-size: 1.8rem; color: #7c9fff; }
 .subtitle  { color: #888; margin-top: 0.3rem; font-size: 0.9rem; }
 
@@ -60,13 +70,46 @@ pre {
   word-break: break-all;
 }
 
-input[type="text"] {
+input[type="text"],
+input[type="number"] {
   background: #0d0d1a;
   border: 1px solid #444;
   border-radius: 4px;
   color: #e0e0e0;
   padding: 0.4rem 0.7rem;
   font-size: 0.9rem;
-  width: 60%;
-  margin-right: 0.5rem;
 }
+input[type="text"] { width: 60%; }
+
+.input-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; align-items: center; }
+.input-row input[type="text"] { flex: 1; width: auto; }
+
+/* WebSocket connection status badge */
+.badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.badge-on  { background: #1a4a1a; color: #5fde5f; border: 1px solid #2a7a2a; }
+.badge-off { background: #3a1a1a; color: #de5f5f; border: 1px solid #7a2a2a; }
+
+code {
+  background: #0d0d1a;
+  border: 1px solid #2a2a3a;
+  border-radius: 3px;
+  padding: 0.1em 0.4em;
+  font-size: 0.85em;
+}
+
+label { color: #aaa; font-size: 0.85rem; }
+
+.asset-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid #1e1e30;
+}
+.asset-name { flex: 1; font-size: 0.85rem; color: #ccc; font-family: monospace; }

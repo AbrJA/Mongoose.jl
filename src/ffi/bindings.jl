@@ -33,17 +33,11 @@ end
 
 """
     mg_http_reply(conn, status, headers, body) — Send an HTTP response.
+    For binary (Vector{UInt8}) bodies use _send! in handler.jl, which bypasses
+    this function and writes directly with mg_send to avoid null-byte truncation.
 """
 function mg_http_reply(conn::MgConnection, status::Integer, headers::String, body::String)
     ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring, Cstring), conn, Cint(status), headers, "%s", body)
-end
-
-"""
-    mg_http_reply(conn, status, headers, body) — Send an HTTP response with binary body.
-    Uses `%.*s` format with an explicit byte count — null-byte safe.
-"""
-function mg_http_reply(conn::MgConnection, status::Integer, headers::String, body::Vector{UInt8})
-    ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring, Cint, Ptr{UInt8}), conn, Cint(status), headers, "%.*s", Cint(length(body)), pointer(body))
 end
 
 """
@@ -96,5 +90,7 @@ end
     mg_send(conn, buf) — Send raw bytes on a connection.
 """
 function mg_send(conn::MgConnection, buf::Vector{UInt8})
-    ccall((:mg_send, libmongoose), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}, Csize_t), conn, pointer(buf), sizeof(buf))
+    GC.@preserve buf begin
+        ccall((:mg_send, libmongoose), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}, Csize_t), conn, pointer(buf), sizeof(buf))
+    end
 end

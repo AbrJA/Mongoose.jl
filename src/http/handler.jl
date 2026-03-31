@@ -115,7 +115,7 @@ function _onevent!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnectio
     # C-level static file serving (Range, ETag, gzip — fallback for unmatched routes)
     _servestatic!(server, conn, ev_data, _method(message), _uri(message)) && return
 
-    id = Int(conn)
+    id = Int(_nextreqid!(server))
     server.connections[id] = conn
     isopen(server.calls) && put!(server.calls, Tagged(id, Request(message)))
     return
@@ -199,11 +199,37 @@ end
 
 # --- Response serialization ---
 
+const _HTTP_STATUS_PHRASES = Dict{Int,String}(
+    200 => "OK", 201 => "Created", 204 => "No Content",
+    206 => "Partial Content",
+    301 => "Moved Permanently", 302 => "Found", 304 => "Not Modified",
+    400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden",
+    404 => "Not Found", 405 => "Method Not Allowed",
+    413 => "Content Too Large", 429 => "Too Many Requests",
+    500 => "Internal Server Error", 503 => "Service Unavailable",
+    504 => "Gateway Timeout",
+)
+
 """
     _send!(conn, response)
+
+Send an HTTP response on `conn`.  Text bodies go through `mg_http_reply`
+(printf-based, automatic Content-Length).  Binary bodies (`Vector{UInt8}`)
+are assembled into a single raw buffer and written with `mg_send` because
+`mg_http_reply` uses `strlen` internally which truncates at the first 0x00.
 """
 function _send!(conn::MgConnection, res::Response)
-    mg_http_reply(conn, res.status, res.headers, res.body)
+    if res.body isa Vector{UInt8}
+        phrase = get(_HTTP_STATUS_PHRASES, res.status, "Unknown")
+        head = "HTTP/1.1 $(res.status) $(phrase)\r\n$(res.headers)Content-Length: $(length(res.body))\r\n\r\n"
+        hlen = ncodeunits(head)
+        buf  = Vector{UInt8}(undef, hlen + length(res.body))
+        copyto!(buf, 1, codeunits(head), 1, hlen)
+        copyto!(buf, hlen + 1, res.body, 1, length(res.body))
+        mg_send(conn, buf)
+    else
+        mg_http_reply(conn, res.status, res.headers, res.body)
+    end
 end
 
 """

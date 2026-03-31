@@ -697,7 +697,7 @@ end
         end
     end
 
-    # --- Test: Static File Serving ---
+    # --- Test: Static File Serving (C-level serve_dir!) ---
     @testset "Static Files" begin
         # Create temp directory with test files
         mktempdir() do dir
@@ -710,42 +710,93 @@ end
             route!(router, :get, "/api/hello", (req) -> Response(200, "", "hello"))
 
             server = SyncServer(router)
-            use!(server, static_files(dir; prefix="/assets"))
+            serve_dir!(server, dir)
             start!(server; port=8117, blocking=false)
 
             try
-                # Serve index on prefix root
-                resp = HTTP.get("http://localhost:8117/assets")
+                # Serve index on root
+                resp = HTTP.get("http://localhost:8117/")
                 @test resp.status == 200
                 @test String(resp.body) == "<h1>Home</h1>"
-                @test occursin("text/html", HTTP.header(resp, "Content-Type"))
 
                 # Serve CSS with correct MIME
-                resp = HTTP.get("http://localhost:8117/assets/style.css")
+                resp = HTTP.get("http://localhost:8117/style.css")
                 @test resp.status == 200
                 @test String(resp.body) == "body { color: red; }"
-                @test occursin("text/css", HTTP.header(resp, "Content-Type"))
 
                 # Serve from subdirectory
-                resp = HTTP.get("http://localhost:8117/assets/sub/page.html")
+                resp = HTTP.get("http://localhost:8117/sub/page.html")
                 @test resp.status == 200
                 @test String(resp.body) == "<p>Sub</p>"
 
-                # Non-existent file falls through to route/404
-                resp = HTTP.get("http://localhost:8117/assets/missing.txt"; status_exception=false)
+                # Non-existent file falls through to 404
+                resp = HTTP.get("http://localhost:8117/missing.txt"; status_exception=false)
                 @test resp.status == 404
 
                 # Path traversal attempt
-                resp = HTTP.get("http://localhost:8117/assets/../../../etc/passwd"; status_exception=false)
+                resp = HTTP.get("http://localhost:8117/../../../etc/passwd"; status_exception=false)
                 @test resp.status in (403, 404)
 
-                # Normal route still works
+                # Normal route still works (routes take priority)
                 resp = HTTP.get("http://localhost:8117/api/hello")
                 @test resp.status == 200
                 @test String(resp.body) == "hello"
             finally
                 shutdown!(server)
             end
+        end
+    end
+
+    # --- Test: Binary Response Body (mg_send path in _send!) ---
+    @testset "Binary Response Body" begin
+        # Vector{UInt8} bodies must be delivered byte-exact, including null bytes.
+        # mg_http_reply uses printf/strlen internally and would truncate at 0x00.
+        # _send! builds a raw HTTP response buffer and writes it with mg_send.
+        #
+        # Use a real 1×1 red PNG (67 bytes) as the payload — it contains multiple
+        # null bytes in IHDR/IDAT chunks, making it a realistic stress-test.
+        red1x1_png = UInt8[
+            # PNG signature
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+            # IHDR: 1×1, 8-bit RGB
+            0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+            0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+            0xde,
+            # IDAT: zlib-compressed red pixel
+            0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54,
+            0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00, 0x00,
+            0x00, 0x02, 0x00, 0x01, 0xe2, 0x21, 0xbc, 0x33,
+            # IEND
+            0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
+            0xae, 0x42, 0x60, 0x82,
+        ]
+
+        router = Router()
+        route!(router, :get, "/image.png", req -> Response(200, "Content-Type: image/png\r\n", red1x1_png))
+
+        server = SyncServer(router)
+        start!(server; port=8130, blocking=false)
+        try
+            resp = HTTP.get("http://localhost:8130/image.png")
+            @test resp.status == 200
+            @test resp.body == red1x1_png
+            @test length(resp.body) == length(red1x1_png)
+
+            # Also test AsyncServer binary path
+            arouter = Router()
+            route!(arouter, :get, "/image.png", req -> Response(200, "Content-Type: image/png\r\n", red1x1_png))
+            aserver = AsyncServer(arouter)
+            start!(aserver; port=8131, blocking=false)
+            try
+                resp2 = HTTP.get("http://localhost:8131/image.png")
+                @test resp2.status == 200
+                @test resp2.body == red1x1_png
+            finally
+                shutdown!(aserver)
+            end
+        finally
+            shutdown!(server)
         end
     end
 

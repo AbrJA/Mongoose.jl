@@ -205,8 +205,8 @@ use!(server, bearer_token(token -> token == "my-secret"); paths=["/api"])
 # API key auth
 use!(server, api_key(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
 
-# Serve static files — GET /static/... → public/...
-use!(server, static_files("public"; prefix="/static"))
+# Serve static files from the "public/" directory (C-level, with Range/ETag/gzip)
+serve_dir!(server, "public")
 
 # Built-in health check at GET /healthz
 use!(server, health())
@@ -355,7 +355,7 @@ use!(server, logger(structured=true))
 use!(server, cors(origins="https://myapp.com"))
 use!(server, rate_limit(max_requests=300, window_seconds=60))
 use!(server, bearer_token(t -> t == get(ENV, "API_TOKEN", "secret")); paths=["/api"])
-use!(server, static_files("public"; prefix="/static"))
+serve_dir!(server, "public")
 
 error_response!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500))
 
