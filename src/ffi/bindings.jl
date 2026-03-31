@@ -80,6 +80,19 @@ function mg_log_set_level(level::Integer)
 end
 
 """
+    mg_http_serve_dir(conn, hm, opts) — Serve static files from a directory.
+
+Handles Range, ETag, Last-Modified, pre-compressed .gz files, and directory
+index automatically. Writes directly to `conn`; must be called from the event
+loop thread (not from worker tasks).
+"""
+function mg_http_serve_dir(conn::MgConnection, hm::Ptr{Cvoid}, opts::Ref{MgHttpServeOpts})
+    ccall((:mg_http_serve_dir, libmongoose), Cvoid,
+          (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{MgHttpServeOpts}),
+          conn, hm, opts)
+end
+
+"""
     mg_send(conn, buf) — Send raw bytes on a connection.
 """
 function mg_send(conn::MgConnection, buf::Vector{UInt8})

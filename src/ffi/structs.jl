@@ -59,6 +59,30 @@ struct MgWsMessage
     flags::UInt8
 end
 
+"""
+    MgHttpServeOpts — Mirrors the C `struct mg_http_serve_opts`.
+
+All pointer fields default to `C_NULL` (NULL pointers), which gives the
+Mongoose defaults: POSIX filesystem, auto MIME detection, no SSI, no 404 page.
+"""
+struct MgHttpServeOpts
+    root_dir::Ptr{UInt8}       # Web root directory, must be non-NULL for serve_dir
+    ssi_pattern::Ptr{UInt8}    # SSI filename pattern, e.g. "*.shtml"
+    extra_headers::Ptr{UInt8}  # Extra HTTP headers appended to every response
+    mime_types::Ptr{UInt8}     # Extra MIME types: "ext1=type1,ext2=type2,..."
+    page404::Ptr{UInt8}        # Path to custom 404 page, or NULL for default
+    fs::Ptr{Cvoid}             # Filesystem implementation, NULL → POSIX
+end
+
+"""
+    MgHttpServeOpts(root_dir) — Construct opts with only root_dir set (all other fields NULL).
+"""
+function MgHttpServeOpts(root_dir::Cstring)
+    return MgHttpServeOpts(
+        Ptr{UInt8}(root_dir), C_NULL, C_NULL, C_NULL, C_NULL, C_NULL
+    )
+end
+
 function MgWsMessage(ev_data::Ptr{Cvoid})
     ev_data == C_NULL && throw(ServerError("ev_data for WS message is NULL"))
     return unsafe_load(Ptr{MgWsMessage}(ev_data))

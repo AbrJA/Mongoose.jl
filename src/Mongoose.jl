@@ -5,7 +5,7 @@ using PrecompileTools
 
 export SyncServer, AsyncServer, Router, Request, Response, Message,
     Text, Html, Json, Css, Js, Xml, Binary,
-    start!, shutdown!, route!, use!,
+    start!, shutdown!, route!, use!, serve_dir!,
     render_body, content_type,
     ws!,
     cors, rate_limit, bearer_token, api_key, logger, static_files, health,

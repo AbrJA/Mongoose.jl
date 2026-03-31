@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mongoose.jl Demo</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>🦦 Mongoose.jl Production Demo</h1>
+    <p class="subtitle">HTTP · REST · WebSocket · Static Files · Middleware</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>REST API</h2>
+      <div class="btn-row">
+        <button onclick="ping()">Ping</button>
+        <button onclick="getUsers()">GET /api/users</button>
+        <button onclick="getUser(1)">GET /api/users/1</button>
+        <button onclick="createUser()">POST /api/users</button>
+        <button onclick="updateUser(1)">PUT /api/users/1</button>
+        <button onclick="deleteUser(1)">DELETE /api/users/1</button>
+      </div>
+      <pre id="rest-output">Results will appear here…</pre>
+    </section>
+
+    <section class="card">
+      <h2>WebSocket Live Chat</h2>
+      <div class="btn-row">
+        <button onclick="wsConnect()">Connect</button>
+        <button onclick="wsDisconnect()">Disconnect</button>
+      </div>
+      <input id="ws-input" type="text" placeholder="Type a message…" />
+      <button onclick="wsSend()">Send</button>
+      <pre id="ws-output">Disconnected.</pre>
+    </section>
+
+    <section class="card">
+      <h2>Metrics</h2>
+      <button onclick="getMetrics()">GET /metrics</button>
+      <pre id="metrics-output">—</pre>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

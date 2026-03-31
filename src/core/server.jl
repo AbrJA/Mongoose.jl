@@ -43,6 +43,7 @@ mutable struct ServerCore{R <: AbstractRouter}
     middlewares::Vector{AbstractMiddleware}
     max_body_size::Int
     drain_timeout_ms::Int
+    static_dir::Union{String,Nothing}   # Root directory for C-level static file serving
 
     function ServerCore(timeout::Integer, router::R;
                         max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
@@ -52,7 +53,7 @@ mutable struct ServerCore{R <: AbstractRouter}
             Manager(empty=true), c_handler, timeout, nothing,
             router, Dict{Int,String}(),
             Threads.Atomic{Bool}(false), AbstractMiddleware[],
-            max_body_size, drain_timeout_ms
+            max_body_size, drain_timeout_ms, nothing
         )
     end
 end

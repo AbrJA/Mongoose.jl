@@ -64,7 +64,7 @@ function (mw::StaticFiles)(request::AbstractRequest, params::Vector{Any}, next)
     isfile(filepath) || return next()
 
     mime = _mimetype(filepath)
-    content = read(filepath, String)
+    content = read(filepath)
     return Response(200, "Content-Type: $mime\r\n", content)
 end
 
