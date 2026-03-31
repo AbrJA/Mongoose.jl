@@ -71,7 +71,9 @@ server = AsyncServer(router;
     nqueue=1024,            # Channel buffer size
     timeout=0,              # Poll timeout (ms)
     max_body_size=1048576,  # Max request body in bytes (default: 1MB)
-    drain_timeout_ms=5000   # Graceful shutdown drain timeout (ms)
+    drain_timeout_ms=5000,  # Graceful shutdown drain timeout (ms)
+    request_timeout_ms=0,   # Per-request timeout (0 = disabled)
+    on_error=nothing        # Custom error handler (see Error Handling)
 )
 ```
 
@@ -79,9 +81,10 @@ server = AsyncServer(router;
 
 ```julia
 server = SyncServer(router;
-    timeout=0,
+    timeout=1,              # Poll timeout (ms), default: 1
     max_body_size=1048576,
-    drain_timeout_ms=5000
+    drain_timeout_ms=5000,
+    on_error=nothing
 )
 ```
 
@@ -163,7 +166,7 @@ Handlers receive a `Request`:
 | `req.body` | `String` | Raw request body |
 | `get(req.headers, "name", nothing)` | `String` or `nothing` | Case-insensitive header lookup |
 | `req.query` | `String` | Full query string |
-| `req.context` | `Dict{Symbol,Any}` | Mutable context dict for middleware data |
+| `getcontext!(req)` | `Dict{Symbol,Any}` | Lazily-allocated context dict for middleware data |
 
 ### Response
 
@@ -173,14 +176,18 @@ Construct responses with a status code, headers, and body:
 # Simple text response
 Response(200, ContentType.text, "Hello!")
 
+# Convenience: plain text with auto Content-Type
+Response(200, "Hello!")
+Response(404, "Not Found")
+
 # JSON response
 Response(200, ContentType.json, """{"ok": true}""")
 
 # Binary body (e.g. image or file bytes)
 Response(200, "Content-Type: image/png\r\n", read("image.png"))
 
-# No headers
-Response(404, "", "Not Found")
+# Binary format type
+Response(Binary, read("data.bin"); status=200)
 ```
 
 ### ContentType
@@ -216,6 +223,12 @@ route!(router, :get, "/search", req -> begin
 end)
 ```
 
+`parse_query` is an alias for `query` when working with raw query strings:
+
+```julia
+params = parse_query(req)  # Dict{String, String}
+```
+
 ## WebSocket Support
 
 Register WebSocket endpoints with `ws!`:
@@ -237,6 +250,17 @@ ws!(router, "/chat",
 
 Middleware is added with `use!` and executes in registration order. Each middleware can short-circuit the request (e.g., return a 401) or pass through to the next handler.
 
+### Path-Scoped Middleware
+
+Apply middleware only to specific path prefixes:
+
+```julia
+use!(server, bearer_token(t -> t == "secret"); paths=["/api", "/admin"])
+use!(server, rate_limit(max_requests=10); paths=["/api/expensive"])
+```
+
+Requests to other paths bypass the middleware entirely.
+
 ### Logger
 
 Logs method, URI, status code, and duration for each request.
@@ -245,6 +269,12 @@ Logs method, URI, status code, and duration for each request.
 use!(server, logger())                         # Log all requests to stderr
 use!(server, logger(threshold_ms=50))           # Only log requests slower than 50ms
 use!(server, logger(output=open("log.txt","a"))) # Custom output
+use!(server, logger(structured=true))           # JSON log lines
+```
+
+Structured mode emits one JSON object per line:
+```json
+{"method":"GET","uri":"/users/1","status":200,"duration_ms":1.23,"ts":"2025-01-15T10:30:00.123"}
 ```
 
 ### CORS
@@ -296,6 +326,45 @@ use!(server, static_files("public"; prefix="/assets", index="index.html"))
 ```
 
 Serves `index.html` for directory requests. Returns `403` for path traversal attempts and `404` for missing files.
+
+## Error Handling
+
+### Custom Error Handler
+
+By default, unhandled exceptions in handlers return a generic `500 Internal Server Error`. Set a custom error handler to control error responses and logging:
+
+```julia
+on_error!(server, (req, err) -> begin
+    @error "Request failed" uri=req.uri exception=err
+    Response(500, ContentType.json, """{"error": "Something went wrong"}""")
+end)
+```
+
+You can also pass `on_error` as a constructor keyword:
+
+```julia
+server = AsyncServer(router; on_error=(req, err) -> Response(500, ContentType.text, "Oops"))
+```
+
+### Request Timeout
+
+Set a per-request timeout (in milliseconds) to prevent slow handlers from blocking the server:
+
+```julia
+server = AsyncServer(router; request_timeout_ms=5000)
+```
+
+When a request exceeds the timeout, the server returns `504 Gateway Timeout`.
+
+### Request ID
+
+Every request is automatically assigned a unique monotonic ID, injected as an `X-Request-Id` response header. This is useful for correlating logs and debugging:
+
+```
+HTTP/1.1 200 OK
+X-Request-Id: 42
+Content-Type: text/plain
+```
 
 ## JSON
 

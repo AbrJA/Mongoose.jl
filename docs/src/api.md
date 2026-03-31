@@ -13,6 +13,7 @@ SyncServer
 start!
 shutdown!
 use!
+on_error!
 ```
 
 ## Routing
@@ -29,16 +30,19 @@ ws!
 Request
 Response
 ContentType
+Binary
 header
 body
 query
-context
+getcontext!
+parse_query
 ```
 
 ## Utilities
 
 ```@docs
 Mongoose.query
+parse_query
 ```
 
 ## WebSocket Types

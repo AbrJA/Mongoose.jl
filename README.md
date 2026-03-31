@@ -70,13 +70,16 @@ AsyncServer(router;
     nqueue=1024,            # Channel buffer size
     timeout=0,              # Poll timeout (ms), 0 = default
     max_body_size=1048576,  # Max request body (bytes, default 1MB)
-    drain_timeout_ms=5000   # Graceful shutdown drain timeout
+    drain_timeout_ms=5000,  # Graceful shutdown drain timeout
+    request_timeout_ms=0,   # Per-request timeout (0 = disabled)
+    on_error=nothing        # Custom error handler: (req, err) -> Response
 )
 
 SyncServer(router;
-    timeout=0,
+    timeout=1,              # Poll timeout (ms), default: 1
     max_body_size=1048576,
-    drain_timeout_ms=5000
+    drain_timeout_ms=5000,
+    on_error=nothing
 )
 ```
 
@@ -124,13 +127,13 @@ route!(router, :post, "/search", req -> begin
     req.body                              # Raw body string
     get(req.headers, "authorization", nothing)  # Case-insensitive header lookup
     req.query                             # Full query string
-    req.context                           # Dict{Symbol,Any} for middleware data
+    getcontext!(req)                      # Lazily-allocated Dict{Symbol,Any}
 
     # Parse query string into a struct
     struct Search; q::String; page::Int end
     s = Mongoose.query(Search, req.query)  # "q=julia&page=1" → Search("julia", 1)
 
-    Response(200, ContentType.text, "ok")
+    Response(200, "ok")  # Convenience: auto text/plain Content-Type
 end)
 ```
 
@@ -168,6 +171,9 @@ use!(server, api_key(header_name="X-API-Key", keys=Set(["key1", "key2"])))
 
 # Static file serving
 use!(server, static_files("public"; prefix="/static", index="index.html"))
+
+# Path-scoped middleware (only applies to matching prefixes)
+use!(server, bearer_token(t -> t == "secret"); paths=["/api", "/admin"])
 ```
 
 ### JSON

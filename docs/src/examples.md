@@ -234,7 +234,7 @@ start!(server, port=8080, blocking=false)
 
 ## Request Context
 
-Middleware can attach data to the request context, which handlers can access:
+Middleware can attach data to the request context via `getcontext!`, which handlers can access:
 
 ```julia
 using Mongoose
@@ -248,7 +248,7 @@ function (mw::UserLookup)(request, params, next)
     if token !== nothing
         user = get(mw.db, replace(token, "Bearer " => ""), nothing)
         if user !== nothing
-            request.context[:user] = user
+            getcontext!(request)[:user] = user
         end
     end
     return next()
@@ -256,7 +256,7 @@ end
 
 router = Router()
 route!(router, :get, "/me", req -> begin
-    user = get(req.context, :user, "anonymous")
+    user = get(getcontext!(req), :user, "anonymous")
     Response(200, ContentType.text, "Hello, $user!")
 end)
 
@@ -348,5 +348,95 @@ use!(server, cors(origins="https://myapp.com"))
 use!(server, rate_limit(max_requests=200, window_seconds=60))
 use!(server, static_files("public"; prefix="/static"))
 
+start!(server, port=8080, blocking=false)
+```
+
+## Custom Error Handler
+
+Handle errors globally with a custom error handler:
+
+```julia
+using Mongoose, JSON
+
+Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+
+router = Router()
+
+route!(router, :get, "/fail", req -> error("Something broke"))
+route!(router, :get, "/ok", req -> Response(200, "All good"))
+
+server = AsyncServer(router; request_timeout_ms=5000)
+
+on_error!(server, (req, err) -> begin
+    @error "Unhandled error" uri=req.uri exception=err
+    Response(Json, Dict("error" => "Internal error", "uri" => req.uri); status=500)
+end)
+
+start!(server, port=8080, blocking=false)
+```
+
+## Path-Scoped Middleware
+
+Apply middleware only to specific URL prefixes:
+
+```julia
+using Mongoose
+
+router = Router()
+
+route!(router, :get, "/", req -> Response(200, "Welcome"))
+route!(router, :get, "/api/users", req -> Response(200, "User list"))
+route!(router, :get, "/admin/dashboard", req -> Response(200, "Dashboard"))
+
+server = AsyncServer(router)
+
+# Auth only for /api and /admin routes
+use!(server, bearer_token(t -> t == "secret"); paths=["/api", "/admin"])
+
+# Rate limit only expensive API endpoints
+use!(server, rate_limit(max_requests=10, window_seconds=60); paths=["/api"])
+
+# Logger for everything
+use!(server, logger(structured=true))
+
+start!(server, port=8080, blocking=false)
+```
+
+## Structured JSON Logging
+
+Emit structured JSON log lines for machine-parsable logging:
+
+```julia
+using Mongoose
+
+router = Router()
+route!(router, :get, "/", req -> Response(200, "ok"))
+
+server = AsyncServer(router)
+use!(server, logger(structured=true, output=open("access.log", "a")))
+
+start!(server, port=8080, blocking=false)
+```
+
+Each log line is a JSON object:
+```json
+{"method":"GET","uri":"/","status":200,"duration_ms":0.42,"ts":"2025-01-15T10:30:00.123"}
+```
+
+## Binary Responses
+
+Use the `Binary` format for raw byte responses:
+
+```julia
+using Mongoose
+
+router = Router()
+
+route!(router, :get, "/image", req -> begin
+    data = read("logo.png")
+    Response(Binary, data; status=200)
+end)
+
+server = AsyncServer(router)
 start!(server, port=8080, blocking=false)
 ```
