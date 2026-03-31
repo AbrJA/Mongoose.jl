@@ -118,7 +118,6 @@ function _workloop(server::AsyncServer)
                     @error "Handler error" exception=(e, catch_backtrace())
                     _handleerror(server, req.payload, e)
                 end
-                # Inject X-Request-Id header
                 res = Response(res.status, res.headers * "X-Request-Id: $(rid)\r\n", res.body)
                 isopen(server.replies) && put!(server.replies, Tagged(req.id, res))
             else  # Intent

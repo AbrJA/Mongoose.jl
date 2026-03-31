@@ -89,7 +89,6 @@ end
 
 Response(body; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) = Response(Text, body; status=status, headers=headers)
 
-# Convenience: Response(status, body) with auto text/plain
 Response(status::Int, body::AbstractString) = Response(status, ContentType.text, body)
 
 function Request(message::MgHttpMessage)

@@ -55,24 +55,20 @@ include("middleware/health.jl")
 # 8. Precompilation
 @setup_workload begin
     @compile_workload begin
-        # Router construction and route registration
         router = Router()
         route!(router, :get, "/", req -> Response(200, "", ""))
         route!(router, :get, "/users/:id::Int", (req, id) -> Response(200, "", ""))
         route!(router, :post, "/data", req -> Response(200, "", ""))
 
-        # Route matching (hot path)
         _matchroute(router, :get, "/")
         _matchroute(router, :get, "/users/1")
         _matchroute(router, :post, "/data")
         _matchroute(router, :get, "/nonexistent")
 
-        # Response construction
         Response(200, ContentType.text, "ok")
-        Response(200, "ok")   # convenience constructor
+        Response(200, "ok")
         Response(404, "", "")
 
-        # Middleware construction
         cors()
         logger()
         logger(structured=true)
@@ -80,12 +76,11 @@ include("middleware/health.jl")
         bearer_token(t -> true)
         api_key(keys=Set(["k"]))
 
-        # HTTP dispatch pipeline (lazy context — starts as nothing)
+        # context is lazily allocated on first getcontext! call
         req = Request(:get, "/", "", Pair{String,String}[], "", nothing)
         _dispatchreq(router, req)
         getcontext!(req)
 
-        # Middleware pipeline
         mw = cors()
         _pipeline(AbstractMiddleware[mw], req, Any[], (r, args...) -> Response(200, "", ""))
     end

@@ -41,18 +41,15 @@ Return `true` if `uri` maps to a real file (or pre-compressed `.gz` variant) und
 `root`, or to a directory that has an `index.html`. Path-traversal safe.
 """
 @inline function _static_file_exists(root::String, uri::String)::Bool
-    # Strip query string
     rel = uri
     qi = findfirst('?', rel)
     qi !== nothing && (rel = rel[1:prevind(rel, qi)])
 
-    # Strip leading slashes to get a relative path
     rel = lstrip(rel, '/')
 
-    # Candidate absolute path
     candidate = normpath(joinpath(root, rel))
 
-    # Path traversal guard
+    # Guard against path traversal (e.g. /../../../etc/passwd).
     startswith(candidate, root) || return false
 
     isfile(candidate) && return true
@@ -74,7 +71,6 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
 
     message = MgHttpMessage(ev_data)
 
-    # Body size limit check
     if message.body.len > server.core.max_body_size
         _send!(conn, _errresponse(server, 413))
         return
@@ -91,7 +87,6 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
         @error "Handler error" exception=(e, catch_backtrace())
         _handleerror(server, req, e)
     end
-    # Inject X-Request-Id header
     res = Response(res.status, res.headers * "X-Request-Id: $(rid)\r\n", res.body)
     _send!(conn, res)
     return
@@ -112,7 +107,7 @@ function _onevent!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnectio
         return
     end
 
-    # C-level static file serving (Range, ETag, gzip — fallback for unmatched routes)
+    # C-level static file serving (Range, ETag, gzip — takes priority after routes)
     _servestatic!(server, conn, ev_data, _method(message), _uri(message)) && return
 
     id = Int(_nextreqid!(server))
@@ -199,33 +194,23 @@ end
 
 # --- Response serialization ---
 
-const _HTTP_STATUS_PHRASES = Dict{Int,String}(
-    200 => "OK", 201 => "Created", 204 => "No Content",
-    206 => "Partial Content",
-    301 => "Moved Permanently", 302 => "Found", 304 => "Not Modified",
-    400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden",
-    404 => "Not Found", 405 => "Method Not Allowed",
-    413 => "Content Too Large", 429 => "Too Many Requests",
-    500 => "Internal Server Error", 503 => "Service Unavailable",
-    504 => "Gateway Timeout",
-)
-
 """
     _send!(conn, response)
 
-Send an HTTP response on `conn`.  Text bodies go through `mg_http_reply`
-(printf-based, automatic Content-Length).  Binary bodies (`Vector{UInt8}`)
-are assembled into a single raw buffer and written with `mg_send` because
-`mg_http_reply` uses `strlen` internally which truncates at the first 0x00.
+Send an HTTP response.  String bodies go through `mg_http_reply` which
+handles Content-Length and clears Mongoose's `is_resp` flag.  Binary
+(`Vector{UInt8}`) bodies are assembled into a raw buffer with `mg_send`
+because `mg_http_reply` uses printf/strlen and truncates at 0x00.
+`Connection: close` is added so the connection is not reused — `mg_send`
+cannot clear `is_resp` and keep-alive would hang.
 """
 function _send!(conn::MgConnection, res::Response)
     if res.body isa Vector{UInt8}
-        phrase = get(_HTTP_STATUS_PHRASES, res.status, "Unknown")
-        head = "HTTP/1.1 $(res.status) $(phrase)\r\n$(res.headers)Content-Length: $(length(res.body))\r\n\r\n"
+        head = "HTTP/1.1 $(res.status) OK\r\n$(res.headers)Content-Length: $(length(res.body))\r\nConnection: close\r\n\r\n"
         hlen = ncodeunits(head)
         buf  = Vector{UInt8}(undef, hlen + length(res.body))
         copyto!(buf, 1, codeunits(head), 1, hlen)
-        copyto!(buf, hlen + 1, res.body, 1, length(res.body))
+        isempty(res.body) || copyto!(buf, hlen + 1, res.body, 1, length(res.body))
         mg_send(conn, buf)
     else
         mg_http_reply(conn, res.status, res.headers, res.body)
@@ -254,7 +239,6 @@ function _servehttp_timeout(server::AbstractServer, req::AbstractRequest, timeou
                 return take!(ch)
             end
             if !isopen(timer)
-                # Timeout expired
                 @warn "Request timed out" uri=req.uri timeout_ms=timeout_ms
                 return _errresponse(server, 504)
             end

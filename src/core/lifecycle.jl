@@ -59,7 +59,6 @@ function shutdown!(server::AbstractServer)
 
     @info "Stopping server..."
 
-    # Drain in-flight requests up to drain_timeout_ms
     _drain_in_flight(server)
 
     _stopworkers!(server)

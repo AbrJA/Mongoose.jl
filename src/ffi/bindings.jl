@@ -33,8 +33,10 @@ end
 
 """
     mg_http_reply(conn, status, headers, body) — Send an HTTP response.
-    For binary (Vector{UInt8}) bodies use _send! in handler.jl, which bypasses
-    this function and writes directly with mg_send to avoid null-byte truncation.
+
+String bodies only.  Binary (`Vector{UInt8}`) bodies must go through `_send!`
+in handler.jl — `mg_http_reply` uses printf/strlen internally and truncates
+at the first 0x00 byte.
 """
 function mg_http_reply(conn::MgConnection, status::Integer, headers::String, body::String)
     ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring, Cstring), conn, Cint(status), headers, "%s", body)

@@ -51,7 +51,6 @@ function (mw::Health)(request::AbstractRequest, params::Vector{Any}, next)
 
         status = healthy && ready && alive ? 200 : 503
 
-        # Simple response without timestamp for now
         body = "status: $(status == 200 ? "healthy" : "unhealthy")\nchecks: health=$healthy, ready=$ready, alive=$alive\n"
         return Response(status, ContentType.text, body)
 
@@ -68,6 +67,5 @@ function (mw::Health)(request::AbstractRequest, params::Vector{Any}, next)
         return Response(status, ContentType.text, body)
     end
 
-    # Not a health endpoint, continue to next middleware/handler
     return next()
 end
