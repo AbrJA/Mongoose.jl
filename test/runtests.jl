@@ -678,10 +678,11 @@ end
     @testset "Request Context" begin
         router = Router()
         route!(router, :get, "/ctx", (req) -> begin
-            # Context should be an empty dict by default
-            @assert req.context isa Dict{Symbol,Any}
-            req.context[:user] = "alice"
-            Response(200, "", "user=$(req.context[:user])")
+            # Context starts as nothing, getcontext! allocates on first access
+            ctx = getcontext!(req)
+            @assert ctx isa Dict{Symbol,Any}
+            ctx[:user] = "alice"
+            Response(200, "", "user=$(ctx[:user])")
         end)
 
         server = SyncServer(router)

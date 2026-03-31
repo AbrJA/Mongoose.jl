@@ -6,6 +6,16 @@
 
 # --- Registration ---
 
+"""
+    ws!(router, path; on_message, on_open=nothing, on_close=nothing)
+
+Register a WebSocket endpoint.
+
+# Callbacks
+- `on_message(msg::Message) → Message | String | Vector{UInt8} | nothing` — called for each frame.
+- `on_open(req::Request)` — called on upgrade with the HTTP request (optional).
+- `on_close()` — called on disconnect with **no arguments** (optional).
+"""
 function ws!(router::Router, path::AbstractString;
     on_message::Function,
     on_open::Union{Function,Nothing}=nothing,

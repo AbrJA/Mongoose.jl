@@ -16,20 +16,13 @@ end
 """
     _pipeline(middlewares, request, params, final_handler)
 
-Iterative middleware pipeline execution. Builds the call chain from the inside out,
-then invokes it once.
+Recursive middleware pipeline execution. Each step builds one closure (for `next`)
+and calls the middleware. Avoids pre-allocating N closures up front.
 """
-function _pipeline(middlewares::Vector{AbstractMiddleware}, request::AbstractRequest, params::Vector{Any}, @nospecialize(final_handler::Function))
-    isempty(middlewares) && return final_handler(request, params...)
-
-    # Build the chain from the innermost (final handler) outward
-    current = () -> final_handler(request, params...)
-
-    for i in length(middlewares):-1:1
-        mw = middlewares[i]
-        next = current
-        current = () -> mw(request, params, next)
+function _pipeline(middlewares::Vector{AbstractMiddleware}, request::AbstractRequest, params::Vector{Any}, @nospecialize(final_handler::Function), idx::Int=1)
+    if idx > length(middlewares)
+        return final_handler(request, params...)
     end
-
-    return current()
+    mw = middlewares[idx]
+    return mw(request, params, () -> _pipeline(middlewares, request, params, final_handler, idx + 1))
 end

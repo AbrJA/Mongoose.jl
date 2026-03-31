@@ -3,10 +3,20 @@
 """
 
 """
-    AsyncServer(router=Router(); workers=4, nqueue=1024, timeout=0, max_body_size, drain_timeout_ms)
+    AsyncServer(router=Router(); workers=4, nqueue=1024, timeout=0, max_body_size,
+               drain_timeout_ms, request_timeout_ms=0, on_error=nothing)
 
 Create a multi-threaded server with `workers` background tasks.
 Not compatible with `juliac --trim=safe`.
+
+# Keyword Arguments
+- `workers::Integer`: Number of worker tasks (default: `4`).
+- `nqueue::Integer`: Channel buffer size (default: `1024`).
+- `timeout::Integer`: Event-loop poll timeout in ms (default: `0`).
+- `max_body_size::Integer`: Maximum request body size in bytes (default: 1MB).
+- `drain_timeout_ms::Integer`: Graceful shutdown drain timeout (default: 5000ms).
+- `request_timeout_ms::Integer`: Per-request timeout in ms, 0 = disabled (default: `0`).
+- `on_error::Union{Nothing,Function}`: Custom error handler `(req, exception) → Response` (default: `nothing`).
 """
 AsyncServer(::Type{T}; kwargs...) where {T <: StaticRouter} = AsyncServer(T(); kwargs...)
 
@@ -15,9 +25,12 @@ function AsyncServer(router::AbstractRouter=Router();
                      nqueue::Integer=1024,
                      timeout::Integer=0,
                      max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
-                     drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS)
+                     drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS,
+                     request_timeout_ms::Integer=0,
+                     on_error::Union{Nothing,Function}=nothing)
     c_handler = Mongoose._cfnasync(typeof(router))
-    core = ServerCore(timeout, router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, c_handler=c_handler)
+    core = ServerCore(timeout, router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms,
+                      request_timeout_ms=request_timeout_ms, on_error=on_error, c_handler=c_handler)
     server = AsyncServer{typeof(router)}(
         core, Task[],
         Channel{Call}(nqueue), Channel{Reply}(nqueue),
@@ -90,15 +103,23 @@ function _eventloop(server::AsyncServer)
 end
 
 function _workloop(server::AsyncServer)
+    timeout_ms = server.core.request_timeout_ms
     try
         for req in server.calls     # blocks properly — no sleep needed
             if req.payload isa Request
+                rid = _nextreqid!(server)
                 res = try
-                    _servehttp(server, req.payload)
+                    if timeout_ms > 0
+                        _servehttp_timeout(server, req.payload, timeout_ms)
+                    else
+                        _servehttp(server, req.payload)
+                    end
                 catch e
                     @error "Handler error" exception=(e, catch_backtrace())
-                    Response(500, ContentType.text, "500 Internal Server Error")
+                    _handleerror(server, req.payload, e)
                 end
+                # Inject X-Request-Id header
+                res = Response(res.status, res.headers * "X-Request-Id: $(rid)\r\n", res.body)
                 isopen(server.replies) && put!(server.replies, Tagged(req.id, res))
             else  # Intent
                 res = _handlewsmsg!(server, req)

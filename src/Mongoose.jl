@@ -4,16 +4,14 @@ using Mongoose_jll
 using PrecompileTools
 
 export SyncServer, AsyncServer, Router, Request, Response, Message,
-    Text, Html, Json, Css, Js, Xml,
-    start!, shutdown!, route!, use!, serve_dir!,
-    render_body, content_type,
+    Text, Html, Json, Css, Js, Xml, Binary,
+    start!, shutdown!, route!, use!, serve_dir!, on_error!,
+    render_body, content_type, getcontext!, parse_query,
     ws!,
     cors, rate_limit, bearer_token, api_key, logger, static_files, health,
     ContentType,
     RouteError, ServerError, BindError,
     @router
-
-# Maybe is good to have parse_ and req_
 
 # 1. FFI Layer (Constants, Structs, Bindings)
 include("ffi/constants.jl")
@@ -72,18 +70,21 @@ include("middleware/health.jl")
 
         # Response construction
         Response(200, ContentType.text, "ok")
+        Response(200, "ok")   # convenience constructor
         Response(404, "", "")
 
         # Middleware construction
         cors()
         logger()
+        logger(structured=true)
         rate_limit()
         bearer_token(t -> true)
         api_key(keys=Set(["k"]))
 
-        # HTTP dispatch pipeline
-        req = Request(:get, "/", "", Pair{String,String}[], "", Dict{Symbol,Any}())
+        # HTTP dispatch pipeline (lazy context — starts as nothing)
+        req = Request(:get, "/", "", Pair{String,String}[], "", nothing)
         _dispatchreq(router, req)
+        getcontext!(req)
 
         # Middleware pipeline
         mw = cors()

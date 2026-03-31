@@ -4,14 +4,17 @@
 
 """
     Request — Full HTTP request with owned string data.
+
+`context` is lazily allocated — starts as `nothing` and becomes a
+`Dict{Symbol,Any}` on first access via `getcontext!`.
 """
-struct Request <: AbstractRequest
-    method::Symbol
-    uri::String
-    query::String
-    headers::Vector{Pair{String,String}}
-    body::String
-    context::Dict{Symbol,Any}
+mutable struct Request <: AbstractRequest
+    const method::Symbol
+    const uri::String
+    const query::String
+    const headers::Vector{Pair{String,String}}
+    const body::String
+    context::Union{Nothing,Dict{Symbol,Any}}
 end
 
 """
@@ -36,6 +39,11 @@ struct Response
     status::Int
     headers::String
     body::Union{String,Vector{UInt8}}
+    # Inner constructor: convert AbstractString (SubString, etc.) to String
+    Response(status::Int, headers::AbstractString, body::AbstractString) =
+        new(status, String(headers), String(body))
+    Response(status::Int, headers::AbstractString, body::Vector{UInt8}) =
+        new(status, String(headers), body)
 end
 
 """
@@ -56,10 +64,12 @@ struct Css <: AbstractFormat end
 struct Js <: AbstractFormat end
 struct Json <: AbstractFormat end
 struct Xml <: AbstractFormat end
+struct Binary <: AbstractFormat end
 
 function render_body end
 render_body(::Type{T}, body) where T<:AbstractFormat = error("render_body not implemented for type $T and body of type $(typeof(body))")
 render_body(::Type{T}, body::String) where T<:AbstractFormat = body
+render_body(::Type{Binary}, body::Vector{UInt8}) = body
 
 # Mapping: This is the only place you need to update when adding new types
 function content_type end
@@ -70,6 +80,7 @@ content_type(::Type{Js}) = "Content-Type: application/javascript; charset=utf-8\
 content_type(::Type{Text}) = "Content-Type: text/plain; charset=utf-8\r\n"
 content_type(::Type{Json}) = "Content-Type: application/json; charset=utf-8\r\n"
 content_type(::Type{Xml}) = "Content-Type: application/xml; charset=utf-8\r\n"
+content_type(::Type{Binary}) = "Content-Type: application/octet-stream\r\n"
 
 function Response(::Type{T}, body; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) where T<:AbstractFormat
     h = content_type(T) * (isempty(headers) ? "" : _formatheaders(headers))
@@ -78,12 +89,25 @@ end
 
 Response(body; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) = Response(Text, body; status=status, headers=headers)
 
+# Convenience: Response(status, body) with auto text/plain
+Response(status::Int, body::AbstractString) = Response(status, ContentType.text, body)
+
 function Request(message::MgHttpMessage)
-    return Request(_method(message), _uri(message), _query(message), _headers(message), _body(message), Dict{Symbol,Any}())
+    return Request(_method(message), _uri(message), _query(message), _headers(message), _body(message), nothing)
 end
 
 Request(method::Symbol, uri::String, query::String, headers::Dict{String,String}, body::String, context::Dict{Symbol,Any}) =
     Request(method, uri, query, [k => v for (k, v) in headers], body, context)
+
+"""
+    getcontext!(req) → Dict{Symbol,Any}
+
+Return the request context, creating it on first access.
+"""
+@inline function getcontext!(req::Request)::Dict{Symbol,Any}
+    req.context === nothing && (req.context = Dict{Symbol,Any}())
+    return req.context::Dict{Symbol,Any}
+end
 
 _method(m::MgHttpMessage) = _method2symbol(m.method)
 _uri(m::MgHttpMessage) = _tostring(m.uri)
@@ -138,10 +162,11 @@ function _headers(message::MgHttpMessage)
 end
 
 const ContentType = (
-    text   = "Content-Type: text/plain; charset=utf-8\r\n",
-    html   = "Content-Type: text/html; charset=utf-8\r\n",
-    json   = "Content-Type: application/json; charset=utf-8\r\n",
-    xml    = "Content-Type: application/xml; charset=utf-8\r\n",
-    css    = "Content-Type: text/css; charset=utf-8\r\n",
-    js     = "Content-Type: application/javascript; charset=utf-8\r\n"
+    text   = content_type(Text),
+    html   = content_type(Html),
+    json   = content_type(Json),
+    xml    = content_type(Xml),
+    css    = content_type(Css),
+    js     = content_type(Js),
+    binary = content_type(Binary),
 )

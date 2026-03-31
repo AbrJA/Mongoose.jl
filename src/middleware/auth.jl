@@ -68,4 +68,4 @@ Create an API key authentication middleware.
 use!(server, api_key(keys=Set(["key-123"])))
 ```
 """
-api_key(; header_name::String="X-API-Key", keys::Set{String}) = ApiKey(header_name, keys)
+api_key(; header_name::String="X-API-Key", keys::Set{String}) = ApiKey(lowercase(header_name), keys)

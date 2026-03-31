@@ -1,51 +1,65 @@
 """
-    Rate limiting middleware using a fixed-window counter.
+    Rate limiting middleware using a fixed-window counter with sharded locks.
     Tracks requests per client IP with automatic cleanup.
+    Uses N shards (each with its own lock) to reduce contention under high concurrency.
 """
+
+const _RATE_LIMIT_SHARDS = 16
+
+struct _RateShard
+    tracker::Dict{String, Tuple{Int, Float64}}
+    lock::ReentrantLock
+    last_cleanup::Base.RefValue{Float64}
+end
 
 struct RateLimit <: AbstractMiddleware
     max_requests::Int
     window_seconds::Int
-    tracker::Dict{String, Tuple{Int, Float64}}
-    tracker_lock::ReentrantLock
-    last_cleanup::Base.RefValue{Float64}
     cleanup_interval::Float64
+    shards::Vector{_RateShard}
+end
+
+@inline function _getshard(mw::RateLimit, key::String)
+    h = hash(key)
+    idx = (h % length(mw.shards)) + 1
+    return mw.shards[idx]
 end
 
 function (mw::RateLimit)(request::AbstractRequest, params::Vector{Any}, next)
-    client_id = let h = get(request.headers, "X-Forwarded-For", nothing)
+    client_id = let h = get(request.headers, "x-forwarded-for", nothing)
         if h !== nothing
-            # X-Forwarded-For may be "client, proxy1, proxy2" — use first IP only
             ci = findfirst(',', h)
             ci !== nothing ? String(strip(h[1:ci-1])) : String(strip(h))
         else
-            h2 = get(request.headers, "X-Real-IP", nothing)
+            h2 = get(request.headers, "x-real-ip", nothing)
             h2 !== nothing ? String(strip(h2)) : "unknown"
         end
     end
 
+    shard = _getshard(mw, client_id)
     now_t = time()
-    allowed = lock(mw.tracker_lock) do
-        if (now_t - mw.last_cleanup[]) > mw.cleanup_interval
-            for (k, v) in collect(mw.tracker)
+
+    allowed = lock(shard.lock) do
+        if (now_t - shard.last_cleanup[]) > mw.cleanup_interval
+            for (k, v) in collect(shard.tracker)
                 if (now_t - v[2]) > mw.window_seconds
-                    delete!(mw.tracker, k)
+                    delete!(shard.tracker, k)
                 end
             end
-            mw.last_cleanup[] = now_t
+            shard.last_cleanup[] = now_t
         end
 
-        entry = get(mw.tracker, client_id, nothing)
+        entry = get(shard.tracker, client_id, nothing)
 
         if entry === nothing || (now_t - entry[2]) > mw.window_seconds
-            mw.tracker[client_id] = (1, now_t)
+            shard.tracker[client_id] = (1, now_t)
             return true
         else
             count, start = entry
             if count >= mw.max_requests
                 return false
             else
-                mw.tracker[client_id] = (count + 1, start)
+                shard.tracker[client_id] = (count + 1, start)
                 return true
             end
         end
@@ -62,8 +76,10 @@ end
 """
     rate_limit(; max_requests, window_seconds)
 
-Create a rate-limiting middleware using a simple fixed-window counter.
+Create a rate-limiting middleware using a sharded fixed-window counter.
 Returns 429 Too Many Requests when the limit is exceeded.
+
+Uses $(_RATE_LIMIT_SHARDS) independent shards internally to minimize lock contention.
 
 # Keyword Arguments
 - `max_requests::Int`: Maximum requests allowed per window (default: `100`).
@@ -75,11 +91,10 @@ use!(server, rate_limit(max_requests=50, window_seconds=30))
 ```
 """
 function rate_limit(; max_requests::Int=100, window_seconds::Int=60)
+    shards = [_RateShard(Dict{String,Tuple{Int,Float64}}(), ReentrantLock(), Ref(time())) for _ in 1:_RATE_LIMIT_SHARDS]
     return RateLimit(
         max_requests, window_seconds,
-        Dict{String, Tuple{Int, Float64}}(),
-        ReentrantLock(),
-        Ref(time()),
-        max(window_seconds * 2.0, 60.0)
+        max(window_seconds * 2.0, 60.0),
+        shards
     )
 end

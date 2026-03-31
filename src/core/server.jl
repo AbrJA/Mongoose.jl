@@ -44,16 +44,22 @@ mutable struct ServerCore{R <: AbstractRouter}
     max_body_size::Int
     drain_timeout_ms::Int
     static_dir::Union{String,Nothing}   # Root directory for C-level static file serving
+    request_timeout_ms::Int             # Per-request timeout (0 = disabled)
+    on_error::Union{Nothing,Function}   # Custom error handler: (req, exception) → Response
+    request_id::Threads.Atomic{UInt64}  # Monotonic request ID counter
 
     function ServerCore(timeout::Integer, router::R;
                         max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
                         drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS,
+                        request_timeout_ms::Integer=0,
+                        on_error::Union{Nothing,Function}=nothing,
                         c_handler::Ptr{Cvoid}=C_NULL) where {R <: AbstractRouter}
         return new{R}(
             Manager(empty=true), c_handler, timeout, nothing,
             router, Dict{Int,String}(),
             Threads.Atomic{Bool}(false), AbstractMiddleware[],
-            max_body_size, drain_timeout_ms, nothing
+            max_body_size, drain_timeout_ms, nothing,
+            request_timeout_ms, on_error, Threads.Atomic{UInt64}(0)
         )
     end
 end

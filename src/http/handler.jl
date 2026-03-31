@@ -84,12 +84,15 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
     _servestatic!(server, conn, ev_data, _method(message), _uri(message)) && return
 
     req = Request(message)
+    rid = _nextreqid!(server)
     res = try
         _servehttp(server, req)
     catch e
         @error "Handler error" exception=(e, catch_backtrace())
-        Response(500, ContentType.text, "500 Internal Server Error")
+        _handleerror(server, req, e)
     end
+    # Inject X-Request-Id header
+    res = Response(res.status, res.headers * "X-Request-Id: $(rid)\r\n", res.body)
     _send!(conn, res)
     return
 end
@@ -119,6 +122,29 @@ function _onevent!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnectio
 end
 
 # --- Dispatch pipeline (used by both sync handler and async workers) ---
+
+"""
+    _nextreqid!(server) → UInt64
+
+Generate a monotonically increasing request ID.
+"""
+@inline _nextreqid!(server::AbstractServer) = Threads.atomic_add!(server.core.request_id, UInt64(1)) + UInt64(1)
+
+"""
+    _handleerror(server, req, e) → Response
+
+Invoke the custom on_error handler if set, otherwise return a generic 500.
+"""
+function _handleerror(server::AbstractServer, req, e)
+    if server.core.on_error !== nothing
+        try
+            return server.core.on_error(req, e)::Response
+        catch inner
+            @error "on_error handler itself failed" exception=(inner, catch_backtrace())
+        end
+    end
+    return Response(500, ContentType.text, "500 Internal Server Error")
+end
 
 """
     _servehttp(server, request) → Response
@@ -169,4 +195,37 @@ end
 """
 function _send!(conn::MgConnection, res::Response)
     mg_http_reply(conn, res.status, res.headers, res.body)
+end
+
+"""
+    _servehttp_timeout(server, req, timeout_ms) → Response
+
+Execute request handling with a timeout. If the handler exceeds `timeout_ms`,
+returns 504 Gateway Timeout. Used only by AsyncServer workers.
+"""
+function _servehttp_timeout(server::AbstractServer, req::AbstractRequest, timeout_ms::Integer)::Response
+    ch = Channel{Response}(1)
+    t = Threads.@spawn begin
+        try
+            put!(ch, _servehttp(server, req))
+        catch e
+            put!(ch, _handleerror(server, req, e))
+        end
+    end
+    timer = Timer(timeout_ms / 1000.0)
+    try
+        while true
+            if isready(ch)
+                return take!(ch)
+            end
+            if !isopen(timer)
+                # Timeout expired
+                @warn "Request timed out" uri=req.uri timeout_ms=timeout_ms
+                return Response(504, ContentType.text, "504 Gateway Timeout")
+            end
+            yield()
+        end
+    finally
+        close(timer)
+    end
 end
