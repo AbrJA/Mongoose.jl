@@ -145,7 +145,7 @@ The `@router` macro generates a compile-time dispatch function with zero dynamic
     get("/", req -> Response(200, ContentType.text, "Hello"))
     get("/users/:id::Int", (req, id) -> Response(200, ContentType.text, "User $id"))
     post("/data", req -> Response(200, ContentType.text, "received"))
-    ws("/chat", on_message = msg -> "Echo: $(msg.data)")
+    ws("/chat", on_message = msg -> Message("Echo: $(msg.data)"))
 end
 
 server = SyncServer(MyApi())
@@ -156,7 +156,7 @@ start!(server, port=8080)
 
 ### Request
 
-Handlers receive a `Request` (for `AsyncServer`) or `LazyRequest` (for `SyncServer`). Both implement the same accessor interface:
+Handlers receive a `Request`:
 
 | Accessor | Returns | Description |
 |----------|---------|-------------|
@@ -173,11 +173,11 @@ Construct responses with a status code, headers, and body:
 # Simple text response
 Response(200, ContentType.text, "Hello!")
 
-# JSON response with custom headers
+# JSON response
 Response(200, ContentType.json, """{"ok": true}""")
 
-# Dict headers (auto-formatted to HTTP header string)
-Response(200, Dict("X-Custom" => "value"), "body")
+# Binary body (e.g. image or file bytes)
+Response(200, "Content-Type: image/png\r\n", read("image.png"))
 
 # No headers
 Response(404, "", "Not Found")
@@ -222,15 +222,16 @@ Register WebSocket endpoints with `ws!`:
 
 ```julia
 ws!(router, "/chat",
-    on_message = msg -> "Echo: $(msg.data)",
-    on_open    = () -> println("connected"),
+    on_message = (msg::Message) -> Message("Echo: $(msg.data)"),
+    on_open    = (req::Request) -> println("connected: ", req.uri),
     on_close   = () -> println("disconnected")
 )
 ```
 
-- `on_message` receives a `WsTextMessage` (`.data::String`) or `WsBinaryMessage` (`.data::Vector{UInt8}`)
-- Return a `String` for text reply, `Vector{UInt8}` for binary, or `nothing` for no reply
-- `on_open` and `on_close` are optional
+- `on_message` receives a `Message` — `msg.data` is `String` (text frame) or `Vector{UInt8}` (binary frame)
+- Return a `Message`, `String`, or `Vector{UInt8}` to send a reply; `nothing` for no reply
+- `on_open` receives the HTTP upgrade `Request` (headers, URI, etc.); `on_close` takes no arguments
+- Both `on_open` and `on_close` are optional
 
 ## Middleware
 

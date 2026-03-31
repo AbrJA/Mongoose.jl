@@ -138,13 +138,13 @@ end)
 
 ```julia
 ws!(router, "/chat",
-    on_message = msg -> "Echo: $(msg.data)",
-    on_open    = () -> println("Client connected"),
+    on_message = (msg::Message) -> Message("Echo: $(msg.data)"),
+    on_open    = (req::Request) -> println("Client connected: ", req.uri),
     on_close   = () -> println("Client disconnected")
 )
 ```
 
-Message handlers receive `WsTextMessage` or `WsBinaryMessage`. Return a `String` to send a text reply, `Vector{UInt8}` for binary, or `nothing` to send no reply.
+`on_message` receives a `Message` with `data::Union{String,Vector{UInt8}}`. Return a `Message`, `String`, or `Vector{UInt8}` to send a reply, or `nothing` for no reply. `on_open` receives the upgrade `Request`.
 
 ### Middleware
 
@@ -198,7 +198,7 @@ The `@router` macro generates a zero-allocation, compile-time dispatch function 
     get("/", req -> Response(200, ContentType.text, "Hello"))
     get("/users/:id::Int", (req, id) -> Response(200, ContentType.text, "User $id"))
     post("/data", req -> Response(200, ContentType.text, "received"))
-    ws("/chat", on_message = msg -> "Echo: $(msg.data)")
+    ws("/chat", on_message = msg -> Message("Echo: $(msg.data)"))
 end
 
 server = SyncServer(MyApi())

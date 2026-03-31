@@ -44,9 +44,7 @@ Mongoose.query
 ## WebSocket Types
 
 ```@docs
-WsMessage
-WsTextMessage
-WsBinaryMessage
+Message
 ```
 
 ## Middleware

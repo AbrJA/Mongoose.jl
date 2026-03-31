@@ -125,7 +125,7 @@ start!(server, port=8080, blocking=false)
 
 ## WebSocket Echo Server
 
-Register WebSocket endpoints with `ws!`. The `on_message` handler receives a `WsTextMessage` or `WsBinaryMessage`.
+Register WebSocket endpoints with `ws!`. The `on_message` handler receives a `Message` whose `.data` field is either `String` (text frame) or `Vector{UInt8}` (binary frame).
 
 ```julia
 using Mongoose
@@ -133,15 +133,14 @@ using Mongoose
 router = Router()
 
 ws!(router, "/echo",
-    on_message = msg -> begin
-        if msg isa WsTextMessage
-            return "Echo: $(msg.data)"
-        elseif msg isa WsBinaryMessage
-            return msg.data  # Echo binary data back
+    on_message = (msg::Message) -> begin
+        if msg.data isa String
+            return Message("Echo: $(msg.data)")
+        else
+            return Message(msg.data)  # Echo binary data back
         end
-        return nothing
     end,
-    on_open  = () -> println("Client connected"),
+    on_open  = (req::Request) -> println("Client connected from ", req.uri),
     on_close = () -> println("Client disconnected")
 )
 
@@ -299,7 +298,7 @@ using Mongoose
     get("/", req -> Response(200, ContentType.text, "Hello from AOT!"))
     get("/users/:id::Int", (req, id) -> Response(200, ContentType.text, "User $id"))
     post("/echo", req -> Response(200, ContentType.text, body(req)))
-    ws("/chat", on_message = msg -> "Echo: $(msg.data)")
+    ws("/chat", on_message = msg -> Message("Echo: $(msg.data)"))
 end
 
 server = SyncServer(MyApi())
@@ -338,8 +337,8 @@ end)
 
 # WebSocket
 ws!(router, "/ws/notifications",
-    on_message = msg -> """{"ack": true}""",
-    on_open    = () -> @info "WS client connected"
+    on_message = (msg::Message) -> Message("""{"ack": true}"""),
+    on_open    = (req::Request) -> @info "WS client connected"
 )
 
 # Server with full middleware stack
