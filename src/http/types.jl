@@ -57,10 +57,12 @@ struct Js <: AbstractFormat end
 struct Json <: AbstractFormat end
 struct Xml <: AbstractFormat end
 
+function render_body end
 render_body(::Type{T}, body) where T<:AbstractFormat = error("render_body not implemented for type $T and body of type $(typeof(body))")
 render_body(::Type{T}, body::String) where T<:AbstractFormat = body
 
 # Mapping: This is the only place you need to update when adding new types
+function content_type end
 content_type(::Type{T}) where T<:AbstractFormat = error("Unsupported format type: $T")
 content_type(::Type{Html}) = "Content-Type: text/html; charset=utf-8\r\n"
 content_type(::Type{Css}) = "Content-Type: text/css; charset=utf-8\r\n"

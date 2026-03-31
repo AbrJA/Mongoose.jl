@@ -4,7 +4,7 @@ using Mongoose_jll
 using PrecompileTools
 
 export SyncServer, AsyncServer, Router, Request, Response, Message,
-    Text, Html, Json, Css, Js, Xml, Binary,
+    Text, Html, Json, Css, Js, Xml,
     start!, shutdown!, route!, use!, serve_dir!,
     render_body, content_type,
     ws!,
