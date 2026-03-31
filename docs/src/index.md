@@ -73,7 +73,7 @@ server = AsyncServer(router;
     max_body_size=1048576,  # Max request body in bytes (default: 1MB)
     drain_timeout_ms=5000,  # Graceful shutdown drain timeout (ms)
     request_timeout_ms=0,   # Per-request timeout (0 = disabled)
-    on_error=nothing        # Custom error handler (see Error Handling)
+    error_responses=Dict{Int,Response}()  # Custom responses by status code
 )
 ```
 
@@ -84,7 +84,7 @@ server = SyncServer(router;
     timeout=1,              # Poll timeout (ms), default: 1
     max_body_size=1048576,
     drain_timeout_ms=5000,
-    on_error=nothing
+    error_responses=Dict{Int,Response}()
 )
 ```
 
@@ -329,21 +329,40 @@ Serves `index.html` for directory requests. Returns `403` for path traversal att
 
 ## Error Handling
 
-### Custom Error Handler
+### Custom Error Responses
 
-By default, unhandled exceptions in handlers return a generic `500 Internal Server Error`. Set a custom error handler to control error responses and logging:
+Register custom `Response` objects for specific HTTP status codes. The following codes are customizable: `500` (unhandled exception), `413` (body too large), `504` (request timeout).
 
 ```julia
-on_error!(server, (req, err) -> begin
-    @error "Request failed" uri=req.uri exception=err
-    Response(500, ContentType.json, """{"error": "Something went wrong"}""")
-end)
+using Mongoose, JSON
+
+Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+
+server = AsyncServer(router)
+
+# Custom JSON 500 response
+error_response!(server, 500, Response(Json, Dict("error" => "Internal server error"); status=500))
+
+# Custom 413 response
+error_response!(server, 413, Response(500, ContentType.json, """{"error":"Request body too large"}"""))
 ```
 
-You can also pass `on_error` as a constructor keyword:
+You can also pass a pre-built dict at construction time:
 
 ```julia
-server = AsyncServer(router; on_error=(req, err) -> Response(500, ContentType.text, "Oops"))
+errors = Dict{Int,Response}(
+    500 => Response(500, ContentType.json, """{"error":"Internal error"}"""),
+    413 => Response(413, ContentType.json, """{"error":"Body too large"}"""),
+)
+server = SyncServer(router; error_responses=errors)
+```
+
+### Custom 404 Pages
+
+For a custom 404 response, add a wildcard catch-all route — no special API needed:
+
+```julia
+route!(router, :get, "*", req -> Response(404, ContentType.html, read("404.html", String)))
 ```
 
 ### Request Timeout

@@ -72,14 +72,14 @@ AsyncServer(router;
     max_body_size=1048576,  # Max request body (bytes, default 1MB)
     drain_timeout_ms=5000,  # Graceful shutdown drain timeout
     request_timeout_ms=0,   # Per-request timeout (0 = disabled)
-    on_error=nothing        # Custom error handler: (req, err) -> Response
+    error_responses=Dict{Int,Response}()  # Custom responses by status code
 )
 
 SyncServer(router;
     timeout=1,              # Poll timeout (ms), default: 1
     max_body_size=1048576,
     drain_timeout_ms=5000,
-    on_error=nothing
+    error_responses=Dict{Int,Response}()
 )
 ```
 
@@ -174,6 +174,13 @@ use!(server, static_files("public"; prefix="/static", index="index.html"))
 
 # Path-scoped middleware (only applies to matching prefixes)
 use!(server, bearer_token(t -> t == "secret"); paths=["/api", "/admin"])
+
+# Custom error responses (pre-built, no dynamic dispatch — trim-safe)
+error_response!(server, 500, Response(500, ContentType.json, """{"error":"Internal error"}"""))
+error_response!(server, 413, Response(413, ContentType.json, """{"error":"Body too large"}"""))
+
+# Custom 404: add a wildcard catch-all route
+route!(router, :get, "*", req -> Response(404, ContentType.html, "<h1>Not Found</h1>"))
 ```
 
 ### JSON

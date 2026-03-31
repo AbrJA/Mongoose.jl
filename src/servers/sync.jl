@@ -3,7 +3,7 @@
 """
 
 """
-    SyncServer(router=Router(); timeout=1, max_body_size, drain_timeout_ms, on_error)
+    SyncServer(router=Router(); timeout=1, max_body_size, drain_timeout_ms, error_responses)
 
 Create a single-threaded blocking server. Compatible with `juliac --trim=safe`.
 
@@ -11,7 +11,7 @@ Create a single-threaded blocking server. Compatible with `juliac --trim=safe`.
 - `timeout::Integer`: Event-loop poll timeout in ms (default: `1`). Use `0` for minimum latency at the cost of CPU.
 - `max_body_size::Integer`: Maximum request body size in bytes (default: 1MB).
 - `drain_timeout_ms::Integer`: Graceful shutdown drain timeout (default: 5000ms).
-- `on_error::Union{Nothing,Function}`: Custom error handler `(req, exception) → Response` (default: `nothing`).
+- `error_responses::Dict{Int,Response}`: Custom responses keyed by HTTP status code (`500`, `413`, `504`). See `error_response!`.
 """
 SyncServer(::Type{T}; kwargs...) where {T <: StaticRouter} = SyncServer(T(); kwargs...)
 
@@ -19,9 +19,9 @@ function SyncServer(router::AbstractRouter=Router();
                     timeout::Integer=1,
                     max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
                     drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS,
-                    on_error::Union{Nothing,Function}=nothing)
+                    error_responses::Dict{Int,Response}=Dict{Int,Response}())
     c_handler = Mongoose._cfnsync(typeof(router))
-    core = ServerCore(timeout, router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, on_error=on_error, c_handler=c_handler)
+    core = ServerCore(timeout, router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms, error_responses=error_responses, c_handler=c_handler)
     server = SyncServer{typeof(router)}(core)
     finalizer(_teardown!, server)
     return server

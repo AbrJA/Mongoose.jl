@@ -351,9 +351,9 @@ use!(server, static_files("public"; prefix="/static"))
 start!(server, port=8080, blocking=false)
 ```
 
-## Custom Error Handler
+## Custom Error Responses
 
-Handle errors globally with a custom error handler:
+Register pre-built `Response` objects for specific HTTP status codes:
 
 ```julia
 using Mongoose, JSON
@@ -365,12 +365,14 @@ router = Router()
 route!(router, :get, "/fail", req -> error("Something broke"))
 route!(router, :get, "/ok", req -> Response(200, "All good"))
 
+# Custom 404: use a wildcard route
+route!(router, :get, "*", req -> Response(404, ContentType.html, "<h1>Not Found</h1>"))
+
 server = AsyncServer(router; request_timeout_ms=5000)
 
-on_error!(server, (req, err) -> begin
-    @error "Unhandled error" uri=req.uri exception=err
-    Response(Json, Dict("error" => "Internal error", "uri" => req.uri); status=500)
-end)
+error_response!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500))
+error_response!(server, 413, Response(413, ContentType.json, """{"error":"Body too large"}"""))
+error_response!(server, 504, Response(504, ContentType.json, """{"error":"Request timed out"}"""))
 
 start!(server, port=8080, blocking=false)
 ```

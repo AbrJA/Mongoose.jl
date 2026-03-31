@@ -76,7 +76,7 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
 
     # Body size limit check
     if message.body.len > server.core.max_body_size
-        _send!(conn, Response(413, ContentType.text, "413 Payload Too Large"))
+        _send!(conn, _errresponse(server, 413))
         return
     end
 
@@ -108,7 +108,7 @@ function _onevent!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnectio
 
     # Body size limit check
     if message.body.len > server.core.max_body_size
-        _send!(conn, Response(413, ContentType.text, "413 Payload Too Large"))
+        _send!(conn, _errresponse(server, 413))
         return
     end
 
@@ -131,19 +131,28 @@ Generate a monotonically increasing request ID.
 @inline _nextreqid!(server::AbstractServer) = Threads.atomic_add!(server.core.request_id, UInt64(1)) + UInt64(1)
 
 """
+    _errresponse(server, status) → Response
+
+Look up a custom response for `status` in `server.core.error_responses`.
+Falls back to the module-level default.
+"""
+@inline function _errresponse(server::AbstractServer, status::Int)::Response
+    r = get(server.core.error_responses, status, nothing)
+    r !== nothing && return r
+    status == 500 && return _DEFAULT_500
+    status == 413 && return _DEFAULT_413
+    status == 504 && return _DEFAULT_504
+    return Response(status, ContentType.text, "$status Error")
+end
+
+"""
     _handleerror(server, req, e) → Response
 
-Invoke the custom on_error handler if set, otherwise return a generic 500.
+Return the custom 500 response from `error_responses` if configured,
+otherwise return the default 500. No dynamic function call — trim-safe.
 """
-function _handleerror(server::AbstractServer, req, e)
-    if server.core.on_error !== nothing
-        try
-            return server.core.on_error(req, e)::Response
-        catch inner
-            @error "on_error handler itself failed" exception=(inner, catch_backtrace())
-        end
-    end
-    return Response(500, ContentType.text, "500 Internal Server Error")
+@inline function _handleerror(server::AbstractServer, ::Any, ::Any)::Response
+    return _errresponse(server, 500)
 end
 
 """
@@ -221,7 +230,7 @@ function _servehttp_timeout(server::AbstractServer, req::AbstractRequest, timeou
             if !isopen(timer)
                 # Timeout expired
                 @warn "Request timed out" uri=req.uri timeout_ms=timeout_ms
-                return Response(504, ContentType.text, "504 Gateway Timeout")
+                return _errresponse(server, 504)
             end
             yield()
         end

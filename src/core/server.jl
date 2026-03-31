@@ -43,26 +43,31 @@ mutable struct ServerCore{R <: AbstractRouter}
     middlewares::Vector{AbstractMiddleware}
     max_body_size::Int
     drain_timeout_ms::Int
-    static_dir::Union{String,Nothing}   # Root directory for C-level static file serving
-    request_timeout_ms::Int             # Per-request timeout (0 = disabled)
-    on_error::Union{Nothing,Function}   # Custom error handler: (req, exception) → Response
-    request_id::Threads.Atomic{UInt64}  # Monotonic request ID counter
+    static_dir::Union{String,Nothing}     # Root directory for C-level static file serving
+    request_timeout_ms::Int               # Per-request timeout (0 = disabled)
+    error_responses::Dict{Int,Response}   # Custom responses keyed by HTTP status code
+    request_id::Threads.Atomic{UInt64}    # Monotonic request ID counter
 
     function ServerCore(timeout::Integer, router::R;
                         max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
                         drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS,
                         request_timeout_ms::Integer=0,
-                        on_error::Union{Nothing,Function}=nothing,
+                        error_responses::Dict{Int,Response}=Dict{Int,Response}(),
                         c_handler::Ptr{Cvoid}=C_NULL) where {R <: AbstractRouter}
         return new{R}(
             Manager(empty=true), c_handler, timeout, nothing,
             router, Dict{Int,String}(),
             Threads.Atomic{Bool}(false), AbstractMiddleware[],
             max_body_size, drain_timeout_ms, nothing,
-            request_timeout_ms, on_error, Threads.Atomic{UInt64}(0)
+            request_timeout_ms, error_responses, Threads.Atomic{UInt64}(0)
         )
     end
 end
+
+# Default error responses returned when no custom entry is in error_responses
+const _DEFAULT_500 = Response(500, ContentType.text, "500 Internal Server Error")
+const _DEFAULT_413 = Response(413, ContentType.text, "413 Payload Too Large")
+const _DEFAULT_504 = Response(504, ContentType.text, "504 Gateway Timeout")
 
 # --- Abstract Server Implementations (Structs only) ---
 

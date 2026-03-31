@@ -4,7 +4,7 @@
 
 """
     AsyncServer(router=Router(); workers=4, nqueue=1024, timeout=0, max_body_size,
-               drain_timeout_ms, request_timeout_ms=0, on_error=nothing)
+               drain_timeout_ms, request_timeout_ms=0, error_responses=Dict{Int,Response}())
 
 Create a multi-threaded server with `workers` background tasks.
 Not compatible with `juliac --trim=safe`.
@@ -16,7 +16,7 @@ Not compatible with `juliac --trim=safe`.
 - `max_body_size::Integer`: Maximum request body size in bytes (default: 1MB).
 - `drain_timeout_ms::Integer`: Graceful shutdown drain timeout (default: 5000ms).
 - `request_timeout_ms::Integer`: Per-request timeout in ms, 0 = disabled (default: `0`).
-- `on_error::Union{Nothing,Function}`: Custom error handler `(req, exception) → Response` (default: `nothing`).
+- `error_responses::Dict{Int,Response}`: Custom responses keyed by HTTP status code (`500`, `413`, `504`). See `error_response!`.
 """
 AsyncServer(::Type{T}; kwargs...) where {T <: StaticRouter} = AsyncServer(T(); kwargs...)
 
@@ -27,10 +27,10 @@ function AsyncServer(router::AbstractRouter=Router();
                      max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
                      drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS,
                      request_timeout_ms::Integer=0,
-                     on_error::Union{Nothing,Function}=nothing)
+                     error_responses::Dict{Int,Response}=Dict{Int,Response}())
     c_handler = Mongoose._cfnasync(typeof(router))
     core = ServerCore(timeout, router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms,
-                      request_timeout_ms=request_timeout_ms, on_error=on_error, c_handler=c_handler)
+                      request_timeout_ms=request_timeout_ms, error_responses=error_responses, c_handler=c_handler)
     server = AsyncServer{typeof(router)}(
         core, Task[],
         Channel{Call}(nqueue), Channel{Reply}(nqueue),

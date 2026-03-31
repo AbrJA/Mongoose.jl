@@ -99,18 +99,23 @@ function serve_dir!(server::AbstractServer, directory::AbstractString)
 end
 
 """
-    on_error!(server, handler)
+    error_response!(server, status::Int, response::Response)
 
-Set a custom error handler. `handler` receives `(request, exception)` and
-must return a `Response`. If the handler itself throws, a generic 500 is sent.
+Register a custom `Response` to be returned for the given HTTP status code.
+Applies to: `500` (unhandled exception), `413` (body too large), `504` (timeout).
+
+Custom 404/405 responses are better handled via a wildcard route:
+```julia
+route!(router, :get, "*", req -> Response(404, ContentType.html, read("404.html", String)))
+```
 
 # Example
 ```julia
-on_error!(server, (req, e) -> Response(500, ContentType.json,
-    JSON.json(Dict("error" => string(e), "uri" => req.uri))))
+error_response!(server, 500, Response(500, ContentType.json, \"\"\"{"error":"Internal error"}\"\"\"))
+error_response!(server, 413, Response(413, ContentType.json, \"\"\"{"error":"Body too large"}\"\"\"))
 ```
 """
-function on_error!(server::AbstractServer, @nospecialize(handler::Function))
-    server.core.on_error = handler
+function error_response!(server::AbstractServer, status::Int, response::Response)
+    server.core.error_responses[status] = response
     return server
 end
