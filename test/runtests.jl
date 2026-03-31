@@ -8,7 +8,7 @@ Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
 @router Routes begin
     get("/hello", (req) -> Response(200, "", "Hello Static"))
     get("/user/:id::Int", (req, id) -> Response(200, "", "User $id"))
-    ws("/chat", on_message=(msg) -> "Echo: $(msg.data)")
+    ws("/chat", on_message=(msg) -> Message("Echo: $(msg.data)"))
 end
 
 @testset "Mongoose.jl" begin
@@ -287,12 +287,12 @@ end
     @testset "WebSocket Tests" begin
         router = Router()
         ws!(router, "/chat", on_message=function (msg::Message)
-                if msg.body isa String
-                    println("Server received text: ", msg.body)
-                    return "Echo: " * msg.body
+                if msg.data isa String
+                    println("Server received text: ", msg.data)
+                    return Message("Echo: " * msg.data)
                 else
-                    println("Server received binary of length: ", length(msg.body))
-                    return msg.body
+                    println("Server received binary of length: ", length(msg.data))
+                    return Message(msg.data)
                 end
             end, on_open=function (req::Request)
                 println("Server opened WS connection! Headers: ", req.headers)

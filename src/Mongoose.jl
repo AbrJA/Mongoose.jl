@@ -3,11 +3,11 @@ module Mongoose
 using Mongoose_jll
 using PrecompileTools
 
-export SyncServer, AsyncServer, Router, Request, Response, WsResponse,
+export SyncServer, AsyncServer, Router, Request, Response, Message,
     Text, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, use!,
     render_body, content_type,
-    ws!, Message,
+    ws!,
     cors, rate_limit, bearer_token, api_key, logger, static_files, health,
     ContentType,
     RouteError, ServerError, BindError,

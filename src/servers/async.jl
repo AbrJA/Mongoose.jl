@@ -73,7 +73,7 @@ function _eventloop(server::AsyncServer)
                 if id_res.payload isa Response
                     _send!(conn, id_res.payload)
                     delete!(server.connections, id_res.id)
-                else  # WsResponse
+                else  # Message
                     try
                         _wssend!(conn, id_res.payload)
                         did_ws_send = true
@@ -100,7 +100,7 @@ function _workloop(server::AsyncServer)
                     Response(500, ContentType.text, "500 Internal Server Error")
                 end
                 isopen(server.replies) && put!(server.replies, Tagged(req.id, res))
-            else  # Message
+            else  # Intent
                 res = _handlewsmsg!(server, req)
                 res !== nothing && isopen(server.replies) && put!(server.replies, res)
             end
