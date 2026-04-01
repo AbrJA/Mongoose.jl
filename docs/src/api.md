@@ -31,18 +31,13 @@ Request
 Response
 ContentType
 Binary
-header
-body
-query
 getcontext!
-parse_query
 ```
 
 ## Utilities
 
 ```@docs
-Mongoose.query
-parse_query
+ServerConfig
 ```
 
 ## WebSocket Types
@@ -59,6 +54,8 @@ rate_limit
 bearer_token
 api_key
 logger
+health
+metrics
 ```
 
 ## JSON

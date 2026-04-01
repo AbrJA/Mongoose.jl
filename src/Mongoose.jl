@@ -8,10 +8,11 @@ export SyncServer, AsyncServer, Router, Request, Response,
     start!, shutdown!, route!, use!, serve_dir!, error_response!,
     render_body, content_type, getcontext!,
     ws!, Message,
-    cors, rate_limit, bearer_token, api_key, logger, health,
+    cors, rate_limit, bearer_token, api_key, logger, health, metrics,
     ContentType,
     RouteError, ServerError, BindError,
-    @router
+    @router,
+    ServerConfig
 
 # 1. FFI Layer (Constants, Structs, Bindings)
 include("ffi/constants.jl")

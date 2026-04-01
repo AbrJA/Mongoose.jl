@@ -45,21 +45,22 @@ start!(server, port=8080, blocking=false)
 
 ## Query Parameters
 
-Use `query(req, key)` to access URL-decoded query parameters. Parsed parameters are cached on first access for efficient repeated lookups.
+Use `Mongoose.query(T, req)` to parse the query string into a typed struct in one call.
 
 ```julia
 using Mongoose
 
+struct SearchQuery
+    q::String
+    page::Int
+end
+
 router = Router()
 
 route!(router, :get, "/search", req -> begin
-    q    = query(req, "q")
-    page = query(req, "page")
-
-    q === nothing && return Response(400, ContentType.text, "Missing ?q= parameter")
-
-    p = page === nothing ? 1 : parse(Int, page)
-    Response(200, ContentType.json, """{"query": "$q", "page": $p}""")
+    s = Mongoose.query(SearchQuery, req)  # parses ?q=julia&page=2
+    isempty(s.q) && return Response(400, ContentType.text, "Missing ?q= parameter")
+    Response(200, ContentType.json, """{"query": "$(s.q)", "page": $(s.page)}""")
 end)
 
 server = AsyncServer(router)
@@ -101,7 +102,7 @@ start!(server, port=8080, blocking=false)
 
 ## Parse Query into a Struct
 
-Use `Mongoose.query(T, str)` to deserialize a query string into a typed struct. Supports `String`, numeric types, `Bool`, and `Union{T, Nothing}` for optional fields.
+Use `query(T, req)` to deserialize a query string into a typed struct. Supports `String`, numeric types, `Bool`, and `Union{T, Nothing}` for optional fields.
 
 ```julia
 using Mongoose
@@ -115,7 +116,7 @@ end
 router = Router()
 
 route!(router, :get, "/search", req -> begin
-    search = Mongoose.query(SearchQuery, req.query)
+    search = Mongoose.query(SearchQuery, req)
     Response(200, ContentType.text, "Searching '$(search.q)' page $(search.page)")
 end)
 
@@ -298,7 +299,7 @@ using Mongoose
 @router MyApi begin
     get("/", req -> Response(200, ContentType.text, "Hello from AOT!"))
     get("/users/:id::Int", (req, id) -> Response(200, ContentType.text, "User $id"))
-    post("/echo", req -> Response(200, ContentType.text, body(req)))
+    post("/echo", req -> Response(200, ContentType.text, req.body))
     ws("/chat", on_message = msg -> Message("Echo: $(msg.data)"))
 end
 
@@ -423,7 +424,49 @@ start!(server, port=8080, blocking=false)
 
 Each log line is a JSON object:
 ```json
-{"method":"GET","uri":"/","status":200,"duration_ms":0.42,"ts":"2025-01-15T10:30:00.123"}
+{"method":"GET","uri":"/","status":200,"duration_ms":0.42,"ts":"2025-01-15T10:30:00"}
+```
+
+## Prometheus Metrics
+
+Expose Prometheus-compatible metrics with the `metrics()` middleware. It automatically tracks request counts and latency histograms, and serves them at `GET /metrics`:
+
+```julia
+using Mongoose
+
+router = Router()
+route!(router, :get, "/api/data", req -> Response(200, ContentType.json, """{"ok":true}"""))
+
+server = AsyncServer(router; workers=4)
+use!(server, health())
+use!(server, metrics())          # serves GET /metrics
+
+start!(server; host="0.0.0.0", port=8080)
+```
+
+Sample output at `GET /metrics`:
+```
+# HELP http_requests_total Total number of HTTP requests
+# TYPE http_requests_total counter
+http_requests_total{method="GET",status="200"} 42
+
+# HELP http_request_duration_seconds HTTP request latency in seconds
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{le="0.005"} 38
+http_request_duration_seconds_bucket{le="0.01"} 41
+...
+http_request_duration_seconds_bucket{le="+Inf"} 42
+http_request_duration_seconds_sum 0.127
+http_request_duration_seconds_count 42
+```
+
+Prometheus `scrape_configs`:
+```yaml
+scrape_configs:
+  - job_name: myapp
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: /metrics
 ```
 
 ## Binary Responses
@@ -550,10 +593,14 @@ function register_user_routes!(router)
 end
 
 # --- Product service ---
+struct ProductQuery
+    limit::Union{Int, Nothing}
+end
+
 function register_product_routes!(router)
     route!(router, :get, "/api/v1/products", req -> begin
-        limit = query(req, "limit")
-        n = limit === nothing ? 10 : parse(Int, limit)
+        limit = Mongoose.query(ProductQuery, req).limit
+        n = something(limit, 10)
         items = [Dict("id" => i, "name" => "Product $i", "price" => i * 9.99) for i in 1:n]
         Response(Json, items)
     end)
@@ -797,6 +844,10 @@ using Mongoose, JSON
 
 Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
 
+struct SearchParams
+    q::String
+end
+
 router = Router()
 
 # --- JSON API ---
@@ -805,9 +856,9 @@ route!(router, :get, "/api/v1/config", req -> begin
 end)
 
 route!(router, :get, "/api/v1/search", req -> begin
-    q = query(req, "q")
-    q === nothing && return Response(400, ContentType.json, """{"error":"Missing query"}""")
-    Response(Json, Dict("query" => q, "results" => []))
+    s = Mongoose.query(SearchParams, req)
+    isempty(s.q) && return Response(400, ContentType.json, """{"error":"Missing query"}""")
+    Response(Json, Dict("query" => s.q, "results" => []))
 end)
 
 server = AsyncServer(router; workers=4)

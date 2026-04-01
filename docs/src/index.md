@@ -88,6 +88,31 @@ server = SyncServer(router;
 )
 ```
 
+### ServerConfig
+
+All constructor keyword arguments can be consolidated into a `ServerConfig` struct — useful for environment-driven configuration:
+
+```julia
+config = ServerConfig(
+    workers            = parse(Int, get(ENV, "WORKERS", "4")),
+    max_body_size      = parse(Int, get(ENV, "MAX_BODY", "1048576")),
+    request_timeout_ms = parse(Int, get(ENV, "REQ_TIMEOUT_MS", "0")),
+    drain_timeout_ms   = 10_000,
+)
+
+server = AsyncServer(router, config)  # or SyncServer(router, config)
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `timeout` | `1` | Poll timeout in ms (`0` = min latency, high CPU) |
+| `max_body_size` | 1 MB | Max request body in bytes |
+| `drain_timeout_ms` | 5000 | Graceful-shutdown drain period in ms |
+| `request_timeout_ms` | `0` | Per-request timeout in ms; `0` = disabled |
+| `workers` | `4` | Worker tasks (`AsyncServer` only) |
+| `nqueue` | `1024` | Channel buffer size (`AsyncServer` only) |
+| `error_responses` | `Dict()` | Custom `Response` keyed by status code |
+
 ### Lifecycle
 
 ```julia
@@ -209,29 +234,18 @@ Headers can be concatenated: `ContentType.text * "X-Custom: value\r\n"`
 ### Query String Utilities
 
 ```julia
-# Look up a single query parameter
-route!(router, :get, "/search", req -> begin
-    q = query(req, "q")           # → String or nothing
-    q === nothing && return Response(400, "Missing ?q=")
-    Response(200, ContentType.text, "Searching: $q")
-end)
-
-# Get all query parameters as a Dict
-route!(router, :get, "/filter", req -> begin
-    params = query(req)           # → Dict{String, String}
-    Response(200, ContentType.text, "Got $(length(params)) params")
-end)
-
-# Parse query string into a typed struct
+# Parse query string into a typed struct (not exported — call as Mongoose.query)
 struct SearchQuery
     q::String
     page::Int
 end
-s = query(SearchQuery, "q=julia&page=1")  # SearchQuery("julia", 1)
 
-# Also works from a request:
+# From a raw string:
+s = Mongoose.query(SearchQuery, "q=julia&page=1")  # SearchQuery("julia", 1)
+
+# From a request:
 route!(router, :get, "/search", req -> begin
-    s = query(SearchQuery, req)
+    s = Mongoose.query(SearchQuery, req)
     Response(200, ContentType.text, "Searching: $(s.q) page $(s.page)")
 end)
 ```
@@ -281,7 +295,7 @@ use!(server, logger(structured=true))           # JSON log lines
 
 Structured mode emits one JSON object per line:
 ```json
-{"method":"GET","uri":"/users/1","status":200,"duration_ms":1.23,"ts":"2025-01-15T10:30:00.123"}
+{"method":"GET","uri":"/users/1","status":200,"duration_ms":1.23,"ts":"2025-01-15T10:30:00"}
 ```
 
 ### CORS
@@ -322,6 +336,22 @@ use!(server, api_key(header_name="X-API-Key", keys=Set(["key1", "key2"])))
 ```
 
 Returns `401` if the header is missing or the key is not in the allowed set.
+
+### Prometheus Metrics
+
+The `metrics()` middleware tracks request counts and latency histograms and exposes a Prometheus scrape endpoint:
+
+```julia
+use!(server, metrics())          # exposes GET /metrics
+use!(server, metrics(path="/internal/metrics"))  # custom path
+```
+
+Metrics exposed:
+
+| Metric | Type | Labels |
+|--------|------|--------|
+| `http_requests_total` | counter | `method`, `status` |
+| `http_request_duration_seconds` | histogram | `le` (11 buckets: 5ms–10s) |
 
 ### Static Files
 

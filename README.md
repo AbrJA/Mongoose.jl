@@ -105,7 +105,7 @@ struct SearchParams
 end
 
 route!(router, :get, "/search", req -> begin
-    p = query(SearchParams, req.query)  # "q=julia&page=2" → SearchParams("julia", 2, nothing)
+    p = Mongoose.query(SearchParams, req)  # parses ?q=julia&page=2
     Response(200, "Searching: $(p.q), page $(p.page)")
 end)
 ```
@@ -119,7 +119,7 @@ Missing fields default to `""`, `0`, `false`, or `nothing` depending on their ty
 | `req.body` | `String` | Raw request body |
 | `get(req.headers, "authorization", nothing)` | `String \| nothing` | Case-insensitive header lookup |
 | `req.query` | `String` | Raw query string (e.g. `"q=test&page=2"`) |
-| `query(T, req)` | `T` | Parse query string into struct `T` |
+| `Mongoose.query(T, req)` | `T` | Parse query string into struct `T` |
 | `getcontext!(req)` | `Dict{Symbol,Any}` | Lazily-allocated context dict (set by middleware) |
 
 ---
@@ -142,6 +142,21 @@ server = AsyncServer(router;
 
 # AOT / simple scripts
 server = SyncServer(router)
+```
+
+### ServerConfig
+
+Consolidate all options into a `ServerConfig` struct — particularly useful for environment-driven configuration:
+
+```julia
+config = ServerConfig(
+    workers            = parse(Int, get(ENV, "WORKERS", "4")),
+    max_body_size      = parse(Int, get(ENV, "MAX_BODY", "1048576")),
+    request_timeout_ms = parse(Int, get(ENV, "REQ_TIMEOUT_MS", "0")),
+    drain_timeout_ms   = 10_000,
+)
+
+server = AsyncServer(router, config)   # or SyncServer(router, config)
 ```
 
 ### Custom Error Responses
@@ -207,6 +222,9 @@ use!(server, api_key(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
 
 # Serve static files from the "public/" directory (C-level, with Range/ETag/gzip)
 serve_dir!(server, "public")
+
+# Prometheus-compatible metrics at GET /metrics
+use!(server, metrics())
 
 # Built-in health check at GET /healthz
 use!(server, health())
