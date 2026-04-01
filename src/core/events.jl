@@ -3,7 +3,7 @@
 
 The single C callback registered with Mongoose via `@cfunction`.
 """
-function _callbackev(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})::Cvoid
+function _callbackev(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
     ev == MG_EV_POLL && return nothing
 
     fn_data = mg_conn_get_fn_data(conn)

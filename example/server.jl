@@ -376,7 +376,8 @@ function main()
     error_response!(server, 413, Response(Json, Dict("error"=>"Request body too large"); status=413))
     error_response!(server, 504, Response(Json, Dict("error"=>"Request timed out"); status=504))
 
-    serve_dir!(server, joinpath(@__DIR__, "public"))  # GET / → public/index.html
+    serve_dir!(server, joinpath(@__DIR__, "public"))                              # GET /* → public/*
+    serve_dir!(server, joinpath(@__DIR__, "public", "assets"); uri_prefix="/assets") # GET /assets/* → public/assets/*
 
     @info "======================================================"
     @info "  Mongoose.jl Comprehensive Demo"

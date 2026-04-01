@@ -14,7 +14,7 @@ end
 """
     _parsewsmsg(msg::MgWsMessage) → Message
 """
-function _parsewsmsg(msg::MgWsMessage)::Message
+function _parsewsmsg(msg::MgWsMessage)
     is_text = (msg.flags & 0x0F) == 1
     if msg.data.len > 0 && msg.data.buf != C_NULL
         if is_text

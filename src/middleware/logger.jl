@@ -4,6 +4,44 @@
     Supports plain text and structured (JSON) output formats.
 """
 
+"""
+    _json_escape(s) → String
+
+Escape a string for safe embedding in a JSON value (handles \\, ", control chars).
+"""
+function _json_escape(s::AbstractString)
+    needs_escape = false
+    for c in s
+        if c == '"' || c == '\\' || c < ' '
+            needs_escape = true
+            break
+        end
+    end
+    needs_escape || return String(s)
+
+    io = IOBuffer()
+    for c in s
+        if c == '"'
+            write(io, "\\\"")
+        elseif c == '\\'
+            write(io, "\\\\")
+        elseif c == '\n'
+            write(io, "\\n")
+        elseif c == '\r'
+            write(io, "\\r")
+        elseif c == '\t'
+            write(io, "\\t")
+        elseif c < ' '
+            # Control characters as \\uXXXX
+            write(io, "\\u")
+            write(io, string(UInt16(c); base=16, pad=4))
+        else
+            write(io, c)
+        end
+    end
+    return String(take!(io))
+end
+
 struct Logger <: AbstractMiddleware
     threshold_ns::Int
     output::IO
@@ -22,7 +60,7 @@ function (mw::Logger)(request::AbstractRequest, params::Vector{Any}, next)
         if mw.structured
             # JSON structured log line (no dependency — manual formatting)
             method = uppercase(String(request.method))
-            uri = request.uri
+            uri = _json_escape(request.uri)
             println(mw.output,
                 "{\"method\":\"", method,
                 "\",\"uri\":\"", uri,

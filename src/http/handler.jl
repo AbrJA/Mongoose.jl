@@ -2,6 +2,34 @@
     HTTP handler — translates Mongoose C events into high-level Request/Response.
 """
 
+# --- HTTP status text lookup ---
+
+"""
+    _statustext(code) → String
+
+Return the standard HTTP reason phrase for a status code.
+"""
+@inline function _statustext(code::Int)
+    code == 200 && return "OK"
+    code == 201 && return "Created"
+    code == 204 && return "No Content"
+    code == 301 && return "Moved Permanently"
+    code == 302 && return "Found"
+    code == 304 && return "Not Modified"
+    code == 400 && return "Bad Request"
+    code == 401 && return "Unauthorized"
+    code == 403 && return "Forbidden"
+    code == 404 && return "Not Found"
+    code == 405 && return "Method Not Allowed"
+    code == 413 && return "Payload Too Large"
+    code == 429 && return "Too Many Requests"
+    code == 500 && return "Internal Server Error"
+    code == 502 && return "Bad Gateway"
+    code == 503 && return "Service Unavailable"
+    code == 504 && return "Gateway Timeout"
+    return "OK"
+end
+
 # --- Static file serving (C-level, event-loop thread only) ---
 
 """
@@ -14,24 +42,29 @@ Returns `true` if the request was handled (caller must return immediately).
 Must be called from the event-loop thread because `ev_data` is only valid
 during the C callback and `mg_http_serve_dir` writes directly to `conn`.
 """
-@inline function _servestatic!(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid}, method::Symbol, uri::String)::Bool
-    server.core.static_dir === nothing && return false
+@inline function _servestatic!(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid}, method::Symbol, uri::String)
+    isempty(server.core.static_dirs) && return false
 
     # Registered routes always take priority over static files.
     _matchroute(server.core.router, method, uri) !== nothing && return false
 
-    # Only call the C library if an actual file exists on disk.
-    # This prevents intercepting middleware-handled paths (e.g. /healthz, /metrics)
-    # that have no corresponding file, which would cause mg_http_serve_dir to send
-    # a 404 before the middleware pipeline ever runs.
-    _static_file_exists(server.core.static_dir, uri) || return false
+    # Try each registered static directory in order. The first one whose prefix
+    # matches the URI and has a matching file on disk wins.
+    for (dir, prefix) in server.core.static_dirs
+        _static_file_exists(dir, prefix, uri) || continue
 
-    dir = server.core.static_dir
-    opts = Ref(MgHttpServeOpts(Base.unsafe_convert(Cstring, dir)))
-    GC.@preserve dir begin
-        mg_http_serve_dir(conn, ev_data, opts)
+        # Build the root_dir string Mongoose expects. When there is a non-root
+        # prefix, use the comma-separated "default,/prefix=dir" format so that
+        # Mongoose strips the prefix before resolving the file path.
+        root_dir = prefix == "/" ? dir : "$dir,$prefix=$dir"
+        opts = Ref(MgHttpServeOpts(Base.unsafe_convert(Cstring, root_dir)))
+        GC.@preserve root_dir begin
+            mg_http_serve_dir(conn, ev_data, opts)
+        end
+        return true
     end
-    return true
+
+    return false
 end
 
 """
@@ -40,8 +73,16 @@ end
 Return `true` if `uri` maps to a real file (or pre-compressed `.gz` variant) under
 `root`, or to a directory that has an `index.html`. Path-traversal safe.
 """
-@inline function _static_file_exists(root::String, uri::String)::Bool
-    rel = uri
+@inline function _static_file_exists(root::String, prefix::String, uri::String)
+    # Check that the URI starts with the configured prefix and strip it.
+    if prefix == "/"
+        rel = uri
+    elseif startswith(uri, prefix * "/") || uri == prefix
+        rel = uri[length(prefix)+1:end]
+    else
+        return false
+    end
+
     qi = findfirst('?', rel)
     qi !== nothing && (rel = rel[1:prevind(rel, qi)])
 
@@ -87,7 +128,7 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
         @error "Handler error" exception=(e, catch_backtrace())
         _handleerror(server, req, e)
     end
-    res = Response(res.status, res.headers * "X-Request-Id: $(rid)\r\n", res.body)
+    res = Response(res.status, _appendreqid(res.headers, rid), res.body)
     _send!(conn, res)
     return
 end
@@ -126,12 +167,21 @@ Generate a monotonically increasing request ID.
 @inline _nextreqid!(server::AbstractServer) = Threads.atomic_add!(server.core.request_id, UInt64(1)) + UInt64(1)
 
 """
+    _appendreqid(headers, rid) → String
+
+Append X-Request-Id header to response headers string.
+"""
+@inline function _appendreqid(headers::String, rid::UInt64)
+    return string(headers, "X-Request-Id: ", rid, "\r\n")
+end
+
+"""
     _errresponse(server, status) → Response
 
 Look up a custom response for `status` in `server.core.error_responses`.
 Falls back to the module-level default.
 """
-@inline function _errresponse(server::AbstractServer, status::Int)::Response
+@inline function _errresponse(server::AbstractServer, status::Int)
     r = get(server.core.error_responses, status, nothing)
     r !== nothing && return r
     status == 500 && return _DEFAULT_500
@@ -146,14 +196,14 @@ end
 Return the custom 500 response from `error_responses` if configured,
 otherwise return the default 500. No dynamic function call — trim-safe.
 """
-@inline function _handleerror(server::AbstractServer, ::Any, ::Any)::Response
+@inline function _handleerror(server::AbstractServer, ::Any, ::Any)
     return _errresponse(server, 500)
 end
 
 """
     _servehttp(server, request) → Response
 """
-function _servehttp(server::AbstractServer, req::AbstractRequest)::Response
+function _servehttp(server::AbstractServer, req::AbstractRequest)
     final = (r, args...) -> _dispatchreq(server.core.router, r)
     if isempty(server.core.middlewares)
         return final(req)
@@ -164,7 +214,7 @@ end
 # Trim-safe specialization: StaticRouter dispatches directly, bypassing
 # the middleware pipeline which uses abstract Function types and closures
 # that cannot be resolved by --trim=safe.
-@inline function _servehttp(server::SyncServer{<:StaticRouter}, req::AbstractRequest)::Response
+@inline function _servehttp(server::SyncServer{<:StaticRouter}, req::AbstractRequest)
     return static_dispatch(server.core.router, req)
 end
 
@@ -206,7 +256,7 @@ cannot clear `is_resp` and keep-alive would hang.
 """
 function _send!(conn::MgConnection, res::Response)
     if res.body isa Vector{UInt8}
-        head = "HTTP/1.1 $(res.status) OK\r\n$(res.headers)Content-Length: $(length(res.body))\r\nConnection: close\r\n\r\n"
+        head = "HTTP/1.1 $(res.status) $(_statustext(res.status))\r\n$(res.headers)Content-Length: $(length(res.body))\r\nConnection: close\r\n\r\n"
         hlen = ncodeunits(head)
         buf  = Vector{UInt8}(undef, hlen + length(res.body))
         copyto!(buf, 1, codeunits(head), 1, hlen)
@@ -223,7 +273,7 @@ end
 Execute request handling with a timeout. If the handler exceeds `timeout_ms`,
 returns 504 Gateway Timeout. Used only by AsyncServer workers.
 """
-function _servehttp_timeout(server::AbstractServer, req::AbstractRequest, timeout_ms::Integer)::Response
+function _servehttp_timeout(server::AbstractServer, req::AbstractRequest, timeout_ms::Integer)
     ch = Channel{Response}(1)
     t = Threads.@spawn begin
         try
@@ -240,6 +290,8 @@ function _servehttp_timeout(server::AbstractServer, req::AbstractRequest, timeou
             end
             if !isopen(timer)
                 @warn "Request timed out" uri=req.uri timeout_ms=timeout_ms
+                # Schedule interrupt so the handler task doesn't leak
+                Base.schedule(t, InterruptException(); error=true)
                 return _errresponse(server, 504)
             end
             yield()

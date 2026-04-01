@@ -87,14 +87,16 @@ Features provided by the C library at no extra cost:
 
 # Example
 ```julia
-serve_dir!(server, "public")          # serve files from ./public/
-serve_dir!(server, "/var/www/html")   # absolute path
+serve_dir!(server, "public")                       # GET /* → public/*
+serve_dir!(server, "public/assets"; uri_prefix="/assets")  # GET /assets/* → public/assets/*
 ```
 """
-function serve_dir!(server::AbstractServer, directory::AbstractString)
+function serve_dir!(server::AbstractServer, directory::AbstractString;
+                    uri_prefix::AbstractString="/")
     dir = rstrip(abspath(directory), '/')
     isdir(dir) || throw(ArgumentError("serve_dir!: directory does not exist: \$dir"))
-    server.core.static_dir = dir
+    prefix = "/" * lstrip(rstrip(uri_prefix, '/'), '/')
+    push!(server.core.static_dirs, (dir, prefix))
     return server
 end
 

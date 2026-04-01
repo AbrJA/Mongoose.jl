@@ -118,7 +118,7 @@ function _workloop(server::AsyncServer)
                     @error "Handler error" exception=(e, catch_backtrace())
                     _handleerror(server, req.payload, e)
                 end
-                res = Response(res.status, res.headers * "X-Request-Id: $(rid)\r\n", res.body)
+                res = Response(res.status, _appendreqid(res.headers, rid), res.body)
                 isopen(server.replies) && put!(server.replies, Tagged(req.id, res))
             else  # Intent
                 res = _handlewsmsg!(server, req)

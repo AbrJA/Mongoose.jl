@@ -443,3 +443,415 @@ end)
 server = AsyncServer(router)
 start!(server, port=8080, blocking=false)
 ```
+
+## Production Deployment
+
+### Environment-Driven Configuration
+
+Read server settings from environment variables with sensible defaults:
+
+```julia
+using Mongoose, JSON
+
+Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+
+# --- Configuration from environment ---
+const HOST    = get(ENV, "HOST", "0.0.0.0")
+const PORT    = parse(Int, get(ENV, "PORT", "8080"))
+const WORKERS = parse(Int, get(ENV, "WORKERS", string(Threads.nthreads())))
+const MAX_BODY  = parse(Int, get(ENV, "MAX_BODY_SIZE", "5242880"))  # 5 MB
+const REQ_TIMEOUT = parse(Int, get(ENV, "REQUEST_TIMEOUT_MS", "30000"))  # 30s
+const LOG_LEVEL = get(ENV, "LOG_LEVEL", "info")
+
+router = Router()
+
+route!(router, :get, "/api/status", req -> Response(Json, Dict(
+    "status" => "ok",
+    "workers" => WORKERS,
+    "julia_version" => string(VERSION)
+)))
+
+server = AsyncServer(router;
+    workers=WORKERS,
+    max_body_size=MAX_BODY,
+    request_timeout_ms=REQ_TIMEOUT,
+    drain_timeout_ms=10_000
+)
+
+# Middleware stack
+use!(server, health())
+use!(server, logger(structured=(LOG_LEVEL == "debug")))
+use!(server, cors())
+
+start!(server; host=HOST, port=PORT)
+```
+
+Launch with: `HOST=0.0.0.0 PORT=3000 WORKERS=8 julia -t 8 --project server.jl`
+
+### Graceful Shutdown with Signal Handling
+
+Handle shutdown signals for clean container stops:
+
+```julia
+using Mongoose
+
+router = Router()
+route!(router, :get, "/", req -> Response(200, "Running"))
+
+server = AsyncServer(router; workers=4, drain_timeout_ms=10_000)
+use!(server, health())
+
+start!(server; host="0.0.0.0", port=8080, blocking=false)
+
+# Block main thread and handle signals
+try
+    @info "Server ready. Press Ctrl+C to stop."
+    while server.core.running[]
+        sleep(1)
+    end
+catch e
+    if e isa InterruptException
+        @info "Received shutdown signal"
+    else
+        @error "Unexpected error" exception=(e, catch_backtrace())
+    end
+finally
+    shutdown!(server)
+end
+```
+
+### Multi-Service API with Route Groups
+
+Organize a larger API using separate routers merged into one server:
+
+```julia
+using Mongoose, JSON
+
+Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+
+# --- User service ---
+function register_user_routes!(router)
+    route!(router, :get, "/api/v1/users", req -> begin
+        Response(Json, [Dict("id" => 1, "name" => "Alice"), Dict("id" => 2, "name" => "Bob")])
+    end)
+
+    route!(router, :get, "/api/v1/users/:id::Int", (req, id) -> begin
+        Response(Json, Dict("id" => id, "name" => "User $id"))
+    end)
+
+    route!(router, :post, "/api/v1/users", req -> begin
+        data = JSON.parse(req.body)
+        Response(Json, Dict("id" => 3, "name" => get(data, "name", "")); status=201)
+    end)
+
+    route!(router, :delete, "/api/v1/users/:id::Int", (req, id) -> begin
+        Response(204, "", "")
+    end)
+end
+
+# --- Product service ---
+function register_product_routes!(router)
+    route!(router, :get, "/api/v1/products", req -> begin
+        limit = query(req, "limit")
+        n = limit === nothing ? 10 : parse(Int, limit)
+        items = [Dict("id" => i, "name" => "Product $i", "price" => i * 9.99) for i in 1:n]
+        Response(Json, items)
+    end)
+
+    route!(router, :get, "/api/v1/products/:id::Int", (req, id) -> begin
+        Response(Json, Dict("id" => id, "name" => "Product $id", "price" => id * 9.99))
+    end)
+end
+
+# --- Assemble ---
+router = Router()
+register_user_routes!(router)
+register_product_routes!(router)
+
+# Catch-all 404
+route!(router, :get, "*", req -> Response(Json, Dict("error" => "Not found"); status=404))
+
+server = AsyncServer(router; workers=4, request_timeout_ms=15_000)
+
+# Public: health + CORS on everything
+use!(server, health())
+use!(server, cors())
+use!(server, logger(structured=true))
+
+# Auth only on API routes
+use!(server, bearer_token(t -> t == ENV["API_TOKEN"]); paths=["/api"])
+
+# Rate limit per-client
+use!(server, rate_limit(max_requests=200, window_seconds=60); paths=["/api"])
+
+start!(server; host="0.0.0.0", port=8080)
+```
+
+### Request Context for Auth Pipelines
+
+Use middleware to inject authenticated user data into the request context:
+
+```julia
+using Mongoose, JSON
+
+Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+
+# --- Auth middleware that populates context ---
+struct JWTAuth <: Mongoose.AbstractMiddleware
+    secret::String
+end
+
+function (mw::JWTAuth)(request, params, next)
+    token = get(request.headers, "authorization", nothing)
+    token === nothing && return Response(401, ContentType.json, """{"error":"Missing token"}""")
+
+    # Strip "Bearer " prefix
+    if length(token) > 7 && lowercase(token[1:7]) == "bearer "
+        token = token[8:end]
+    else
+        return Response(401, ContentType.json, """{"error":"Invalid scheme"}""")
+    end
+
+    # In production, decode and verify a real JWT here
+    # For this example, we simulate user lookup
+    ctx = getcontext!(request)
+    ctx[:user_id] = 42
+    ctx[:role] = "admin"
+    ctx[:token] = token
+
+    return next()
+end
+
+# --- Role-based access control middleware ---
+struct RequireRole <: Mongoose.AbstractMiddleware
+    roles::Set{String}
+end
+
+function (mw::RequireRole)(request, params, next)
+    ctx = getcontext!(request)
+    role = get(ctx, :role, "")
+    if role ∉ mw.roles
+        return Response(403, ContentType.json, """{"error":"Insufficient permissions"}""")
+    end
+    return next()
+end
+
+router = Router()
+
+route!(router, :get, "/api/profile", req -> begin
+    ctx = getcontext!(req)
+    Response(Json, Dict("user_id" => ctx[:user_id], "role" => ctx[:role]))
+end)
+
+route!(router, :delete, "/api/admin/users/:id::Int", (req, id) -> begin
+    Response(Json, Dict("deleted" => id))
+end)
+
+server = AsyncServer(router; workers=4)
+
+# Apply auth to all /api routes
+use!(server, JWTAuth("my-secret"); paths=["/api"])
+
+# Require admin role for /api/admin routes
+use!(server, RequireRole(Set(["admin"])); paths=["/api/admin"])
+
+start!(server; port=8080, blocking=false)
+```
+
+### Kubernetes-Ready Health Checks
+
+Configure health checks that integrate with your infrastructure:
+
+```julia
+using Mongoose
+
+# Simulate external dependency checks
+const DB_CONNECTED = Ref(true)
+const CACHE_READY = Ref(true)
+
+router = Router()
+route!(router, :get, "/api/data", req -> Response(200, ContentType.json, """{"ok":true}"""))
+
+server = AsyncServer(router; workers=4)
+
+use!(server, health(
+    # Health check: all dependencies must be working
+    health_check = () -> DB_CONNECTED[] && CACHE_READY[],
+
+    # Readiness: is the service ready to accept traffic?
+    # Return false during startup or when draining
+    ready_check = () -> DB_CONNECTED[],
+
+    # Liveness: is the process responsive?
+    # Only return false if the process is deadlocked
+    live_check = () -> true
+))
+
+use!(server, logger(structured=true))
+
+start!(server; host="0.0.0.0", port=8080)
+```
+
+Kubernetes probes configuration:
+```yaml
+livenessProbe:
+  httpGet:
+    path: /livez
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8080
+  initialDelaySeconds: 3
+  periodSeconds: 5
+```
+
+### File Upload with Size Validation
+
+Handle file uploads with proper size limits and content type checking:
+
+```julia
+using Mongoose, JSON
+
+Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+
+router = Router()
+
+route!(router, :post, "/api/upload", req -> begin
+    ct = get(req.headers, "content-type", "")
+
+    if !startswith(ct, "application/json")
+        return Response(415, ContentType.json, """{"error":"Unsupported media type"}""")
+    end
+
+    data = JSON.parse(req.body)
+    filename = get(data, "filename", "")
+    isempty(filename) && return Response(400, ContentType.json, """{"error":"Missing filename"}""")
+
+    Response(Json, Dict(
+        "status" => "uploaded",
+        "filename" => filename,
+        "size" => length(req.body)
+    ); status=201)
+end)
+
+# 10MB body limit for upload endpoint
+server = AsyncServer(router; workers=4, max_body_size=10_485_760)
+
+use!(server, logger())
+use!(server, rate_limit(max_requests=30, window_seconds=60); paths=["/api/upload"])
+
+start!(server; port=8080, blocking=false)
+```
+
+### WebSocket Chat Room
+
+A multi-client chat server using WebSocket:
+
+```julia
+using Mongoose
+
+router = Router()
+
+route!(router, :get, "/", req -> Response(200, ContentType.html, """
+    <html><body>
+    <h1>Chat</h1>
+    <div id="messages"></div>
+    <input id="msg" type="text" /><button onclick="send()">Send</button>
+    <script>
+      const ws = new WebSocket('ws://' + location.host + '/ws/chat');
+      ws.onmessage = e => {
+        const d = document.getElementById('messages');
+        d.innerHTML += '<p>' + e.data + '</p>';
+      };
+      function send() {
+        const input = document.getElementById('msg');
+        ws.send(input.value);
+        input.value = '';
+      }
+    </script>
+    </body></html>
+"""))
+
+ws!(router, "/ws/chat",
+    on_message = (msg::Message) -> begin
+        # Echo back the message (in production, broadcast to all clients)
+        Message("User: $(msg.data)")
+    end,
+    on_open = (req::Request) -> @info "Client connected",
+    on_close = () -> @info "Client disconnected"
+)
+
+server = AsyncServer(router; workers=2)
+start!(server; host="0.0.0.0", port=8080)
+```
+
+### Static + API Hybrid Application
+
+Serve a frontend SPA alongside a JSON API:
+
+```julia
+using Mongoose, JSON
+
+Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+
+router = Router()
+
+# --- JSON API ---
+route!(router, :get, "/api/v1/config", req -> begin
+    Response(Json, Dict("version" => "1.0.0", "features" => ["auth", "search"]))
+end)
+
+route!(router, :get, "/api/v1/search", req -> begin
+    q = query(req, "q")
+    q === nothing && return Response(400, ContentType.json, """{"error":"Missing query"}""")
+    Response(Json, Dict("query" => q, "results" => []))
+end)
+
+server = AsyncServer(router; workers=4)
+
+# Middleware: API-only auth
+use!(server, api_key(keys=Set([ENV["API_KEY"]])); paths=["/api"])
+
+# CORS for API
+use!(server, cors(origins="https://myapp.com"); paths=["/api"])
+
+# Structured logging
+use!(server, logger(structured=true))
+
+# Serve frontend from public/ directory
+# Routes take priority, so /api/* is handled by Julia
+# Everything else falls through to static files
+serve_dir!(server, "public")
+
+start!(server; host="0.0.0.0", port=8080)
+```
+
+### Compiled Binary with @router (AOT)
+
+Build a fully self-contained binary using `juliac --trim=safe`:
+
+```julia
+# app.jl — compile with: juliac --trim=safe --output-exe myserver app.jl
+using Mongoose
+
+@router MyAPI begin
+    get("/", req -> Response(200, ContentType.json, """{"status":"ok"}"""))
+    get("/users/:id::Int", (req, id) -> Response(200, ContentType.json, """{"id":$id}"""))
+    post("/echo", req -> Response(200, ContentType.text, req.body))
+    ws("/ws", on_message = msg -> Message("Echo: $(msg.data)"))
+end
+
+function main()
+    server = SyncServer(MyAPI())
+    start!(server; host="0.0.0.0", port=8080)
+end
+
+main()
+```
+
+The `@router` macro generates a compile-time prefix trie with zero dynamic dispatch,
+making it compatible with Julia's AOT compilation. The resulting binary starts in
+milliseconds with no JIT warmup.

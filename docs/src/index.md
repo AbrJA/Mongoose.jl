@@ -209,24 +209,31 @@ Headers can be concatenated: `ContentType.text * "X-Custom: value\r\n"`
 ### Query String Utilities
 
 ```julia
-# Parse query string into a struct
+# Look up a single query parameter
+route!(router, :get, "/search", req -> begin
+    q = query(req, "q")           # → String or nothing
+    q === nothing && return Response(400, "Missing ?q=")
+    Response(200, ContentType.text, "Searching: $q")
+end)
+
+# Get all query parameters as a Dict
+route!(router, :get, "/filter", req -> begin
+    params = query(req)           # → Dict{String, String}
+    Response(200, ContentType.text, "Got $(length(params)) params")
+end)
+
+# Parse query string into a typed struct
 struct SearchQuery
     q::String
     page::Int
 end
-s = Mongoose.query(SearchQuery, "q=julia&page=1")  # SearchQuery("julia", 1)
+s = query(SearchQuery, "q=julia&page=1")  # SearchQuery("julia", 1)
 
 # Also works from a request:
 route!(router, :get, "/search", req -> begin
-    s = Mongoose.query(SearchQuery, req.query)
+    s = query(SearchQuery, req)
     Response(200, ContentType.text, "Searching: $(s.q) page $(s.page)")
 end)
-```
-
-`parse_query` is an alias for `query` when working with raw query strings:
-
-```julia
-params = parse_query(req)  # Dict{String, String}
 ```
 
 ## WebSocket Support

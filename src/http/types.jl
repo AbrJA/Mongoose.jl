@@ -150,6 +150,7 @@ end
 
 function _headers(message::MgHttpMessage)
     pairs = Pair{String,String}[]
+    sizehint!(pairs, 12)
     for h in message.headers
         if h.name.buf != C_NULL && h.name.len > 0 && h.val.buf != C_NULL && h.val.len > 0
             name = lowercase(_tostring(h.name))

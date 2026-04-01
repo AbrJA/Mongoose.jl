@@ -122,7 +122,8 @@ expected by the Mongoose C library's `mg_http_reply`.
 """
 function _formatheaders(headers::Vector{Pair{String,String}})
     isempty(headers) && return ""
-    io = IOBuffer()
+    # Estimate ~40 bytes per header (key: value\r\n)
+    io = IOBuffer(sizehint=length(headers) * 40)
     for (k, v) in headers
         print(io, k, ": ", v, "\r\n")
     end
@@ -130,8 +131,9 @@ function _formatheaders(headers::Vector{Pair{String,String}})
 end
 
 function Base.get(headers::Vector{Pair{String,String}}, key::String, default)
+    lkey = lowercase(key)
     @inbounds for i in eachindex(headers)
-        lowercase(headers[i].first) == lowercase(key) && return headers[i].second
+        headers[i].first == lkey && return headers[i].second
     end
     return default
 end

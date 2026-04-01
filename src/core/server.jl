@@ -43,8 +43,8 @@ mutable struct ServerCore{R <: AbstractRouter}
     middlewares::Vector{AbstractMiddleware}
     max_body_size::Int
     drain_timeout_ms::Int
-    static_dir::Union{String,Nothing}     # Root directory for C-level static file serving
-    request_timeout_ms::Int               # Per-request timeout (0 = disabled)
+    static_dirs::Vector{Tuple{String,String}}  # [(dir, uri_prefix), ...] for C-level static file serving
+    request_timeout_ms::Int                      # Per-request timeout (0 = disabled)
     error_responses::Dict{Int,Response}   # Custom responses keyed by HTTP status code
     request_id::Threads.Atomic{UInt64}    # Monotonic request ID counter
 
@@ -58,7 +58,7 @@ mutable struct ServerCore{R <: AbstractRouter}
             Manager(empty=true), c_handler, timeout, nothing,
             router, Dict{Int,String}(),
             Threads.Atomic{Bool}(false), AbstractMiddleware[],
-            max_body_size, drain_timeout_ms, nothing,
+            max_body_size, drain_timeout_ms, Tuple{String,String}[],
             request_timeout_ms, error_responses, Threads.Atomic{UInt64}(0)
         )
     end
