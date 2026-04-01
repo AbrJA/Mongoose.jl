@@ -374,18 +374,20 @@ using Mongoose, JSON
 
 Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
 
+router = Router()
 server = AsyncServer(router)
 
 # Custom JSON 500 response
 error_response!(server, 500, Response(Json, Dict("error" => "Internal server error"); status=500))
 
 # Custom 413 response
-error_response!(server, 413, Response(500, ContentType.json, """{"error":"Request body too large"}"""))
+error_response!(server, 413, Response(413, ContentType.json, """{"error":"Request body too large"}"""))
 ```
 
 You can also pass a pre-built dict at construction time:
 
 ```julia
+router = Router()
 errors = Dict{Int,Response}(
     500 => Response(500, ContentType.json, """{"error":"Internal error"}"""),
     413 => Response(413, ContentType.json, """{"error":"Body too large"}"""),
