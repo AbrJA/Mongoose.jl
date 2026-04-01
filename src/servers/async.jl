@@ -19,6 +19,7 @@ Not compatible with `juliac --trim=safe`.
 - `error_responses::Dict{Int,Response}`: Custom responses keyed by HTTP status code (`500`, `413`, `504`). See `error_response!`.
 """
 AsyncServer(::Type{T}; kwargs...) where {T <: StaticRouter} = AsyncServer(T(); kwargs...)
+AsyncServer(::Type{T}, config::ServerConfig) where {T <: StaticRouter} = AsyncServer(T(), config)
 
 function AsyncServer(router::AbstractRouter=Router();
                      workers::Integer=4,
@@ -38,6 +39,23 @@ function AsyncServer(router::AbstractRouter=Router();
     )
     finalizer(_teardown!, server)
     return server
+end
+
+"""
+    AsyncServer(router, config::ServerConfig)
+
+Create an `AsyncServer` from a [`ServerConfig`](@ref) struct.
+"""
+function AsyncServer(router::AbstractRouter, config::ServerConfig)
+    return AsyncServer(router;
+        workers            = config.workers,
+        nqueue             = config.nqueue,
+        timeout            = config.timeout,
+        max_body_size      = config.max_body_size,
+        drain_timeout_ms   = config.drain_timeout_ms,
+        request_timeout_ms = config.request_timeout_ms,
+        error_responses    = config.error_responses
+    )
 end
 
 function _init!(server::AsyncServer)
@@ -107,7 +125,7 @@ function _workloop(server::AsyncServer)
     try
         for req in server.calls     # blocks properly — no sleep needed
             if req.payload isa Request
-                rid = _nextreqid!(server)
+                rid = _requestid(req.payload, server)
                 res = try
                     if timeout_ms > 0
                         _servehttp_timeout(server, req.payload, timeout_ms)

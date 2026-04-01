@@ -121,7 +121,7 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
     _servestatic!(server, conn, ev_data, _method(message), _uri(message)) && return
 
     req = Request(message)
-    rid = _nextreqid!(server)
+    rid = _requestid(req, server)
     res = try
         _servehttp(server, req)
     catch e
@@ -167,11 +167,45 @@ Generate a monotonically increasing request ID.
 @inline _nextreqid!(server::AbstractServer) = Threads.atomic_add!(server.core.request_id, UInt64(1)) + UInt64(1)
 
 """
+    _sanitize_request_id(s) → String
+
+Validate an incoming X-Request-Id value. Returns the original string if safe,
+or an empty string if it contains HTTP header-injection characters (`\r`, `\n`)
+or exceeds 128 bytes. This prevents response-splitting attacks when echoing
+an untrusted client-supplied ID into a response header.
+"""
+@inline function _sanitize_request_id(s::String)::String
+    length(s) > 128 && return ""
+    @inbounds for i in 1:ncodeunits(s)
+        b = codeunit(s, i)
+        (b == 0x0d || b == 0x0a || b < 0x20) && return ""
+    end
+    return s
+end
+
+"""
+    _requestid(req, server) → String
+
+Return the request ID to embed in the `X-Request-Id` response header.
+If the incoming request carries a valid `X-Request-Id` header it is forwarded
+verbatim (enabling end-to-end distributed-trace correlation). Otherwise a new
+monotonic ID is generated from the server's atomic counter.
+"""
+@inline function _requestid(req::AbstractRequest, server::AbstractServer)::String
+    h = get(req.headers, "x-request-id", nothing)
+    if h !== nothing
+        safe = _sanitize_request_id(h)
+        !isempty(safe) && return safe
+    end
+    return string(Threads.atomic_add!(server.core.request_id, UInt64(1)) + UInt64(1))
+end
+
+"""
     _appendreqid(headers, rid) → String
 
 Append X-Request-Id header to response headers string.
 """
-@inline function _appendreqid(headers::String, rid::UInt64)
+@inline function _appendreqid(headers::String, rid::AbstractString)
     return string(headers, "X-Request-Id: ", rid, "\r\n")
 end
 

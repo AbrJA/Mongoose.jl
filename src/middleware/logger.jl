@@ -5,11 +5,11 @@
 """
 
 """
-    _json_escape(s) → String
+    _escape(s) → String
 
 Escape a string for safe embedding in a JSON value (handles \\, ", control chars).
 """
-function _json_escape(s::AbstractString)
+function _escape(s::AbstractString)
     needs_escape = false
     for c in s
         if c == '"' || c == '\\' || c < ' '
@@ -60,7 +60,7 @@ function (mw::Logger)(request::AbstractRequest, params::Vector{Any}, next)
         if mw.structured
             # JSON structured log line (no dependency — manual formatting)
             method = uppercase(String(request.method))
-            uri = _json_escape(request.uri)
+            uri = _escape(request.uri)
             println(mw.output,
                 "{\"method\":\"", method,
                 "\",\"uri\":\"", uri,

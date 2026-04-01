@@ -69,6 +69,55 @@ const _DEFAULT_500 = Response(500, ContentType.text, "500 Internal Server Error"
 const _DEFAULT_413 = Response(413, ContentType.text, "413 Payload Too Large")
 const _DEFAULT_504 = Response(504, ContentType.text, "504 Gateway Timeout")
 
+# --- ServerConfig ---
+
+"""
+    ServerConfig
+
+Consolidated configuration for `SyncServer` and `AsyncServer`. Pass a
+`ServerConfig` as the second positional argument to either constructor instead
+of individual keyword arguments.
+
+# Fields
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `timeout` | `1` | Event-loop poll timeout in ms. Use `0` for min latency (high CPU). |
+| `max_body_size` | 1 MB | Maximum request body size in bytes. |
+| `drain_timeout_ms` | 5000 | Graceful-shutdown drain period in ms. |
+| `request_timeout_ms` | 0 | Per-request timeout in ms; `0` = disabled (AsyncServer only). |
+| `workers` | 4 | Number of worker tasks (AsyncServer only). |
+| `nqueue` | 1024 | Channel buffer size (AsyncServer only). |
+| `error_responses` | `Dict()` | Custom `Response` objects keyed by HTTP status (`500`, `413`, `504`). |
+
+# Example
+```julia
+config = ServerConfig(workers=8, request_timeout_ms=15_000, max_body_size=5_242_880)
+
+server = AsyncServer(router, config)
+use!(server, health())
+start!(server; host="0.0.0.0", port=8080)
+```
+
+`ServerConfig` can be built from environment variables:
+```julia
+config = ServerConfig(
+    workers           = parse(Int, get(ENV, "WORKERS", "4")),
+    max_body_size     = parse(Int, get(ENV, "MAX_BODY",  "1048576")),
+    request_timeout_ms = parse(Int, get(ENV, "REQ_TIMEOUT_MS", "0")),
+)
+```
+"""
+Base.@kwdef struct ServerConfig
+    timeout::Int            = 1
+    max_body_size::Int      = DEFAULT_MAX_BODY_SIZE
+    drain_timeout_ms::Int   = DEFAULT_DRAIN_TIMEOUT_MS
+    request_timeout_ms::Int = 0
+    workers::Int            = 4
+    nqueue::Int             = 1024
+    error_responses::Dict{Int,Response} = Dict{Int,Response}()
+end
+
 # --- Abstract Server Implementations (Structs only) ---
 
 """

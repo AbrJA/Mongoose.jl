@@ -51,6 +51,7 @@ include("middleware/rate_limit.jl")
 include("middleware/auth.jl")
 include("middleware/logger.jl")
 include("middleware/health.jl")
+include("middleware/metrics.jl")
 
 # 8. Precompilation
 @setup_workload begin
@@ -81,8 +82,24 @@ include("middleware/health.jl")
         _dispatchreq(router, req)
         getcontext!(req)
 
+        # query parsing
+        struct QueryTest
+            q::String
+            page::Int
+        end
+        _req_q = Request(:get, "/", "q=hello&page=1", Pair{String,String}[], "", nothing)
+        query(QueryTest, _req_q)
+
         mw = cors()
         _pipeline(AbstractMiddleware[mw], req, Any[], (r, args...) -> Response(200, "", ""))
+
+        # metrics
+        mw_metrics = metrics()
+        mw_metrics(req, Any[], () -> Response(200, "", "ok"))
+
+        # ServerConfig
+        ServerConfig()
+        ServerConfig(workers=2, max_body_size=1024)
     end
 end
 

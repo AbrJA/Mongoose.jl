@@ -14,6 +14,7 @@ Create a single-threaded blocking server. Compatible with `juliac --trim=safe`.
 - `error_responses::Dict{Int,Response}`: Custom responses keyed by HTTP status code (`500`, `413`, `504`). See `error_response!`.
 """
 SyncServer(::Type{T}; kwargs...) where {T <: StaticRouter} = SyncServer(T(); kwargs...)
+SyncServer(::Type{T}, config::ServerConfig) where {T <: StaticRouter} = SyncServer(T(), config)
 
 function SyncServer(router::AbstractRouter=Router();
                     timeout::Integer=1,
@@ -25,6 +26,20 @@ function SyncServer(router::AbstractRouter=Router();
     server = SyncServer{typeof(router)}(core)
     finalizer(_teardown!, server)
     return server
+end
+
+"""
+    SyncServer(router, config::ServerConfig)
+
+Create a `SyncServer` from a [`ServerConfig`](@ref) struct.
+"""
+function SyncServer(router::AbstractRouter, config::ServerConfig)
+    return SyncServer(router;
+        timeout          = config.timeout,
+        max_body_size    = config.max_body_size,
+        drain_timeout_ms = config.drain_timeout_ms,
+        error_responses  = config.error_responses
+    )
 end
 
 function _init!(server::SyncServer)
