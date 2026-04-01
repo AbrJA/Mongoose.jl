@@ -18,3 +18,5 @@ end
     start!(server, port=8099, blocking=true)
     return 0
 end
+
+# juliac --trim=safe --project . --output-exe binary juliac_example.jl 2>&1
