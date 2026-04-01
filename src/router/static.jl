@@ -284,7 +284,11 @@ macro router(app_type::Symbol, block)
             fn_data == C_NULL && return nothing
             # Fully inferred AsyncServer recovery prevents dynamic dispatch errors in AOT
             server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.AsyncServer{$app_type}
-            Mongoose._dispatchev(server, ev, conn, ev_data)
+            try
+                Mongoose._dispatchev(server, ev, conn, ev_data)
+            catch e
+                @error "Event handler error" exception = (e, Base.catch_backtrace())
+            end
             return nothing
         end
 
@@ -294,7 +298,11 @@ macro router(app_type::Symbol, block)
             fn_data == C_NULL && return nothing
             # Fully inferred SyncServer recovery
             server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.SyncServer{$app_type}
-            Mongoose._dispatchev(server, ev, conn, ev_data)
+            try
+                Mongoose._dispatchev(server, ev, conn, ev_data)
+            catch e
+                @error "Event handler error" exception = (e, Base.catch_backtrace())
+            end
             return nothing
         end
 

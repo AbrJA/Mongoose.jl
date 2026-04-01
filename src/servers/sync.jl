@@ -52,6 +52,7 @@ function _eventloop(server::SyncServer)
     server.core.running[] = true
     while server.core.running[]
         mg_mgr_poll(server.core.manager.ptr, server.core.timeout)
+        isempty(server.core.ws_connections) || mg_mgr_poll(server.core.manager.ptr, 0)
         yield()
     end
 end
