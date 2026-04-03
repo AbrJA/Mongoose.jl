@@ -95,6 +95,11 @@ function Request(message::MgHttpMessage)
     return Request(_method(message), _uri(message), _query(message), _headers(message), _body(message), nothing)
 end
 
+# Fast constructor reusing pre-extracted method and uri (avoids re-extracting from C struct)
+function Request(message::MgHttpMessage, method::Symbol, uri::String)
+    return Request(method, uri, _query(message), _headers(message), _body(message), nothing)
+end
+
 Request(method::Symbol, uri::String, query::String, headers::Dict{String,String}, body::String, context::Dict{Symbol,Any}) =
     Request(method, uri, query, [k => v for (k, v) in headers], body, context)
 
@@ -152,7 +157,10 @@ function _headers(message::MgHttpMessage)
     pairs = Pair{String,String}[]
     sizehint!(pairs, 12)
     for h in message.headers
-        if h.name.buf != C_NULL && h.name.len > 0 && h.val.buf != C_NULL && h.val.len > 0
+        # Mongoose C lib zero-fills unused header slots — stop at first empty
+        h.name.buf == C_NULL && break
+        h.name.len == 0 && break
+        if h.val.buf != C_NULL && h.val.len > 0
             name = lowercase(_tostring(h.name))
             value = _tostring(h.val)
             push!(pairs, name => value)

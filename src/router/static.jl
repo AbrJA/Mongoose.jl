@@ -9,6 +9,9 @@
 """
 abstract type StaticRouter <: AbstractRouter end
 
+# By default, static routers have no WS routes. @router can override.
+@inline _has_ws_routes(::StaticRouter) = false
+
 """
     static_dispatch(app, request) → Response
 """
@@ -339,5 +342,9 @@ macro router(app_type::Symbol, block)
             ]...))
             return nothing
         end
+
+        $(if !isempty(ws_routes)
+            :(Mongoose._has_ws_routes(::$(esc(app_type))) = true)
+        end)
     end
 end

@@ -46,6 +46,7 @@ during the C callback and `mg_http_serve_dir` writes directly to `conn`.
     isempty(server.core.static_dirs) && return false
 
     # Registered routes always take priority over static files.
+    # Only do the (expensive) route match when static dirs exist.
     _matchroute(server.core.router, method, uri) !== nothing && return false
 
     # Try each registered static directory in order. The first one whose prefix
@@ -106,11 +107,18 @@ end
 # --- SyncServer: direct dispatch on event-loop thread ---
 
 function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
-    if _tryupgrade(server, conn, ev_data)
-        return
-    end
-
     message = MgHttpMessage(ev_data)
+    method = _method(message)
+    uri    = _uri(message)
+
+    # WebSocket upgrade check (skip entirely when no WS routes are registered)
+    if _has_ws_routes(server.core.router)
+        endpoint = _wsep(server.core.router, uri)
+        if endpoint !== nothing
+            _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
+            return
+        end
+    end
 
     if message.body.len > server.core.max_body_size
         _send!(conn, _errresponse(server, 413))
@@ -118,9 +126,9 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
     end
 
     # C-level static file serving (Range, ETag, gzip — fallback for unmatched routes)
-    _servestatic!(server, conn, ev_data, _method(message), _uri(message)) && return
+    _servestatic!(server, conn, ev_data, method, uri) && return
 
-    req = Request(message)
+    req = Request(message, method, uri)
     rid = _requestid(req, server)
     res = try
         _servehttp(server, req)
@@ -136,11 +144,18 @@ end
 # --- AsyncServer: queue to worker channels ---
 
 function _onevent!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
-    if _tryupgrade(server, conn, ev_data)
-        return
-    end
-
     message = MgHttpMessage(ev_data)
+    method = _method(message)
+    uri    = _uri(message)
+
+    # WebSocket upgrade check (skip entirely when no WS routes are registered)
+    if _has_ws_routes(server.core.router)
+        endpoint = _wsep(server.core.router, uri)
+        if endpoint !== nothing
+            _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
+            return
+        end
+    end
 
     # Body size limit check
     if message.body.len > server.core.max_body_size
@@ -149,11 +164,11 @@ function _onevent!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnectio
     end
 
     # C-level static file serving (Range, ETag, gzip — takes priority after routes)
-    _servestatic!(server, conn, ev_data, _method(message), _uri(message)) && return
+    _servestatic!(server, conn, ev_data, method, uri) && return
 
     id = Int(_nextreqid!(server))
     server.connections[id] = conn
-    isopen(server.calls) && put!(server.calls, Tagged(id, Request(message)))
+    isopen(server.calls) && put!(server.calls, Tagged(id, Request(message, method, uri)))
     return
 end
 
@@ -197,7 +212,20 @@ monotonic ID is generated from the server's atomic counter.
         safe = _sanitize_request_id(h)
         !isempty(safe) && return safe
     end
-    return string(Threads.atomic_add!(server.core.request_id, UInt64(1)) + UInt64(1))
+    return _uint64tostr(Threads.atomic_add!(server.core.request_id, UInt64(1)) + UInt64(1))
+end
+
+# Fast UInt64→String without going through `string()` (avoids Julia runtime formatting)
+@inline function _uint64tostr(n::UInt64)::String
+    n == 0 && return "0"
+    buf = Vector{UInt8}(undef, 20)  # max UInt64 digits
+    i = 20
+    @inbounds while n > 0
+        buf[i] = UInt8('0') + UInt8(n % 10)
+        n = div(n, 10)
+        i -= 1
+    end
+    return String(view(buf, i+1:20))
 end
 
 """
@@ -238,10 +266,10 @@ end
     _servehttp(server, request) → Response
 """
 function _servehttp(server::AbstractServer, req::AbstractRequest)
-    final = (r, args...) -> _dispatchreq(server.core.router, r)
     if isempty(server.core.middlewares)
-        return final(req)
+        return _dispatchreq(server.core.router, req)
     end
+    final = (r, args...) -> _dispatchreq(server.core.router, r)
     return _pipeline(server.core.middlewares, req, Any[], final)
 end
 
