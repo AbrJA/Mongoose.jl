@@ -16,7 +16,6 @@ abstract type StaticRouter <: AbstractRouter end
     static_dispatch(app, request) → Response
 """
 function static_dispatch end
-function static_ws_dispatch end
 
 # Interface fallback — @router generates the real methods
 static_dispatch(app::T, ::AbstractRequest) where {T<:StaticRouter} =
@@ -88,7 +87,9 @@ function _parseroute(path::String)
             push!(segments, RouteSegment(true, String(name), SubString{String}))
         elseif startswith(part, "*")
             name = part[2:end]
-            push!(segments, RouteSegment(true, String(name), Vector{String}))
+            # Wildcards use type String to distinguish from SubString{String} single-segment variables.
+            # The handler receives a SubString of the remaining path (everything from this segment to end).
+            push!(segments, RouteSegment(true, String(name), String))
         else
             push!(segments, RouteSegment(false, String(part), Nothing))
         end
@@ -107,12 +108,12 @@ function _buildtrie(routes)
         node = root
         for seg in segments
             if seg.is_variable
-                if seg.type == Vector{String}
+                if seg.type == String  # wildcard *name — consumes rest of path
                     if node.wildcard_child === nothing
                         node.wildcard_child = (seg.value, StaticNode())
                     end
                     node = node.wildcard_child[2]
-                else
+                else  # normal variable :name or {name}
                     if node.variable_child === nothing
                         node.variable_child = (seg, StaticNode())
                     end
@@ -200,14 +201,14 @@ function _gendispatch(node::StaticNode, seg_sym::Symbol, idx_sym::Symbol, path_s
         new_parsed_vars = copy(parsed_vars)
         push!(new_parsed_vars, var_sym)
 
-        # A wildcard consumes the rest of the path, zero-copy
+        # A wildcard captures the remainder of the path as a SubString (zero-copy).
+        # idx_sym is the codeunit end_idx returned by _staticnextseg (one past seg end).
+        # The current segment starts at (idx_sym - ncodeunits(seg_sym)), so the
+        # remainder including this segment is path[start:ncodeunits(path)].
         handler_call = Expr(:call, esc(child.handler), req_sym, new_parsed_vars...)
         push!(exprs, quote
             if length($(seg_sym)) != 0
-                # reconstruct remaining path from current idx
-                # seg_sym is a view, and idx_sym is the NEXT index.
-                # To get everything from the start of the current segment:
-                $(var_sym) = view($(path_sym), ($(idx_sym)-length($(seg_sym))-1):sizeof($(path_sym)))
+                $(var_sym) = view($(path_sym), ($(idx_sym) - ncodeunits($(seg_sym))) : ncodeunits($(path_sym)))
                 return $(handler_call)
             end
         end)

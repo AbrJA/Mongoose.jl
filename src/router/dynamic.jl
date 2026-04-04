@@ -116,7 +116,13 @@ function _matchroute(router::Router, method::Symbol, path::AbstractString)
         return Match(route.handlers, EMPTY_PARAMS)
     end
     params = Any[]
-    return _match(router.node, clean, 1, method, params)
+    result = _match(router.node, clean, 1, method, params)
+    result !== nothing && return result
+    # Wildcard catch-all: check for a "*" fixed route (e.g. for custom 404 handlers)
+    if (route = get(router.fixed, "*", nothing)) !== nothing
+        return Match(route.handlers, EMPTY_PARAMS)
+    end
+    return nothing
 end
 
 @inline function _match(node::TrieNode, path::AbstractString, path_idx::Int, method::Symbol, params::Vector{Any})

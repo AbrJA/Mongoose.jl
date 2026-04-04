@@ -100,9 +100,6 @@ function Request(message::MgHttpMessage, method::Symbol, uri::String)
     return Request(method, uri, _query(message), _headers(message), _body(message), nothing)
 end
 
-Request(method::Symbol, uri::String, query::String, headers::Dict{String,String}, body::String, context::Dict{Symbol,Any}) =
-    Request(method, uri, query, [k => v for (k, v) in headers], body, context)
-
 """
     getcontext!(req) → Dict{Symbol,Any}
 
@@ -161,12 +158,29 @@ function _headers(message::MgHttpMessage)
         h.name.buf == C_NULL && break
         h.name.len == 0 && break
         if h.val.buf != C_NULL && h.val.len > 0
-            name = lowercase(_tostring(h.name))
+            name = _tolowerstr(h.name)
             value = _tostring(h.val)
             push!(pairs, name => value)
         end
     end
     return pairs
+end
+
+"""
+    _tolowerstr(str::MgStr) → String
+
+Convert an MgStr to a lowercase Julia String in a single pass.
+Avoids the double allocation of `lowercase(_tostring(str))`.
+"""
+@inline function _tolowerstr(str::MgStr)::String
+    len = Int(str.len)
+    buf = Vector{UInt8}(undef, len)
+    src = str.buf
+    @inbounds for i in 1:len
+        b = unsafe_load(src, i)
+        buf[i] = (UInt8('A') <= b <= UInt8('Z')) ? (b | 0x20) : b
+    end
+    return String(buf)
 end
 
 const ContentType = (

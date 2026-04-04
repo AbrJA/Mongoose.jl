@@ -94,7 +94,7 @@ serve_dir!(server, "public/assets"; uri_prefix="/assets")  # GET /assets/* → p
 function serve_dir!(server::AbstractServer, directory::AbstractString;
                     uri_prefix::AbstractString="/")
     dir = rstrip(abspath(directory), '/')
-    isdir(dir) || throw(ArgumentError("serve_dir!: directory does not exist: \$dir"))
+    isdir(dir) || throw(ArgumentError("serve_dir!: directory does not exist: $dir"))
     prefix = "/" * lstrip(rstrip(uri_prefix, '/'), '/')
     push!(server.core.static_dirs, (dir, prefix))
     return server

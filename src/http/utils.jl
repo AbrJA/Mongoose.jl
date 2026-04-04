@@ -131,9 +131,20 @@ function _formatheaders(headers::Vector{Pair{String,String}})
 end
 
 function Base.get(headers::Vector{Pair{String,String}}, key::String, default)
-    lkey = lowercase(key)
+    # Fast path: if key is already all-lowercase ASCII, compare directly without allocating.
+    # Stored header names are always lowercase (normalised in _headers()).
+    lkey = _islowerascii(key) ? key : lowercase(key)
     @inbounds for i in eachindex(headers)
         headers[i].first == lkey && return headers[i].second
     end
     return default
+end
+
+# Returns true when `s` contains no uppercase ASCII letters (A-Z).
+@inline function _islowerascii(s::String)::Bool
+    @inbounds for i in 1:ncodeunits(s)
+        b = codeunit(s, i)
+        (UInt8('A') <= b <= UInt8('Z')) && return false
+    end
+    return true
 end

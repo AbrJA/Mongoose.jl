@@ -3,7 +3,7 @@
 """
 
 """
-    _handlewsmsg!(server, request) → Tagged{Intent} or nothing
+    _handlewsmsg!(server, request) → Tagged{Message} or nothing
 """
 function _handlewsmsg!(server::AbstractServer, request::Tagged{Intent})
     router = server.core.router
@@ -73,6 +73,7 @@ function _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
         try
             endpoint.on_open(req)
         catch e
+            @error "WebSocket on_open error" uri=uri exception=(e, catch_backtrace())
         end
     end
 end

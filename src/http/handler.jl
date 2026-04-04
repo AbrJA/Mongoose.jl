@@ -129,15 +129,14 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
     _servestatic!(server, conn, ev_data, method, uri) && return
 
     req = Request(message, method, uri)
-    rid = _requestid(req, server)
     res = try
         _servehttp(server, req)
     catch e
         @error "Handler error" exception=(e, catch_backtrace())
         _handleerror(server, req, e)
     end
-    res = Response(res.status, _appendreqid(res.headers, rid), res.body)
-    _send!(conn, res)
+    rid = _requestid_fast(message, server)
+    _sendwithid!(conn, res, rid)
     return
 end
 
@@ -214,6 +213,47 @@ monotonic ID is generated from the server's atomic counter.
     end
     return _uint64tostr(Threads.atomic_add!(server.core.request_id, UInt64(1)) + UInt64(1))
 end
+
+"""
+    _requestid_fast(message, server) → String
+
+Fast-path request ID extraction that reads directly from the raw C `MgHttpMessage`
+headers, avoiding the cost of scanning the already-parsed `Vector{Pair}`.
+"""
+@inline function _requestid_fast(message::MgHttpMessage, server::AbstractServer)::String
+    # Scan raw C headers for "x-request-id" (12 chars, case-insensitive)
+    for h in message.headers
+        h.name.buf == C_NULL && break
+        h.name.len == 0 && break
+        h.name.len == 12 || continue
+        if _is_xrequestid(h.name.buf)
+            val = _tostring(h.val)
+            safe = _sanitize_request_id(val)
+            !isempty(safe) && return safe
+        end
+    end
+    return _uint64tostr(Threads.atomic_add!(server.core.request_id, UInt64(1)) + UInt64(1))
+end
+
+# Case-insensitive check for "x-request-id" (12 bytes) directly on C memory
+@inline function _is_xrequestid(ptr::Ptr{UInt8})::Bool
+    # Expected: x-request-id (any case)
+    _tolower(unsafe_load(ptr, 1))  == UInt8('x') || return false
+    unsafe_load(ptr, 2)            == UInt8('-') || return false
+    _tolower(unsafe_load(ptr, 3))  == UInt8('r') || return false
+    _tolower(unsafe_load(ptr, 4))  == UInt8('e') || return false
+    _tolower(unsafe_load(ptr, 5))  == UInt8('q') || return false
+    _tolower(unsafe_load(ptr, 6))  == UInt8('u') || return false
+    _tolower(unsafe_load(ptr, 7))  == UInt8('e') || return false
+    _tolower(unsafe_load(ptr, 8))  == UInt8('s') || return false
+    _tolower(unsafe_load(ptr, 9))  == UInt8('t') || return false
+    unsafe_load(ptr, 10)           == UInt8('-') || return false
+    _tolower(unsafe_load(ptr, 11)) == UInt8('i') || return false
+    _tolower(unsafe_load(ptr, 12)) == UInt8('d') || return false
+    return true
+end
+
+@inline _tolower(b::UInt8) = (UInt8('A') <= b <= UInt8('Z')) ? (b | 0x20) : b
 
 # Fast UInt64→String without going through `string()` (avoids Julia runtime formatting)
 @inline function _uint64tostr(n::UInt64)::String
@@ -326,6 +366,26 @@ function _send!(conn::MgConnection, res::Response)
         mg_send(conn, buf)
     else
         mg_http_reply(conn, res.status, res.headers, res.body)
+    end
+end
+
+"""
+    _sendwithid!(conn, response, rid)
+
+Send an HTTP response with X-Request-Id header injected directly.
+Avoids allocating a new Response struct and header string concatenation.
+"""
+function _sendwithid!(conn::MgConnection, res::Response, rid::String)
+    headers = string(res.headers, "X-Request-Id: ", rid, "\r\n")
+    if res.body isa Vector{UInt8}
+        head = "HTTP/1.1 $(res.status) $(_statustext(res.status))\r\n$(headers)Content-Length: $(length(res.body))\r\nConnection: close\r\n\r\n"
+        hlen = ncodeunits(head)
+        buf  = Vector{UInt8}(undef, hlen + length(res.body))
+        copyto!(buf, 1, codeunits(head), 1, hlen)
+        isempty(res.body) || copyto!(buf, hlen + 1, res.body, 1, length(res.body))
+        mg_send(conn, buf)
+    else
+        mg_http_reply(conn, res.status, headers, res.body)
     end
 end
 

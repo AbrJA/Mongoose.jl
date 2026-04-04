@@ -99,6 +99,7 @@ include("middleware/metrics.jl")
         _appendreqid(ContentType.json, "abc-123")
         _sanitize_request_id("abc-123")
         _sanitize_request_id("bad\r\nvalue")
+        _uint64tostr(UInt64(12345))
 
         # --- Query parsing ---
         struct QueryTest

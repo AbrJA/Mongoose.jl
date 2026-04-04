@@ -27,7 +27,7 @@
 - **Battery-included middleware** — CORS, rate limiting, auth, logging, static files, health checks.
 - **WebSocket support** — on the same port and router as HTTP.
 - **AOT-ready** — full `juliac --trim=safe` compatibility for compiled binaries with zero startup time.
-- **JSON as an extension** — `JSON.jl` is optional; loaded automatically when present.
+- **JSON as an extension** — `JSON.jl` is optional; integrate it with a one-line `render_body` override (see [JSON](#json) below).
 
 ---
 

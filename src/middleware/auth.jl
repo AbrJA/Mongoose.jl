@@ -7,7 +7,7 @@ struct BearerToken <: AbstractMiddleware
 end
 
 function (mw::BearerToken)(request::AbstractRequest, params::Vector{Any}, next)
-    auth_header = get(request.headers, "Authorization", nothing)
+    auth_header = get(request.headers, "authorization", nothing)
 
     if auth_header === nothing
         return Response(401, ContentType.text * "WWW-Authenticate: Bearer\r\n", "401 Unauthorized")
