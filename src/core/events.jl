@@ -36,6 +36,9 @@ end
 
 """
     _dispatchev(server, ev, conn, ev_data)
+
+Route a Mongoose event integer to the appropriate `_onevent!` specialization.
+Only events handled by the framework are forwarded; all others are silently ignored.
 """
 @inline function _dispatchev(@nospecialize(server), ev::Cint, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid})
     if ev == MG_EV_HTTP_MSG

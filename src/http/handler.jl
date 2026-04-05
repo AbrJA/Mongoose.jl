@@ -121,7 +121,7 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
     end
 
     if message.body.len > server.core.max_body_size
-        _send!(conn, _errresponse(server, 413))
+        _sendhttp!(conn, _errresponse(server, 413))
         return
     end
 
@@ -130,7 +130,7 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
 
     req = Request(message, method, uri)
     res = try
-        _servehttp(server, req)
+        _invokehttp(server, req)
     catch e
         @error "Handler error" exception=(e, catch_backtrace())
         _handleerror(server, req, e)
@@ -158,7 +158,7 @@ function _onevent!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnectio
 
     # Body size limit check
     if message.body.len > server.core.max_body_size
-        _send!(conn, _errresponse(server, 413))
+        _sendhttp!(conn, _errresponse(server, 413))
         return
     end
 
@@ -303,24 +303,24 @@ otherwise return the default 500. No dynamic function call — trim-safe.
 end
 
 """
-    _servehttp(server, request) → Response
+    _invokehttp(server, request) → Response
 """
-function _servehttp(server::AbstractServer, req::AbstractRequest)
+function _invokehttp(server::AbstractServer, req::AbstractRequest)
     if isempty(server.core.middlewares)
-        return _dispatchreq(server.core.router, req)
+        return _dispatchhttp(server.core.router, req)
     end
-    final = (r, args...) -> _dispatchreq(server.core.router, r)
+    final = (r, args...) -> _dispatchhttp(server.core.router, r)
     return _pipeline(server.core.middlewares, req, Any[], final)
 end
 
 # Trim-safe specialization: StaticRouter dispatches directly, bypassing
 # the middleware pipeline which uses abstract Function types and closures
 # that cannot be resolved by --trim=safe.
-@inline function _servehttp(server::SyncServer{<:StaticRouter}, req::AbstractRequest)
+@inline function _invokehttp(server::SyncServer{<:StaticRouter}, req::AbstractRequest)
     return static_dispatch(server.core.router, req)
 end
 
-@inline function _dispatchreq(router::Router, req)
+@inline function _dispatchhttp(router::Router, req)
     matched = _matchroute(router, req.method, req.uri)
     if matched !== nothing
         handler = _gethandler(matched.handlers, req.method)
@@ -340,14 +340,14 @@ end
     return Response(404, ContentType.text, "404 Not Found")
 end
 
-@inline function _dispatchreq(router::StaticRouter, req)
+@inline function _dispatchhttp(router::StaticRouter, req)
     return static_dispatch(router, req)
 end
 
 # --- Response serialization ---
 
 """
-    _send!(conn, response)
+    _sendhttp!(conn, response)
 
 Send an HTTP response.  String bodies go through `mg_http_reply` which
 handles Content-Length and clears Mongoose's `is_resp` flag.  Binary
@@ -356,7 +356,7 @@ because `mg_http_reply` uses printf/strlen and truncates at 0x00.
 `Connection: close` is added so the connection is not reused — `mg_send`
 cannot clear `is_resp` and keep-alive would hang.
 """
-function _send!(conn::MgConnection, res::Response)
+function _sendhttp!(conn::MgConnection, res::Response)
     if res.body isa Vector{UInt8}
         head = "HTTP/1.1 $(res.status) $(_statustext(res.status))\r\n$(res.headers)Content-Length: $(length(res.body))\r\nConnection: close\r\n\r\n"
         hlen = ncodeunits(head)
@@ -390,16 +390,16 @@ function _sendwithid!(conn::MgConnection, res::Response, rid::String)
 end
 
 """
-    _servehttp_timeout(server, req, timeout_ms) → Response
+    _invokehttp_timeout(server, req, timeout_ms) → Response
 
 Execute request handling with a timeout. If the handler exceeds `timeout_ms`,
 returns 504 Gateway Timeout. Used only by AsyncServer workers.
 """
-function _servehttp_timeout(server::AbstractServer, req::AbstractRequest, timeout_ms::Integer)
+function _invokehttp_timeout(server::AbstractServer, req::AbstractRequest, timeout_ms::Integer)
     ch = Channel{Response}(1)
     t = Threads.@spawn begin
         try
-            put!(ch, _servehttp(server, req))
+            put!(ch, _invokehttp(server, req))
         catch e
             put!(ch, _handleerror(server, req, e))
         end

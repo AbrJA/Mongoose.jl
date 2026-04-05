@@ -59,12 +59,12 @@ function AsyncServer(router::AbstractRouter, config::ServerConfig)
 end
 
 function _init!(server::AsyncServer)
-   server.core.manager = Manager()
-   server.calls  = Channel{Call}(server.nqueue)
-   server.replies   = Channel{Reply}(server.nqueue)
-   empty!(server.connections)
-   empty!(server.core.ws_connections)
-   return
+    server.core.manager = Manager()
+    server.calls   = Channel{Call}(server.nqueue)
+    server.replies = Channel{Reply}(server.nqueue)
+    empty!(server.connections)
+    empty!(server.core.ws_connections)
+    return
 end
 
 function _spawnworkers!(server::AsyncServer)
@@ -102,11 +102,11 @@ function _eventloop(server::AsyncServer)
             conn = get(server.connections, id_res.id, nothing)
             if conn !== nothing
                 if id_res.payload isa Response
-                    _send!(conn, id_res.payload)
+                    _sendhttp!(conn, id_res.payload)
                     delete!(server.connections, id_res.id)
                 else  # Message
                     try
-                        _wssend!(conn, id_res.payload)
+                        _sendws!(conn, id_res.payload)
                         did_ws_send = true
                     catch e
                         @error "WebSocket send error" exception=(e, catch_backtrace())
@@ -128,9 +128,9 @@ function _workloop(server::AsyncServer)
                 rid = _requestid(req.payload, server)
                 res = try
                     if timeout_ms > 0
-                        _servehttp_timeout(server, req.payload, timeout_ms)
+                        _invokehttp_timeout(server, req.payload, timeout_ms)
                     else
-                        _servehttp(server, req.payload)
+                        _invokehttp(server, req.payload)
                     end
                 catch e
                     @error "Handler error" exception=(e, catch_backtrace())
@@ -139,7 +139,7 @@ function _workloop(server::AsyncServer)
                 res = Response(res.status, _appendreqid(res.headers, rid), res.body)
                 isopen(server.replies) && put!(server.replies, Tagged(req.id, res))
             else  # Intent
-                res = _handlewsmsg!(server, req)
+                res = _invokews(server, req)
                 res !== nothing && isopen(server.replies) && put!(server.replies, res)
             end
         end

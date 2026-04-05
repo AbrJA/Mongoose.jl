@@ -95,7 +95,6 @@ end
 
 @inline _has_ws_routes(router::Router) = !isempty(router.ws_routes)
 
-# (Match, _matchroute, route!, etc...)
 struct Match
     handlers::MethodMap
     params::Vector{Any}

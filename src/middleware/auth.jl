@@ -2,6 +2,10 @@
     Authentication middleware — Bearer token and API key authentication.
 """
 
+"""
+    BearerToken — Bearer token authentication middleware.
+    Checks the `Authorization: Bearer <token>` header and delegates validation to a user-supplied function.
+"""
 struct BearerToken <: AbstractMiddleware
     validator::Function
 end
@@ -39,6 +43,10 @@ use!(server, bearer_token(token -> token == "my-secret-token"))
 """
 bearer_token(validator::Function) = BearerToken(validator)
 
+"""
+    ApiKey — API key authentication middleware.
+    Reads a header by name and checks it against a set of valid keys.
+"""
 struct ApiKey <: AbstractMiddleware
     header_name::String
     keys::Set{String}

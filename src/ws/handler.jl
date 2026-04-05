@@ -3,39 +3,30 @@
 """
 
 """
-    _handlewsmsg!(server, request) → Tagged{Message} or nothing
+    _invokews(server, request) → Tagged{Message} or nothing
 """
-function _handlewsmsg!(server::AbstractServer, request::Tagged{Intent})
-    router = server.core.router
-    return _routews(router, request)
+function _invokews(server::AbstractServer, request::Tagged{Intent})
+    return _dispatchws(server.core.router, request)
 end
 
-@inline _routews(router::Router, request) = _dynws(router, request)
-@inline _routews(router::StaticRouter, request) = _staticws(router, request)
-
-function _staticws(static::StaticRouter, request::Tagged{Intent})
-    endpoint = static_ws_upgrade(static, request.payload.uri)
-    if endpoint !== nothing
-        return _callep(endpoint, request)
-    end
-    return nothing
-end
-
-function _dynws(router::Router, request::Tagged{Intent})
+function _dispatchws(router::Router, request::Tagged{Intent})
     endpoint = get(router.ws_routes, request.payload.uri, nothing)
-    if endpoint !== nothing
-        return _callep(endpoint, request)
-    end
+    endpoint !== nothing && return _callwsep(endpoint, request)
     return nothing
 end
 
-# The dispatch helpers:
-_tagws(id, res::Message)       = Tagged{Message}(id, res)
-_tagws(id, res::String)          = _tagws(id, Message(res))
-_tagws(id, res::Vector{UInt8})   = _tagws(id, Message(res))
-_tagws(id, ::Nothing) = nothing
+function _dispatchws(router::StaticRouter, request::Tagged{Intent})
+    endpoint = static_ws_upgrade(router, request.payload.uri)
+    endpoint !== nothing && return _callwsep(endpoint, request)
+    return nothing
+end
 
-function _callep(endpoint::WsEndpoint, request::Tagged{Intent})
+_tagws(id, res::Message)        = Tagged{Message}(id, res)
+_tagws(id, res::String)         = _tagws(id, Message(res))
+_tagws(id, res::Vector{UInt8})  = _tagws(id, Message(res))
+_tagws(id, ::Nothing)           = nothing
+
+function _callwsep(endpoint::WsEndpoint, request::Tagged{Intent})
     try
         res = endpoint.on_message(request.payload.body)
         return _tagws(request.id, res)
@@ -43,23 +34,6 @@ function _callep(endpoint::WsEndpoint, request::Tagged{Intent})
         @error "WebSocket on_message error" exception = (e, catch_backtrace())
     end
     return nothing
-end
-
-"""
-    _tryupgrade(server, conn, ev_data) → Bool
-"""
-function _tryupgrade(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
-    router = server.core.router
-    message = MgHttpMessage(ev_data)
-    uri = _tostring(message.uri)
-
-    endpoint = _wsep(router, uri)
-    if endpoint !== nothing
-        _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
-        return true
-    end
-
-    return false
 end
 
 @inline _wsep(router::Router, uri) = get(router.ws_routes, uri, nothing)
@@ -78,9 +52,9 @@ function _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
     end
 end
 
-_wssend!(conn, data::String)        = mg_ws_send(conn, data, WS_OP_TEXT)
-_wssend!(conn, data::Vector{UInt8}) = mg_ws_send(conn, data, WS_OP_BINARY)
-_wssend!(conn, msg::Message)      = _wssend!(conn, msg.data)
+_sendws!(conn, data::String)        = mg_ws_send(conn, data, WS_OP_TEXT)
+_sendws!(conn, data::Vector{UInt8}) = mg_ws_send(conn, data, WS_OP_BINARY)
+_sendws!(conn, msg::Message)        = _sendws!(conn, msg.data)
 
 # --- WS event handlers ---
 
@@ -91,9 +65,9 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, 
     conn_id = Int(conn)
     uri = get(server.core.ws_connections, conn_id, "")
     tagged = Tagged(conn_id, Intent(ws_msg, uri))
-    result = _handlewsmsg!(server, tagged)
+    result = _invokews(server, tagged)
     if result !== nothing
-        _wssend!(conn, result.payload)
+        _sendws!(conn, result.payload)
     end
     return
 end
@@ -123,6 +97,9 @@ end
 
 """
     _closews!(server, conn)
+
+Clean up WebSocket state when a connection closes: fire `on_close` if registered,
+then remove the connection URI from `ws_connections`.
 """
 function _closews!(server::AbstractServer, conn::MgConnection)
     conn_id = Int(conn)

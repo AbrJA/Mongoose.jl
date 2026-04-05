@@ -92,7 +92,7 @@ include("middleware/metrics.jl")
             "{}", nothing)
         getcontext!(req)
 
-        # --- _send! (string and binary) ---
+        # --- _sendhttp! (string and binary) ---
         # These compile the serialization path without a real socket
         _statustext(200)
         _appendreqid("", "42")
@@ -144,17 +144,17 @@ include("middleware/metrics.jl")
 
         # --- Full _pipeline with multiple middleware ---
         _pipeline(AbstractMiddleware[mw_cors, mw_logger], req, Any[],
-                  (r, args...) -> _dispatchreq(router, r))
+                  (r, args...) -> _dispatchhttp(router, r))
 
-        # --- _servehttp (the actual request dispatch hot path) ---
+        # --- _invokehttp (the actual request dispatch hot path) ---
         server_sync  = SyncServer(router)
         server_async = AsyncServer(router; workers=1)
         use!(server_sync,  cors())
         use!(server_async, cors())
 
-        _servehttp(server_sync,  req)
-        _servehttp(server_async, req)
-        _servehttp(server_sync,  req_with_headers)
+        _invokehttp(server_sync,  req)
+        _invokehttp(server_async, req)
+        _invokehttp(server_sync,  req_with_headers)
 
         # --- Error responses ---
         _errresponse(server_sync, 500)

@@ -3,6 +3,10 @@
     Provides `/healthz`, `/readyz`, and `/livez` endpoints for Kubernetes.
 """
 
+"""
+    Health — Health check middleware for cloud-native deployments.
+    Intercepts `/healthz`, `/readyz`, and `/livez` before any other middleware.
+"""
 struct Health <: AbstractMiddleware
     health_check::Function
     ready_check::Function

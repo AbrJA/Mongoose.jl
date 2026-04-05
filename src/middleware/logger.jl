@@ -42,6 +42,10 @@ function _escape(s::AbstractString)
     return String(take!(io))
 end
 
+"""
+    Logger — Request logging middleware.
+    Logs each request's method, URI, status code, and elapsed time.
+"""
 struct Logger <: AbstractMiddleware
     threshold_ns::Int
     output::IO
