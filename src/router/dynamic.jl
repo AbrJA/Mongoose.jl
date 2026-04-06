@@ -61,9 +61,8 @@ mutable struct TrieNode
     dynamic::Union{Nothing,TrieNode}                 # parameter segment child (:param)
     param::Union{Nothing,String}                 # parameter name (if dynamic node)
     param_type::Type                             # parameter type
-    param_names::Vector{String}                  # parameter names in order
     handlers::MethodMap                          # HTTP method → handler
-    TrieNode() = new(Pair{String,TrieNode}[], nothing, nothing, String, String[], MethodMap())
+    TrieNode() = new(Pair{String,TrieNode}[], nothing, nothing, String, MethodMap())
 end
 
 # --- Vector-based child lookup (faster than Dict for <10 children) ---
@@ -175,7 +174,6 @@ function _addroute!(router::Router, method::Symbol, path::AbstractString, @nospe
         if startswith(seg, ':')
             spec = seg[2:end]
             param, ptype = _paramspec(spec)
-            push!(node.param_names, param)
             if (dyn = node.dynamic) === nothing
                 dyn = TrieNode()
                 dyn.param = param

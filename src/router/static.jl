@@ -72,7 +72,7 @@ end
 function _parseroute(path::String)
     segments = RouteSegment[]
     parts = split(path, '/', keepempty=false)
-    for part in parts
+    for (i, part) in enumerate(parts)
         if startswith(part, "{") && endswith(part, "}")
             inner = part[2:end-1]
             if occursin("::", inner)
@@ -86,6 +86,7 @@ function _parseroute(path::String)
             name = part[2:end]
             push!(segments, RouteSegment(true, String(name), SubString{String}))
         elseif startswith(part, "*")
+            i < length(parts) && error("RouteError: wildcard segment *$(part[2:end]) must be the last segment in route \"$path\"")
             name = part[2:end]
             # Wildcards use type String to distinguish from SubString{String} single-segment variables.
             # The handler receives a SubString of the remaining path (everything from this segment to end).

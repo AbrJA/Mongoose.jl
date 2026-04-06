@@ -92,7 +92,9 @@ Return `true` if `uri` maps to a real file (or pre-compressed `.gz` variant) und
     candidate = normpath(joinpath(root, rel))
 
     # Guard against path traversal (e.g. /../../../etc/passwd).
-    startswith(candidate, root) || return false
+    # A plain startswith is not sufficient — "/var/www/public2" starts with "/var/www/public".
+    # Require the candidate to equal root exactly or begin with root + the platform separator.
+    (candidate == root || startswith(candidate, root * Base.Filesystem.path_separator)) || return false
 
     isfile(candidate) && return true
     isfile(candidate * ".gz") && return true
