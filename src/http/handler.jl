@@ -30,6 +30,12 @@ Return the standard HTTP reason phrase for a status code.
     return "OK"
 end
 
+# Pre-built responses for the three codes that _errresponse must handle without allocation.
+# Body text is derived from _statustext — single source of truth.
+const _DEFAULT_500 = Response(Text, "500 $(_statustext(500))"; status=500)
+const _DEFAULT_413 = Response(Text, "413 $(_statustext(413))"; status=413)
+const _DEFAULT_504 = Response(Text, "504 $(_statustext(504))"; status=504)
+
 # --- Static file serving (C-level, event-loop thread only) ---
 
 """
@@ -249,8 +255,6 @@ end
     return true
 end
 
-@inline _tolower(b::UInt8) = (UInt8('A') <= b <= UInt8('Z')) ? (b | 0x20) : b
-
 # Fast UInt64→String without going through `string()` (avoids Julia runtime formatting)
 @inline function _uint64tostr(n::UInt64)::String
     n == 0 && return "0"
@@ -285,7 +289,7 @@ Falls back to the module-level default.
     status == 500 && return _DEFAULT_500
     status == 413 && return _DEFAULT_413
     status == 504 && return _DEFAULT_504
-    return Response(status, ContentType.text, "$status Error")
+    return Response(Text, "$status $(_statustext(status))"; status=status)
 end
 
 """
@@ -329,9 +333,9 @@ end
                 return Response(resp.status, resp.headers, "")
             end
         end
-        return Response(405, ContentType.text, "405 Method Not Allowed")
+        return Response(Text, "405 Method Not Allowed"; status=405)
     end
-    return Response(404, ContentType.text, "404 Not Found")
+    return Response(Text, "404 Not Found"; status=404)
 end
 
 @inline function _dispatchhttp(router::StaticRouter, req)

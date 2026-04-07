@@ -108,13 +108,13 @@ Applies to: `500` (unhandled exception), `413` (body too large), `504` (timeout)
 
 Custom 404/405 responses are better handled via a wildcard route:
 ```julia
-route!(router, :get, "*", req -> Response(404, ContentType.html, read("404.html", String)))
+route!(router, :get, "*", req -> Response(Html, read("404.html", String); status=404))
 ```
 
 # Example
 ```julia
-error_response!(server, 500, Response(500, ContentType.json, \"\"\"{"error":"Internal error"}\"\"\"))
-error_response!(server, 413, Response(413, ContentType.json, \"\"\"{"error":"Body too large"}\"\"\"))
+error_response!(server, 500, Response(Json, \"\"\"{"error":"Internal error"}\"\"\"; status=500))
+error_response!(server, 413, Response(Json, \"\"\"{"error":"Body too large"}\"\"\"; status=413))
 ```
 """
 function error_response!(server::AbstractServer, status::Int, response::Response)

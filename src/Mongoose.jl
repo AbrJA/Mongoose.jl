@@ -9,7 +9,6 @@ export SyncServer, AsyncServer, Router, Request, Response,
     render_body, content_type, context!,
     ws!, Message,
     cors, rate_limit, bearer_token, api_key, logger, health, metrics,
-    ContentType,
     RouteError, ServerError, BindError,
     @router,
     ServerConfig
@@ -70,10 +69,10 @@ include("middleware/metrics.jl")
         _matchroute(router, :get,  "/nonexistent")
 
         # --- Response constructors (all common forms) ---
-        Response(200, ContentType.text, "ok")
-        Response(200, ContentType.json, "{}")
-        Response(200, ContentType.html, "<p>ok</p>")
-        Response(200, "ok")
+        Response(Text, "ok")
+        Response(Json, "{}")
+        Response(Html, "<p>ok</p>")
+        Response(Text, "ok"; status=200)
         Response(404, "", "")
         Response(500, "", "")
         Response(204, "", "")
@@ -96,7 +95,7 @@ include("middleware/metrics.jl")
         # These compile the serialization path without a real socket
         _statustext(200)
         _appendreqid("", "42")
-        _appendreqid(ContentType.json, "abc-123")
+        _appendreqid(content_type(Json), "abc-123")
         _sanitizeid("abc-123")
         _sanitizeid("bad\r\nvalue")
         _uint64tostr(UInt64(12345))

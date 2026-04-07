@@ -71,7 +71,7 @@ render_body(::Type{T}, body) where T<:AbstractFormat = error("render_body not im
 render_body(::Type{T}, body::String) where T<:AbstractFormat = body
 render_body(::Type{Binary}, body::Vector{UInt8}) = body
 
-# Mapping: This is the only place you need to update when adding new types
+# Mapping: This is the only place you need to update when adding new format types
 function content_type end
 content_type(::Type{T}) where T<:AbstractFormat = error("Unsupported format type: $T")
 content_type(::Type{Html}) = "Content-Type: text/html; charset=utf-8\r\n"
@@ -83,13 +83,12 @@ content_type(::Type{Xml}) = "Content-Type: application/xml; charset=utf-8\r\n"
 content_type(::Type{Binary}) = "Content-Type: application/octet-stream\r\n"
 
 function Response(::Type{T}, body; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) where T<:AbstractFormat
-    h = content_type(T) * (isempty(headers) ? "" : _formatheaders(headers))
-    Response(status, h, render_body(T, body))
+    rendered_body = body isa String ? body : render_body(T, body)  # Avoid dispatch trap for String
+    content_headers = isempty(headers) ? content_type(T) : content_type(T) * _formatheaders(headers)
+    Response(status, content_headers, rendered_body)
 end
 
 Response(body; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) = Response(Text, body; status=status, headers=headers)
-
-Response(status::Int, body::AbstractString) = Response(status, ContentType.text, body)
 
 function Request(message::MgHttpMessage)
     return Request(_method(message), _uri(message), _query(message), _headers(message), _body(message), nothing)
@@ -166,6 +165,8 @@ function _headers(message::MgHttpMessage)
     return pairs
 end
 
+@inline _tolower(b::UInt8) = (UInt8('A') <= b <= UInt8('Z')) ? (b | 0x20) : b
+
 """
     _tolowerstr(str::MgStr) → String
 
@@ -177,18 +178,9 @@ Avoids the double allocation of `lowercase(_tostring(str))`.
     buf = Vector{UInt8}(undef, len)
     src = str.buf
     @inbounds for i in 1:len
-        b = unsafe_load(src, i)
-        buf[i] = (UInt8('A') <= b <= UInt8('Z')) ? (b | 0x20) : b
+        buf[i] = _tolower(unsafe_load(src, i))
     end
     return String(buf)
 end
 
-const ContentType = (
-    text   = content_type(Text),
-    html   = content_type(Html),
-    json   = content_type(Json),
-    xml    = content_type(Xml),
-    css    = content_type(Css),
-    js     = content_type(Js),
-    binary = content_type(Binary),
-)
+

@@ -25,12 +25,12 @@ end
     # --- Helper Functions ---
     function greet(request)
         body = "{\"message\":\"Hello World from Julia!\"}"
-        Response(200, ContentType.json, body)
+        Response(Json, body)
     end
 
     function echo(request, name)
         body = "Hello $name from Julia!"
-        Response(200, ContentType.text, body)
+        Response(body)
     end
 
     function error_handler(request, args...)
@@ -95,13 +95,13 @@ end
     @testset "Typed Route Parameters" begin
         router = Router()
         route!(router, :get, "/users/:id::Int", (req, id) -> begin
-            Response(200, ContentType.text, "User $(id) type=$(typeof(id))")
+            Response("User $(id) type=$(typeof(id))")
         end)
         route!(router, :get, "/score/:val::Float64", (req, val) -> begin
-            Response(200, ContentType.text, "Score $(val) type=$(typeof(val))")
+            Response("Score $(val) type=$(typeof(val))")
         end)
         route!(router, :get, "/greet/:name", (req, name) -> begin
-            Response(200, ContentType.text, "Hello $(name) type=$(typeof(name))")
+            Response("Hello $(name) type=$(typeof(name))")
         end)
 
         server = AsyncServer(router; workers=1)
@@ -192,7 +192,7 @@ end
     # --- Test 5: CORS Middleware ---
     @testset "CORS Middleware" begin
         router = Router()
-        route!(router, :get, "/api/data", (req) -> Response(200, ContentType.json, "{\"ok\":true}"))
+        route!(router, :get, "/api/data", (req) -> Response(Json, "{\"ok\":true}"))
 
         server = AsyncServer(router; workers=1)
         plug!(server, cors(origins="https://example.com"))
@@ -1160,35 +1160,25 @@ end
         @test Mongoose._sanitizeid(edge) == edge
     end
 
-    @testset "Unit: ContentType MIME header strings" begin
-        @test ContentType.text   == "Content-Type: text/plain; charset=utf-8\r\n"
-        @test ContentType.json   == "Content-Type: application/json; charset=utf-8\r\n"
-        @test ContentType.html   == "Content-Type: text/html; charset=utf-8\r\n"
-        @test ContentType.css    == "Content-Type: text/css; charset=utf-8\r\n"
-        @test ContentType.js     == "Content-Type: application/javascript; charset=utf-8\r\n"
-        @test ContentType.xml    == "Content-Type: application/xml; charset=utf-8\r\n"
-        @test ContentType.binary == "Content-Type: application/octet-stream\r\n"
-    end
-
     @testset "Unit: Response constructors" begin
         # 3-arg: status, header string, body string
-        r1 = Response(200, ContentType.text, "hello")
+        r1 = Response("hello")
         @test r1.status == 200
         @test r1.body   == "hello"
         @test occursin("text/plain", r1.headers)
 
         # 3-arg: binary body
-        r2 = Response(200, ContentType.binary, UInt8[1, 2, 3])
+        r2 = Response(Binary, UInt8[1, 2, 3])
         @test r2.body == UInt8[1, 2, 3]
 
         # 2-arg: status + string body (uses text/plain)
-        r3 = Response(201, "created")
+        r3 = Response("created"; status=201)
         @test r3.status == 201
         @test r3.body   == "created"
         @test occursin("text/plain", r3.headers)
 
         # Format-typed constructors (avoid Json which has a test-overloaded render_body)
-        r4 = Response(Xml, "<root/>")  
+        r4 = Response(Xml, "<root/>")
         @test r4.status == 200
         @test occursin("application/xml", r4.headers)
 
@@ -1342,7 +1332,7 @@ end
     @testset "Wildcard catch-all via * path" begin
         router = Router()
         route!(router, :get, "/known", req -> Response(200, "", "known"))
-        route!(router, :get, "*",      req -> Response(404, ContentType.html, "<h1>Custom 404</h1>"))
+        route!(router, :get, "*",      req -> Response(Html, "<h1>Custom 404</h1>"; status=404))
 
         server = SyncServer(router)
         start!(server; port=8202, blocking=false)
@@ -1471,8 +1461,8 @@ end
         route!(router, :post, "/upload", req -> Response(200, "", "ok"))
 
         server = AsyncServer(router; workers=1, max_body=50)
-        error_response!(server, 500, Response(500, ContentType.json, """{"error":"internal","code":500}"""))
-        error_response!(server, 413, Response(413, ContentType.json, """{"error":"too large","code":413}"""))
+        error_response!(server, 500, Response(Json, """{"error":"internal","code":500}"""; status=500))
+        error_response!(server, 413, Response(Json, """{"error":"too large","code":413}"""; status=413))
         start!(server; port=8206, blocking=false)
         sleep(0.5)
 
@@ -1955,8 +1945,8 @@ end
         emoji_body = "Hello 🌍 from Mongoose.jl — café résumé"
 
         router = Router()
-        route!(router, :get,  "/unicode", req -> Response(200, ContentType.text, emoji_body))
-        route!(router, :post, "/echo",    req -> Response(200, ContentType.text, req.body))
+        route!(router, :get,  "/unicode", req -> Response(emoji_body))
+        route!(router, :post, "/echo",    req -> Response(req.body))
 
         server = SyncServer(router)
         start!(server; port=8224, blocking=false)

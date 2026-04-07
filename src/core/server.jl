@@ -43,10 +43,10 @@ mutable struct ServerCore{R <: AbstractRouter}
     plugs::Vector{AbstractMiddleware}
     max_body::Int
     drain_timeout::Int
-    mounts::Vector{Tuple{String,String}}  
-    request_timeout::Int                      
-    errors::Dict{Int,Response}   
-    id::Threads.Atomic{UInt64}    
+    mounts::Vector{Tuple{String,String}}
+    request_timeout::Int
+    errors::Dict{Int,Response}
+    id::Threads.Atomic{UInt64}
 
     function ServerCore(timeout::Integer, router::R;
                         max_body::Integer=MAX_BODY,
@@ -64,10 +64,6 @@ mutable struct ServerCore{R <: AbstractRouter}
     end
 end
 
-# Default error responses returned when no custom entry is in errors
-const _DEFAULT_500 = Response(500, ContentType.text, "500 Internal Server Error")
-const _DEFAULT_413 = Response(413, ContentType.text, "413 Payload Too Large")
-const _DEFAULT_504 = Response(504, ContentType.text, "504 Gateway Timeout")
 
 # --- ServerConfig ---
 

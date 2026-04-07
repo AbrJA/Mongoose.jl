@@ -56,19 +56,19 @@ function (mw::Health)(request::AbstractRequest, params::Vector{Any}, next)
         status = healthy && ready && alive ? 200 : 503
 
         body = "status: $(status == 200 ? "healthy" : "unhealthy")\nchecks: health=$healthy, ready=$ready, alive=$alive\n"
-        return Response(status, ContentType.text, body)
+        return Response(Text, body; status=status)
 
     elseif uri == "/readyz"
         ready = mw.ready_check()
         status = ready ? 200 : 503
         body = "status: $(ready ? "ready" : "not ready")\n"
-        return Response(status, ContentType.text, body)
+        return Response(Text, body; status=status)
 
     elseif uri == "/livez"
         alive = mw.live_check()
         status = alive ? 200 : 503
         body = "status: $(alive ? "alive" : "dead")\n"
-        return Response(status, ContentType.text, body)
+        return Response(Text, body; status=status)
     end
 
     return next()

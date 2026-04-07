@@ -86,16 +86,16 @@ end
 
 # Emit a single structured startup log with everything an operator needs.
 function _logstart(server::SyncServer, url::String)
-    @info "Mongoose started" type="SyncServer" url=url routes=_routecount(server.core.router) julia_threads=Threads.nthreads()
+    @info "Mongoose started" type="SyncServer" url=url routes=_routecount(server.core.router) threads=Threads.nthreads()
 end
 
 function _logstart(server::AsyncServer, url::String)
-    @info "Mongoose started" type="AsyncServer" url=url workers=server.nworkers routes=_routecount(server.core.router) julia_threads=Threads.nthreads()
+    @info "Mongoose started" type="AsyncServer" url=url workers=server.nworkers routes=_routecount(server.core.router) threads=Threads.nthreads()
 end
 
 # Total registered handler-bearing nodes across fixed + dynamic trie.
 _routecount(r::Router) = length(r.fixed) + _countnodes(r.node)
-_routecount(::StaticRouter) = -1  # unknown at runtime for AOT routers
+_routecount(::StaticRouter) = "static"  # routes compiled at build time via @router
 
 """
     shutdown!(server)
