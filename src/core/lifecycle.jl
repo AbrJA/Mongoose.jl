@@ -57,8 +57,9 @@ graceful shutdown automatically — no wrapper code needed in the caller.
 - `host::AbstractString`: IP address to bind to (default: `"127.0.0.1"`).
 - `port::Integer`: Port number to listen on (default: `8080`).
 - `blocking::Bool`: If `true`, blocks until the server is stopped (default: `true`).
+- `pretty::Bool`: If `true`, enables pretty printing of server logs (default: `true` if stdout is a TTY).
 """
-function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=true)
+function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=true, pretty::Bool=isa(stdout, Base.TTY))
     if Threads.atomic_xchg!(server.core.running, true)
         return
     end
@@ -68,7 +69,7 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
         _init!(server)
         url = _bind!(server, host, port)
         _spawnworkers!(server)
-        _logstart(server, url)
+        _logstart(server, url, pretty)
 
         if blocking
             # Run event loop directly on main thread (required for AOT executables)
@@ -85,13 +86,42 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
 end
 
 # Emit a single structured startup log with everything an operator needs.
-function _logstart(server::SyncServer, url::String)
-    @info "Mongoose started" component="server" type="SyncServer" url=url routes=_routecount(server.core.router) middleware=length(server.core.plugs) mounts=length(server.core.mounts) threads=Threads.nthreads()
+# A single entry point for both types
+function _logstart(server::AbstractServer, url::String, pretty::Bool)
+    type = nameof(typeof(server))
+    routes = _routecount(server.core.router)
+    threads = Threads.nthreads()
+    plugs = length(server.core.plugs)
+    mounts = length(server.core.mounts)
+    workers = server isa AsyncServer ? server.nworkers : 1
+    if pretty
+        println()
+        printstyled("🚀 Mongoose started\n", color=:cyan, bold=true)
+        printstyled("  URL:     ", color=:light_black); printstyled(url, color=:blue, underline=true); println()
+        printstyled("  API:     ", color=:light_black)
+        printstyled("$routes routes • $plugs middleware • $mounts mounts\n", color=:green)
+        printstyled("  Type:    ", color=:light_black); println(type)
+        printstyled("  System:  ", color=:light_black)
+        printstyled("$workers workers • $threads threads\n", color=:green); println()
+    else
+        @info "Mongoose started" component="server" type=type url=url routes=routes middleware=plugs mounts=mounts workers=workers threads=threads
+    end
 end
 
-function _logstart(server::AsyncServer, url::String)
-    to = server.core.request_timeout
-    @info "Mongoose started" component="server" type="AsyncServer" url=url workers=server.nworkers routes=_routecount(server.core.router) middleware=length(server.core.plugs) mounts=length(server.core.mounts) timeout_ms=(to > 0 ? to : "disabled") threads=Threads.nthreads()
+function _logstop(pretty::Bool=true)
+    if pretty
+        printstyled("🛑 Mongoose shutting down...\n", color=:red, bold=true)
+     else
+        @info "Mongoose shutting down..." component="server"
+    end
+end
+
+function _logstopped(pretty::Bool=true)
+    if pretty
+        printstyled("✅ Mongoose stopped.\n", color=:green, bold=true)
+    else
+        @info "Mongoose stopped." component="server"
+    end
 end
 
 # Total registered handler-bearing nodes across fixed + dynamic trie.
@@ -112,14 +142,13 @@ function shutdown!(server::AbstractServer)
     if !Threads.atomic_xchg!(server.core.running, false)
         return
     end
-
-    @info "Mongoose shutting down" component="server" type=string(nameof(typeof(server)))
+    _logstop()
     _drain(server)
     _stopworkers!(server)
     _stoploop!(server)
     _teardown!(server)
     _unregister!(server)
-    @info "Mongoose stopped" component="server" type=string(nameof(typeof(server)))
+    _logstopped()
     return
 end
 

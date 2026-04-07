@@ -33,37 +33,57 @@ end
     ServerCore{R} — Shared state. R <: AbstractRouter
 """
 mutable struct ServerCore{R <: AbstractRouter}
-    manager::Manager
-    handler::Ptr{Cvoid}
-    timeout::Int
-    master::Union{Nothing,Task}
-    router::R
-    sockets::Dict{Int,String}
+    # --- 1. Execution State ---
     running::Threads.Atomic{Bool}
-    plugs::Vector{AbstractMiddleware}
-    max_body::Int
-    drain_timeout::Int
-    mounts::Vector{Tuple{String,String}}
-    request_timeout::Int
-    errors::Dict{Int,Response}
-    id::Threads.Atomic{UInt64}
+    server_task::Union{Nothing, Task}
+    manager::Manager
+    handler::Ptr{Cvoid}             # C-interop handler
+    sockets::Dict{Int, String}
+    next_id::Threads.Atomic{UInt64} # Connection/Request ID generator
 
-    function ServerCore(timeout::Integer, router::R;
-                        max_body::Integer=MAX_BODY,
-                        drain_timeout::Integer=DRAIN_TIMEOUT,
-                        request_timeout::Integer=0,
-                        errors::Dict{Int,Response}=Dict{Int,Response}(),
-                        c_handler::Ptr{Cvoid}=C_NULL) where {R <: AbstractRouter}
+    # --- 2. Routing & Logic ---
+    router::R
+    pipeline::Vector{AbstractMiddleware}
+    mounts::Vector{Tuple{String, String}}
+    errors::Dict{Int, Response}
+
+    # --- 3. Configuration & Limits ---
+    poll_timeout::Int
+    request_timeout::Int
+    drain_timeout::Int
+    max_body::Int
+
+    # --- 4. UI/UX Preferences ---
+    pretty::Bool
+
+    # Inner Constructor
+    function ServerCore(poll_timeout::Integer, router::R;
+                        max_body::Integer = MAX_BODY,
+                        drain_timeout::Integer = DRAIN_TIMEOUT,
+                        request_timeout::Integer = 0,
+                        errors::Dict{Int, Response} = Dict{Int, Response}(),
+                        c_handler::Ptr{Cvoid} = C_NULL,
+                        pretty::Bool = true) where {R <: AbstractRouter}
+
         return new{R}(
-            Manager(empty=true), c_handler, timeout, nothing,
-            router, Dict{Int,String}(),
-            Threads.Atomic{Bool}(false), AbstractMiddleware[],
-            max_body, drain_timeout, Tuple{String,String}[],
-            request_timeout, errors, Threads.Atomic{UInt64}(0)
+            Threads.Atomic{Bool}(false),    # running
+            nothing,                        # server_task (formerly master)
+            Manager(empty=true),            # manager
+            c_handler,                      # handler
+            Dict{Int, String}(),            # sockets
+            Threads.Atomic{UInt64}(0),      # next_id (formerly id)
+            router,                         # router
+            AbstractMiddleware[],           # pipeline (formerly plugs)
+            Tuple{String, String}[],        # mounts
+            errors,                         # errors
+            poll_timeout,                   # poll_timeout (formerly timeout)
+            request_timeout,                # request_timeout
+            drain_timeout,                  # drain_timeout
+            max_body,                       # max_body
+            pretty                          # pretty
         )
     end
 end
-
 
 # --- ServerConfig ---
 
