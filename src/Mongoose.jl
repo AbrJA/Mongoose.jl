@@ -5,7 +5,7 @@ using PrecompileTools
 
 export SyncServer, AsyncServer, Router, Request, Response,
     Plain, Html, Json, Css, Js, Xml, Binary,
-    start!, shutdown!, route!, plug!, mount!, error_response!,
+    start!, shutdown!, route!, plug!, mount!, fail!,
     render_body, content_type, context!,
     ws!, Message,
     cors, rate_limit, bearer_token, api_key, logger, health, metrics,
@@ -112,8 +112,8 @@ include("middleware/metrics.jl")
         # --- Middleware construction ---
         mw_cors     = cors()
         mw_cors2    = cors(origins="https://example.com", methods="GET,POST")
-        mw_logger   = logger(threshold_ms=100)
-        mw_logger2  = logger(threshold_ms=100, structured=true)
+        mw_logger   = logger(threshold=100)
+        mw_logger2  = logger(threshold=100, structured=true)
         mw_rl       = rate_limit()
         mw_rl2      = rate_limit(max_requests=10, window_seconds=30)
         mw_bearer   = bearer_token(t -> true)

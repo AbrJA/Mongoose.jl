@@ -164,9 +164,9 @@ server = AsyncServer(router, config)   # or SyncServer(router, config)
 Register pre-built responses for specific status codes — no function callbacks, fully trim-safe:
 
 ```julia
-error_response!(server, 500, Response(Json, """{"error":"Internal error"}"""; status=500))
-error_response!(server, 413, Response(Json, """{"error":"Body too large"}"""; status=413))
-error_response!(server, 504, Response(Json, """{"error":"Timed out"}"""; status=504))
+fail!(server, 500, Response(Json, """{"error":"Internal error"}"""; status=500))
+fail!(server, 413, Response(Json, """{"error":"Body too large"}"""; status=413))
+fail!(server, 504, Response(Json, """{"error":"Timed out"}"""; status=504))
 
 # Custom 404 — add a catch-all route
 route!(router, :get, "*", req -> Response(Html, read("404.html", String); status=404))
@@ -376,7 +376,7 @@ plug!(server, rate_limit(max_requests=300, window_seconds=60))
 plug!(server, bearer_token(t -> t == get(ENV, "API_TOKEN", "secret")); paths=["/api"])
 mount!(server, "public")
 
-error_response!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500))
+fail!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500))
 
 # blocking=true: start! handles Ctrl+C automatically and shuts down gracefully
 start!(server, port=8080)

@@ -334,13 +334,13 @@ function handle_debug_echo(req::Request)
     ))
 end
 
-# Intentional error — exercises the custom 500 error_response!.
+# Intentional error — exercises the custom 500 fail!.
 function handle_debug_panic(req::Request)
     error("Intentional panic from /debug/panic — confirms custom 500 response is working")
 end
 
 # Sleep for ?ms=N milliseconds.
-# ms=600  → triggers the logger(threshold_ms=500) line in stderr.
+# ms=600  → triggers the logger(threshold=500) line in stderr.
 # ms=4000 → exceeds request_timeout=3000 and returns the custom 504 response.
 function handle_debug_slow(req::Request)
     p  = Mongoose.query(DebugSlowParams, req)
@@ -487,7 +487,7 @@ function main()
     plug!(server, logger(structured=true))
 
     # 3. Slow-request logger — only emits a line when the request takes > 500ms.
-    plug!(server, logger(threshold_ms=500))
+    plug!(server, logger(threshold=500))
 
     # 4. Rate limiter — 300 req / 60 s per client IP.
     plug!(server, rate_limit(max_requests=300, window_seconds=60))
@@ -521,9 +521,9 @@ function main()
     plug!(server, InjectUser(admin_tokens); paths=["/admin"])
 
     # ── Custom error responses ─────────────────────────────────────────────────
-    error_response!(server, 500, Response(Json, Dict("error"=>"Internal server error"); status=500))
-    error_response!(server, 413, Response(Json, Dict("error"=>"Request body too large"); status=413))
-    error_response!(server, 504, Response(Json, Dict("error"=>"Request timed out");      status=504))
+    fail!(server, 500, Response(Json, Dict("error"=>"Internal server error"); status=500))
+    fail!(server, 413, Response(Json, Dict("error"=>"Request body too large"); status=413))
+    fail!(server, 504, Response(Json, Dict("error"=>"Request timed out");      status=504))
 
     # ── Static file serving (C-level, bypasses middleware pipeline) ────────────
     # All three mounts are auth-free (api_key only covers /api).

@@ -101,7 +101,7 @@ function mount!(server::AbstractServer, directory::AbstractString;
 end
 
 """
-    error_response!(server, status::Int, response::Response)
+    fail!(server, status::Int, response::Response)
 
 Register a custom `Response` to be returned for the given HTTP status code.
 Applies to: `500` (unhandled exception), `413` (body too large), `504` (timeout).
@@ -113,11 +113,11 @@ route!(router, :get, "*", req -> Response(Html, read("404.html", String); status
 
 # Example
 ```julia
-error_response!(server, 500, Response(Json, \"\"\"{"error":"Internal error"}\"\"\"; status=500))
-error_response!(server, 413, Response(Json, \"\"\"{"error":"Body too large"}\"\"\"; status=413))
+fail!(server, 500, Response(Json, \"\"\"{"error":"Internal error"}\"\"\"; status=500))
+fail!(server, 413, Response(Json, \"\"\"{"error":"Body too large"}\"\"\"; status=413))
 ```
 """
-function error_response!(server::AbstractServer, status::Int, response::Response)
+function fail!(server::AbstractServer, status::Int, response::Response)
     server.core.errors[status] = response
     return server
 end

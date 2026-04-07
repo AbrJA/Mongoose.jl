@@ -210,7 +210,7 @@ end)
 server = AsyncServer(router)
 
 # Only log requests taking longer than 50ms
-plug!(server, logger(threshold_ms=50))
+plug!(server, logger(threshold=50))
 
 start!(server, port=8080, blocking=false)
 ```
@@ -344,7 +344,7 @@ ws!(router, "/ws/notifications",
 
 # Server with full middleware stack
 server = AsyncServer(router; workers=4)
-plug!(server, logger(threshold_ms=100))
+plug!(server, logger(threshold=100))
 plug!(server, cors(origins="https://myapp.com"))
 plug!(server, rate_limit(max_requests=200, window_seconds=60))
 mount!(server, "public")
@@ -371,9 +371,9 @@ route!(router, :get, "*", req -> Response(Html, "<h1>Not Found</h1>"; status=404
 
 server = AsyncServer(router; request_timeout=5000)
 
-error_response!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500))
-error_response!(server, 413, Response(Json, """{"error":"Body too large"}"""; status=413))
-error_response!(server, 504, Response(Json, """{"error":"Request timed out"}"""; status=504))
+fail!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500))
+fail!(server, 413, Response(Json, """{"error":"Body too large"}"""; status=413))
+fail!(server, 504, Response(Json, """{"error":"Request timed out"}"""; status=504))
 
 start!(server, port=8080, blocking=false)
 ```
@@ -423,7 +423,7 @@ start!(server, port=8080, blocking=false)
 
 Each log line is a JSON object:
 ```json
-{"method":"GET","uri":"/","status":200,"duration_ms":0.42,"ts":"2025-01-15T10:30:00"}
+{"method":"GET","uri":"/","status":200,"duration":0.42,"ts":"2025-01-15T10:30:00"}
 ```
 
 ## Prometheus Metrics

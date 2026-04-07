@@ -13,7 +13,7 @@ SyncServer
 start!
 shutdown!
 plug!
-error_response!
+fail!
 ```
 
 ## Routing

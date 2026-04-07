@@ -604,7 +604,7 @@ end
 
         log_buf = IOBuffer()
         server = AsyncServer(router; workers=1)
-        plug!(server, logger(threshold_ms=5000, output=log_buf))
+        plug!(server, logger(threshold=5000, output=log_buf))
         start!(server; port=8111, blocking=false)
         sleep(0.5)
 
@@ -1256,7 +1256,7 @@ end
         @test occursin("\"/api/v1\"", out)
         @test occursin("\"status\":", out)
         @test occursin("200",         out)
-        @test occursin("\"duration_ms\":", out)
+        @test occursin("\"duration\":", out)
         @test occursin("\"ts\":",     out)
     end
 
@@ -1445,24 +1445,24 @@ end
             @test occursin("\"GET\"",         out)
             @test occursin("/log_me",         out)
             @test occursin("\"status\":200",  out)
-            @test occursin("\"duration_ms\":", out)
+            @test occursin("\"duration\":", out)
         finally
             shutdown!(server)
         end
     end
 
     # ==========================================================================
-    # Custom error_response! for 500 and 413
+    # Custom fail! for 500 and 413
     # ==========================================================================
 
-    @testset "Custom error_response! for 500 and 413" begin
+    @testset "Custom fail! for 500 and 413" begin
         router = Router()
         route!(router, :get,  "/boom",   req -> error("deliberate crash"))
         route!(router, :post, "/upload", req -> Response(200, "", "ok"))
 
         server = AsyncServer(router; workers=1, max_body=50)
-        error_response!(server, 500, Response(Json, """{"error":"internal","code":500}"""; status=500))
-        error_response!(server, 413, Response(Json, """{"error":"too large","code":413}"""; status=413))
+        fail!(server, 500, Response(Json, """{"error":"internal","code":500}"""; status=500))
+        fail!(server, 413, Response(Json, """{"error":"too large","code":413}"""; status=413))
         start!(server; port=8206, blocking=false)
         sleep(0.5)
 

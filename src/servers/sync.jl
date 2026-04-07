@@ -11,7 +11,7 @@ Create a single-threaded blocking server. Compatible with `juliac --trim=safe`.
 - `timeout::Integer`: Event-loop poll timeout in ms (default: `1`). Use `0` for minimum latency at the cost of CPU.
 - `max_body::Integer`: Maximum request body size in bytes (default: 1MB).
 - `drain_timeout::Integer`: Graceful shutdown drain timeout (default: 5000ms).
-- `errors::Dict{Int,Response}`: Custom responses keyed by HTTP status code (`500`, `413`, `504`). See `error_response!`.
+- `errors::Dict{Int,Response}`: Custom responses keyed by HTTP status code (`500`, `413`, `504`). See `fail!`.
 """
 SyncServer(::Type{T}; kwargs...) where {T <: StaticRouter} = SyncServer(T(); kwargs...)
 SyncServer(::Type{T}, config::ServerConfig) where {T <: StaticRouter} = SyncServer(T(), config)

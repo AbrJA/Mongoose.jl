@@ -31,7 +31,7 @@ function _callwsep(endpoint::WsEndpoint, request::Tagged{Intent})
         res = endpoint.on_message(request.payload.body)
         return _tagws(request.id, res)
     catch e
-        @error "WebSocket on_message error" exception = (e, catch_backtrace())
+        @error "WebSocket on_message error" component="websocket" uri=request.payload.uri exception=(e, catch_backtrace())
     end
     return nothing
 end
@@ -48,7 +48,7 @@ function _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
         try
             endpoint.on_open(req)
         catch e
-            @error "WebSocket on_open error" uri=uri exception=(e, catch_backtrace())
+            @error "WebSocket on_open error" component="websocket" uri=uri exception=(e, catch_backtrace())
         end
     end
 end
@@ -112,7 +112,7 @@ function _closews!(server::AbstractServer, conn::MgConnection)
             try
                 endpoint.on_close()
             catch e
-                @error "WebSocket on_close error" exception = (e, catch_backtrace())
+                @error "WebSocket on_close error" component="websocket" uri=uri exception=(e, catch_backtrace())
             end
         end
         delete!(server.core.sockets, conn_id)

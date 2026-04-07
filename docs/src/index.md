@@ -282,14 +282,14 @@ Logs method, URI, status code, and duration for each request.
 
 ```julia
 plug!(server, logger())                         # Log all requests to stderr
-plug!(server, logger(threshold_ms=50))           # Only log requests slower than 50ms
+plug!(server, logger(threshold=50))           # Only log requests slower than 50ms
 plug!(server, logger(output=open("log.txt","a"))) # Custom output
 plug!(server, logger(structured=true))           # JSON log lines
 ```
 
 Structured mode emits one JSON object per line:
 ```json
-{"method":"GET","uri":"/users/1","status":200,"duration_ms":1.23,"ts":"2025-01-15T10:30:00"}
+{"method":"GET","uri":"/users/1","status":200,"duration":1.23,"ts":"2025-01-15T10:30:00"}
 ```
 
 ### CORS
@@ -372,10 +372,10 @@ router = Router()
 server = AsyncServer(router)
 
 # Custom JSON 500 response
-error_response!(server, 500, Response(Json, Dict("error" => "Internal server error"); status=500))
+fail!(server, 500, Response(Json, Dict("error" => "Internal server error"); status=500))
 
 # Custom 413 response
-error_response!(server, 413, Response(Json, """{"error":"Request body too large"}"""; status=413))
+fail!(server, 413, Response(Json, """{"error":"Request body too large"}"""; status=413))
 ```
 
 You can also pass a pre-built dict at construction time:

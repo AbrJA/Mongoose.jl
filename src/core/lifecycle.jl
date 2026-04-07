@@ -86,11 +86,12 @@ end
 
 # Emit a single structured startup log with everything an operator needs.
 function _logstart(server::SyncServer, url::String)
-    @info "Mongoose started" type="SyncServer" url=url routes=_routecount(server.core.router) threads=Threads.nthreads()
+    @info "Mongoose started" component="server" type="SyncServer" url=url routes=_routecount(server.core.router) middleware=length(server.core.plugs) mounts=length(server.core.mounts) threads=Threads.nthreads()
 end
 
 function _logstart(server::AsyncServer, url::String)
-    @info "Mongoose started" type="AsyncServer" url=url workers=server.nworkers routes=_routecount(server.core.router) threads=Threads.nthreads()
+    to = server.core.request_timeout
+    @info "Mongoose started" component="server" type="AsyncServer" url=url workers=server.nworkers routes=_routecount(server.core.router) middleware=length(server.core.plugs) mounts=length(server.core.mounts) timeout_ms=(to > 0 ? to : "disabled") threads=Threads.nthreads()
 end
 
 # Total registered handler-bearing nodes across fixed + dynamic trie.
@@ -112,13 +113,13 @@ function shutdown!(server::AbstractServer)
         return
     end
 
-    @info "Mongoose shutting down" server=server
+    @info "Mongoose shutting down" component="server" type=string(nameof(typeof(server)))
     _drain(server)
     _stopworkers!(server)
     _stoploop!(server)
     _teardown!(server)
     _unregister!(server)
-    @info "Mongoose stopped"
+    @info "Mongoose stopped" component="server" type=string(nameof(typeof(server)))
     return
 end
 

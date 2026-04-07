@@ -144,14 +144,14 @@
       </div>
 
       <div class="debug-group">
-        <div class="debug-label">Custom 500 — intentional <code>error()</code> in handler → custom <code>error_response!(500, …)</code></div>
+        <div class="debug-label">Custom 500 — intentional <code>error()</code> in handler → custom <code>fail!(500, …)</code></div>
         <div class="btn-row">
           <button class="btn-danger" onclick="debugPanic()">GET /debug/panic</button>
         </div>
       </div>
 
       <div class="debug-group">
-        <div class="debug-label">Slow Request — 600 ms triggers <code>logger(threshold_ms=500)</code> in stderr · 4000 ms triggers 504</div>
+        <div class="debug-label">Slow Request — 600 ms triggers <code>logger(threshold=500)</code> in stderr · 4000 ms triggers 504</div>
         <div class="btn-row align-center">
           <label>ms <input id="slowMs" type="number" value="200" step="100" style="width:80px" /></label>
           <button onclick="debugSlow()">Send</button>

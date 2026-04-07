@@ -69,7 +69,7 @@ function (mw::Logger)(request::AbstractRequest, params::Vector{Any}, next)
                 "{\"method\":\"", method,
                 "\",\"uri\":\"", uri,
                 "\",\"status\":", status,
-                ",\"duration_ms\":", round(elapsed_ms; digits=2),
+                ",\"duration\":", round(elapsed_ms; digits=2),
                 ",\"ts\":\"", Libc.strftime("%Y-%m-%dT%H:%M:%S", time()),
                 "\"}")
         else
@@ -81,20 +81,20 @@ function (mw::Logger)(request::AbstractRequest, params::Vector{Any}, next)
 end
 
 """
-    logger(; threshold_ms=0, output=stderr, structured=false)
+    logger(; threshold=0, output=stderr, structured=false)
 
 Create a request-logging middleware.
 
 # Keyword Arguments
-- `threshold_ms::Int`: Only log requests slower than this (default: `0` = log all).
+- `threshold::Int`: Only log requests slower than this (default: `0` = log all) ms.
 - `output::IO`: IO stream for log output (default: `stderr`).
 - `structured::Bool`: If `true`, emit one JSON object per line (default: `false`).
 
 # Example
 ```julia
 plug!(server, logger())                         # plain text, all requests
-plug!(server, logger(threshold_ms=100))         # only slow requests
+plug!(server, logger(threshold=100))         # only slow requests
 plug!(server, logger(structured=true))          # JSON structured logs
 ```
 """
-logger(; threshold_ms::Int=0, output::IO=stderr, structured::Bool=false) = Logger(threshold_ms * 1_000_000, output, structured)
+logger(; threshold::Int=0, output::IO=stderr, structured::Bool=false) = Logger(threshold * 1_000_000, output, structured)

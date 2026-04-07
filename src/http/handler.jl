@@ -133,7 +133,7 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
     res = try
         _invokehttp(server, req)
     catch e
-        @error "Handler error" exception=(e, catch_backtrace())
+        @error "Handler error" component="http" uri=req.uri exception=(e, catch_backtrace())
         _handleerror(server, req, e)
     end
     rid = _resolveid(message, server)
@@ -397,14 +397,14 @@ function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout:
     Threads.@spawn try
         put!(ch, _invokehttp(server, req))
     catch e
-        @error "Handler error" uri=req.uri exception=(e, catch_backtrace())
+        @error "Handler error" component="http" uri=req.uri exception=(e, catch_backtrace())
         put!(ch, _handleerror(server, req, e))
     end
     result = timedwait(timeout / 1000.0) do
         isready(ch)
     end
     if result === :timed_out
-        @warn "Request timed out" uri=req.uri timeout=timeout
+        @warn "Request timed out" component="http" uri=req.uri timeout_ms=timeout
         return _errresponse(server, 504)
     end
     return take!(ch)

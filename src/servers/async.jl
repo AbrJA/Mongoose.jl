@@ -16,7 +16,7 @@ Not compatible with `juliac --trim=safe`.
 - `max_body::Integer`: Maximum request body size in bytes (default: 1MB).
 - `drain_timeout::Integer`: Graceful shutdown drain timeout (default: 5000ms).
 - `request_timeout::Integer`: Per-request timeout in ms, 0 = disabled (default: `0`).
-- `errors::Dict{Int,Response}`: Custom responses keyed by HTTP status code (`500`, `413`, `504`). See `error_response!`.
+- `errors::Dict{Int,Response}`: Custom responses keyed by HTTP status code (`500`, `413`, `504`). See `fail!`.
 """
 AsyncServer(::Type{T}; kwargs...) where {T <: StaticRouter} = AsyncServer(T(); kwargs...)
 AsyncServer(::Type{T}, config::ServerConfig) where {T <: StaticRouter} = AsyncServer(T(), config)
@@ -109,7 +109,7 @@ function _eventloop(server::AsyncServer)
                         _sendws!(conn, id_res.payload)
                         did_ws_send = true
                     catch e
-                        @error "WebSocket send error" exception=(e, catch_backtrace())
+                    @error "WebSocket send error" component="websocket" exception=(e, catch_backtrace())
                     end
                 end
             end
@@ -133,7 +133,7 @@ function _workloop(server::AsyncServer)
                         _invokehttp(server, req.payload)
                     end
                 catch e
-                    @error "Handler error" exception=(e, catch_backtrace())
+                    @error "Handler error" component="http" uri=req.payload.uri exception=(e, catch_backtrace())
                     _handleerror(server, req.payload, e)
                 end
                 res = Response(res.status, _appendreqid(res.headers, rid), res.body)

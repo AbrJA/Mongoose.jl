@@ -20,7 +20,7 @@ function _callbackev(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
     try
         _dispatchev(server, ev, conn, ev_data)
     catch e
-        @error "Event handler error" exception = (e, catch_backtrace())
+        @error "Event handler error" component="eventloop" exception=(e, catch_backtrace())
     end
 
     return nothing

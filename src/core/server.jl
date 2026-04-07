@@ -160,7 +160,7 @@ function _spawnloop!(server::AbstractServer)
             _eventloop(server)
         catch e
             if !isa(e, InterruptException)
-                @error "Server event loop error" exception = (e, catch_backtrace())
+                @error "Server event loop error" component="eventloop" exception=(e, catch_backtrace())
             end
         finally
             server.core.running[] = false
