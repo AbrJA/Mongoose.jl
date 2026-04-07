@@ -155,8 +155,7 @@ function _bind!(server::AbstractServer, host::AbstractString, port::Integer)
     fn_data = pointer_from_objref(server)
     is_listen = mg_http_listen(server.core.manager.ptr, url, server.core.handler, fn_data)
     is_listen == C_NULL && throw(BindError("Failed to start server on $url. Port may be in use."))
-    @info "Listening on $url"
-    return
+    return url
 end
 
 function _spawnloop!(server::AbstractServer)
@@ -165,11 +164,10 @@ function _spawnloop!(server::AbstractServer)
             _eventloop(server)
         catch e
             if !isa(e, InterruptException)
-                @error "Server event loop error: $e" exception = (e, catch_backtrace())
+                @error "Server event loop error" exception = (e, catch_backtrace())
             end
         finally
             server.core.running[] = false
-            @info "Server event loop task finished."
         end
     end
     return

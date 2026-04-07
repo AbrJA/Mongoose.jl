@@ -2,6 +2,48 @@
     Server lifecycle management — start, shutdown, graceful drain.
 """
 
+# ---------------------------------------------------------------------------
+# Base.show — human-readable display for Router and server types
+# ---------------------------------------------------------------------------
+
+function Base.show(io::IO, r::Router)
+    n_fixed   = length(r.fixed)
+    n_dynamic = _countnodes(r.node)
+    n_ws      = length(r.ws_routes)
+    print(io, "Router(")
+    print(io, n_fixed + n_dynamic, " route", (n_fixed + n_dynamic) == 1 ? "" : "s")
+    n_ws > 0 && print(io, ", ", n_ws, " WebSocket", n_ws == 1 ? "" : "s")
+    print(io, ")")
+end
+
+# Count the number of nodes that carry at least one handler in the trie.
+function _countnodes(node::TrieNode)::Int
+    count = _hashandlers(node.handlers) ? 1 : 0
+    for (_, child) in node.children
+        count += _countnodes(child)
+    end
+    if node.dynamic !== nothing
+        count += _countnodes(node.dynamic)
+    end
+    return count
+end
+
+function Base.show(io::IO, s::SyncServer)
+    status = s.core.running[] ? "running" : "stopped"
+    print(io, "SyncServer(", status, ", router=", s.core.router, ")")
+end
+
+function Base.show(io::IO, s::AsyncServer)
+    status = s.core.running[] ? "running" : "stopped"
+    print(io, "AsyncServer(", status,
+          ", workers=", s.nworkers,
+          ", router=", s.core.router, ")")
+end
+
+# ---------------------------------------------------------------------------
+# Lifecycle
+# ---------------------------------------------------------------------------
+
 """
     start!(server; host, port, blocking)
 
@@ -24,8 +66,9 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
     try
         _register!(server)
         _init!(server)
-        _bind!(server, host, port)
+        url = _bind!(server, host, port)
         _spawnworkers!(server)
+        _logstart(server, url)
 
         if blocking
             # Run event loop directly on main thread (required for AOT executables)
@@ -41,6 +84,19 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
     return
 end
 
+# Emit a single structured startup log with everything an operator needs.
+function _logstart(server::SyncServer, url::String)
+    @info "Mongoose started" type="SyncServer" url=url routes=_routecount(server.core.router) julia_threads=Threads.nthreads()
+end
+
+function _logstart(server::AsyncServer, url::String)
+    @info "Mongoose started" type="AsyncServer" url=url workers=server.nworkers routes=_routecount(server.core.router) julia_threads=Threads.nthreads()
+end
+
+# Total registered handler-bearing nodes across fixed + dynamic trie.
+_routecount(r::Router) = length(r.fixed) + _countnodes(r.node)
+_routecount(::StaticRouter) = -1  # unknown at runtime for AOT routers
+
 """
     shutdown!(server)
 
@@ -53,20 +109,16 @@ Gracefully stop the server:
 """
 function shutdown!(server::AbstractServer)
     if !Threads.atomic_xchg!(server.core.running, false)
-        @info "Server not running. Nothing to do."
         return
     end
 
-    @info "Stopping server..."
-
+    @info "Mongoose shutting down" server=server
     _drain(server)
-
     _stopworkers!(server)
     _stoploop!(server)
     _teardown!(server)
     _unregister!(server)
-
-    @info "Server stopped successfully."
+    @info "Mongoose stopped"
     return
 end
 

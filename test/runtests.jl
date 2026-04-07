@@ -1641,12 +1641,19 @@ end
 
     @testset "AsyncServer request_timeout → 504" begin
         router = Router()
+        route!(router, :get, "/ping", req -> Response(200, "", "pong"))   # warmup route
         route!(router, :get, "/fast", req -> Response(200, "", "fast"))
         route!(router, :get, "/slow", req -> (sleep(5); Response(200, "", "never")))
 
         server = AsyncServer(router; workers=1, request_timeout=200)
         start!(server; port=8212, blocking=false)
         sleep(0.5)
+
+        # Warm up the JIT via a request that has no timing assertions.
+        # Without this the first real request compiles the full dispatch chain
+        # (>200 ms) and spuriously hits the timeout.
+        HTTP.get("http://localhost:8212/ping")
+        sleep(0.1)
 
         try
             resp = HTTP.get("http://localhost:8212/fast")

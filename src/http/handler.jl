@@ -391,22 +391,17 @@ returns 504 Gateway Timeout. Used only by AsyncServer workers.
 """
 function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout_ms::Integer)
     ch = Channel{Response}(1)
-
-    t = Threads.@spawn try
+    Threads.@spawn try
         put!(ch, _invokehttp(server, req))
     catch e
-        e isa InterruptException || put!(ch, _handleerror(server, req, e))
+        put!(ch, _handleerror(server, req, e))
     end
-
     result = timedwait(timeout_ms / 1000.0) do
         isready(ch)
     end
-
     if result === :timed_out
         @warn "Request timed out" uri=req.uri timeout_ms=timeout_ms
-        Base.schedule(t, InterruptException(); error=true)
         return _errresponse(server, 504)
     end
-
     return take!(ch)
 end
