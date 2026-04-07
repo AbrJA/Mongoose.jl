@@ -38,7 +38,7 @@ The `validator` function receives the token string and must return `true` if val
 
 # Example
 ```julia
-use!(server, bearer_token(token -> token == "my-secret-token"))
+plug!(server, bearer_token(token -> token == "my-secret-token"))
 ```
 """
 bearer_token(validator::Function) = BearerToken(validator)
@@ -73,7 +73,7 @@ Create an API key authentication middleware.
 
 # Example
 ```julia
-use!(server, api_key(keys=Set(["key-123"])))
+plug!(server, api_key(keys=Set(["key-123"])))
 ```
 """
 api_key(; header_name::String="X-API-Key", keys::Set{String}) = ApiKey(lowercase(header_name), keys)

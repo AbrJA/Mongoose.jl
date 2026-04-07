@@ -33,7 +33,7 @@ Create a CORS middleware.
 
 # Example
 ```julia
-use!(server, cors(origins="https://myapp.com"))
+plug!(server, cors(origins="https://myapp.com"))
 ```
 """
 function cors(;

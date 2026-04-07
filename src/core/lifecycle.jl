@@ -46,7 +46,7 @@ end
 
 Gracefully stop the server:
 1. Signal the event loop to stop.
-2. Wait for in-flight requests to drain (up to `drain_timeout_ms`).
+2. Wait for in-flight requests to drain (up to `drain_timeout`).
 3. Stop worker threads.
 4. Free all C resources.
 5. Unregister from the global registry.
@@ -59,7 +59,7 @@ function shutdown!(server::AbstractServer)
 
     @info "Stopping server..."
 
-    _drain_in_flight(server)
+    _drain(server)
 
     _stopworkers!(server)
     _stoploop!(server)
@@ -71,13 +71,13 @@ function shutdown!(server::AbstractServer)
 end
 
 """
-    _drain_in_flight(server)
+    _drain(server)
 
-Wait for in-flight requests to drain, up to `drain_timeout_ms`.
+Wait for in-flight requests to drain, up to `drain_timeout`.
 For AsyncServer, polls the response channels until they're empty or timeout expires.
 """
-function _drain_in_flight(server::AbstractServer)
-    timeout_s = server.core.drain_timeout_ms / 1000.0
+function _drain(server::AbstractServer)
+    timeout_s = server.core.drain_timeout / 1000.0
     deadline = time() + timeout_s
     while time() < deadline
         _haspending(server) || break

@@ -33,5 +33,5 @@ const WS_OP_PING = Cint(9)
 const WS_OP_PONG = Cint(10)
 
 # Default limits
-const DEFAULT_MAX_BODY_SIZE = 1_048_576  # 1 MB default max body size
-const DEFAULT_DRAIN_TIMEOUT_MS = 5000    # 5s shutdown drain timeout
+const MAX_BODY = 1_048_576  # 1 MB default max body size
+const DRAIN_TIMEOUT = 5000    # 5s shutdown drain timeout

@@ -79,7 +79,7 @@
       <h2>Protected Files <small style="color:#888;font-weight:normal">(auth-gated binary response)</small></h2>
       <p>
         Files in <code>example/public/assets/</code> served through a Julia route handler (<code>GET /api/protected/:name</code>),
-        not <code>serve_dir!</code>.  Auth is checked by the middleware pipeline before any file I/O runs.
+        not <code>mount!</code>.  Auth is checked by the middleware pipeline before any file I/O runs.
         Bytes are returned as <code>Vector{UInt8}</code> and sent via <code>mg_send</code>.
       </p>
       <div class="btn-row">

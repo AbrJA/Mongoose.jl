@@ -3,8 +3,8 @@
 """
 
 """
-    AsyncServer(router=Router(); workers=4, nqueue=1024, timeout=0, max_body_size,
-               drain_timeout_ms, request_timeout_ms=0, error_responses=Dict{Int,Response}())
+    AsyncServer(router=Router(); workers=4, nqueue=1024, timeout=0, max_body,
+               drain_timeout, request_timeout=0, errors=Dict{Int,Response}())
 
 Create a multi-threaded server with `workers` background tasks.
 Not compatible with `juliac --trim=safe`.
@@ -13,10 +13,10 @@ Not compatible with `juliac --trim=safe`.
 - `workers::Integer`: Number of worker tasks (default: `4`).
 - `nqueue::Integer`: Channel buffer size (default: `1024`).
 - `timeout::Integer`: Event-loop poll timeout in ms (default: `0`).
-- `max_body_size::Integer`: Maximum request body size in bytes (default: 1MB).
-- `drain_timeout_ms::Integer`: Graceful shutdown drain timeout (default: 5000ms).
-- `request_timeout_ms::Integer`: Per-request timeout in ms, 0 = disabled (default: `0`).
-- `error_responses::Dict{Int,Response}`: Custom responses keyed by HTTP status code (`500`, `413`, `504`). See `error_response!`.
+- `max_body::Integer`: Maximum request body size in bytes (default: 1MB).
+- `drain_timeout::Integer`: Graceful shutdown drain timeout (default: 5000ms).
+- `request_timeout::Integer`: Per-request timeout in ms, 0 = disabled (default: `0`).
+- `errors::Dict{Int,Response}`: Custom responses keyed by HTTP status code (`500`, `413`, `504`). See `error_response!`.
 """
 AsyncServer(::Type{T}; kwargs...) where {T <: StaticRouter} = AsyncServer(T(); kwargs...)
 AsyncServer(::Type{T}, config::ServerConfig) where {T <: StaticRouter} = AsyncServer(T(), config)
@@ -25,13 +25,13 @@ function AsyncServer(router::AbstractRouter=Router();
                      workers::Integer=4,
                      nqueue::Integer=1024,
                      timeout::Integer=0,
-                     max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
-                     drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS,
-                     request_timeout_ms::Integer=0,
-                     error_responses::Dict{Int,Response}=Dict{Int,Response}())
+                     max_body::Integer=MAX_BODY,
+                     drain_timeout::Integer=DRAIN_TIMEOUT,
+                     request_timeout::Integer=0,
+                     errors::Dict{Int,Response}=Dict{Int,Response}())
     c_handler = Mongoose._cfnasync(typeof(router))
-    core = ServerCore(timeout, router; max_body_size=max_body_size, drain_timeout_ms=drain_timeout_ms,
-                      request_timeout_ms=request_timeout_ms, error_responses=error_responses, c_handler=c_handler)
+    core = ServerCore(timeout, router; max_body=max_body, drain_timeout=drain_timeout,
+                      request_timeout=request_timeout, errors=errors, c_handler=c_handler)
     server = AsyncServer{typeof(router)}(
         core, Task[],
         Channel{Call}(nqueue), Channel{Reply}(nqueue),
@@ -51,10 +51,10 @@ function AsyncServer(router::AbstractRouter, config::ServerConfig)
         workers            = config.workers,
         nqueue             = config.nqueue,
         timeout            = config.timeout,
-        max_body_size      = config.max_body_size,
-        drain_timeout_ms   = config.drain_timeout_ms,
-        request_timeout_ms = config.request_timeout_ms,
-        error_responses    = config.error_responses
+        max_body      = config.max_body,
+        drain_timeout   = config.drain_timeout,
+        request_timeout = config.request_timeout,
+        errors    = config.errors
     )
 end
 
@@ -63,7 +63,7 @@ function _init!(server::AsyncServer)
     server.calls   = Channel{Call}(server.nqueue)
     server.replies = Channel{Reply}(server.nqueue)
     empty!(server.connections)
-    empty!(server.core.ws_connections)
+    empty!(server.core.sockets)
     return
 end
 
@@ -121,14 +121,14 @@ function _eventloop(server::AsyncServer)
 end
 
 function _workloop(server::AsyncServer)
-    timeout_ms = server.core.request_timeout_ms
+    timeout_ms = server.core.request_timeout
     try
         for req in server.calls     # blocks properly — no sleep needed
             if req.payload isa Request
                 rid = _requestid(req.payload, server)
                 res = try
                     if timeout_ms > 0
-                        _invokehttp_timeout(server, req.payload, timeout_ms)
+                        _invoketimedhttp(server, req.payload, timeout_ms)
                     else
                         _invokehttp(server, req.payload)
                     end

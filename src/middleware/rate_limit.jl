@@ -19,7 +19,7 @@ struct RateLimit <: AbstractMiddleware
     shards::Vector{_RateShard}
 end
 
-@inline function _getshard(mw::RateLimit, key::String)
+@inline function _shard(mw::RateLimit, key::String)
     h = hash(key)
     idx = (h % length(mw.shards)) + 1
     return mw.shards[idx]
@@ -36,7 +36,7 @@ function (mw::RateLimit)(request::AbstractRequest, params::Vector{Any}, next)
         end
     end
 
-    shard = _getshard(mw, client_id)
+    shard = _shard(mw, client_id)
     now_t = time()
 
     allowed = lock(shard.lock) do
@@ -87,7 +87,7 @@ Uses $(_RATE_LIMIT_SHARDS) independent shards internally to minimize lock conten
 
 # Example
 ```julia
-use!(server, rate_limit(max_requests=50, window_seconds=30))
+plug!(server, rate_limit(max_requests=50, window_seconds=30))
 ```
 """
 function rate_limit(; max_requests::Int=100, window_seconds::Int=60)

@@ -13,8 +13,7 @@
 const _HIST_BOUNDS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
 const _N_HIST_BUCKETS = length(_HIST_BOUNDS) + 1  # +1 for the +Inf bucket
 
-# Number of independent shards — each shard has its own lock so concurrent
-# workers write to different (thread-indexed) shards without contention.
+# Number of independent shards 
 const _METRICS_SHARDS = 8
 
 const _METRICS_CONTENT_TYPE = "Content-Type: text/plain; version=0.0.4; charset=utf-8\r\n"
@@ -42,14 +41,13 @@ struct PrometheusMetrics <: AbstractMiddleware
     path::String
 end
 
-@inline function _metrics_shard(mw::PrometheusMetrics)
+@inline function _shard(mw::PrometheusMetrics)
     idx = (Threads.threadid() - 1) % _METRICS_SHARDS + 1
     return mw.shards[idx]
 end
 
 # Find the raw (non-cumulative) histogram bucket index for an elapsed time.
-# The last bucket (_N_HIST_BUCKETS) is +Inf — always matches.
-@inline function _hist_idx(elapsed_s::Float64)::Int
+@inline function _histidx(elapsed_s::Float64)::Int
     @inbounds for i in 1:length(_HIST_BOUNDS)
         elapsed_s <= _HIST_BOUNDS[i] && return i
     end
@@ -59,7 +57,7 @@ end
 function (mw::PrometheusMetrics)(request::AbstractRequest, params::Vector{Any}, next)
     # Serve /metrics directly — skip handler pipeline
     if request.method === :get && request.uri == mw.path
-        return _render_metrics(mw)
+        return _renderstats(mw)
     end
 
     t0 = time_ns()
@@ -69,9 +67,9 @@ function (mw::PrometheusMetrics)(request::AbstractRequest, params::Vector{Any}, 
     if response isa Response
         method = uppercase(String(request.method))
         key = string(method, "_", response.status)
-        bidx = _hist_idx(elapsed_s)
+        bidx = _histidx(elapsed_s)
 
-        shard = _metrics_shard(mw)
+        shard = _shard(mw)
         lock(shard.lock) do
             shard.counts[key] = get(shard.counts, key, 0) + 1
             @inbounds shard.raw_hist[bidx] += 1
@@ -83,7 +81,7 @@ function (mw::PrometheusMetrics)(request::AbstractRequest, params::Vector{Any}, 
     return response
 end
 
-function _render_metrics(mw::PrometheusMetrics)::Response
+function _renderstats(mw::PrometheusMetrics)::Response
     # --- Aggregate all shards under their individual locks ---
     agg_counts = Dict{String,Int}()
     agg_raw    = zeros(Int, _N_HIST_BUCKETS)
@@ -161,8 +159,8 @@ minimize lock contention under concurrent load.
 # Example
 ```julia
 server = AsyncServer(router; workers=4)
-use!(server, health())
-use!(server, metrics())   # exposes GET /metrics
+plug!(server, health())
+plug!(server, metrics())   # exposes GET /metrics
 
 start!(server, port=8080)
 ```

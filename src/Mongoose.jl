@@ -5,8 +5,8 @@ using PrecompileTools
 
 export SyncServer, AsyncServer, Router, Request, Response,
     Text, Html, Json, Css, Js, Xml, Binary,
-    start!, shutdown!, route!, use!, serve_dir!, error_response!,
-    render_body, content_type, getcontext!,
+    start!, shutdown!, route!, plug!, mount!, error_response!,
+    render_body, content_type, context!,
     ws!, Message,
     cors, rate_limit, bearer_token, api_key, logger, health, metrics,
     ContentType,
@@ -90,15 +90,15 @@ include("middleware/metrics.jl")
             ["content-type" => "application/json", "authorization" => "Bearer tok",
              "x-request-id" => "abc-123", "x-forwarded-for" => "10.0.0.1"],
             "{}", nothing)
-        getcontext!(req)
+        context!(req)
 
         # --- _sendhttp! (string and binary) ---
         # These compile the serialization path without a real socket
         _statustext(200)
         _appendreqid("", "42")
         _appendreqid(ContentType.json, "abc-123")
-        _sanitize_request_id("abc-123")
-        _sanitize_request_id("bad\r\nvalue")
+        _sanitizeid("abc-123")
+        _sanitizeid("bad\r\nvalue")
         _uint64tostr(UInt64(12345))
 
         # --- Query parsing ---
@@ -149,8 +149,8 @@ include("middleware/metrics.jl")
         # --- _invokehttp (the actual request dispatch hot path) ---
         server_sync  = SyncServer(router)
         server_async = AsyncServer(router; workers=1)
-        use!(server_sync,  cors())
-        use!(server_async, cors())
+        plug!(server_sync,  cors())
+        plug!(server_async, cors())
 
         _invokehttp(server_sync,  req)
         _invokehttp(server_async, req)
@@ -164,8 +164,8 @@ include("middleware/metrics.jl")
 
         # --- ServerConfig ---
         ServerConfig()
-        ServerConfig(workers=2, max_body_size=1024)
-        ServerConfig(workers=8, request_timeout_ms=5000, drain_timeout_ms=10_000)
+        ServerConfig(workers=2, max_body=1024)
+        ServerConfig(workers=8, request_timeout=5000, drain_timeout=10_000)
     end
 end
 

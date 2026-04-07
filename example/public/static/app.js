@@ -181,7 +181,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // ── Protected files (auth-gated binary response via /api/protected) ──────────
 //
-// Unlike serve_dir!, which serves files at the C level before any middleware
+// Unlike mount!, which serves files at the C level before any middleware
 // runs, these routes go through the full Julia middleware pipeline (AnyAuth
 // checks the X-API-Key / Bearer token).  The handler reads the file into
 // Vector{UInt8} and returns it; _send! writes the complete HTTP frame with

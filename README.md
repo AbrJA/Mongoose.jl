@@ -120,7 +120,7 @@ Missing fields default to `""`, `0`, `false`, or `nothing` depending on their ty
 | `get(req.headers, "authorization", nothing)` | `String \| nothing` | Case-insensitive header lookup |
 | `req.query` | `String` | Raw query string (e.g. `"q=test&page=2"`) |
 | `Mongoose.query(T, req)` | `T` | Parse query string into struct `T` |
-| `getcontext!(req)` | `Dict{Symbol,Any}` | Lazily-allocated context dict (set by middleware) |
+| `context!(req)` | `Dict{Symbol,Any}` | Lazily-allocated context dict (set by middleware) |
 
 ---
 
@@ -136,8 +136,8 @@ Missing fields default to `""`, `0`, `false`, or `nothing` depending on their ty
 server = AsyncServer(router;
     workers=4,
     nqueue=1024,
-    request_timeout_ms=5000,
-    max_body_size=4 * 1024 * 1024,
+    request_timeout=5000,
+    max_body=4 * 1024 * 1024,
 )
 
 # AOT / simple scripts
@@ -151,9 +151,9 @@ Consolidate all options into a `ServerConfig` struct — particularly useful for
 ```julia
 config = ServerConfig(
     workers            = parse(Int, get(ENV, "WORKERS", "4")),
-    max_body_size      = parse(Int, get(ENV, "MAX_BODY", "1048576")),
-    request_timeout_ms = parse(Int, get(ENV, "REQ_TIMEOUT_MS", "0")),
-    drain_timeout_ms   = 10_000,
+    max_body      = parse(Int, get(ENV, "MAX_BODY", "1048576")),
+    request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT_MS", "0")),
+    drain_timeout   = 10_000,
 )
 
 server = AsyncServer(router, config)   # or SyncServer(router, config)
@@ -206,28 +206,28 @@ Middleware runs in registration order. Each middleware can inspect and modify th
 server = AsyncServer(router)
 
 # Structured JSON access logs
-use!(server, logger(structured=true))
+plug!(server, logger(structured=true))
 
 # CORS — allow a specific origin
-use!(server, cors(origins="https://myapp.com"))
+plug!(server, cors(origins="https://myapp.com"))
 
 # Rate limiting — 200 requests per 60s per client IP
-use!(server, rate_limit(max_requests=200, window_seconds=60))
+plug!(server, rate_limit(max_requests=200, window_seconds=60))
 
 # Auth — scoped to /api routes only
-use!(server, bearer_token(token -> token == "my-secret"); paths=["/api"])
+plug!(server, bearer_token(token -> token == "my-secret"); paths=["/api"])
 
 # API key auth
-use!(server, api_key(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
+plug!(server, api_key(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
 
 # Serve static files from the "public/" directory (C-level, with Range/ETag/gzip)
-serve_dir!(server, "public")
+mount!(server, "public")
 
 # Prometheus-compatible metrics at GET /metrics
-use!(server, metrics())
+plug!(server, metrics())
 
 # Built-in health check at GET /healthz
-use!(server, health())
+plug!(server, health())
 ```
 
 ### Path-Scoped Middleware
@@ -235,8 +235,8 @@ use!(server, health())
 The `paths` keyword limits a middleware to specific URL prefixes only:
 
 ```julia
-use!(server, bearer_token(t -> t == "secret"); paths=["/api", "/admin"])
-use!(server, rate_limit(max_requests=10);       paths=["/api/expensive"])
+plug!(server, bearer_token(t -> t == "secret"); paths=["/api", "/admin"])
+plug!(server, rate_limit(max_requests=10);       paths=["/api/expensive"])
 ```
 
 ### Custom Middleware
@@ -254,7 +254,7 @@ function (::RequestTimer)(req, params, next)
     return res
 end
 
-use!(server, RequestTimer())
+plug!(server, RequestTimer())
 ```
 
 ---
@@ -367,13 +367,13 @@ ws!(router, "/ws",
 route!(router, :get, "*", req -> Response(404, ContentType.html, "<h1>Not Found</h1>"))
 
 # Server
-server = AsyncServer(router; workers=4, request_timeout_ms=10_000)
+server = AsyncServer(router; workers=4, request_timeout=10_000)
 
-use!(server, logger(structured=true))
-use!(server, cors(origins="https://myapp.com"))
-use!(server, rate_limit(max_requests=300, window_seconds=60))
-use!(server, bearer_token(t -> t == get(ENV, "API_TOKEN", "secret")); paths=["/api"])
-serve_dir!(server, "public")
+plug!(server, logger(structured=true))
+plug!(server, cors(origins="https://myapp.com"))
+plug!(server, rate_limit(max_requests=300, window_seconds=60))
+plug!(server, bearer_token(t -> t == get(ENV, "API_TOKEN", "secret")); paths=["/api"])
+mount!(server, "public")
 
 error_response!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500))
 

@@ -43,20 +43,16 @@ Must be called from the event-loop thread because `ev_data` is only valid
 during the C callback and `mg_http_serve_dir` writes directly to `conn`.
 """
 @inline function _servestatic!(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid}, method::Symbol, uri::String)
-    isempty(server.core.static_dirs) && return false
+    isempty(server.core.mounts) && return false
 
     # Registered routes always take priority over static files.
-    # Only do the (expensive) route match when static dirs exist.
     _matchroute(server.core.router, method, uri) !== nothing && return false
 
-    # Try each registered static directory in order. The first one whose prefix
-    # matches the URI and has a matching file on disk wins.
-    for (dir, prefix) in server.core.static_dirs
-        _static_file_exists(dir, prefix, uri) || continue
+    # Try each registered static directory in order. The first one matches wins.
+    for (dir, prefix) in server.core.mounts
+        _staticexists(dir, prefix, uri) || continue
 
-        # Build the root_dir string Mongoose expects. When there is a non-root
-        # prefix, use the comma-separated "default,/prefix=dir" format so that
-        # Mongoose strips the prefix before resolving the file path.
+        # Build the root_dir string Mongoose expects. "default,/prefix=dir"
         root_dir = prefix == "/" ? dir : "$dir,$prefix=$dir"
         opts = Ref(MgHttpServeOpts(Base.unsafe_convert(Cstring, root_dir)))
         GC.@preserve root_dir begin
@@ -69,12 +65,12 @@ during the C callback and `mg_http_serve_dir` writes directly to `conn`.
 end
 
 """
-    _static_file_exists(root, uri) → Bool
+    _staticexists(root, uri) → Bool
 
 Return `true` if `uri` maps to a real file (or pre-compressed `.gz` variant) under
 `root`, or to a directory that has an `index.html`. Path-traversal safe.
 """
-@inline function _static_file_exists(root::String, prefix::String, uri::String)
+@inline function _staticexists(root::String, prefix::String, uri::String)
     # Check that the URI starts with the configured prefix and strip it.
     if prefix == "/"
         rel = uri
@@ -92,8 +88,6 @@ Return `true` if `uri` maps to a real file (or pre-compressed `.gz` variant) und
     candidate = normpath(joinpath(root, rel))
 
     # Guard against path traversal (e.g. /../../../etc/passwd).
-    # A plain startswith is not sufficient — "/var/www/public2" starts with "/var/www/public".
-    # Require the candidate to equal root exactly or begin with root + the platform separator.
     (candidate == root || startswith(candidate, root * Base.Filesystem.path_separator)) || return false
 
     isfile(candidate) && return true
@@ -122,7 +116,7 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
         end
     end
 
-    if message.body.len > server.core.max_body_size
+    if message.body.len > server.core.max_body
         _sendhttp!(conn, _errresponse(server, 413))
         return
     end
@@ -137,7 +131,7 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
         @error "Handler error" exception=(e, catch_backtrace())
         _handleerror(server, req, e)
     end
-    rid = _requestid_fast(message, server)
+    rid = _resolveid(message, server)
     _sendwithid!(conn, res, rid)
     return
 end
@@ -159,7 +153,7 @@ function _onevent!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnectio
     end
 
     # Body size limit check
-    if message.body.len > server.core.max_body_size
+    if message.body.len > server.core.max_body
         _sendhttp!(conn, _errresponse(server, 413))
         return
     end
@@ -180,17 +174,17 @@ end
 
 Generate a monotonically increasing request ID.
 """
-@inline _nextreqid!(server::AbstractServer) = Threads.atomic_add!(server.core.request_id, UInt64(1)) + UInt64(1)
+@inline _nextreqid!(server::AbstractServer) = Threads.atomic_add!(server.core.id, UInt64(1)) + UInt64(1)
 
 """
-    _sanitize_request_id(s) → String
+    _sanitizeid(s) → String
 
 Validate an incoming X-Request-Id value. Returns the original string if safe,
 or an empty string if it contains HTTP header-injection characters (`\r`, `\n`)
 or exceeds 128 bytes. This prevents response-splitting attacks when echoing
 an untrusted client-supplied ID into a response header.
 """
-@inline function _sanitize_request_id(s::String)::String
+@inline function _sanitizeid(s::String)::String
     length(s) > 128 && return ""
     @inbounds for i in 1:ncodeunits(s)
         b = codeunit(s, i)
@@ -210,35 +204,35 @@ monotonic ID is generated from the server's atomic counter.
 @inline function _requestid(req::AbstractRequest, server::AbstractServer)::String
     h = get(req.headers, "x-request-id", nothing)
     if h !== nothing
-        safe = _sanitize_request_id(h)
+        safe = _sanitizeid(h)
         !isempty(safe) && return safe
     end
-    return _uint64tostr(Threads.atomic_add!(server.core.request_id, UInt64(1)) + UInt64(1))
+    return _uint64tostr(Threads.atomic_add!(server.core.id, UInt64(1)) + UInt64(1))
 end
 
 """
-    _requestid_fast(message, server) → String
+    _resolveid(message, server) → String
 
 Fast-path request ID extraction that reads directly from the raw C `MgHttpMessage`
 headers, avoiding the cost of scanning the already-parsed `Vector{Pair}`.
 """
-@inline function _requestid_fast(message::MgHttpMessage, server::AbstractServer)::String
+@inline function _resolveid(message::MgHttpMessage, server::AbstractServer)::String
     # Scan raw C headers for "x-request-id" (12 chars, case-insensitive)
     for h in message.headers
         h.name.buf == C_NULL && break
         h.name.len == 0 && break
         h.name.len == 12 || continue
-        if _is_xrequestid(h.name.buf)
+        if _isxrequestid(h.name.buf)
             val = _tostring(h.val)
-            safe = _sanitize_request_id(val)
+            safe = _sanitizeid(val)
             !isempty(safe) && return safe
         end
     end
-    return _uint64tostr(Threads.atomic_add!(server.core.request_id, UInt64(1)) + UInt64(1))
+    return _uint64tostr(Threads.atomic_add!(server.core.id, UInt64(1)) + UInt64(1))
 end
 
 # Case-insensitive check for "x-request-id" (12 bytes) directly on C memory
-@inline function _is_xrequestid(ptr::Ptr{UInt8})::Bool
+@inline function _isxrequestid(ptr::Ptr{UInt8})::Bool
     # Expected: x-request-id (any case)
     _tolower(unsafe_load(ptr, 1))  == UInt8('x') || return false
     unsafe_load(ptr, 2)            == UInt8('-') || return false
@@ -282,11 +276,11 @@ end
 """
     _errresponse(server, status) → Response
 
-Look up a custom response for `status` in `server.core.error_responses`.
+Look up a custom response for `status` in `server.core.errors`.
 Falls back to the module-level default.
 """
 @inline function _errresponse(server::AbstractServer, status::Int)
-    r = get(server.core.error_responses, status, nothing)
+    r = get(server.core.errors, status, nothing)
     r !== nothing && return r
     status == 500 && return _DEFAULT_500
     status == 413 && return _DEFAULT_413
@@ -297,7 +291,7 @@ end
 """
     _handleerror(server, req, e) → Response
 
-Return the custom 500 response from `error_responses` if configured,
+Return the custom 500 response from `errors` if configured,
 otherwise return the default 500. No dynamic function call — trim-safe.
 """
 @inline function _handleerror(server::AbstractServer, ::Any, ::Any)
@@ -308,16 +302,14 @@ end
     _invokehttp(server, request) → Response
 """
 function _invokehttp(server::AbstractServer, req::AbstractRequest)
-    if isempty(server.core.middlewares)
+    if isempty(server.core.plugs)
         return _dispatchhttp(server.core.router, req)
     end
     final = (r, args...) -> _dispatchhttp(server.core.router, r)
-    return _pipeline(server.core.middlewares, req, Any[], final)
+    return _pipeline(server.core.plugs, req, Any[], final)
 end
 
-# Trim-safe specialization: StaticRouter dispatches directly, bypassing
-# the middleware pipeline which uses abstract Function types and closures
-# that cannot be resolved by --trim=safe.
+# Trim-safe specialization: StaticRouter dispatches directly, bypassing the middleware pipeline 
 @inline function _invokehttp(server::SyncServer{<:StaticRouter}, req::AbstractRequest)
     return static_dispatch(server.core.router, req)
 end
@@ -392,35 +384,29 @@ function _sendwithid!(conn::MgConnection, res::Response, rid::String)
 end
 
 """
-    _invokehttp_timeout(server, req, timeout_ms) → Response
+    _invoketimedhttp(server, req, timeout_ms) → Response
 
 Execute request handling with a timeout. If the handler exceeds `timeout_ms`,
 returns 504 Gateway Timeout. Used only by AsyncServer workers.
 """
-function _invokehttp_timeout(server::AbstractServer, req::AbstractRequest, timeout_ms::Integer)
+function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout_ms::Integer)
     ch = Channel{Response}(1)
-    t = Threads.@spawn begin
-        try
-            put!(ch, _invokehttp(server, req))
-        catch e
-            put!(ch, _handleerror(server, req, e))
-        end
+
+    t = Threads.@spawn try
+        put!(ch, _invokehttp(server, req))
+    catch e
+        e isa InterruptException || put!(ch, _handleerror(server, req, e))
     end
-    timer = Timer(timeout_ms / 1000.0)
-    try
-        while true
-            if isready(ch)
-                return take!(ch)
-            end
-            if !isopen(timer)
-                @warn "Request timed out" uri=req.uri timeout_ms=timeout_ms
-                # Schedule interrupt so the handler task doesn't leak
-                Base.schedule(t, InterruptException(); error=true)
-                return _errresponse(server, 504)
-            end
-            yield()
-        end
-    finally
-        close(timer)
+
+    result = timedwait(timeout_ms / 1000.0) do
+        isready(ch)
     end
+
+    if result === :timed_out
+        @warn "Request timed out" uri=req.uri timeout_ms=timeout_ms
+        Base.schedule(t, InterruptException(); error=true)
+        return _errresponse(server, 504)
+    end
+
+    return take!(ch)
 end

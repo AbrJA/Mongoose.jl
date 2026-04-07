@@ -12,7 +12,7 @@ SyncServer
 ```@docs
 start!
 shutdown!
-use!
+plug!
 error_response!
 ```
 
@@ -31,7 +31,7 @@ Request
 Response
 ContentType
 Binary
-getcontext!
+context!
 ```
 
 ## Utilities

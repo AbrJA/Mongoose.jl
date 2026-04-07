@@ -38,33 +38,33 @@ mutable struct ServerCore{R <: AbstractRouter}
     timeout::Int
     master::Union{Nothing,Task}
     router::R
-    ws_connections::Dict{Int,String}
+    sockets::Dict{Int,String}
     running::Threads.Atomic{Bool}
-    middlewares::Vector{AbstractMiddleware}
-    max_body_size::Int
-    drain_timeout_ms::Int
-    static_dirs::Vector{Tuple{String,String}}  # [(dir, uri_prefix), ...] for C-level static file serving
-    request_timeout_ms::Int                      # Per-request timeout (0 = disabled)
-    error_responses::Dict{Int,Response}   # Custom responses keyed by HTTP status code
-    request_id::Threads.Atomic{UInt64}    # Monotonic request ID counter
+    plugs::Vector{AbstractMiddleware}
+    max_body::Int
+    drain_timeout::Int
+    mounts::Vector{Tuple{String,String}}  
+    request_timeout::Int                      
+    errors::Dict{Int,Response}   
+    id::Threads.Atomic{UInt64}    
 
     function ServerCore(timeout::Integer, router::R;
-                        max_body_size::Integer=DEFAULT_MAX_BODY_SIZE,
-                        drain_timeout_ms::Integer=DEFAULT_DRAIN_TIMEOUT_MS,
-                        request_timeout_ms::Integer=0,
-                        error_responses::Dict{Int,Response}=Dict{Int,Response}(),
+                        max_body::Integer=MAX_BODY,
+                        drain_timeout::Integer=DRAIN_TIMEOUT,
+                        request_timeout::Integer=0,
+                        errors::Dict{Int,Response}=Dict{Int,Response}(),
                         c_handler::Ptr{Cvoid}=C_NULL) where {R <: AbstractRouter}
         return new{R}(
             Manager(empty=true), c_handler, timeout, nothing,
             router, Dict{Int,String}(),
             Threads.Atomic{Bool}(false), AbstractMiddleware[],
-            max_body_size, drain_timeout_ms, Tuple{String,String}[],
-            request_timeout_ms, error_responses, Threads.Atomic{UInt64}(0)
+            max_body, drain_timeout, Tuple{String,String}[],
+            request_timeout, errors, Threads.Atomic{UInt64}(0)
         )
     end
 end
 
-# Default error responses returned when no custom entry is in error_responses
+# Default error responses returned when no custom entry is in errors
 const _DEFAULT_500 = Response(500, ContentType.text, "500 Internal Server Error")
 const _DEFAULT_413 = Response(413, ContentType.text, "413 Payload Too Large")
 const _DEFAULT_504 = Response(504, ContentType.text, "504 Gateway Timeout")
@@ -83,19 +83,19 @@ of individual keyword arguments.
 | Field | Default | Description |
 |-------|---------|-------------|
 | `timeout` | `1` | Event-loop poll timeout in ms. Use `0` for min latency (high CPU). |
-| `max_body_size` | 1 MB | Maximum request body size in bytes. |
-| `drain_timeout_ms` | 5000 | Graceful-shutdown drain period in ms. |
-| `request_timeout_ms` | 0 | Per-request timeout in ms; `0` = disabled (AsyncServer only). |
+| `max_body` | 1 MB | Maximum request body size in bytes. |
+| `drain_timeout` | 5000 | Graceful-shutdown drain period in ms. |
+| `request_timeout` | 0 | Per-request timeout in ms; `0` = disabled (AsyncServer only). |
 | `workers` | 4 | Number of worker tasks (AsyncServer only). |
 | `nqueue` | 1024 | Channel buffer size (AsyncServer only). |
-| `error_responses` | `Dict()` | Custom `Response` objects keyed by HTTP status (`500`, `413`, `504`). |
+| `errors` | `Dict()` | Custom `Response` objects keyed by HTTP status (`500`, `413`, `504`). |
 
 # Example
 ```julia
-config = ServerConfig(workers=8, request_timeout_ms=15_000, max_body_size=5_242_880)
+config = ServerConfig(workers=8, request_timeout=15_000, max_body=5_242_880)
 
 server = AsyncServer(router, config)
-use!(server, health())
+plug!(server, health())
 start!(server; host="0.0.0.0", port=8080)
 ```
 
@@ -103,19 +103,19 @@ start!(server; host="0.0.0.0", port=8080)
 ```julia
 config = ServerConfig(
     workers           = parse(Int, get(ENV, "WORKERS", "4")),
-    max_body_size     = parse(Int, get(ENV, "MAX_BODY",  "1048576")),
-    request_timeout_ms = parse(Int, get(ENV, "REQ_TIMEOUT_MS", "0")),
+    max_body     = parse(Int, get(ENV, "MAX_BODY",  "1048576")),
+    request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT", "0")),
 )
 ```
 """
 Base.@kwdef struct ServerConfig
     timeout::Int            = 1
-    max_body_size::Int      = DEFAULT_MAX_BODY_SIZE
-    drain_timeout_ms::Int   = DEFAULT_DRAIN_TIMEOUT_MS
-    request_timeout_ms::Int = 0
+    max_body::Int      = MAX_BODY
+    drain_timeout::Int   = DRAIN_TIMEOUT
+    request_timeout::Int = 0
     workers::Int            = 4
     nqueue::Int             = 1024
-    error_responses::Dict{Int,Response} = Dict{Int,Response}()
+    errors::Dict{Int,Response} = Dict{Int,Response}()
 end
 
 # --- Abstract Server Implementations (Structs only) ---

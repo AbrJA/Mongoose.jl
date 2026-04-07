@@ -70,10 +70,10 @@ server = AsyncServer(router;
     workers=4,              # Number of worker tasks
     nqueue=1024,            # Channel buffer size
     timeout=0,              # Poll timeout (ms)
-    max_body_size=1048576,  # Max request body in bytes (default: 1MB)
-    drain_timeout_ms=5000,  # Graceful shutdown drain timeout (ms)
-    request_timeout_ms=0,   # Per-request timeout (0 = disabled)
-    error_responses=Dict{Int,Response}()  # Custom responses by status code
+    max_body=1048576,  # Max request body in bytes (default: 1MB)
+    drain_timeout=5000,  # Graceful shutdown drain timeout (ms)
+    request_timeout=0,   # Per-request timeout (0 = disabled)
+    errors=Dict{Int,Response}()  # Custom responses by status code
 )
 ```
 
@@ -82,9 +82,9 @@ server = AsyncServer(router;
 ```julia
 server = SyncServer(router;
     timeout=1,              # Poll timeout (ms), default: 1
-    max_body_size=1048576,
-    drain_timeout_ms=5000,
-    error_responses=Dict{Int,Response}()
+    max_body=1048576,
+    drain_timeout=5000,
+    errors=Dict{Int,Response}()
 )
 ```
 
@@ -95,9 +95,9 @@ All constructor keyword arguments can be consolidated into a `ServerConfig` stru
 ```julia
 config = ServerConfig(
     workers            = parse(Int, get(ENV, "WORKERS", "4")),
-    max_body_size      = parse(Int, get(ENV, "MAX_BODY", "1048576")),
-    request_timeout_ms = parse(Int, get(ENV, "REQ_TIMEOUT_MS", "0")),
-    drain_timeout_ms   = 10_000,
+    max_body      = parse(Int, get(ENV, "MAX_BODY", "1048576")),
+    request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT_MS", "0")),
+    drain_timeout   = 10_000,
 )
 
 server = AsyncServer(router, config)  # or SyncServer(router, config)
@@ -106,12 +106,12 @@ server = AsyncServer(router, config)  # or SyncServer(router, config)
 | Field | Default | Description |
 |-------|---------|-------------|
 | `timeout` | `1` | Poll timeout in ms (`0` = min latency, high CPU) |
-| `max_body_size` | 1 MB | Max request body in bytes |
-| `drain_timeout_ms` | 5000 | Graceful-shutdown drain period in ms |
-| `request_timeout_ms` | `0` | Per-request timeout in ms; `0` = disabled |
+| `max_body` | 1 MB | Max request body in bytes |
+| `drain_timeout` | 5000 | Graceful-shutdown drain period in ms |
+| `request_timeout` | `0` | Per-request timeout in ms; `0` = disabled |
 | `workers` | `4` | Worker tasks (`AsyncServer` only) |
 | `nqueue` | `1024` | Channel buffer size (`AsyncServer` only) |
-| `error_responses` | `Dict()` | Custom `Response` keyed by status code |
+| `errors` | `Dict()` | Custom `Response` keyed by status code |
 
 ### Lifecycle
 
@@ -191,7 +191,7 @@ Handlers receive a `Request`:
 | `req.body` | `String` | Raw request body |
 | `get(req.headers, "name", nothing)` | `String` or `nothing` | Case-insensitive header lookup |
 | `req.query` | `String` | Full query string |
-| `getcontext!(req)` | `Dict{Symbol,Any}` | Lazily-allocated context dict for middleware data |
+| `context!(req)` | `Dict{Symbol,Any}` | Lazily-allocated context dict for middleware data |
 
 ### Response
 
@@ -269,15 +269,15 @@ ws!(router, "/chat",
 
 ## Middleware
 
-Middleware is added with `use!` and executes in registration order. Each middleware can short-circuit the request (e.g., return a 401) or pass through to the next handler.
+Middleware is added with `plug!` and executes in registration order. Each middleware can short-circuit the request (e.g., return a 401) or pass through to the next handler.
 
 ### Path-Scoped Middleware
 
 Apply middleware only to specific path prefixes:
 
 ```julia
-use!(server, bearer_token(t -> t == "secret"); paths=["/api", "/admin"])
-use!(server, rate_limit(max_requests=10); paths=["/api/expensive"])
+plug!(server, bearer_token(t -> t == "secret"); paths=["/api", "/admin"])
+plug!(server, rate_limit(max_requests=10); paths=["/api/expensive"])
 ```
 
 Requests to other paths bypass the middleware entirely.
@@ -287,10 +287,10 @@ Requests to other paths bypass the middleware entirely.
 Logs method, URI, status code, and duration for each request.
 
 ```julia
-use!(server, logger())                         # Log all requests to stderr
-use!(server, logger(threshold_ms=50))           # Only log requests slower than 50ms
-use!(server, logger(output=open("log.txt","a"))) # Custom output
-use!(server, logger(structured=true))           # JSON log lines
+plug!(server, logger())                         # Log all requests to stderr
+plug!(server, logger(threshold_ms=50))           # Only log requests slower than 50ms
+plug!(server, logger(output=open("log.txt","a"))) # Custom output
+plug!(server, logger(structured=true))           # JSON log lines
 ```
 
 Structured mode emits one JSON object per line:
@@ -303,9 +303,9 @@ Structured mode emits one JSON object per line:
 Handles `OPTIONS` preflight and adds CORS headers to all responses.
 
 ```julia
-use!(server, cors())                                        # Allow all origins
-use!(server, cors(origins="https://example.com"))            # Specific origin
-use!(server, cors(methods="GET, POST", headers="Authorization", max_age=3600))
+plug!(server, cors())                                        # Allow all origins
+plug!(server, cors(origins="https://example.com"))            # Specific origin
+plug!(server, cors(methods="GET, POST", headers="Authorization", max_age=3600))
 ```
 
 ### Rate Limiting
@@ -313,8 +313,8 @@ use!(server, cors(methods="GET, POST", headers="Authorization", max_age=3600))
 Fixed-window rate limiter keyed by client IP address.
 
 ```julia
-use!(server, rate_limit())                                  # 100 req / 60s (defaults)
-use!(server, rate_limit(max_requests=10, window_seconds=30)) # Stricter limits
+plug!(server, rate_limit())                                  # 100 req / 60s (defaults)
+plug!(server, rate_limit(max_requests=10, window_seconds=30)) # Stricter limits
 ```
 
 Returns `429 Too Many Requests` with a `Retry-After` header when exceeded.
@@ -324,7 +324,7 @@ Returns `429 Too Many Requests` with a `Retry-After` header when exceeded.
 **Bearer token:**
 
 ```julia
-use!(server, bearer_token(token -> token == "secret-123"))
+plug!(server, bearer_token(token -> token == "secret-123"))
 ```
 
 Returns `401` with `WWW-Authenticate: Bearer` if missing or invalid scheme, `403` if the validator returns `false`.
@@ -332,7 +332,7 @@ Returns `401` with `WWW-Authenticate: Bearer` if missing or invalid scheme, `403
 **API key:**
 
 ```julia
-use!(server, api_key(header_name="X-API-Key", keys=Set(["key1", "key2"])))
+plug!(server, api_key(header_name="X-API-Key", keys=Set(["key1", "key2"])))
 ```
 
 Returns `401` if the header is missing or the key is not in the allowed set.
@@ -342,8 +342,8 @@ Returns `401` if the header is missing or the key is not in the allowed set.
 The `metrics()` middleware tracks request counts and latency histograms and exposes a Prometheus scrape endpoint:
 
 ```julia
-use!(server, metrics())          # exposes GET /metrics
-use!(server, metrics(path="/internal/metrics"))  # custom path
+plug!(server, metrics())          # exposes GET /metrics
+plug!(server, metrics(path="/internal/metrics"))  # custom path
 ```
 
 Metrics exposed:
@@ -358,7 +358,7 @@ Metrics exposed:
 Serve a directory of static assets using the C-level file server (supports Range, ETag, Last-Modified, and gzip):
 
 ```julia
-serve_dir!(server, "public")
+mount!(server, "public")
 ```
 
 Serves `index.html` for directory requests. Returns `404` for missing files. Path traversal is blocked at the C level.
@@ -392,7 +392,7 @@ errors = Dict{Int,Response}(
     500 => Response(500, ContentType.json, """{"error":"Internal error"}"""),
     413 => Response(413, ContentType.json, """{"error":"Body too large"}"""),
 )
-server = SyncServer(router; error_responses=errors)
+server = SyncServer(router; errors=errors)
 ```
 
 ### Custom 404 Pages
@@ -408,7 +408,7 @@ route!(router, :get, "*", req -> Response(404, ContentType.html, read("404.html"
 Set a per-request timeout (in milliseconds) to prevent slow handlers from blocking the server:
 
 ```julia
-server = AsyncServer(router; request_timeout_ms=5000)
+server = AsyncServer(router; request_timeout=5000)
 ```
 
 When a request exceeds the timeout, the server returns `504 Gateway Timeout`.

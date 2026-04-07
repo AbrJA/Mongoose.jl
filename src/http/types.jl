@@ -6,7 +6,7 @@
     Request — Full HTTP request with owned string data.
 
 `context` is lazily allocated — starts as `nothing` and becomes a
-`Dict{Symbol,Any}` on first access via `getcontext!`.
+`Dict{Symbol,Any}` on first access via `context!`.
 """
 mutable struct Request <: AbstractRequest
     const method::Symbol
@@ -101,11 +101,11 @@ function Request(message::MgHttpMessage, method::Symbol, uri::String)
 end
 
 """
-    getcontext!(req) → Dict{Symbol,Any}
+    context!(req) → Dict{Symbol,Any}
 
 Return the request context, creating it on first access.
 """
-@inline function getcontext!(req::Request)::Dict{Symbol,Any}
+@inline function context!(req::Request)::Dict{Symbol,Any}
     req.context === nothing && (req.context = Dict{Symbol,Any}())
     return req.context::Dict{Symbol,Any}
 end

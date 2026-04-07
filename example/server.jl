@@ -214,7 +214,7 @@ function handle_download(req::Request)
         csv)
 end
 
-# serve_dir! runs at the C level before middleware, so it cannot enforce auth.
+# mount! runs at the C level before middleware, so it cannot enforce auth.
 # These routes read files into Vector{UInt8} inside the middleware pipeline,
 # where AnyAuth has already checked credentials.
 const PROTECTED_MIME = Dict(
@@ -272,9 +272,9 @@ mongoose_requests_total $(REQ_COUNT[])
 # TYPE mongoose_errors_total counter
 mongoose_errors_total $(ERR_COUNT[])
 
-# HELP mongoose_ws_connections Active WebSocket connections
-# TYPE mongoose_ws_connections gauge
-mongoose_ws_connections $(WS_COUNT[])
+# HELP mongoose_sockets Active WebSocket connections
+# TYPE mongoose_sockets gauge
+mongoose_sockets $(WS_COUNT[])
 
 # HELP mongoose_uptime_seconds Server uptime in seconds
 # TYPE mongoose_uptime_seconds gauge
@@ -355,29 +355,29 @@ function main()
     )
 
     # ── Server ─────────────────────────────────────────────────────────────
-    server = AsyncServer(router; workers=4, nqueue=2048, request_timeout_ms=15_000)
+    server = AsyncServer(router; workers=4, nqueue=2048, request_timeout=15_000)
 
     # ── Middleware ─────────────────────────────────────────────────────────
-    use!(server, cors(
+    plug!(server, cors(
         origins = "*",
         methods = "GET, POST, PUT, DELETE, OPTIONS",
         headers = "Content-Type, Authorization, X-API-Key",
     ))
-    use!(server, logger(structured=true))
-    use!(server, rate_limit(max_requests=300, window_seconds=60))
-    use!(server, health())   # registers /healthz, /readyz, /livez
+    plug!(server, logger(structured=true))
+    plug!(server, rate_limit(max_requests=300, window_seconds=60))
+    plug!(server, health())   # registers /healthz, /readyz, /livez
 
     # AnyAuth: accepts X-API-Key or Bearer token, scoped to /api only.
     valid_keys   = Set(["demo-key-1234", "prod-key-secret"])
     valid_tokens = Set(["secret-token",  "prod-bearer-token"])
-    use!(server, AnyAuth(valid_keys, valid_tokens, "x-api-key"); paths=["/api"])
+    plug!(server, AnyAuth(valid_keys, valid_tokens, "x-api-key"); paths=["/api"])
 
     error_response!(server, 500, Response(Json, Dict("error"=>"Internal server error"); status=500))
     error_response!(server, 413, Response(Json, Dict("error"=>"Request body too large"); status=413))
     error_response!(server, 504, Response(Json, Dict("error"=>"Request timed out"); status=504))
 
-    serve_dir!(server, joinpath(@__DIR__, "public"))                              # GET /* → public/*
-    serve_dir!(server, joinpath(@__DIR__, "public", "assets"); uri_prefix="/assets") # GET /assets/* → public/assets/*
+    mount!(server, joinpath(@__DIR__, "public"))                              # GET /* → public/*
+    mount!(server, joinpath(@__DIR__, "public", "assets"); uri_prefix="/assets") # GET /assets/* → public/assets/*
 
     @info "======================================================"
     @info "  Mongoose.jl Comprehensive Demo"

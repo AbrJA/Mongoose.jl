@@ -3,7 +3,7 @@
 """
 
 """
-    use!(server, middleware; paths=nothing)
+    plug!(server, middleware; paths=nothing)
 
 Register a middleware. Middleware is executed in FIFO order.
 Each middleware is a callable `<: AbstractMiddleware` that receives `(request, params, next)`
@@ -16,20 +16,20 @@ and must call `next()` or return early.
 
 # Example
 ```julia
-use!(server, cors())                                          # all paths
-use!(server, api_key(keys=Set(["k"])); paths=["/api"])         # only /api/*
-use!(server, logger(); paths=["/api", "/admin"])               # selective logging
+plug!(server, cors())                                          # all paths
+plug!(server, api_key(keys=Set(["k"])); paths=["/api"])         # only /api/*
+plug!(server, logger(); paths=["/api", "/admin"])               # selective logging
 ```
 
 !!! note
     Middleware is only supported with the dynamic `route!` API.
     The static `@router` macro bypasses middleware for trim-safe compilation.
 """
-function use!(server::AbstractServer, middleware::AbstractMiddleware; paths::Union{Nothing,Vector{String}}=nothing)
+function plug!(server::AbstractServer, middleware::AbstractMiddleware; paths::Union{Nothing,Vector{String}}=nothing)
     if paths === nothing
-        push!(server.core.middlewares, middleware)
+        push!(server.core.plugs, middleware)
     else
-        push!(server.core.middlewares, PathFilter(middleware, paths))
+        push!(server.core.plugs, PathFilter(middleware, paths))
     end
     return server
 end
@@ -67,7 +67,7 @@ function ws!(server::AbstractServer, path::AbstractString; kwargs...)
 end
 
 """
-    serve_dir!(server, directory)
+    mount!(server, directory)
 
 Configure the server to serve static files from `directory` using the Mongoose
 C library (`mg_http_serve_dir`). This bypasses the Julia middleware pipeline and
@@ -87,16 +87,16 @@ Features provided by the C library at no extra cost:
 
 # Example
 ```julia
-serve_dir!(server, "public")                       # GET /* → public/*
-serve_dir!(server, "public/assets"; uri_prefix="/assets")  # GET /assets/* → public/assets/*
+mount!(server, "public")                       # GET /* → public/*
+mount!(server, "public/assets"; uri_prefix="/assets")  # GET /assets/* → public/assets/*
 ```
 """
-function serve_dir!(server::AbstractServer, directory::AbstractString;
+function mount!(server::AbstractServer, directory::AbstractString;
                     uri_prefix::AbstractString="/")
     dir = rstrip(abspath(directory), '/')
-    isdir(dir) || throw(ArgumentError("serve_dir!: directory does not exist: $dir"))
+    isdir(dir) || throw(ArgumentError("mount!: directory does not exist: $dir"))
     prefix = "/" * lstrip(rstrip(uri_prefix, '/'), '/')
-    push!(server.core.static_dirs, (dir, prefix))
+    push!(server.core.mounts, (dir, prefix))
     return server
 end
 
@@ -118,6 +118,6 @@ error_response!(server, 413, Response(413, ContentType.json, \"\"\"{"error":"Bod
 ```
 """
 function error_response!(server::AbstractServer, status::Int, response::Response)
-    server.core.error_responses[status] = response
+    server.core.errors[status] = response
     return server
 end

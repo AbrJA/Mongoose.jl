@@ -164,16 +164,16 @@ end)
 server = AsyncServer(router)
 
 # 1. Log all requests (method, URI, status, duration in ms)
-use!(server, logger())
+plug!(server, logger())
 
 # 2. CORS headers + OPTIONS preflight handling
-use!(server, cors(origins="https://example.com"))
+plug!(server, cors(origins="https://example.com"))
 
 # 3. Rate limiting: 100 requests per 60 seconds per client IP
-use!(server, rate_limit(max_requests=100, window_seconds=60))
+plug!(server, rate_limit(max_requests=100, window_seconds=60))
 
 # 4. Bearer token authentication
-use!(server, bearer_token(token -> token == "my-secret-token"))
+plug!(server, bearer_token(token -> token == "my-secret-token"))
 
 start!(server, port=8080, blocking=false)
 ```
@@ -189,7 +189,7 @@ router = Router()
 route!(router, :get, "/internal", req -> Response(200, ContentType.text, "Internal data"))
 
 server = AsyncServer(router)
-use!(server, api_key(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
+plug!(server, api_key(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
 
 start!(server, port=8080, blocking=false)
 ```
@@ -211,7 +211,7 @@ end)
 server = AsyncServer(router)
 
 # Only log requests taking longer than 50ms
-use!(server, logger(threshold_ms=50))
+plug!(server, logger(threshold_ms=50))
 
 start!(server, port=8080, blocking=false)
 ```
@@ -229,14 +229,14 @@ server = AsyncServer(Router())
 # Serve files from "public/" directory
 # GET /style.css  →  public/style.css
 # GET /            →  public/index.html
-serve_dir!(server, "public")
+mount!(server, "public")
 
 start!(server, port=8080, blocking=false)
 ```
 
 ## Request Context
 
-Middleware can attach data to the request context via `getcontext!`, which handlers can access:
+Middleware can attach data to the request context via `context!`, which handlers can access:
 
 ```julia
 using Mongoose
@@ -250,7 +250,7 @@ function (mw::UserLookup)(request, params, next)
     if token !== nothing
         user = get(mw.db, replace(token, "Bearer " => ""), nothing)
         if user !== nothing
-            getcontext!(request)[:user] = user
+            context!(request)[:user] = user
         end
     end
     return next()
@@ -258,12 +258,12 @@ end
 
 router = Router()
 route!(router, :get, "/me", req -> begin
-    user = get(getcontext!(req), :user, "anonymous")
+    user = get(context!(req), :user, "anonymous")
     Response(200, ContentType.text, "Hello, $user!")
 end)
 
 server = AsyncServer(router)
-use!(server, UserLookup(Dict("token-123" => "Alice", "token-456" => "Bob")))
+plug!(server, UserLookup(Dict("token-123" => "Alice", "token-456" => "Bob")))
 
 start!(server, port=8080, blocking=false)
 ```
@@ -345,10 +345,10 @@ ws!(router, "/ws/notifications",
 
 # Server with full middleware stack
 server = AsyncServer(router; workers=4)
-use!(server, logger(threshold_ms=100))
-use!(server, cors(origins="https://myapp.com"))
-use!(server, rate_limit(max_requests=200, window_seconds=60))
-serve_dir!(server, "public")
+plug!(server, logger(threshold_ms=100))
+plug!(server, cors(origins="https://myapp.com"))
+plug!(server, rate_limit(max_requests=200, window_seconds=60))
+mount!(server, "public")
 
 start!(server, port=8080, blocking=false)
 ```
@@ -370,7 +370,7 @@ route!(router, :get, "/ok", req -> Response(200, "All good"))
 # Custom 404: use a wildcard route
 route!(router, :get, "*", req -> Response(404, ContentType.html, "<h1>Not Found</h1>"))
 
-server = AsyncServer(router; request_timeout_ms=5000)
+server = AsyncServer(router; request_timeout=5000)
 
 error_response!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500))
 error_response!(server, 413, Response(413, ContentType.json, """{"error":"Body too large"}"""))
@@ -395,13 +395,13 @@ route!(router, :get, "/admin/dashboard", req -> Response(200, "Dashboard"))
 server = AsyncServer(router)
 
 # Auth only for /api and /admin routes
-use!(server, bearer_token(t -> t == "secret"); paths=["/api", "/admin"])
+plug!(server, bearer_token(t -> t == "secret"); paths=["/api", "/admin"])
 
 # Rate limit only expensive API endpoints
-use!(server, rate_limit(max_requests=10, window_seconds=60); paths=["/api"])
+plug!(server, rate_limit(max_requests=10, window_seconds=60); paths=["/api"])
 
 # Logger for everything
-use!(server, logger(structured=true))
+plug!(server, logger(structured=true))
 
 start!(server, port=8080, blocking=false)
 ```
@@ -417,7 +417,7 @@ router = Router()
 route!(router, :get, "/", req -> Response(200, "ok"))
 
 server = AsyncServer(router)
-use!(server, logger(structured=true, output=open("access.log", "a")))
+plug!(server, logger(structured=true, output=open("access.log", "a")))
 
 start!(server, port=8080, blocking=false)
 ```
@@ -438,8 +438,8 @@ router = Router()
 route!(router, :get, "/api/data", req -> Response(200, ContentType.json, """{"ok":true}"""))
 
 server = AsyncServer(router; workers=4)
-use!(server, health())
-use!(server, metrics())          # serves GET /metrics
+plug!(server, health())
+plug!(server, metrics())          # serves GET /metrics
 
 start!(server; host="0.0.0.0", port=8080)
 ```
@@ -502,8 +502,8 @@ Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
 const HOST    = get(ENV, "HOST", "0.0.0.0")
 const PORT    = parse(Int, get(ENV, "PORT", "8080"))
 const WORKERS = parse(Int, get(ENV, "WORKERS", string(Threads.nthreads())))
-const MAX_BODY  = parse(Int, get(ENV, "MAX_BODY_SIZE", "5242880"))  # 5 MB
-const REQ_TIMEOUT = parse(Int, get(ENV, "REQUEST_TIMEOUT_MS", "30000"))  # 30s
+const MAX_BODY  = parse(Int, get(ENV, "MAX_BODY", "5242880"))  # 5 MB
+const REQ_TIMEOUT = parse(Int, get(ENV, "request_timeout", "30000"))  # 30s
 const LOG_LEVEL = get(ENV, "LOG_LEVEL", "info")
 
 router = Router()
@@ -516,15 +516,15 @@ route!(router, :get, "/api/status", req -> Response(Json, Dict(
 
 server = AsyncServer(router;
     workers=WORKERS,
-    max_body_size=MAX_BODY,
-    request_timeout_ms=REQ_TIMEOUT,
-    drain_timeout_ms=10_000
+    max_body=MAX_BODY,
+    request_timeout=REQ_TIMEOUT,
+    drain_timeout=10_000
 )
 
 # Middleware stack
-use!(server, health())
-use!(server, logger(structured=(LOG_LEVEL == "debug")))
-use!(server, cors())
+plug!(server, health())
+plug!(server, logger(structured=(LOG_LEVEL == "debug")))
+plug!(server, cors())
 
 start!(server; host=HOST, port=PORT)
 ```
@@ -541,8 +541,8 @@ using Mongoose
 router = Router()
 route!(router, :get, "/", req -> Response(200, "Running"))
 
-server = AsyncServer(router; workers=4, drain_timeout_ms=10_000)
-use!(server, health())
+server = AsyncServer(router; workers=4, drain_timeout=10_000)
+plug!(server, health())
 
 start!(server; host="0.0.0.0", port=8080, blocking=false)
 
@@ -618,18 +618,18 @@ register_product_routes!(router)
 # Catch-all 404
 route!(router, :get, "*", req -> Response(Json, Dict("error" => "Not found"); status=404))
 
-server = AsyncServer(router; workers=4, request_timeout_ms=15_000)
+server = AsyncServer(router; workers=4, request_timeout=15_000)
 
 # Public: health + CORS on everything
-use!(server, health())
-use!(server, cors())
-use!(server, logger(structured=true))
+plug!(server, health())
+plug!(server, cors())
+plug!(server, logger(structured=true))
 
 # Auth only on API routes
-use!(server, bearer_token(t -> t == ENV["API_TOKEN"]); paths=["/api"])
+plug!(server, bearer_token(t -> t == ENV["API_TOKEN"]); paths=["/api"])
 
 # Rate limit per-client
-use!(server, rate_limit(max_requests=200, window_seconds=60); paths=["/api"])
+plug!(server, rate_limit(max_requests=200, window_seconds=60); paths=["/api"])
 
 start!(server; host="0.0.0.0", port=8080)
 ```
@@ -661,7 +661,7 @@ function (mw::JWTAuth)(request, params, next)
 
     # In production, decode and verify a real JWT here
     # For this example, we simulate user lookup
-    ctx = getcontext!(request)
+    ctx = context!(request)
     ctx[:user_id] = 42
     ctx[:role] = "admin"
     ctx[:token] = token
@@ -675,7 +675,7 @@ struct RequireRole <: Mongoose.AbstractMiddleware
 end
 
 function (mw::RequireRole)(request, params, next)
-    ctx = getcontext!(request)
+    ctx = context!(request)
     role = get(ctx, :role, "")
     if role ∉ mw.roles
         return Response(403, ContentType.json, """{"error":"Insufficient permissions"}""")
@@ -686,7 +686,7 @@ end
 router = Router()
 
 route!(router, :get, "/api/profile", req -> begin
-    ctx = getcontext!(req)
+    ctx = context!(req)
     Response(Json, Dict("user_id" => ctx[:user_id], "role" => ctx[:role]))
 end)
 
@@ -697,10 +697,10 @@ end)
 server = AsyncServer(router; workers=4)
 
 # Apply auth to all /api routes
-use!(server, JWTAuth("my-secret"); paths=["/api"])
+plug!(server, JWTAuth("my-secret"); paths=["/api"])
 
 # Require admin role for /api/admin routes
-use!(server, RequireRole(Set(["admin"])); paths=["/api/admin"])
+plug!(server, RequireRole(Set(["admin"])); paths=["/api/admin"])
 
 start!(server; port=8080, blocking=false)
 ```
@@ -721,7 +721,7 @@ route!(router, :get, "/api/data", req -> Response(200, ContentType.json, """{"ok
 
 server = AsyncServer(router; workers=4)
 
-use!(server, health(
+plug!(server, health(
     # Health check: all dependencies must be working
     health_check = () -> DB_CONNECTED[] && CACHE_READY[],
 
@@ -734,7 +734,7 @@ use!(server, health(
     live_check = () -> true
 ))
 
-use!(server, logger(structured=true))
+plug!(server, logger(structured=true))
 
 start!(server; host="0.0.0.0", port=8080)
 ```
@@ -785,10 +785,10 @@ route!(router, :post, "/api/upload", req -> begin
 end)
 
 # 10MB body limit for upload endpoint
-server = AsyncServer(router; workers=4, max_body_size=10_485_760)
+server = AsyncServer(router; workers=4, max_body=10_485_760)
 
-use!(server, logger())
-use!(server, rate_limit(max_requests=30, window_seconds=60); paths=["/api/upload"])
+plug!(server, logger())
+plug!(server, rate_limit(max_requests=30, window_seconds=60); paths=["/api/upload"])
 
 start!(server; port=8080, blocking=false)
 ```
@@ -864,18 +864,18 @@ end)
 server = AsyncServer(router; workers=4)
 
 # Middleware: API-only auth
-use!(server, api_key(keys=Set([ENV["API_KEY"]])); paths=["/api"])
+plug!(server, api_key(keys=Set([ENV["API_KEY"]])); paths=["/api"])
 
 # CORS for API
-use!(server, cors(origins="https://myapp.com"); paths=["/api"])
+plug!(server, cors(origins="https://myapp.com"); paths=["/api"])
 
 # Structured logging
-use!(server, logger(structured=true))
+plug!(server, logger(structured=true))
 
 # Serve frontend from public/ directory
 # Routes take priority, so /api/* is handled by Julia
 # Everything else falls through to static files
-serve_dir!(server, "public")
+mount!(server, "public")
 
 start!(server; host="0.0.0.0", port=8080)
 ```

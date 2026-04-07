@@ -11,6 +11,15 @@ Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
     ws("/chat", on_message=(msg) -> Message("Echo: $(msg.data)"))
 end
 
+@router WildcardApp begin
+    get("/known",  req -> Response(200, "", "known"))
+    get("/*path",  (req, path) -> Response(404, "", "not found: $path"))
+end
+
+@router TypedApp begin
+    get("/item/{id::Int}", (req, id) -> Response(200, "", "id=$id type=$(typeof(id))"))
+end
+
 @testset "Mongoose.jl" begin
 
     # --- Helper Functions ---
@@ -186,7 +195,7 @@ end
         route!(router, :get, "/api/data", (req) -> Response(200, ContentType.json, "{\"ok\":true}"))
 
         server = AsyncServer(router; workers=1)
-        use!(server, cors(origins="https://example.com"))
+        plug!(server, cors(origins="https://example.com"))
         start!(server, port=8096, blocking=false)
         sleep(0.5)
 
@@ -265,7 +274,7 @@ end
         router = Router()
         route!(router, :post, "/upload", (req) -> Response(200, "", "OK"))
 
-        server = AsyncServer(router; workers=1, max_body_size=100)
+        server = AsyncServer(router; workers=1, max_body=100)
         start!(server, port=8099, blocking=false)
         sleep(0.5)
 
@@ -416,7 +425,7 @@ end
         route!(router, :get, "/api/data", (req) -> Response(200, "Content-Type: application/json\r\n", "{\"ok\":true}"))
 
         server = AsyncServer(router; workers=2)
-        use!(server, cors(origins="https://test.com"))
+        plug!(server, cors(origins="https://test.com"))
         start!(server; port=8104, blocking=false)
         sleep(0.5)
 
@@ -437,7 +446,7 @@ end
 
         # 1. Bearer Auth
         server_bearer = AsyncServer(router; workers=1)
-        use!(server_bearer, bearer_token(token -> token == "magic-token"))
+        plug!(server_bearer, bearer_token(token -> token == "magic-token"))
         start!(server_bearer; port=8105, blocking=false)
         sleep(0.5)
 
@@ -460,7 +469,7 @@ end
 
         # 2. API Key Auth
         server_api = AsyncServer(router; workers=1)
-        use!(server_api, api_key(keys=Set(["key123"])))
+        plug!(server_api, api_key(keys=Set(["key123"])))
         start!(server_api; port=8106, blocking=false)
         sleep(0.5)
 
@@ -484,7 +493,7 @@ end
 
         server = AsyncServer(router; workers=1)
         # 2 requests per 10 seconds
-        use!(server, rate_limit(max_requests=2, window_seconds=10))
+        plug!(server, rate_limit(max_requests=2, window_seconds=10))
         start!(server; port=8107, blocking=false)
         sleep(0.5)
 
@@ -569,7 +578,7 @@ end
 
         log_buf = IOBuffer()
         server = AsyncServer(router; workers=1)
-        use!(server, logger(output=log_buf))
+        plug!(server, logger(output=log_buf))
         start!(server; port=8110, blocking=false)
         sleep(0.5)
 
@@ -595,7 +604,7 @@ end
 
         log_buf = IOBuffer()
         server = AsyncServer(router; workers=1)
-        use!(server, logger(threshold_ms=5000, output=log_buf))
+        plug!(server, logger(threshold_ms=5000, output=log_buf))
         start!(server; port=8111, blocking=false)
         sleep(0.5)
 
@@ -678,8 +687,8 @@ end
     @testset "Request Context" begin
         router = Router()
         route!(router, :get, "/ctx", (req) -> begin
-            # Context starts as nothing, getcontext! allocates on first access
-            ctx = getcontext!(req)
+            # Context starts as nothing, context! allocates on first access
+            ctx = context!(req)
             @assert ctx isa Dict{Symbol,Any}
             ctx[:user] = "alice"
             Response(200, "", "user=$(ctx[:user])")
@@ -697,7 +706,7 @@ end
         end
     end
 
-    # --- Test: Static File Serving (C-level serve_dir!) ---
+    # --- Test: Static File Serving (C-level mount!) ---
     @testset "Static Files" begin
         # Create temp directory with test files
         mktempdir() do dir
@@ -710,7 +719,7 @@ end
             route!(router, :get, "/api/hello", (req) -> Response(200, "", "hello"))
 
             server = SyncServer(router)
-            serve_dir!(server, dir)
+            mount!(server, dir)
             start!(server; port=8117, blocking=false)
 
             try
@@ -911,7 +920,7 @@ end
 
         # Healthy server
         s1 = SyncServer(router)
-        use!(s1, health(health_check=() -> true, ready_check=() -> true, live_check=() -> true))
+        plug!(s1, health(health_check=() -> true, ready_check=() -> true, live_check=() -> true))
         start!(s1; port=8124, blocking=false)
         try
             resp = HTTP.get("http://localhost:8124/healthz")
@@ -935,7 +944,7 @@ end
 
         # Unhealthy server
         s2 = SyncServer(router)
-        use!(s2, health(health_check=() -> false))
+        plug!(s2, health(health_check=() -> false))
         start!(s2; port=8125, blocking=false)
         try
             resp = HTTP.get("http://localhost:8125/healthz"; status_exception=false)
@@ -1005,7 +1014,7 @@ end
         route!(router, :get, "/secure", (req) -> Response(200, "", "ok"))
 
         server = SyncServer(router)
-        use!(server, bearer_token(token -> token == "secret"))
+        plug!(server, bearer_token(token -> token == "secret"))
         start!(server; port=8128, blocking=false)
         try
             # Lowercase scheme must be accepted (RFC 7235)
@@ -1030,7 +1039,7 @@ end
         route!(router, :get, "/limited", (req) -> Response(200, "", "OK"))
 
         server = AsyncServer(router; workers=1)
-        use!(server, rate_limit(max_requests=2, window_seconds=60))
+        plug!(server, rate_limit(max_requests=2, window_seconds=60))
         start!(server; port=8129, blocking=false)
         sleep(0.5)
 
@@ -1045,6 +1054,945 @@ end
             # Third request from same client is rate-limited
             resp = HTTP.get("http://localhost:8129/limited"; headers=headers1, status_exception=false)
             @test resp.status == 429
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Unit Tests — pure in-process, no live server
+    # ==========================================================================
+
+    @testset "Unit: _matchroute quality" begin
+        r = Router()
+        route!(r, :get,  "/",                  req       -> Response(200, "", "root"))
+        route!(r, :get,  "/users/:id::Int",    (req, id) -> Response(200, "", "user"))
+        route!(r, :post, "/items",             req       -> Response(200, "", "items"))
+        route!(r, :get,  "/a/b/c",            req       -> Response(200, "", "deep-fixed"))
+        route!(r, :get,  "/a/:x",             (req, x)  -> Response(200, "", "dynamic-a"))
+
+        # Root route
+        m = Mongoose._matchroute(r, :get, "/")
+        @test m !== nothing
+        @test m.params == []
+
+        # Typed param parsed
+        m = Mongoose._matchroute(r, :get, "/users/42")
+        @test m !== nothing
+        @test m.params == [42]
+        @test m.params[1] isa Int
+
+        # Query string stripped before match
+        m = Mongoose._matchroute(r, :get, "/users/7?verbose=true")
+        @test m !== nothing
+        @test m.params == [7]
+
+        # Invalid type → no route match
+        @test Mongoose._matchroute(r, :get, "/users/notanumber") === nothing
+
+        # Static child beats dynamic: /a/b/c must not be captured by /a/:x
+        m_deep = Mongoose._matchroute(r, :get, "/a/b/c")
+        @test m_deep !== nothing
+
+        # Dynamic fallback for non-fixed child
+        m_dyn = Mongoose._matchroute(r, :get, "/a/hello")
+        @test m_dyn !== nothing
+
+        # POST-only route is not matched by GET
+        m_post_items = Mongoose._matchroute(r, :post, "/items")
+        @test m_post_items !== nothing
+
+        # Unknown route → nothing
+        @test Mongoose._matchroute(r, :get, "/nonexistent/path") === nothing
+
+        # Wildcard catch-all: "*" fixed route acts as final fallback
+        route!(r, :get, "*", req -> Response(200, "", "catchall"))
+        m_wild = Mongoose._matchroute(r, :get, "/totally/unknown/path")
+        @test m_wild !== nothing
+    end
+
+    @testset "Unit: _matchroute multi-segment typed params" begin
+        r = Router()
+        route!(r, :get, "/users/:uid::Int/posts/:pid::Int",
+               (req, uid, pid) -> Response(200, "", "u=$uid p=$pid"))
+
+        m = Mongoose._matchroute(r, :get, "/users/3/posts/7")
+        @test m !== nothing
+        @test m.params == [3, 7]
+        @test m.params[1] isa Int
+        @test m.params[2] isa Int
+
+        @test Mongoose._matchroute(r, :get, "/users/abc/posts/7")  === nothing
+        @test Mongoose._matchroute(r, :get, "/users/3/posts/nope") === nothing
+    end
+
+    @testset "Unit: _parseroute wildcard must be last segment" begin
+        # Wildcard anywhere but last → error
+        @test_throws ErrorException Mongoose._parseroute("/files/*name/extra")
+        @test_throws ErrorException Mongoose._parseroute("/*wild/a/b")
+        @test_throws ErrorException Mongoose._parseroute("/a/*mid/b")
+
+        # Wildcard as the final segment → valid, type is String
+        segs = Mongoose._parseroute("/assets/*rest")
+        @test length(segs) == 2
+        @test segs[end].value == "rest"
+        @test segs[end].type  == String
+
+        # No wildcard → unaffected
+        segs2 = Mongoose._parseroute("/a/b/:id")
+        @test length(segs2) == 3
+    end
+
+    @testset "Unit: _sanitizeid" begin
+        @test Mongoose._sanitizeid("abc-123")     == "abc-123"
+        @test Mongoose._sanitizeid("")             == ""
+
+        # CRLF injection → empty string
+        @test Mongoose._sanitizeid("ok\r\nevil")  == ""
+        @test Mongoose._sanitizeid("id\nevil")    == ""
+        @test Mongoose._sanitizeid("a\x00b")      == ""
+
+        # Too long (>128 bytes) → empty string
+        @test Mongoose._sanitizeid(repeat("a", 129)) == ""
+
+        # Exactly 128 chars → valid
+        edge = repeat("x", 128)
+        @test Mongoose._sanitizeid(edge) == edge
+    end
+
+    @testset "Unit: ContentType MIME header strings" begin
+        @test ContentType.text   == "Content-Type: text/plain; charset=utf-8\r\n"
+        @test ContentType.json   == "Content-Type: application/json; charset=utf-8\r\n"
+        @test ContentType.html   == "Content-Type: text/html; charset=utf-8\r\n"
+        @test ContentType.css    == "Content-Type: text/css; charset=utf-8\r\n"
+        @test ContentType.js     == "Content-Type: application/javascript; charset=utf-8\r\n"
+        @test ContentType.xml    == "Content-Type: application/xml; charset=utf-8\r\n"
+        @test ContentType.binary == "Content-Type: application/octet-stream\r\n"
+    end
+
+    @testset "Unit: Response constructors" begin
+        # 3-arg: status, header string, body string
+        r1 = Response(200, ContentType.text, "hello")
+        @test r1.status == 200
+        @test r1.body   == "hello"
+        @test occursin("text/plain", r1.headers)
+
+        # 3-arg: binary body
+        r2 = Response(200, ContentType.binary, UInt8[1, 2, 3])
+        @test r2.body == UInt8[1, 2, 3]
+
+        # 2-arg: status + string body (uses text/plain)
+        r3 = Response(201, "created")
+        @test r3.status == 201
+        @test r3.body   == "created"
+        @test occursin("text/plain", r3.headers)
+
+        # Format-typed constructors (avoid Json which has a test-overloaded render_body)
+        r4 = Response(Xml, "<root/>")  
+        @test r4.status == 200
+        @test occursin("application/xml", r4.headers)
+
+        r5 = Response(Html, "<p>hi</p>"; status=201)
+        @test r5.status == 201
+        @test occursin("text/html", r5.headers)
+
+        # SubString body must be converted to String
+        s   = SubString("hello world", 1, 5)
+        r6  = Response(200, "", s)
+        @test r6.body isa String
+        @test r6.body == "hello"
+    end
+
+    @testset "Unit: query struct deserialization with optional fields" begin
+        struct _QOptFields
+            name::String
+            age::Union{Int,Nothing}
+            flag::Bool
+        end
+
+        # All fields present
+        p1 = Mongoose.query(_QOptFields, "name=Alice&age=30&flag=true")
+        @test p1.name == "Alice"
+        @test p1.age  == 30
+        @test p1.flag == true
+
+        # Optional (Union{Int,Nothing}) absent → nothing
+        p2 = Mongoose.query(_QOptFields, "name=Bob&flag=yes")
+        @test p2.name == "Bob"
+        @test p2.age  === nothing
+        @test p2.flag == true
+
+        # Unknown query keys are silently ignored
+        p3 = Mongoose.query(_QOptFields, "name=X&unknown=42&age=1")
+        @test p3.name == "X"
+        @test p3.age  == 1
+    end
+
+    @testset "Unit: _staticexists path traversal boundary" begin
+        mktempdir() do base
+            # Two adjacent directories to test the prefix-check boundary
+            dir_pub  = joinpath(base, "public")
+            dir_pub2 = joinpath(base, "public2")
+            mkdir(dir_pub)
+            mkdir(dir_pub2)
+            write(joinpath(dir_pub,  "ok.txt"),     "ok")
+            write(joinpath(dir_pub2, "secret.txt"), "secret")
+
+            # Legitimate in-root file is found
+            @test  Mongoose._staticexists(dir_pub, "/", "/ok.txt")
+
+            # Traversal via ../ to adjacent directory is blocked
+            @test !Mongoose._staticexists(dir_pub, "/", "/../public2/secret.txt")
+
+            # Root "/" without index.html → false
+            @test !Mongoose._staticexists(dir_pub, "/", "/")
+
+            # Adding index.html makes root "/" resolvable
+            write(joinpath(dir_pub, "index.html"), "<h1>home</h1>")
+            @test  Mongoose._staticexists(dir_pub, "/", "/")
+        end
+    end
+
+    @testset "Unit: structured logger JSON format" begin
+        log_buf = IOBuffer()
+        lg  = logger(structured=true, output=log_buf)
+        req = Request(:get, "/api/v1", "", Pair{String,String}[], "", nothing)
+        lg(req, Any[], () -> Response(200, "", "ok"))
+        out = String(take!(log_buf))
+
+        @test occursin("\"method\":", out)
+        @test occursin("\"GET\"",     out)
+        @test occursin("\"uri\":",    out)
+        @test occursin("\"/api/v1\"", out)
+        @test occursin("\"status\":", out)
+        @test occursin("200",         out)
+        @test occursin("\"duration_ms\":", out)
+        @test occursin("\"ts\":",     out)
+    end
+
+    # ==========================================================================
+    # HTTP Methods Coverage
+    # ==========================================================================
+
+    @testset "HTTP Methods: PUT PATCH DELETE OPTIONS" begin
+        router = Router()
+        route!(router, :put,     "/item", req -> Response(200, "", "put"))
+        route!(router, :patch,   "/item", req -> Response(200, "", "patch"))
+        route!(router, :delete,  "/item", req -> Response(204, "", ""))
+        route!(router, :options, "/item", req -> Response(200, "Allow: GET, OPTIONS\r\n", ""))
+
+        server = AsyncServer(router; workers=1)
+        start!(server; port=8200, blocking=false)
+        sleep(0.5)
+
+        try
+            resp = HTTP.put("http://localhost:8200/item")
+            @test resp.status == 200
+            @test String(resp.body) == "put"
+
+            resp = HTTP.patch("http://localhost:8200/item")
+            @test resp.status == 200
+            @test String(resp.body) == "patch"
+
+            resp = HTTP.delete("http://localhost:8200/item")
+            @test resp.status == 204
+
+            resp = HTTP.request("OPTIONS", "http://localhost:8200/item")
+            @test resp.status == 200
+            @test HTTP.header(resp, "Allow") == "GET, OPTIONS"
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Multi-parameter route
+    # ==========================================================================
+
+    @testset "Multi-parameter route /users/:uid::Int/posts/:pid::Int" begin
+        router = Router()
+        route!(router, :get, "/users/:uid::Int/posts/:pid::Int",
+               (req, uid, pid) -> Response(200, "", "uid=$uid pid=$pid"))
+
+        server = AsyncServer(router; workers=1)
+        start!(server; port=8201, blocking=false)
+        sleep(0.5)
+
+        try
+            resp = HTTP.get("http://localhost:8201/users/5/posts/12")
+            @test resp.status == 200
+            @test String(resp.body) == "uid=5 pid=12"
+
+            # Wrong type in first segment → 404
+            resp = HTTP.get("http://localhost:8201/users/alice/posts/12"; status_exception=false)
+            @test resp.status == 404
+
+            # Wrong type in second segment → 404
+            resp = HTTP.get("http://localhost:8201/users/5/posts/nope"; status_exception=false)
+            @test resp.status == 404
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Wildcard catch-all route via "*" path
+    # ==========================================================================
+
+    @testset "Wildcard catch-all via * path" begin
+        router = Router()
+        route!(router, :get, "/known", req -> Response(200, "", "known"))
+        route!(router, :get, "*",      req -> Response(404, ContentType.html, "<h1>Custom 404</h1>"))
+
+        server = SyncServer(router)
+        start!(server; port=8202, blocking=false)
+
+        try
+            resp = HTTP.get("http://localhost:8202/known")
+            @test resp.status == 200
+
+            resp = HTTP.get("http://localhost:8202/anything/else"; status_exception=false)
+            @test resp.status == 404
+            @test String(resp.body) == "<h1>Custom 404</h1>"
+            hdrs = Dict(String(h.first) => String(h.second) for h in resp.headers)
+            @test occursin("text/html", hdrs["Content-Type"])
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # PathFilter via plug! with paths= keyword
+    # ==========================================================================
+
+    @testset "PathFilter via plug! paths keyword" begin
+        router = Router()
+        route!(router, :get, "/api/data",    req -> Response(200, "", "api"))
+        route!(router, :get, "/public/page", req -> Response(200, "", "public"))
+
+        server = AsyncServer(router; workers=1)
+        # Bearer auth only applies to /api routes
+        plug!(server, bearer_token(token -> token == "secret"); paths=["/api"])
+        start!(server; port=8203, blocking=false)
+        sleep(0.5)
+
+        try
+            # /public/* must pass without auth
+            resp = HTTP.get("http://localhost:8203/public/page")
+            @test resp.status == 200
+            @test String(resp.body) == "public"
+
+            # /api/* missing header → 401
+            resp = HTTP.get("http://localhost:8203/api/data"; status_exception=false)
+            @test resp.status == 401
+
+            # /api/* correct token → 200
+            resp = HTTP.get("http://localhost:8203/api/data";
+                            headers=["Authorization" => "Bearer secret"])
+            @test resp.status == 200
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Prometheus Metrics Middleware
+    # ==========================================================================
+
+    @testset "Metrics Middleware" begin
+        router = Router()
+        route!(router, :get,  "/api/hello", req -> Response(200, "", "hello"))
+        route!(router, :post, "/api/data",  req -> Response(201, "", "created"))
+
+        server = AsyncServer(router; workers=2)
+        plug!(server, metrics())
+        start!(server; port=8204, blocking=false)
+        sleep(0.5)
+
+        try
+            HTTP.get("http://localhost:8204/api/hello")
+            HTTP.get("http://localhost:8204/api/hello")
+            HTTP.post("http://localhost:8204/api/data")
+
+            resp = HTTP.get("http://localhost:8204/metrics")
+            @test resp.status == 200
+            hdrs = Dict(String(h.first) => String(h.second) for h in resp.headers)
+            @test occursin("text/plain", hdrs["Content-Type"])
+
+            body = String(resp.body)
+            @test occursin("http_requests_total",             body)
+            @test occursin("http_request_duration_seconds",   body)
+            @test occursin("# TYPE http_requests_total",      body)
+            # At least 2 GET/200 and 1 POST/201 recorded
+            @test occursin("method=\"GET\",status=\"200\"} 2", body)
+            @test occursin("method=\"POST\",status=\"201\"} 1", body)
+            @test occursin("http_request_duration_seconds_count", body)
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Structured Logger (JSON) via live server
+    # ==========================================================================
+
+    @testset "Structured Logger (JSON) via live server" begin
+        router = Router()
+        route!(router, :get, "/log_me", req -> Response(200, "", "ok"))
+
+        log_buf = IOBuffer()
+        server  = AsyncServer(router; workers=1)
+        plug!(server, logger(structured=true, output=log_buf))
+        start!(server; port=8205, blocking=false)
+        sleep(0.5)
+
+        try
+            HTTP.get("http://localhost:8205/log_me")
+            sleep(0.3)  # give worker time to flush the log line
+
+            out = String(take!(log_buf))
+            @test occursin("{\"method\":",    out)
+            @test occursin("\"GET\"",         out)
+            @test occursin("/log_me",         out)
+            @test occursin("\"status\":200",  out)
+            @test occursin("\"duration_ms\":", out)
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Custom error_response! for 500 and 413
+    # ==========================================================================
+
+    @testset "Custom error_response! for 500 and 413" begin
+        router = Router()
+        route!(router, :get,  "/boom",   req -> error("deliberate crash"))
+        route!(router, :post, "/upload", req -> Response(200, "", "ok"))
+
+        server = AsyncServer(router; workers=1, max_body=50)
+        error_response!(server, 500, Response(500, ContentType.json, """{"error":"internal","code":500}"""))
+        error_response!(server, 413, Response(413, ContentType.json, """{"error":"too large","code":413}"""))
+        start!(server; port=8206, blocking=false)
+        sleep(0.5)
+
+        try
+            resp = HTTP.get("http://localhost:8206/boom"; status_exception=false)
+            @test resp.status == 500
+            body = String(resp.body)
+            @test occursin("internal", body)
+            @test occursin("500",      body)
+
+            resp = HTTP.post("http://localhost:8206/upload";
+                             body=repeat("x", 100), status_exception=false)
+            @test resp.status == 413
+            body413 = String(resp.body)
+            @test occursin("too large", body413)
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Multiple middlewares stacked (CORS + bearer)
+    # ==========================================================================
+
+    @testset "Multiple middlewares stacked: CORS + bearer auth" begin
+        router = Router()
+        route!(router, :get, "/api/secure", req -> Response(200, "", "secure data"))
+
+        server = AsyncServer(router; workers=1)
+        plug!(server, cors(origins="https://app.example.com"))
+        plug!(server, bearer_token(token -> token == "tok123"))
+        start!(server; port=8207, blocking=false)
+        sleep(0.5)
+
+        try
+            # Wrong token → 403; CORS headers must still be present (CORS runs first)
+            resp = HTTP.get("http://localhost:8207/api/secure";
+                            headers=["Authorization" => "Bearer wrong"],
+                            status_exception=false)
+            @test resp.status == 403
+            hdrs = Dict(String(h.first) => String(h.second) for h in resp.headers)
+            @test haskey(hdrs, "Access-Control-Allow-Origin")
+            @test hdrs["Access-Control-Allow-Origin"] == "https://app.example.com"
+
+            # Correct token → 200 + CORS headers
+            resp = HTTP.get("http://localhost:8207/api/secure";
+                            headers=["Authorization" => "Bearer tok123"])
+            @test resp.status == 200
+            hdrs2 = Dict(String(h.first) => String(h.second) for h in resp.headers)
+            @test hdrs2["Access-Control-Allow-Origin"] == "https://app.example.com"
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # mount! with URI prefix
+    # ==========================================================================
+
+    @testset "mount! with URI prefix" begin
+        mktempdir() do dir
+            write(joinpath(dir, "logo.txt"), "LOGO_DATA")
+            mkdir(joinpath(dir, "sub"))
+            write(joinpath(dir, "sub", "page.txt"), "SUB_PAGE")
+
+            router = Router()
+            route!(router, :get, "/api/ping", req -> Response(200, "", "pong"))
+            server = SyncServer(router)
+            mount!(server, dir; uri_prefix="/static")
+            start!(server; port=8208, blocking=false)
+
+            try
+                # File served under prefix
+                resp = HTTP.get("http://localhost:8208/static/logo.txt")
+                @test resp.status == 200
+                @test String(resp.body) == "LOGO_DATA"
+
+                # Subdirectory file served under prefix
+                resp = HTTP.get("http://localhost:8208/static/sub/page.txt")
+                @test resp.status == 200
+                @test String(resp.body) == "SUB_PAGE"
+
+                # Without prefix → should not serve the file
+                resp = HTTP.get("http://localhost:8208/logo.txt"; status_exception=false)
+                @test resp.status == 404
+
+                # Normal route still works alongside static serving
+                resp = HTTP.get("http://localhost:8208/api/ping")
+                @test resp.status == 200
+                @test String(resp.body) == "pong"
+            finally
+                shutdown!(server)
+            end
+        end
+    end
+
+    # ==========================================================================
+    # mount! with two directories registered simultaneously
+    # ==========================================================================
+
+    @testset "mount! multiple static directories" begin
+        mktempdir() do base
+            dir_a = joinpath(base, "site")
+            dir_b = joinpath(base, "assets")
+            mkdir(dir_a)
+            mkdir(dir_b)
+            write(joinpath(dir_a, "index.html"), "<h1>Home</h1>")
+            write(joinpath(dir_b, "app.js"),     "console.log(1)")
+
+            router = Router()
+            server = SyncServer(router)
+            mount!(server, dir_a)                       # prefix "/"
+            mount!(server, dir_b; uri_prefix="/assets") # prefix "/assets"
+            start!(server; port=8209, blocking=false)
+
+            try
+                resp = HTTP.get("http://localhost:8209/")
+                @test resp.status == 200
+                @test String(resp.body) == "<h1>Home</h1>"
+
+                resp = HTTP.get("http://localhost:8209/assets/app.js")
+                @test resp.status == 200
+                @test String(resp.body) == "console.log(1)"
+            finally
+                shutdown!(server)
+            end
+        end
+    end
+
+    # ==========================================================================
+    # ServerConfig construction
+    # ==========================================================================
+
+    @testset "ServerConfig for SyncServer and AsyncServer" begin
+        router = Router()
+        route!(router, :get, "/ping", req -> Response(200, "", "pong"))
+
+        cfg_sync = ServerConfig(timeout=1, max_body=1024)
+        s_sync   = SyncServer(router, cfg_sync)
+        start!(s_sync; port=8210, blocking=false)
+        try
+            resp = HTTP.get("http://localhost:8210/ping")
+            @test resp.status == 200
+            @test String(resp.body) == "pong"
+        finally
+            shutdown!(s_sync)
+        end
+
+        cfg_async = ServerConfig(workers=2, nqueue=64, timeout=0,
+                                 max_body=2048, drain_timeout=1000)
+        s_async   = AsyncServer(router, cfg_async)
+        start!(s_async; port=8211, blocking=false)
+        sleep(0.3)
+        try
+            resp = HTTP.get("http://localhost:8211/ping")
+            @test resp.status == 200
+            @test String(resp.body) == "pong"
+        finally
+            shutdown!(s_async)
+        end
+    end
+
+    # ==========================================================================
+    # AsyncServer request_timeout → 504
+    # ==========================================================================
+
+    @testset "AsyncServer request_timeout → 504" begin
+        router = Router()
+        route!(router, :get, "/fast", req -> Response(200, "", "fast"))
+        route!(router, :get, "/slow", req -> (sleep(5); Response(200, "", "never")))
+
+        server = AsyncServer(router; workers=1, request_timeout=200)
+        start!(server; port=8212, blocking=false)
+        sleep(0.5)
+
+        try
+            resp = HTTP.get("http://localhost:8212/fast")
+            @test resp.status == 200
+            @test String(resp.body) == "fast"
+
+            resp = HTTP.get("http://localhost:8212/slow";
+                            readtimeout=10, status_exception=false)
+            @test resp.status == 504
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # WebSocket on_open and on_close lifecycle callbacks
+    # ==========================================================================
+
+    @testset "WebSocket on_open and on_close callbacks" begin
+        open_fired  = Ref(false)
+        close_fired = Ref(false)
+
+        router = Router()
+        ws!(router, "/lifecycle";
+            on_message = (msg)  -> Message("echo: $(msg.data)"),
+            on_open    = (req)  -> (open_fired[]  = true),
+            on_close   = ()     -> (close_fired[] = true))
+
+        server = AsyncServer(router; workers=1)
+        start!(server; port=8213, blocking=false)
+        sleep(0.5)
+
+        try
+            HTTP.WebSockets.open("ws://localhost:8213/lifecycle") do ws
+                HTTP.WebSockets.send(ws, "hello")
+                reply = String(HTTP.WebSockets.receive(ws))
+                @test reply == "echo: hello"
+                @test open_fired[]
+            end
+            sleep(0.3)  # give event loop time to fire MG_EV_CLOSE
+            @test close_fired[]
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # WebSocket concurrent connections
+    # ==========================================================================
+
+    @testset "WebSocket concurrent connections" begin
+        router = Router()
+        ws!(router, "/concurrent";
+            on_message = (msg) -> Message("reply: $(msg.data)"))
+
+        server = AsyncServer(router; workers=2)
+        start!(server; port=8214, blocking=false)
+        sleep(0.5)
+
+        try
+            results = Channel{String}(6)
+            @sync for i in 1:3
+                let i = i
+                    @async begin
+                        HTTP.WebSockets.open("ws://localhost:8214/concurrent") do ws
+                            HTTP.WebSockets.send(ws, "client$i")
+                            put!(results, String(HTTP.WebSockets.receive(ws)))
+                        end
+                    end
+                end
+            end
+            collected = [take!(results) for _ in 1:3]
+            @test length(collected) == 3
+            @test all(startswith(m, "reply: client") for m in collected)
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # API key with custom header name
+    # ==========================================================================
+
+    @testset "API key with custom header_name" begin
+        router = Router()
+        route!(router, :get, "/data", req -> Response(200, "", "secret"))
+
+        server = SyncServer(router)
+        plug!(server, api_key(header_name="X-Token", keys=Set(["valid-key"])))
+        start!(server; port=8215, blocking=false)
+
+        try
+            # Custom header with valid key → 200
+            resp = HTTP.get("http://localhost:8215/data";
+                            headers=["X-Token" => "valid-key"])
+            @test resp.status == 200
+
+            # Default X-API-Key header is not checked here → 401
+            resp = HTTP.get("http://localhost:8215/data";
+                            headers=["X-API-Key" => "valid-key"],
+                            status_exception=false)
+            @test resp.status == 401
+
+            # Missing header → 401
+            resp = HTTP.get("http://localhost:8215/data"; status_exception=false)
+            @test resp.status == 401
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # CORS default wildcard origin "*"
+    # ==========================================================================
+
+    @testset "CORS default wildcard origin *" begin
+        router = Router()
+        route!(router, :get, "/open", req -> Response(200, "", "open"))
+
+        server = SyncServer(router)
+        plug!(server, cors())  # default: origins="*"
+        start!(server; port=8216, blocking=false)
+
+        try
+            resp = HTTP.get("http://localhost:8216/open")
+            @test resp.status == 200
+            hdrs = Dict(String(h.first) => String(h.second) for h in resp.headers)
+            @test haskey(hdrs, "Access-Control-Allow-Origin")
+            @test hdrs["Access-Control-Allow-Origin"] == "*"
+            @test haskey(hdrs, "Access-Control-Allow-Methods")
+            @test haskey(hdrs, "Access-Control-Allow-Headers")
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # route! on server returns server (for method chaining)
+    # ==========================================================================
+
+    @testset "route! on server returns server for chaining" begin
+        server = SyncServer(Router())
+        ret1 = route!(server, :get,  "/a", req -> Response(200, "", "a"))
+        @test ret1 === server
+        ret2 = route!(server, :post, "/b", req -> Response(200, "", "b"))
+        @test ret2 === server
+
+        start!(server; port=8217, blocking=false)
+        try
+            @test HTTP.get("http://localhost:8217/a").status == 200
+            @test HTTP.post("http://localhost:8217/b").status == 200
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # @router static router: 404, 405, and invalid typed param
+    # ==========================================================================
+
+    @testset "@router: unknown route returns 404" begin
+        server = SyncServer(Routes)
+        start!(server; port=8218, blocking=false)
+        sleep(0.3)
+
+        try
+            resp = HTTP.get("http://localhost:8218/nonexistent"; status_exception=false)
+            @test resp.status == 404
+
+            # Static router falls through to 404 for any unmatched method/path combination
+            resp = HTTP.post("http://localhost:8218/hello"; status_exception=false)
+            @test resp.status == 404
+        finally
+            shutdown!(server)
+        end
+    end
+
+    @testset "@router: typed param {id::Int} non-matching value → 404" begin
+        server = SyncServer(TypedApp)
+        start!(server; port=8219, blocking=false)
+        sleep(0.3)
+
+        try
+            # Correctly typed value → 200
+            resp = HTTP.get("http://localhost:8219/item/42")
+            @test resp.status == 200
+            body42 = String(resp.body)
+            @test occursin("id=42", body42)
+            @test occursin("Int",   body42)
+
+            # Non-integer value causes Base.parse to throw; the server catches it → 500
+            resp = HTTP.get("http://localhost:8219/item/notanint"; status_exception=false)
+            @test resp.status == 500
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Wildcard route in @router (module-level WildcardApp defined at top of file)
+    # ==========================================================================
+
+    @testset "@router with wildcard catch-all route" begin
+        server = SyncServer(WildcardApp)
+        start!(server; port=8220, blocking=false)
+        sleep(0.3)
+
+        try
+            resp = HTTP.get("http://localhost:8220/known")
+            @test resp.status == 200
+
+            resp = HTTP.get("http://localhost:8220/missing/thing"; status_exception=false)
+            @test resp.status == 404
+            @test occursin("not found:", String(resp.body))
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Health middleware: readyz and livez unhealthy states
+    # ==========================================================================
+
+    @testset "Health middleware: partial failure states" begin
+        router = Router()
+
+        # ready=false → readyz returns 503
+        s1 = SyncServer(router)
+        plug!(s1, health(health_check=() -> true, ready_check=() -> false, live_check=() -> true))
+        start!(s1; port=8221, blocking=false)
+        try
+            resp = HTTP.get("http://localhost:8221/healthz"; status_exception=false)
+            @test resp.status == 503
+            @test occursin("unhealthy", String(resp.body))
+
+            resp = HTTP.get("http://localhost:8221/readyz"; status_exception=false)
+            @test resp.status == 503
+            @test occursin("not ready", String(resp.body))
+
+            resp = HTTP.get("http://localhost:8221/livez")
+            @test resp.status == 200
+            @test occursin("alive", String(resp.body))
+        finally
+            shutdown!(s1)
+        end
+
+        # live=false → livez returns 503
+        s2 = SyncServer(router)
+        plug!(s2, health(live_check=() -> false))
+        start!(s2; port=8222, blocking=false)
+        try
+            resp = HTTP.get("http://localhost:8222/livez"; status_exception=false)
+            @test resp.status == 503
+            @test occursin("dead", String(resp.body))
+        finally
+            shutdown!(s2)
+        end
+    end
+
+    # ==========================================================================
+    # Request context in handler (context! allocates lazily)
+    # ==========================================================================
+
+    @testset "context! lazy allocation and isolation between requests" begin
+        router = Router()
+        route!(router, :get, "/ctx/:key", (req, key) -> begin
+            ctx = context!(req)
+            ctx[:val] = key
+            Response(200, "", "$(ctx[:val])")
+        end)
+
+        server = AsyncServer(router; workers=2)
+        start!(server; port=8223, blocking=false)
+        sleep(0.5)
+
+        try
+            results = Vector{String}(undef, 5)
+            @sync for i in 1:5
+                let i = i
+                    @async begin
+                        resp = HTTP.get("http://localhost:8223/ctx/item$i")
+                        results[i] = String(resp.body)
+                    end
+                end
+            end
+            for i in 1:5
+                @test results[i] == "item$i"
+            end
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Unicode-safe body round-trip
+    # ==========================================================================
+
+    @testset "Unicode body round-trip" begin
+        emoji_body = "Hello 🌍 from Mongoose.jl — café résumé"
+
+        router = Router()
+        route!(router, :get,  "/unicode", req -> Response(200, ContentType.text, emoji_body))
+        route!(router, :post, "/echo",    req -> Response(200, ContentType.text, req.body))
+
+        server = SyncServer(router)
+        start!(server; port=8224, blocking=false)
+
+        try
+            resp = HTTP.get("http://localhost:8224/unicode")
+            @test resp.status == 200
+            @test String(resp.body) == emoji_body
+
+            resp = HTTP.post("http://localhost:8224/echo"; body=emoji_body)
+            @test resp.status == 200
+            @test String(resp.body) == emoji_body
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # X-Request-Id echo and injection protection (unit + live)
+    # The live test only sends safe IDs; CRLF injection is caught by
+    # _sanitizeid which is tested as a pure unit test above.
+    # ==========================================================================
+
+    @testset "X-Request-Id echoed in response" begin
+        router = Router()
+        route!(router, :get, "/id", req -> Response(200, "", "ok"))
+
+        server = SyncServer(router)
+        start!(server; port=8225, blocking=false)
+
+        try
+            # Valid ID is echoed back in the response header
+            resp = HTTP.get("http://localhost:8225/id";
+                            headers=["X-Request-Id" => "req-abc-123"])
+            @test resp.status == 200
+            @test HTTP.header(resp, "X-Request-Id") == "req-abc-123"
+
+            # Long-but-valid 64-char ID is also echoed
+            long_id = repeat("a", 64)
+            resp = HTTP.get("http://localhost:8225/id";
+                            headers=["X-Request-Id" => long_id])
+            @test resp.status == 200
+            @test HTTP.header(resp, "X-Request-Id") == long_id
         finally
             shutdown!(server)
         end
