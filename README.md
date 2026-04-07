@@ -90,7 +90,7 @@ Append `::Type` to a segment for automatic parsing:
 ```julia
 route!(router, :get, "/users/:id::Int",       (req, id)   -> ...)  # id::Int
 route!(router, :get, "/price/:val::Float64",  (req, val)  -> ...)  # val::Float64
-route!(router, :get, "/posts/:slug",          (req, slug) -> ...)  # slug::SubString
+route!(router, :get, "/posts/:slug",          (req, slug) -> ...)  # slug::String
 ```
 
 ### Query String

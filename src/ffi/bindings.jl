@@ -44,20 +44,35 @@ end
 
 """
     mg_ws_send(conn, buf, op) — Send a WebSocket frame (text or binary).
+
+For strings, passes the raw pointer and byte length so that payloads
+containing embedded NUL bytes (valid in WebSocket text frames per RFC 6455)
+are transmitted in full.  `GC.@preserve` keeps the buffer alive for the
+duration of the ccall.
 """
 function mg_ws_send(conn::MgConnection, buf::String, op::Cint)
-    ccall((:mg_ws_send, libmongoose), Cvoid, (Ptr{Cvoid}, Cstring, Csize_t, Cint), conn, buf, sizeof(buf), op)
+    GC.@preserve buf begin
+        ccall((:mg_ws_send, libmongoose), Cvoid,
+              (Ptr{Cvoid}, Ptr{UInt8}, Csize_t, Cint),
+              conn, pointer(buf), ncodeunits(buf), op)
+    end
 end
 
 function mg_ws_send(conn::MgConnection, buf::Vector{UInt8}, op::Cint)
-    ccall((:mg_ws_send, libmongoose), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}, Csize_t, Cint), conn, pointer(buf), sizeof(buf), op)
+    GC.@preserve buf begin
+        ccall((:mg_ws_send, libmongoose), Cvoid,
+              (Ptr{Cvoid}, Ptr{UInt8}, Csize_t, Cint),
+              conn, pointer(buf), length(buf), op)
+    end
 end
 
 """
     mg_ws_upgrade(conn, hm, fmt) — Upgrade an HTTP connection to WebSocket.
+
+Pass `C_NULL` (the default) for `fmt` to omit the HTTP response body.
 """
 function mg_ws_upgrade(conn::MgConnection, hm::Ptr{Cvoid}, fmt::Ptr{Cvoid}=C_NULL)
-    ccall((:mg_ws_upgrade, libmongoose), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}, Cstring), conn, hm, fmt)
+    ccall((:mg_ws_upgrade, libmongoose), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), conn, hm, fmt)
 end
 
 """

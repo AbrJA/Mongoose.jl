@@ -20,7 +20,7 @@ function _parsewsmsg(msg::MgWsMessage)
         if is_text
             return Message(unsafe_string(msg.data.buf, msg.data.len))
         else
-            data = unsafe_wrap(Array, msg.data.buf, msg.data.len)
+            data = unsafe_wrap(Vector{UInt8}, msg.data.buf, Int(msg.data.len); own=false)
             return Message(copy(data))
         end
     end
