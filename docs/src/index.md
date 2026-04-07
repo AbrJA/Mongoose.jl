@@ -31,8 +31,8 @@ using Mongoose
 
 router = Router()
 
-route!(router, :get, "/", req -> Response(200, ContentType.text, "Hello!"))
-route!(router, :get, "/users/:id::Int", (req, id) -> Response(200, ContentType.text, "User $id"))
+route!(router, :get, "/", req -> Response(Text, "Hello!"))
+route!(router, :get, "/users/:id::Int", (req, id) -> Response(Text, "User $id"))
 
 server = AsyncServer(router; workers=4)
 start!(server, port=8080, blocking=false)
@@ -130,14 +130,14 @@ Routes are registered with `route!` using a method symbol (or string) and a path
 router = Router()
 
 # Symbol methods
-route!(router, :get, "/hello", req -> Response(200, ContentType.text, "hi"))
-route!(router, :post, "/data", req -> Response(200, ContentType.text, "ok"))
-route!(router, :put, "/update", req -> Response(200, ContentType.text, "updated"))
-route!(router, :patch, "/patch", req -> Response(200, ContentType.text, "patched"))
-route!(router, :delete, "/remove", req -> Response(200, ContentType.text, "deleted"))
+route!(router, :get, "/hello", req -> Response(Text, "hi"))
+route!(router, :post, "/data", req -> Response(Text, "ok"))
+route!(router, :put, "/update", req -> Response(Text, "updated"))
+route!(router, :patch, "/patch", req -> Response(Text, "patched"))
+route!(router, :delete, "/remove", req -> Response(Text, "deleted"))
 
 # Other HTTP methods
-route!(router, :options, "/alt", req -> Response(200, ContentType.text, "ok"))
+route!(router, :options, "/alt", req -> Response(Text, "ok"))
 ```
 
 GET routes automatically respond to HEAD requests (body omitted).
@@ -161,7 +161,7 @@ Routes can be added directly on an already-created server:
 
 ```julia
 server = AsyncServer(router)
-route!(server, :get, "/health", req -> Response(200, ContentType.text, "ok"))
+route!(server, :get, "/health", req -> Response(Text, "ok"))
 ```
 
 ### Static Router (AOT)
@@ -170,9 +170,9 @@ The `@router` macro generates a compile-time dispatch function with zero dynamic
 
 ```julia
 @router MyApi begin
-    get("/", req -> Response(200, ContentType.text, "Hello"))
-    get("/users/:id::Int", (req, id) -> Response(200, ContentType.text, "User $id"))
-    post("/data", req -> Response(200, ContentType.text, "received"))
+    get("/", req -> Response(Text, "Hello"))
+    get("/users/:id::Int", (req, id) -> Response(Text, "User $id"))
+    post("/data", req -> Response(Text, "received"))
     ws("/chat", on_message = msg -> Message("Echo: $(msg.data)"))
 end
 
@@ -195,41 +195,35 @@ Handlers receive a `Request`:
 
 ### Response
 
-Construct responses with a status code, headers, and body:
+Construct responses with a format type, body, and optional keyword arguments:
 
 ```julia
-# Simple text response
-Response(200, ContentType.text, "Hello!")
+# Format type sets Content-Type automatically
+Response(Text, "Hello!")                    # text/plain, status 200
+Response(Json, """{"ok": true}""")          # application/json, status 200
+Response(Html, "<p>hi</p>")                 # text/html, status 200
+Response(Json, body; status=201)            # custom status
+Response(Html, body; status=404)            # custom status
+Response(Json, body; headers=["X-Custom" => "value"])  # extra headers
 
-# Convenience: plain text with auto Content-Type
-Response(200, "Hello!")
-Response(404, "Not Found")
+# Binary body (e.g., image or file bytes)
+Response(Binary, read("image.png"); status=200)
 
-# JSON response
-Response(200, ContentType.json, """{"ok": true}""")
-
-# Binary body (e.g. image or file bytes)
+# Raw form (when you already have a pre-formatted headers string)
 Response(200, "Content-Type: image/png\r\n", read("image.png"))
-
-# Binary format type
-Response(Binary, read("data.bin"); status=200)
 ```
 
-### ContentType
+The format type determines the `Content-Type` header:
 
-Pre-formatted Content-Type header strings:
-
-| Field | MIME Type |
-|-------|-----------|
-| `ContentType.text` | `text/plain` |
-| `ContentType.json` | `application/json` |
-| `ContentType.html` | `text/html` |
-| `ContentType.xml` | `application/xml` |
-| `ContentType.css` | `text/css` |
-| `ContentType.js` | `application/javascript` |
-
-
-Headers can be concatenated: `ContentType.text * "X-Custom: value\r\n"`
+| Format | Content-Type |
+|--------|-------------|
+| `Text`   | `text/plain; charset=utf-8` |
+| `Html`   | `text/html; charset=utf-8` |
+| `Json`   | `application/json; charset=utf-8` |
+| `Xml`    | `application/xml; charset=utf-8` |
+| `Css`    | `text/css; charset=utf-8` |
+| `Js`     | `application/javascript; charset=utf-8` |
+| `Binary` | `application/octet-stream` |
 
 ### Query String Utilities
 
@@ -246,7 +240,7 @@ s = Mongoose.query(SearchQuery, "q=julia&page=1")  # SearchQuery("julia", 1)
 # From a request:
 route!(router, :get, "/search", req -> begin
     s = Mongoose.query(SearchQuery, req)
-    Response(200, ContentType.text, "Searching: $(s.q) page $(s.page)")
+    Response(Text, "Searching: $(s.q) page $(s.page)")
 end)
 ```
 
@@ -381,7 +375,7 @@ server = AsyncServer(router)
 error_response!(server, 500, Response(Json, Dict("error" => "Internal server error"); status=500))
 
 # Custom 413 response
-error_response!(server, 413, Response(413, ContentType.json, """{"error":"Request body too large"}"""))
+error_response!(server, 413, Response(Json, """{"error":"Request body too large"}"""; status=413))
 ```
 
 You can also pass a pre-built dict at construction time:
@@ -389,8 +383,8 @@ You can also pass a pre-built dict at construction time:
 ```julia
 router = Router()
 errors = Dict{Int,Response}(
-    500 => Response(500, ContentType.json, """{"error":"Internal error"}"""),
-    413 => Response(413, ContentType.json, """{"error":"Body too large"}"""),
+    500 => Response(Json, """{"error":"Internal error"}"""; status=500),
+    413 => Response(Json, """{"error":"Body too large"}"""; status=413),
 )
 server = SyncServer(router; errors=errors)
 ```
@@ -400,7 +394,7 @@ server = SyncServer(router; errors=errors)
 For a custom 404 response, add a wildcard catch-all route — no special API needed:
 
 ```julia
-route!(router, :get, "*", req -> Response(404, ContentType.html, read("404.html", String)))
+route!(router, :get, "*", req -> Response(Html, read("404.html", String); status=404))
 ```
 
 ### Request Timeout

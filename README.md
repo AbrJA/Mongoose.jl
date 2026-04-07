@@ -52,13 +52,13 @@ using Mongoose
 
 router = Router()
 
-route!(router, :get, "/", req -> Response(200, "Hello from Mongoose.jl!"))
+route!(router, :get, "/", req -> Response(Text, "Hello from Mongoose.jl!"))
 
 route!(router, :get, "/users/:id::Int", (req, id) ->
-    Response(200, ContentType.json, """{"id": $id, "name": "User $id"}""")
+    Response(Json, """{"id": $id, "name": "User $id"}""")
 )
 
-route!(router, :post, "/echo", req -> Response(200, req.body))
+route!(router, :post, "/echo", req -> Response(Text, req.body))
 
 server = AsyncServer(router; workers=4)
 start!(server, port=8080, blocking=false)
@@ -106,7 +106,7 @@ end
 
 route!(router, :get, "/search", req -> begin
     p = Mongoose.query(SearchParams, req)  # parses ?q=julia&page=2
-    Response(200, "Searching: $(p.q), page $(p.page)")
+    Response(Text, "Searching: $(p.q), page $(p.page)")
 end)
 ```
 
@@ -164,12 +164,12 @@ server = AsyncServer(router, config)   # or SyncServer(router, config)
 Register pre-built responses for specific status codes — no function callbacks, fully trim-safe:
 
 ```julia
-error_response!(server, 500, Response(500, ContentType.json, """{"error":"Internal error"}"""))
-error_response!(server, 413, Response(413, ContentType.json, """{"error":"Body too large"}"""))
-error_response!(server, 504, Response(504, ContentType.json, """{"error":"Timed out"}"""))
+error_response!(server, 500, Response(Json, """{"error":"Internal error"}"""; status=500))
+error_response!(server, 413, Response(Json, """{"error":"Body too large"}"""; status=413))
+error_response!(server, 504, Response(Json, """{"error":"Timed out"}"""; status=504))
 
 # Custom 404 — add a catch-all route
-route!(router, :get, "*", req -> Response(404, ContentType.html, read("404.html", String)))
+route!(router, :get, "*", req -> Response(Html, read("404.html", String); status=404))
 ```
 
 ---
@@ -177,24 +177,25 @@ route!(router, :get, "*", req -> Response(404, ContentType.html, read("404.html"
 ## Responses
 
 ```julia
-Response(200, "Hello!")                              # auto text/plain
-Response(200, ContentType.json, """{"ok": true}""") # explicit Content-Type
-Response(404, "Not found")
-Response(204, "")
+Response(Text, "Hello!")                    # text/plain, status 200
+Response(Json, """{"ok": true}""")          # application/json, status 200
+Response(Html, "<p>ok</p>")                 # text/html, status 200
+Response(Json, body; status=201)            # custom status
+Response(Html, body; status=404)            # custom status
+Response(Json, body; headers=["X-Custom" => "value"])  # extra headers
 ```
 
-### ContentType Constants
+The format type sets the `Content-Type` header automatically:
 
-```
-ContentType.text   →  text/plain
-ContentType.json   →  application/json
-ContentType.html   →  text/html
-ContentType.xml    →  application/xml
-ContentType.css    →  text/css
-ContentType.js     →  application/javascript
-```
-
-Headers can be concatenated: `ContentType.json * "X-Custom: value\r\n"`
+| Format | Content-Type |
+|---|---|
+| `Text` | `text/plain; charset=utf-8` |
+| `Html` | `text/html; charset=utf-8` |
+| `Json` | `application/json; charset=utf-8` |
+| `Xml` | `application/xml; charset=utf-8` |
+| `Css` | `text/css; charset=utf-8` |
+| `Js` | `application/javascript; charset=utf-8` |
+| `Binary` | `application/octet-stream` |
 
 ---
 
@@ -310,9 +311,9 @@ Use the `@router` macro to generate a **zero-allocation, compile-time dispatch f
 using Mongoose
 
 @router MyApp begin
-    get("/",               req      -> Response(200, "Hello!"))
-    get("/users/:id::Int", (req, id) -> Response(200, "User $id"))
-    post("/echo",          req      -> Response(200, req.body))
+    get("/",               req      -> Response(Text, "Hello!"))
+    get("/users/:id::Int", (req, id) -> Response(Text, "User $id"))
+    post("/echo",          req      -> Response(Text, req.body))
     ws("/live", on_message = msg   -> Message("Echo: $(msg.data)"))
 end
 
@@ -344,7 +345,7 @@ Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
 router = Router()
 
 # Health check
-route!(router, :get, "/health", req -> Response(200, "ok"))
+route!(router, :get, "/health", req -> Response(Text, "ok"))
 
 # REST API
 route!(router, :get, "/api/users/:id::Int", (req, id) ->
@@ -364,7 +365,7 @@ ws!(router, "/ws",
 )
 
 # Custom 404
-route!(router, :get, "*", req -> Response(404, ContentType.html, "<h1>Not Found</h1>"))
+route!(router, :get, "*", req -> Response(Html, "<h1>Not Found</h1>"; status=404))
 
 # Server
 server = AsyncServer(router; workers=4, request_timeout=10_000)

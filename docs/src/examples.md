@@ -8,7 +8,7 @@ The simplest possible Mongoose.jl server:
 using Mongoose
 
 router = Router()
-route!(router, :get, "/", req -> Response(200, ContentType.text, "Hello, World!"))
+route!(router, :get, "/", req -> Response(Text, "Hello, World!"))
 
 server = SyncServer(router)
 start!(server, port=8080)
@@ -25,19 +25,18 @@ router = Router()
 
 # String parameter (default)
 route!(router, :get, "/greet/:name", (req, name) -> begin
-    Response(200, ContentType.text, "Hello, $name!")
+    Response(Text, "Hello, $name!")
 end)
 
 # Typed integer parameter
 route!(router, :get, "/users/:id::Int", (req, id) -> begin
-    Response(200, ContentType.json, """{"id": $id, "type": "$(typeof(id))"}""")
+    Response(Json, """{"id": $id, "type": "$(typeof(id))"}""")
 end)
 
 # Float parameter
 route!(router, :get, "/price/:amount::Float64", (req, amount) -> begin
     tax = amount * 0.16
-    Response(200, ContentType.json, """{"amount": $amount, "tax": $tax}""")
-end)
+    Response(Json, """{"amount": $amount, "tax": $tax}""")
 
 server = AsyncServer(router)
 start!(server, port=8080, blocking=false)
@@ -59,8 +58,8 @@ router = Router()
 
 route!(router, :get, "/search", req -> begin
     s = Mongoose.query(SearchQuery, req)  # parses ?q=julia&page=2
-    isempty(s.q) && return Response(400, ContentType.text, "Missing ?q= parameter")
-    Response(200, ContentType.json, """{"query": "$(s.q)", "page": $(s.page)}""")
+    isempty(s.q) && return Response(Text, "Missing ?q= parameter"; status=400)
+    Response(Json, """{"query": "$(s.q)", "page": $(s.page)}""")
 end)
 
 server = AsyncServer(router)
@@ -117,7 +116,7 @@ router = Router()
 
 route!(router, :get, "/search", req -> begin
     search = Mongoose.query(SearchQuery, req)
-    Response(200, ContentType.text, "Searching '$(search.q)' page $(search.page)")
+    Response(Text, "Searching '$(search.q)' page $(search.page)")
 end)
 
 server = AsyncServer(router)
@@ -158,7 +157,7 @@ using Mongoose
 
 router = Router()
 route!(router, :get, "/api/data", req -> begin
-    Response(200, ContentType.json, """{"status": "ok"}""")
+    Response(Json, """{"status": "ok"}""")
 end)
 
 server = AsyncServer(router)
@@ -186,7 +185,7 @@ Protect endpoints with an API key header check:
 using Mongoose
 
 router = Router()
-route!(router, :get, "/internal", req -> Response(200, ContentType.text, "Internal data"))
+route!(router, :get, "/internal", req -> Response(Text, "Internal data"))
 
 server = AsyncServer(router)
 plug!(server, api_key(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
@@ -202,10 +201,10 @@ Only log requests that exceed a duration threshold — useful for identifying sl
 using Mongoose
 
 router = Router()
-route!(router, :get, "/fast", req -> Response(200, ContentType.text, "fast"))
+route!(router, :get, "/fast", req -> Response(Text, "fast"))
 route!(router, :get, "/slow", req -> begin
     sleep(0.1)
-    Response(200, ContentType.text, "slow")
+    Response(Text, "slow")
 end)
 
 server = AsyncServer(router)
@@ -259,7 +258,7 @@ end
 router = Router()
 route!(router, :get, "/me", req -> begin
     user = get(context!(req), :user, "anonymous")
-    Response(200, ContentType.text, "Hello, $user!")
+    Response(Text, "Hello, $user!")
 end)
 
 server = AsyncServer(router)
@@ -279,7 +278,7 @@ router = Router()
 
 route!(router, :get, "/compute", req -> begin
     result = sum(rand(1_000_000))
-    Response(200, ContentType.text, "Computed: $result")
+    Response(Text, "Computed: $result")
 end)
 
 # 8 worker tasks processing requests concurrently
@@ -297,9 +296,9 @@ For ahead-of-time compiled binaries with `juliac --trim=safe`, use the `@router`
 using Mongoose
 
 @router MyApi begin
-    get("/", req -> Response(200, ContentType.text, "Hello from AOT!"))
-    get("/users/:id::Int", (req, id) -> Response(200, ContentType.text, "User $id"))
-    post("/echo", req -> Response(200, ContentType.text, req.body))
+    get("/", req -> Response(Text, "Hello from AOT!"))
+    get("/users/:id::Int", (req, id) -> Response(Text, "User $id"))
+    post("/echo", req -> Response(Text, req.body))
     ws("/chat", on_message = msg -> Message("Echo: $(msg.data)"))
 end
 
@@ -324,7 +323,7 @@ end
 router = Router()
 
 # Health check
-route!(router, :get, "/health", req -> Response(200, ContentType.text, "ok"))
+route!(router, :get, "/health", req -> Response(Text, "ok"))
 
 # JSON API
 route!(router, :get, "/api/users/:id::Int", (req, id) -> begin
@@ -368,13 +367,13 @@ route!(router, :get, "/fail", req -> error("Something broke"))
 route!(router, :get, "/ok", req -> Response(200, "All good"))
 
 # Custom 404: use a wildcard route
-route!(router, :get, "*", req -> Response(404, ContentType.html, "<h1>Not Found</h1>"))
+route!(router, :get, "*", req -> Response(Html, "<h1>Not Found</h1>"; status=404))
 
 server = AsyncServer(router; request_timeout=5000)
 
 error_response!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500))
-error_response!(server, 413, Response(413, ContentType.json, """{"error":"Body too large"}"""))
-error_response!(server, 504, Response(504, ContentType.json, """{"error":"Request timed out"}"""))
+error_response!(server, 413, Response(Json, """{"error":"Body too large"}"""; status=413))
+error_response!(server, 504, Response(Json, """{"error":"Request timed out"}"""; status=504))
 
 start!(server, port=8080, blocking=false)
 ```

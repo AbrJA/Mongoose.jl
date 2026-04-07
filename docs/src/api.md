@@ -29,7 +29,6 @@ ws!
 ```@docs
 Request
 Response
-ContentType
 Binary
 context!
 ```
