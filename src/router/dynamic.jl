@@ -92,7 +92,7 @@ struct Router <: AbstractRouter
     Router() = new(TrieNode(), Dict{String,FixedRoute}(), Dict{String,WsEndpoint}())
 end
 
-@inline _has_ws_routes(router::Router) = !isempty(router.ws_routes)
+@inline _haswsroutes(router::Router) = !isempty(router.ws_routes)
 
 struct Match
     handlers::MethodMap

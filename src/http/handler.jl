@@ -108,7 +108,7 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
     uri    = _uri(message)
 
     # WebSocket upgrade check (skip entirely when no WS routes are registered)
-    if _has_ws_routes(server.core.router)
+    if _haswsroutes(server.core.router)
         endpoint = _wsep(server.core.router, uri)
         if endpoint !== nothing
             _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
@@ -144,7 +144,7 @@ function _onevent!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnectio
     uri    = _uri(message)
 
     # WebSocket upgrade check (skip entirely when no WS routes are registered)
-    if _has_ws_routes(server.core.router)
+    if _haswsroutes(server.core.router)
         endpoint = _wsep(server.core.router, uri)
         if endpoint !== nothing
             _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
@@ -311,7 +311,7 @@ end
 
 # Trim-safe specialization: StaticRouter dispatches directly, bypassing the middleware pipeline 
 @inline function _invokehttp(server::SyncServer{<:StaticRouter}, req::AbstractRequest)
-    return static_dispatch(server.core.router, req)
+    return _dispatchstatic(server.core.router, req)
 end
 
 @inline function _dispatchhttp(router::Router, req)
@@ -335,7 +335,7 @@ end
 end
 
 @inline function _dispatchhttp(router::StaticRouter, req)
-    return static_dispatch(router, req)
+    return _dispatchstatic(router, req)
 end
 
 # --- Response serialization ---

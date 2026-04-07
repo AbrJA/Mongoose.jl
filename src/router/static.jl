@@ -10,16 +10,16 @@
 abstract type StaticRouter <: AbstractRouter end
 
 # By default, static routers have no WS routes. @router can override.
-@inline _has_ws_routes(::StaticRouter) = false
+@inline _haswsroutes(::StaticRouter) = false
 
 """
-    static_dispatch(app, request) → Response
+    _dispatchstatic(app, request) → Response
 """
-function static_dispatch end
+function _dispatchstatic end
 
 # Interface fallback — @router generates the real methods
-static_dispatch(app::T, ::AbstractRequest) where {T<:StaticRouter} =
-    error("$(T) must implement static_dispatch via the @router macro")
+_dispatchstatic(app::T, ::AbstractRequest) where {T<:StaticRouter} =
+    error("$(T) must implement _dispatchstatic via the @router macro")
 
 # --- Path matching helpers (used by generated code) ---
 
@@ -132,7 +132,7 @@ function _buildtrie(routes)
     return root
 end
 
-function _gendispatch(node::StaticNode, seg_sym::Symbol, idx_sym::Symbol, path_sym::Symbol, req_sym::Symbol, parsed_vars::Vector{Symbol})
+function _generatedispatch(node::StaticNode, seg_sym::Symbol, idx_sym::Symbol, path_sym::Symbol, req_sym::Symbol, parsed_vars::Vector{Symbol})
     exprs = []
 
     # 1. Exact match reached
@@ -151,7 +151,7 @@ function _gendispatch(node::StaticNode, seg_sym::Symbol, idx_sym::Symbol, path_s
         for (val, child) in node.static_children
             next_seg = gensym("seg")
             next_idx = gensym("idx")
-            child_expr = _gendispatch(child, next_seg, next_idx, path_sym, req_sym, parsed_vars)
+            child_expr = _generatedispatch(child, next_seg, next_idx, path_sym, req_sym, parsed_vars)
 
             push!(static_blocks, quote
                 if $(seg_sym) == $val
@@ -173,7 +173,7 @@ function _gendispatch(node::StaticNode, seg_sym::Symbol, idx_sym::Symbol, path_s
         new_parsed_vars = copy(parsed_vars)
         push!(new_parsed_vars, var_sym)
 
-        child_expr = _gendispatch(child, next_seg, next_idx, path_sym, req_sym, new_parsed_vars)
+        child_expr = _generatedispatch(child, next_seg, next_idx, path_sym, req_sym, new_parsed_vars)
 
         # In Mongoose, we default variables to SubString (zero-copy) for performance
         parse_expr = if seg.type == SubString{String} || seg.type == String || seg.type == :String
@@ -277,7 +277,7 @@ macro router(app_type::Symbol, block)
     method_seg_sym = gensym("method_seg")
     method_idx_sym = gensym("method_idx")
 
-    dispatch_body = _gendispatch(root, method_seg_sym, method_idx_sym, path_sym, req_sym, Symbol[])
+    dispatch_body = _generatedispatch(root, method_seg_sym, method_idx_sym, path_sym, req_sym, Symbol[])
 
     async_handler_sym = Symbol("_async_", app_type, "_c_handler")
     sync_handler_sym = Symbol("_sync_", app_type, "_c_handler")
@@ -321,7 +321,7 @@ macro router(app_type::Symbol, block)
         $handler_definitions
 
         # --- Static Router Dispatch ---
-        function Mongoose.static_dispatch(::$(esc(app_type)), $(req_sym)::Mongoose.AbstractRequest)::Mongoose.Response
+        function Mongoose._dispatchstatic(::$(esc(app_type)), $(req_sym)::Mongoose.AbstractRequest)::Mongoose.Response
             $(path_sym) = Mongoose._stripquery($(req_sym).uri)
 
             # The root expects `method` to be matched as the first segment
@@ -334,7 +334,7 @@ macro router(app_type::Symbol, block)
         end
 
         # --- Static WebSocket Dispatch ---
-        function Mongoose.static_ws_upgrade(::$(esc(app_type)), uri::String)::Union{Mongoose.WsEndpoint,Nothing}
+        function Mongoose._wsupgrade(::$(esc(app_type)), uri::String)::Union{Mongoose.WsEndpoint,Nothing}
             $(Expr(:block, [
                 quote
                     if uri == $path
@@ -346,7 +346,7 @@ macro router(app_type::Symbol, block)
         end
 
         $(if !isempty(ws_routes)
-            :(Mongoose._has_ws_routes(::$(esc(app_type))) = true)
+            :(Mongoose._haswsroutes(::$(esc(app_type))) = true)
         end)
     end
 end

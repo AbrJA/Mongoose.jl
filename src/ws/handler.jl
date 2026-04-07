@@ -16,7 +16,7 @@ function _dispatchws(router::Router, request::Tagged{Intent})
 end
 
 function _dispatchws(router::StaticRouter, request::Tagged{Intent})
-    endpoint = static_ws_upgrade(router, request.payload.uri)
+    endpoint = _wsupgrade(router, request.payload.uri)
     endpoint !== nothing && return _callwsep(endpoint, request)
     return nothing
 end
@@ -36,8 +36,9 @@ function _callwsep(endpoint::WsEndpoint, request::Tagged{Intent})
     return nothing
 end
 
+# --- WS route lookup and dispatch helpers ---
 @inline _wsep(router::Router, uri) = get(router.ws_routes, uri, nothing)
-@inline _wsep(router::StaticRouter, uri) = static_ws_upgrade(router, uri)
+@inline _wsep(router::StaticRouter, uri) = _wsupgrade(router, uri)
 
 function _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
     mg_ws_upgrade(conn, ev_data, C_NULL)
