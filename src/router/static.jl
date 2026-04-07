@@ -330,7 +330,7 @@ macro router(app_type::Symbol, block)
 
             $(dispatch_body)
 
-            return Mongoose.Response(Text, "404 Not Found"; status=404)
+            return Mongoose.Response(Plain, "404 Not Found"; status=404)
         end
 
         # --- Static WebSocket Dispatch ---

@@ -123,6 +123,15 @@ function _matchroute(router::Router, method::Symbol, path::AbstractString)
     return nothing
 end
 
+function _matchrouteexact(router::Router, method::Symbol, path::AbstractString)
+    clean = _stripquery(path)
+    if (route = get(router.fixed, clean, nothing)) !== nothing
+        return Match(route.handlers, EMPTY_PARAMS)
+    end
+    params = Any[]
+    return _match(router.node, clean, 1, method, params)
+end
+
 @inline function _match(node::TrieNode, path::AbstractString, path_idx::Int, method::Symbol, params::Vector{Any})
     seg, next_idx = _nextseg(path, path_idx)
     if seg === nothing

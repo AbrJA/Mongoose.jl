@@ -8,7 +8,7 @@ The simplest possible Mongoose.jl server:
 using Mongoose
 
 router = Router()
-route!(router, :get, "/", req -> Response(Text, "Hello, World!"))
+route!(router, :get, "/", req -> Response(Plain, "Hello, World!"))
 
 server = SyncServer(router)
 start!(server, port=8080)
@@ -25,7 +25,7 @@ router = Router()
 
 # String parameter (default)
 route!(router, :get, "/greet/:name", (req, name) -> begin
-    Response(Text, "Hello, $name!")
+    Response(Plain, "Hello, $name!")
 end)
 
 # Typed integer parameter
@@ -58,7 +58,7 @@ router = Router()
 
 route!(router, :get, "/search", req -> begin
     s = Mongoose.query(SearchQuery, req)  # parses ?q=julia&page=2
-    isempty(s.q) && return Response(Text, "Missing ?q= parameter"; status=400)
+    isempty(s.q) && return Response(Plain, "Missing ?q= parameter"; status=400)
     Response(Json, """{"query": "$(s.q)", "page": $(s.page)}""")
 end)
 
@@ -116,7 +116,7 @@ router = Router()
 
 route!(router, :get, "/search", req -> begin
     search = Mongoose.query(SearchQuery, req)
-    Response(Text, "Searching '$(search.q)' page $(search.page)")
+    Response(Plain, "Searching '$(search.q)' page $(search.page)")
 end)
 
 server = AsyncServer(router)
@@ -185,7 +185,7 @@ Protect endpoints with an API key header check:
 using Mongoose
 
 router = Router()
-route!(router, :get, "/internal", req -> Response(Text, "Internal data"))
+route!(router, :get, "/internal", req -> Response(Plain, "Internal data"))
 
 server = AsyncServer(router)
 plug!(server, api_key(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
@@ -201,10 +201,10 @@ Only log requests that exceed a duration threshold — useful for identifying sl
 using Mongoose
 
 router = Router()
-route!(router, :get, "/fast", req -> Response(Text, "fast"))
+route!(router, :get, "/fast", req -> Response(Plain, "fast"))
 route!(router, :get, "/slow", req -> begin
     sleep(0.1)
-    Response(Text, "slow")
+    Response(Plain, "slow")
 end)
 
 server = AsyncServer(router)
@@ -258,7 +258,7 @@ end
 router = Router()
 route!(router, :get, "/me", req -> begin
     user = get(context!(req), :user, "anonymous")
-    Response(Text, "Hello, $user!")
+    Response(Plain, "Hello, $user!")
 end)
 
 server = AsyncServer(router)
@@ -278,7 +278,7 @@ router = Router()
 
 route!(router, :get, "/compute", req -> begin
     result = sum(rand(1_000_000))
-    Response(Text, "Computed: $result")
+    Response(Plain, "Computed: $result")
 end)
 
 # 8 worker tasks processing requests concurrently
@@ -296,9 +296,9 @@ For ahead-of-time compiled binaries with `juliac --trim=safe`, use the `@router`
 using Mongoose
 
 @router MyApi begin
-    get("/", req -> Response(Text, "Hello from AOT!"))
-    get("/users/:id::Int", (req, id) -> Response(Text, "User $id"))
-    post("/echo", req -> Response(Text, req.body))
+    get("/", req -> Response(Plain, "Hello from AOT!"))
+    get("/users/:id::Int", (req, id) -> Response(Plain, "User $id"))
+    post("/echo", req -> Response(Plain, req.body))
     ws("/chat", on_message = msg -> Message("Echo: $(msg.data)"))
 end
 
@@ -323,7 +323,7 @@ end
 router = Router()
 
 # Health check
-route!(router, :get, "/health", req -> Response(Text, "ok"))
+route!(router, :get, "/health", req -> Response(Plain, "ok"))
 
 # JSON API
 route!(router, :get, "/api/users/:id::Int", (req, id) -> begin

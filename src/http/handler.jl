@@ -32,9 +32,9 @@ end
 
 # Pre-built responses for the three codes that _errresponse must handle without allocation.
 # Body text is derived from _statustext — single source of truth.
-const _DEFAULT_500 = Response(Text, "500 $(_statustext(500))"; status=500)
-const _DEFAULT_413 = Response(Text, "413 $(_statustext(413))"; status=413)
-const _DEFAULT_504 = Response(Text, "504 $(_statustext(504))"; status=504)
+const _DEFAULT_500 = Response(Plain, "500 $(_statustext(500))"; status=500)
+const _DEFAULT_413 = Response(Plain, "413 $(_statustext(413))"; status=413)
+const _DEFAULT_504 = Response(Plain, "504 $(_statustext(504))"; status=504)
 
 # --- Static file serving (C-level, event-loop thread only) ---
 
@@ -49,10 +49,9 @@ Must be called from the event-loop thread because `ev_data` is only valid
 during the C callback and `mg_http_serve_dir` writes directly to `conn`.
 """
 @inline function _servestatic!(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid}, method::Symbol, uri::String)
-    isempty(server.core.mounts) && return false
+   isempty(server.core.mounts) && return false
 
-    # Registered routes always take priority over static files.
-    _matchroute(server.core.router, method, uri) !== nothing && return false
+    _matchrouteexact(server.core.router, method, uri) !== nothing && return false
 
     # Try each registered static directory in order. The first one matches wins.
     for (dir, prefix) in server.core.mounts
@@ -289,7 +288,7 @@ Falls back to the module-level default.
     status == 500 && return _DEFAULT_500
     status == 413 && return _DEFAULT_413
     status == 504 && return _DEFAULT_504
-    return Response(Text, "$status $(_statustext(status))"; status=status)
+    return Response(Plain, "$status $(_statustext(status))"; status=status)
 end
 
 """
@@ -313,7 +312,7 @@ function _invokehttp(server::AbstractServer, req::AbstractRequest)
     return _pipeline(server.core.plugs, req, Any[], final)
 end
 
-# Trim-safe specialization: StaticRouter dispatches directly, bypassing the middleware pipeline 
+# Trim-safe specialization: StaticRouter dispatches directly, bypassing the middleware pipeline
 @inline function _invokehttp(server::SyncServer{<:StaticRouter}, req::AbstractRequest)
     return _dispatchstatic(server.core.router, req)
 end
@@ -333,9 +332,9 @@ end
                 return Response(resp.status, resp.headers, "")
             end
         end
-        return Response(Text, "405 Method Not Allowed"; status=405)
+        return Response(Plain, "405 Method Not Allowed"; status=405)
     end
-    return Response(Text, "404 Not Found"; status=404)
+    return Response(Plain, "404 Not Found"; status=404)
 end
 
 @inline function _dispatchhttp(router::StaticRouter, req)
@@ -388,23 +387,24 @@ function _sendwithid!(conn::MgConnection, res::Response, rid::String)
 end
 
 """
-    _invoketimedhttp(server, req, timeout_ms) → Response
+    _invoketimedhttp(server, req, timeout) → Response
 
-Execute request handling with a timeout. If the handler exceeds `timeout_ms`,
+Execute request handling with a timeout. If the handler exceeds `timeout`,
 returns 504 Gateway Timeout. Used only by AsyncServer workers.
 """
-function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout_ms::Integer)
+function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout::Integer)
     ch = Channel{Response}(1)
     Threads.@spawn try
         put!(ch, _invokehttp(server, req))
     catch e
+        @error "Handler error" uri=req.uri exception=(e, catch_backtrace())
         put!(ch, _handleerror(server, req, e))
     end
-    result = timedwait(timeout_ms / 1000.0) do
+    result = timedwait(timeout / 1000.0) do
         isready(ch)
     end
     if result === :timed_out
-        @warn "Request timed out" uri=req.uri timeout_ms=timeout_ms
+        @warn "Request timed out" uri=req.uri timeout=timeout
         return _errresponse(server, 504)
     end
     return take!(ch)

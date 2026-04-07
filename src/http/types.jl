@@ -58,7 +58,7 @@ const Call  = Union{Tagged{Request}, Tagged{Intent}}
 const Reply = Union{Tagged{Response}, Tagged{Message}}
 
 abstract type AbstractFormat end
-struct Text <: AbstractFormat end
+struct Plain <: AbstractFormat end
 struct Html <: AbstractFormat end
 struct Css <: AbstractFormat end
 struct Js <: AbstractFormat end
@@ -77,7 +77,7 @@ content_type(::Type{T}) where T<:AbstractFormat = error("Unsupported format type
 content_type(::Type{Html}) = "Content-Type: text/html; charset=utf-8\r\n"
 content_type(::Type{Css}) = "Content-Type: text/css; charset=utf-8\r\n"
 content_type(::Type{Js}) = "Content-Type: application/javascript; charset=utf-8\r\n"
-content_type(::Type{Text}) = "Content-Type: text/plain; charset=utf-8\r\n"
+content_type(::Type{Plain}) = "Content-Type: text/plain; charset=utf-8\r\n"
 content_type(::Type{Json}) = "Content-Type: application/json; charset=utf-8\r\n"
 content_type(::Type{Xml}) = "Content-Type: application/xml; charset=utf-8\r\n"
 content_type(::Type{Binary}) = "Content-Type: application/octet-stream\r\n"
@@ -88,7 +88,7 @@ function Response(::Type{T}, body; status::Int=200, headers::Vector{Pair{String,
     Response(status, content_headers, rendered_body)
 end
 
-Response(body; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) = Response(Text, body; status=status, headers=headers)
+Response(body; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) = Response(Plain, body; status=status, headers=headers)
 
 function Request(message::MgHttpMessage)
     return Request(_method(message), _uri(message), _query(message), _headers(message), _body(message), nothing)

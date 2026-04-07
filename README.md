@@ -52,13 +52,13 @@ using Mongoose
 
 router = Router()
 
-route!(router, :get, "/", req -> Response(Text, "Hello from Mongoose.jl!"))
+route!(router, :get, "/", req -> Response(Plain, "Hello from Mongoose.jl!"))
 
 route!(router, :get, "/users/:id::Int", (req, id) ->
     Response(Json, """{"id": $id, "name": "User $id"}""")
 )
 
-route!(router, :post, "/echo", req -> Response(Text, req.body))
+route!(router, :post, "/echo", req -> Response(Plain, req.body))
 
 server = AsyncServer(router; workers=4)
 start!(server, port=8080, blocking=false)
@@ -106,7 +106,7 @@ end
 
 route!(router, :get, "/search", req -> begin
     p = Mongoose.query(SearchParams, req)  # parses ?q=julia&page=2
-    Response(Text, "Searching: $(p.q), page $(p.page)")
+    Response(Plain, "Searching: $(p.q), page $(p.page)")
 end)
 ```
 
@@ -152,7 +152,7 @@ Consolidate all options into a `ServerConfig` struct — particularly useful for
 config = ServerConfig(
     workers            = parse(Int, get(ENV, "WORKERS", "4")),
     max_body      = parse(Int, get(ENV, "MAX_BODY", "1048576")),
-    request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT_MS", "0")),
+    request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT", "0")),
     drain_timeout   = 10_000,
 )
 
@@ -177,7 +177,7 @@ route!(router, :get, "*", req -> Response(Html, read("404.html", String); status
 ## Responses
 
 ```julia
-Response(Text, "Hello!")                    # text/plain, status 200
+Response(Plain, "Hello!")                    # text/plain, status 200
 Response(Json, """{"ok": true}""")          # application/json, status 200
 Response(Html, "<p>ok</p>")                 # text/html, status 200
 Response(Json, body; status=201)            # custom status
@@ -189,7 +189,7 @@ The format type sets the `Content-Type` header automatically:
 
 | Format | Content-Type |
 |---|---|
-| `Text` | `text/plain; charset=utf-8` |
+| `Plain` | `text/plain; charset=utf-8` |
 | `Html` | `text/html; charset=utf-8` |
 | `Json` | `application/json; charset=utf-8` |
 | `Xml` | `application/xml; charset=utf-8` |
@@ -311,9 +311,9 @@ Use the `@router` macro to generate a **zero-allocation, compile-time dispatch f
 using Mongoose
 
 @router MyApp begin
-    get("/",               req      -> Response(Text, "Hello!"))
-    get("/users/:id::Int", (req, id) -> Response(Text, "User $id"))
-    post("/echo",          req      -> Response(Text, req.body))
+    get("/",               req      -> Response(Plain, "Hello!"))
+    get("/users/:id::Int", (req, id) -> Response(Plain, "User $id"))
+    post("/echo",          req      -> Response(Plain, req.body))
     ws("/live", on_message = msg   -> Message("Echo: $(msg.data)"))
 end
 
@@ -345,7 +345,7 @@ Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
 router = Router()
 
 # Health check
-route!(router, :get, "/health", req -> Response(Text, "ok"))
+route!(router, :get, "/health", req -> Response(Plain, "ok"))
 
 # REST API
 route!(router, :get, "/api/users/:id::Int", (req, id) ->

@@ -25,10 +25,10 @@ function mg_http_listen(mgr::Ptr{Cvoid}, url::String, handler::Ptr{Cvoid}, fn_da
 end
 
 """
-    mg_mgr_poll(mgr, timeout_ms) — Poll the manager for events within the given timeout.
+    mg_mgr_poll(mgr, timeout) — Poll the manager for events within the given timeout.
 """
-function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout_ms::Integer)
-    ccall((:mg_mgr_poll, libmongoose), Cint, (Ptr{Cvoid}, Cint), mgr, Cint(timeout_ms))
+function mg_mgr_poll(mgr::Ptr{Cvoid}, timeout::Integer)
+    ccall((:mg_mgr_poll, libmongoose), Cint, (Ptr{Cvoid}, Cint), mgr, Cint(timeout))
 end
 
 """

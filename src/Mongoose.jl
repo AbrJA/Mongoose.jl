@@ -4,7 +4,7 @@ using Mongoose_jll
 using PrecompileTools
 
 export SyncServer, AsyncServer, Router, Request, Response,
-    Text, Html, Json, Css, Js, Xml, Binary,
+    Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, plug!, mount!, error_response!,
     render_body, content_type, context!,
     ws!, Message,
@@ -69,10 +69,10 @@ include("middleware/metrics.jl")
         _matchroute(router, :get,  "/nonexistent")
 
         # --- Response constructors (all common forms) ---
-        Response(Text, "ok")
+        Response(Plain, "ok")
         Response(Json, "{}")
         Response(Html, "<p>ok</p>")
-        Response(Text, "ok"; status=200)
+        Response(Plain, "ok"; status=200)
         Response(404, "", "")
         Response(500, "", "")
         Response(204, "", "")

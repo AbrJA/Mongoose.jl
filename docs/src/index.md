@@ -31,8 +31,8 @@ using Mongoose
 
 router = Router()
 
-route!(router, :get, "/", req -> Response(Text, "Hello!"))
-route!(router, :get, "/users/:id::Int", (req, id) -> Response(Text, "User $id"))
+route!(router, :get, "/", req -> Response(Plain, "Hello!"))
+route!(router, :get, "/users/:id::Int", (req, id) -> Response(Plain, "User $id"))
 
 server = AsyncServer(router; workers=4)
 start!(server, port=8080, blocking=false)
@@ -96,7 +96,7 @@ All constructor keyword arguments can be consolidated into a `ServerConfig` stru
 config = ServerConfig(
     workers            = parse(Int, get(ENV, "WORKERS", "4")),
     max_body      = parse(Int, get(ENV, "MAX_BODY", "1048576")),
-    request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT_MS", "0")),
+    request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT", "0")),
     drain_timeout   = 10_000,
 )
 
@@ -130,14 +130,14 @@ Routes are registered with `route!` using a method symbol (or string) and a path
 router = Router()
 
 # Symbol methods
-route!(router, :get, "/hello", req -> Response(Text, "hi"))
-route!(router, :post, "/data", req -> Response(Text, "ok"))
-route!(router, :put, "/update", req -> Response(Text, "updated"))
-route!(router, :patch, "/patch", req -> Response(Text, "patched"))
-route!(router, :delete, "/remove", req -> Response(Text, "deleted"))
+route!(router, :get, "/hello", req -> Response(Plain, "hi"))
+route!(router, :post, "/data", req -> Response(Plain, "ok"))
+route!(router, :put, "/update", req -> Response(Plain, "updated"))
+route!(router, :patch, "/patch", req -> Response(Plain, "patched"))
+route!(router, :delete, "/remove", req -> Response(Plain, "deleted"))
 
 # Other HTTP methods
-route!(router, :options, "/alt", req -> Response(Text, "ok"))
+route!(router, :options, "/alt", req -> Response(Plain, "ok"))
 ```
 
 GET routes automatically respond to HEAD requests (body omitted).
@@ -161,7 +161,7 @@ Routes can be added directly on an already-created server:
 
 ```julia
 server = AsyncServer(router)
-route!(server, :get, "/health", req -> Response(Text, "ok"))
+route!(server, :get, "/health", req -> Response(Plain, "ok"))
 ```
 
 ### Static Router (AOT)
@@ -170,9 +170,9 @@ The `@router` macro generates a compile-time dispatch function with zero dynamic
 
 ```julia
 @router MyApi begin
-    get("/", req -> Response(Text, "Hello"))
-    get("/users/:id::Int", (req, id) -> Response(Text, "User $id"))
-    post("/data", req -> Response(Text, "received"))
+    get("/", req -> Response(Plain, "Hello"))
+    get("/users/:id::Int", (req, id) -> Response(Plain, "User $id"))
+    post("/data", req -> Response(Plain, "received"))
     ws("/chat", on_message = msg -> Message("Echo: $(msg.data)"))
 end
 
@@ -199,7 +199,7 @@ Construct responses with a format type, body, and optional keyword arguments:
 
 ```julia
 # Format type sets Content-Type automatically
-Response(Text, "Hello!")                    # text/plain, status 200
+Response(Plain, "Hello!")                    # text/plain, status 200
 Response(Json, """{"ok": true}""")          # application/json, status 200
 Response(Html, "<p>hi</p>")                 # text/html, status 200
 Response(Json, body; status=201)            # custom status
@@ -217,7 +217,7 @@ The format type determines the `Content-Type` header:
 
 | Format | Content-Type |
 |--------|-------------|
-| `Text`   | `text/plain; charset=utf-8` |
+| `Plain`   | `text/plain; charset=utf-8` |
 | `Html`   | `text/html; charset=utf-8` |
 | `Json`   | `application/json; charset=utf-8` |
 | `Xml`    | `application/xml; charset=utf-8` |
@@ -240,7 +240,7 @@ s = Mongoose.query(SearchQuery, "q=julia&page=1")  # SearchQuery("julia", 1)
 # From a request:
 route!(router, :get, "/search", req -> begin
     s = Mongoose.query(SearchQuery, req)
-    Response(Text, "Searching: $(s.q) page $(s.page)")
+    Response(Plain, "Searching: $(s.q) page $(s.page)")
 end)
 ```
 

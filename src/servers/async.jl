@@ -121,14 +121,14 @@ function _eventloop(server::AsyncServer)
 end
 
 function _workloop(server::AsyncServer)
-    timeout_ms = server.core.request_timeout
+    timeout = server.core.request_timeout
     try
         for req in server.calls     # blocks properly — no sleep needed
             if req.payload isa Request
                 rid = _requestid(req.payload, server)
                 res = try
-                    if timeout_ms > 0
-                        _invoketimedhttp(server, req.payload, timeout_ms)
+                    if timeout > 0
+                        _invoketimedhttp(server, req.payload, timeout)
                     else
                         _invokehttp(server, req.payload)
                     end

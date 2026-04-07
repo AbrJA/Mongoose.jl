@@ -69,9 +69,9 @@ function _authHeaders() {
 
 // ── Health & Ping ─────────────────────────────────────────────────────────
 function ping()        { apiFetch("/api/ping",  {}, pingOut()); }
-function checkHealth() {
-  fetch(API + "/healthz")
-    .then(r => r.text().then(t => pingOut().textContent = `${r.status}\n${t}`))
+function checkHealth(path = '/healthz') {
+  fetch(API + path)
+    .then(r => r.text().then(t => pingOut().textContent = `${r.status} ${path}\n${t}`))
     .catch(e => pingOut().textContent = "Error: " + e.message);
 }
 
@@ -296,4 +296,80 @@ async function getMetrics() {
   } catch (e) {
     metricsOut().textContent = "Error: " + e.message;
   }
+}
+
+// ── CRUD additions ────────────────────────────────────────────────────────
+function getUsersActive(active) { apiFetch(`/api/users?active=${active}`); }
+function patchUser(id) {
+  apiFetch(`/api/users/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ role: "moderator" }),
+  });
+}
+
+// ── Math / Float64 URL params ─────────────────────────────────────────────
+function calc() {
+  const op = document.getElementById("calcOp").value;
+  const a  = document.getElementById("calcA").value;
+  const b  = document.getElementById("calcB").value;
+  apiFetch(`/api/calc/${op}/${a}/${b}`, {}, document.getElementById("calc-output"));
+}
+
+// ── Admin ─────────────────────────────────────────────────────────────────
+const adminOut = () => document.getElementById("admin-output");
+
+function adminWhoami() {
+  apiFetch("/admin/whoami", {}, adminOut());
+}
+
+async function toggleDb(state) {
+  await apiFetch(`/admin/db/${state}`, { method: "PUT" }, adminOut());
+  const badge = document.getElementById("db-badge");
+  if (state === "up") {
+    badge.textContent = "DB: online";  badge.className = "badge badge-on";
+  } else {
+    badge.textContent = "DB: offline"; badge.className = "badge badge-off";
+  }
+}
+
+// ── Debug Playground ──────────────────────────────────────────────────────
+const debugOut = () => document.getElementById("debug-output");
+let limitedHits = 0;
+
+function debugEcho(method) {
+  const opts = method === "POST"
+    ? { method: "POST", body: JSON.stringify({ hello: "from the browser", ts: Date.now() }),
+        headers: { "Content-Type": "application/json" } }
+    : {};
+  apiFetch("/debug/echo", opts, debugOut());
+}
+
+function debugPanic() { apiFetch("/debug/panic", {}, debugOut()); }
+
+function debugSlow() {
+  const ms = document.getElementById("slowMs").value || 200;
+  apiFetch(`/debug/slow?ms=${ms}`, {}, debugOut());
+}
+
+function debugFormats(type) {
+  fetch(`${API}/debug/formats?type=${type}`)
+    .then(r => {
+      const ct = r.headers.get("content-type") || "unknown";
+      if (type === "binary") {
+        return r.arrayBuffer().then(buf => {
+          const bytes = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join(" ");
+          debugOut().textContent = `${r.status}  Content-Type: ${ct}\n\n(binary bytes) ${bytes}`;
+        });
+      }
+      return r.text().then(t => {
+        debugOut().textContent = `${r.status}  Content-Type: ${ct}\n\n${t}`;
+      });
+    })
+    .catch(e => debugOut().textContent = "Error: " + e.message);
+}
+
+function debugLimited() {
+  limitedHits++;
+  document.getElementById("limited-counter").textContent = `${limitedHits} hit${limitedHits !== 1 ? "s" : ""}`;
+  apiFetch("/debug/limited", {}, debugOut());
 }
