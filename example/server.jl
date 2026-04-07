@@ -321,10 +321,9 @@ function (mw::AnyAuth)(req::Mongoose.AbstractRequest, params::Vector{Any}, next)
         !isempty(token) && token ∈ mw.tokens && return next()
     end
 
-    Response(401,
-        "Content-Type: application/json; charset=utf-8\r\n" *
-        "WWW-Authenticate: Bearer realm=\"api\", error=\"invalid_token\"\r\n",
-        "{\"error\":\"Unauthorized: provide a valid X-API-Key header or Authorization: Bearer token\"}")
+    Response(Json, """{"error":"Unauthorized: provide a valid X-API-Key header or Authorization: Bearer token"}""";
+        status=401,
+        headers=["WWW-Authenticate" => "Bearer realm=\"api\", error=\"invalid_token\""])
 end
 
 # ─── Build & start ─────────────────────────────────────────────────────────────
