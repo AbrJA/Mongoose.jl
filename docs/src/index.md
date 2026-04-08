@@ -9,7 +9,7 @@
 - Dynamic and static (AOT-compatible) routing with typed path parameters
 - Built-in middleware: CORS, rate limiting, authentication, logging, static files
 - WebSocket support on the same router
-- JSON as an optional package extension (loads automatically with `JSON.jl`)
+- Optional JSON integration via `JSON.jl` with explicit setup by the user
 - Full compatibility with `juliac --trim=safe` for compiled binaries
 
 ## Installation

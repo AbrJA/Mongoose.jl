@@ -132,7 +132,7 @@ function _buildtrie(routes)
     return root
 end
 
-function _generatedispatch(node::StaticNode, seg_sym::Symbol, idx_sym::Symbol, path_sym::Symbol, req_sym::Symbol, parsed_vars::Vector{Symbol})
+function _generatedispatch(node::StaticNode, seg_sym::Symbol, idx_sym::Symbol, path_sym::Symbol, req_sym::Symbol, parsed_vars::Vector{Symbol}, is_root::Bool=false)
     exprs = []
 
     # 1. Exact match reached
@@ -153,12 +153,24 @@ function _generatedispatch(node::StaticNode, seg_sym::Symbol, idx_sym::Symbol, p
             next_idx = gensym("idx")
             child_expr = _generatedispatch(child, next_seg, next_idx, path_sym, req_sym, parsed_vars)
 
-            push!(static_blocks, quote
-                if $(seg_sym) == $val
-                    $(next_seg), $(next_idx) = _staticnextseg($(path_sym), $(idx_sym))
-                    $(child_expr)
-                end
-            end)
+            if is_root
+                # At the root level the "segment" is the HTTP method — compare as Symbol
+                # (zero allocation: Symbols are interned, comparison is pointer equality)
+                method_sym_lit = Symbol(val)
+                push!(static_blocks, quote
+                    if $(req_sym).method == $(QuoteNode(method_sym_lit))
+                        $(next_seg), $(next_idx) = _staticnextseg($(path_sym), 1)
+                        $(child_expr)
+                    end
+                end)
+            else
+                push!(static_blocks, quote
+                    if $(seg_sym) == $val
+                        $(next_seg), $(next_idx) = _staticnextseg($(path_sym), $(idx_sym))
+                        $(child_expr)
+                    end
+                end)
+            end
         end
         push!(exprs, Expr(:block, static_blocks...))
     end
@@ -273,11 +285,7 @@ macro router(app_type::Symbol, block)
     path_sym = gensym("path")
     req_sym = gensym("req")
 
-    # Initial setup
-    method_seg_sym = gensym("method_seg")
-    method_idx_sym = gensym("method_idx")
-
-    dispatch_body = _generatedispatch(root, method_seg_sym, method_idx_sym, path_sym, req_sym, Symbol[])
+    dispatch_body = _generatedispatch(root, :_, :_, path_sym, req_sym, Symbol[], true)
 
     async_handler_sym = Symbol("_async_", app_type, "_c_handler")
     sync_handler_sym = Symbol("_sync_", app_type, "_c_handler")
@@ -323,10 +331,6 @@ macro router(app_type::Symbol, block)
         # --- Static Router Dispatch ---
         function Mongoose._dispatchstatic(::$(esc(app_type)), $(req_sym)::Mongoose.AbstractRequest)::Mongoose.Response
             $(path_sym) = Mongoose._stripquery($(req_sym).uri)
-
-            # The root expects `method` to be matched as the first segment
-            $(method_seg_sym) = view(String($(req_sym).method), 1:length(String($(req_sym).method)))
-            $(method_idx_sym) = 1
 
             $(dispatch_body)
 

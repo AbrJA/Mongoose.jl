@@ -76,7 +76,7 @@ SUITE["format"]["10_headers"] = @benchmarkable Mongoose._formatheaders($HEADERS_
 # --- Response Construction ---
 SUITE["response"] = BenchmarkGroup()
 
-SUITE["response"]["raw_string"]       = @benchmarkable Response(200, Mongoose.ContentType.json, "{\"ok\":true}")
-SUITE["response"]["typed_no_headers"]  = @benchmarkable Response(Mongoose.Html, "<h1>Hi</h1>")
-SUITE["response"]["typed_with_headers"] = @benchmarkable Response(Mongoose.Html, "<h1>Hi</h1>"; headers=$HEADERS_5)
+SUITE["response"]["raw_string"]       = @benchmarkable Response(Json, "{\"ok\":true}")
+SUITE["response"]["typed_no_headers"]  = @benchmarkable Response(Html, "<h1>Hi</h1>")
+SUITE["response"]["typed_with_headers"] = @benchmarkable Response(Html, "<h1>Hi</h1>"; headers=$HEADERS_5)
 SUITE["response"]["headers_formatted"] = @benchmarkable Response(200, Mongoose._formatheaders($HEADERS_5), "{\"ok\":true}")

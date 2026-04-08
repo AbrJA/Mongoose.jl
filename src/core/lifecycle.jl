@@ -57,7 +57,6 @@ graceful shutdown automatically — no wrapper code needed in the caller.
 - `host::AbstractString`: IP address to bind to (default: `"127.0.0.1"`).
 - `port::Integer`: Port number to listen on (default: `8080`).
 - `blocking::Bool`: If `true`, blocks until the server is stopped (default: `true`).
-- `pretty::Bool`: If `true`, enables pretty printing of server logs (default: `true` if stdout is a TTY).
 """
 function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=true)
     if Threads.atomic_xchg!(server.core.running, true)
@@ -93,7 +92,7 @@ function _logstart(server::AbstractServer, url::String)
     threads = Threads.nthreads()
     middlewares = length(server.core.middlewares)
     mounts = length(server.core.mounts)
-    workers = server isa AsyncServer ? server.nworkers : 1
+    workers = server isa AsyncServer ? server.nworkers : 0
     if server.core.pretty
         println()
         printstyled("🚀 Mongoose started\n", color=:cyan, bold=true)

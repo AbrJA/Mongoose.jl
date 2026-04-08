@@ -434,7 +434,7 @@ Expose Prometheus-compatible metrics with the `metrics()` middleware. It automat
 using Mongoose
 
 router = Router()
-route!(router, :get, "/api/data", req -> Response(200, ContentType.json, """{"ok":true}"""))
+route!(router, :get, "/api/data", req -> Response(Json, """{"ok":true}"""))
 
 server = AsyncServer(router; nworkers=4)
 plug!(server, health())
@@ -649,13 +649,13 @@ end
 
 function (mw::JWTAuth)(request, params, next)
     token = get(request.headers, "authorization", nothing)
-    token === nothing && return Response(401, ContentType.json, """{"error":"Missing token"}""")
+    token === nothing && return Response(Json, """{"error":"Missing token"}"""; status=401)
 
     # Strip "Bearer " prefix
     if length(token) > 7 && lowercase(token[1:7]) == "bearer "
         token = token[8:end]
     else
-        return Response(401, ContentType.json, """{"error":"Invalid scheme"}""")
+        return Response(Json, """{"error":"Invalid scheme"}"""; status=401)
     end
 
     # In production, decode and verify a real JWT here
@@ -677,7 +677,7 @@ function (mw::RequireRole)(request, params, next)
     ctx = context!(request)
     role = get(ctx, :role, "")
     if role ∉ mw.roles
-        return Response(403, ContentType.json, """{"error":"Insufficient permissions"}""")
+        return Response(Json, """{"error":"Insufficient permissions"}"""; status=403)
     end
     return next()
 end
@@ -693,7 +693,7 @@ route!(router, :delete, "/api/admin/users/:id::Int", (req, id) -> begin
     Response(Json, Dict("deleted" => id))
 end)
 
-server = AsyncServer(router; workers=4)
+server = AsyncServer(router; nworkers=4)
 
 # Apply auth to all /api routes
 plug!(server, JWTAuth("my-secret"); paths=["/api"])
@@ -716,9 +716,9 @@ const DB_CONNECTED = Ref(true)
 const CACHE_READY = Ref(true)
 
 router = Router()
-route!(router, :get, "/api/data", req -> Response(200, ContentType.json, """{"ok":true}"""))
+route!(router, :get, "/api/data", req -> Response(Json, """{"ok":true}"""))
 
-server = AsyncServer(router; workers=4)
+server = AsyncServer(router; nworkers=4)
 
 plug!(server, health(
     # Health check: all dependencies must be working
@@ -769,12 +769,12 @@ route!(router, :post, "/api/upload", req -> begin
     ct = get(req.headers, "content-type", "")
 
     if !startswith(ct, "application/json")
-        return Response(415, ContentType.json, """{"error":"Unsupported media type"}""")
+        return Response(Json, """{"error":"Unsupported media type"}"""; status=415)
     end
 
     data = JSON.parse(req.body)
     filename = get(data, "filename", "")
-    isempty(filename) && return Response(400, ContentType.json, """{"error":"Missing filename"}""")
+    isempty(filename) && return Response(Json, """{"error":"Missing filename"}"""; status=400)
 
     Response(Json, Dict(
         "status" => "uploaded",
@@ -784,7 +784,7 @@ route!(router, :post, "/api/upload", req -> begin
 end)
 
 # 10MB body limit for upload endpoint
-server = AsyncServer(router; workers=4, max_body=10_485_760)
+server = AsyncServer(router; nworkers=4, max_body=10_485_760)
 
 plug!(server, logger())
 plug!(server, rate_limit(max_requests=30, window_seconds=60); paths=["/api/upload"])
@@ -801,7 +801,7 @@ using Mongoose
 
 router = Router()
 
-route!(router, :get, "/", req -> Response(200, ContentType.html, """
+route!(router, :get, "/", req -> Response(Html, """
     <html><body>
     <h1>Chat</h1>
     <div id="messages"></div>
@@ -856,11 +856,11 @@ end)
 
 route!(router, :get, "/api/v1/search", req -> begin
     s = Mongoose.query(SearchParams, req)
-    isempty(s.q) && return Response(400, ContentType.json, """{"error":"Missing query"}""")
+    isempty(s.q) && return Response(Json, """{"error":"Missing query"}"""; status=400)
     Response(Json, Dict("query" => s.q, "results" => []))
 end)
 
-server = AsyncServer(router; workers=4)
+server = AsyncServer(router; nworkers=4)
 
 # Middleware: API-only auth
 plug!(server, api_key(keys=Set([ENV["API_KEY"]])); paths=["/api"])
@@ -888,9 +888,9 @@ Build a fully self-contained binary using `juliac --trim=safe`:
 using Mongoose
 
 @router MyAPI begin
-    get("/", req -> Response(200, ContentType.json, """{"status":"ok"}"""))
-    get("/users/:id::Int", (req, id) -> Response(200, ContentType.json, """{"id":$id}"""))
-    post("/echo", req -> Response(200, ContentType.text, req.body))
+    get("/", req -> Response(Json, """{"status":"ok"}"""))
+    get("/users/:id::Int", (req, id) -> Response(Json, """{"id":$id}"""))
+    post("/echo", req -> Response(req.body))
     ws("/ws", on_message = msg -> Message("Echo: $(msg.data)"))
 end
 

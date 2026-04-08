@@ -60,7 +60,7 @@ route!(router, :get, "/users/:id::Int", (req, id) ->
 
 route!(router, :post, "/echo", req -> Response(Plain, req.body))
 
-server = AsyncServer(router; workers=4)
+server = AsyncServer(router; nworkers=4)
 start!(server, port=8080, blocking=false)
 
 # Graceful shutdown when done
@@ -134,7 +134,7 @@ Missing fields default to `""`, `0`, `false`, or `nothing` depending on their ty
 ```julia
 # Production: 4 workers, 5s per-request timeout, 4 MB body limit
 server = AsyncServer(router;
-    workers=4,
+    nworkers=4,
     nqueue=1024,
     request_timeout=5000,
     max_body=4 * 1024 * 1024,
@@ -368,7 +368,7 @@ ws!(router, "/ws",
 route!(router, :get, "*", req -> Response(Html, "<h1>Not Found</h1>"; status=404))
 
 # Server
-server = AsyncServer(router; workers=4, request_timeout=10_000)
+server = AsyncServer(router; nworkers=4, request_timeout=10_000)
 
 plug!(server, logger(structured=true))
 plug!(server, cors(origins="https://myapp.com"))

@@ -1,11 +1,11 @@
 using Mongoose
 
 function greet(req)
-    Response(200, ContentType.json, "{\"message\":\"Hello World from trimmed Julia!\"}")
+    Response(Json, 200, "{\"message\":\"Hello World from trimmed Julia!\"}")
 end
 
 function echo(req, name)
-    Response(200, ContentType.text, "Hello $(String(name))!")
+    Response("Hello $(String(name))!")
 end
 
 @router Routes begin
