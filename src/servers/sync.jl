@@ -49,7 +49,6 @@ function _init!(server::SyncServer)
 end
 
 function _eventloop(server::SyncServer)
-    server.core.running[] = true
     mgr = server.core.manager.ptr
     timeout = server.core.poll_timeout
     while server.core.running[]

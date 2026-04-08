@@ -147,7 +147,7 @@ include("middleware/metrics.jl")
 
         # --- _invokehttp (the actual request dispatch hot path) ---
         server_sync  = SyncServer(router)
-        server_async = AsyncServer(router; workers=1)
+        server_async = AsyncServer(router; nworkers=1)
         plug!(server_sync,  cors())
         plug!(server_async, cors())
 
@@ -163,8 +163,8 @@ include("middleware/metrics.jl")
 
         # --- ServerConfig ---
         ServerConfig()
-        ServerConfig(workers=2, max_body=1024)
-        ServerConfig(workers=8, request_timeout=5000, drain_timeout=10_000)
+        ServerConfig(nworkers=2, max_body=1024)
+        ServerConfig(nworkers=8, request_timeout=5000, drain_timeout=10_000)
     end
 end
 

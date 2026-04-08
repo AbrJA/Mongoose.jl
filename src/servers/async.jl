@@ -3,14 +3,14 @@
 """
 
 """
-    AsyncServer(router=Router(); workers=4, nqueue=1024, poll_timeout=0, max_body,
+    AsyncServer(router=Router(); nworkers=4, nqueue=1024, poll_timeout=0, max_body,
                drain_timeout, request_timeout=0, errors=Dict{Int,Response}())
 
-Create a multi-threaded server with `workers` background tasks.
+Create a multi-threaded server with `nworkers` background tasks.
 Not compatible with `juliac --trim=safe`.
 
 # Keyword Arguments
-- `workers::Integer`: Number of worker tasks (default: `4`).
+- `nworkers::Integer`: Number of worker tasks (default: `4`).
 - `nqueue::Integer`: Channel buffer size (default: `1024`).
 - `poll_timeout::Integer`: Event-loop poll timeout in ms (default: `0`).
 - `max_body::Integer`: Maximum request body size in bytes (default: 1MB).
@@ -22,7 +22,7 @@ AsyncServer(::Type{T}; kwargs...) where {T <: StaticRouter} = AsyncServer(T(); k
 AsyncServer(::Type{T}, config::ServerConfig) where {T <: StaticRouter} = AsyncServer(T(), config)
 
 function AsyncServer(router::AbstractRouter=Router();
-                     workers::Integer=4,
+                     nworkers::Integer=4,
                      nqueue::Integer=1024,
                      poll_timeout::Integer=0,
                      max_body::Integer=MAX_BODY,
@@ -33,9 +33,9 @@ function AsyncServer(router::AbstractRouter=Router();
     core = ServerCore(poll_timeout, router; max_body=max_body, drain_timeout=drain_timeout,
                       request_timeout=request_timeout, errors=errors, c_handler=c_handler)
     server = AsyncServer{typeof(router)}(
-        core, Task[],
+        core, Task[],  # workers
         Channel{Call}(nqueue), Channel{Reply}(nqueue),
-        Dict{Int,MgConnection}(), Int(workers), Int(nqueue)
+        Dict{Int,MgConnection}(), Int(nworkers), Int(nqueue)
     )
     finalizer(_teardown!, server)
     return server
@@ -48,7 +48,7 @@ Create an `AsyncServer` from a [`ServerConfig`](@ref) struct.
 """
 function AsyncServer(router::AbstractRouter, config::ServerConfig)
     return AsyncServer(router;
-        workers = config.workers,
+        nworkers = config.nworkers,
         nqueue = config.nqueue,
         poll_timeout = config.poll_timeout,
         max_body = config.max_body,
@@ -91,7 +91,6 @@ end
 _stopworkers!(::AbstractServer) = nothing
 
 function _eventloop(server::AsyncServer)
-    server.core.running[] = true
     while server.core.running[]
         mg_mgr_poll(server.core.manager.ptr, server.core.poll_timeout)
 

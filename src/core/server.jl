@@ -102,13 +102,13 @@ of individual keyword arguments.
 | `max_body` | 1 MB | Maximum request body size in bytes. |
 | `drain_timeout` | 5000 | Graceful-shutdown drain period in ms. |
 | `request_timeout` | 0 | Per-request timeout in ms; `0` = disabled (AsyncServer only). |
-| `workers` | 4 | Number of worker tasks (AsyncServer only). |
+| `nworkers` | 4 | Number of worker tasks (AsyncServer only). |
 | `nqueue` | 1024 | Channel buffer size (AsyncServer only). |
 | `errors` | `Dict()` | Custom `Response` objects keyed by HTTP status (`500`, `413`, `504`). |
 
 # Example
 ```julia
-config = ServerConfig(workers=8, request_timeout=15_000, max_body=5_242_880)
+config = ServerConfig(nworkers=8, request_timeout=15_000, max_body=5_242_880)
 
 server = AsyncServer(router, config)
 plug!(server, health())
@@ -118,7 +118,7 @@ start!(server; host="0.0.0.0", port=8080)
 `ServerConfig` can be built from environment variables:
 ```julia
 config = ServerConfig(
-    workers           = parse(Int, get(ENV, "WORKERS", "4")),
+    nworkers          = parse(Int, get(ENV, "WORKERS", "4")),
     max_body     = parse(Int, get(ENV, "MAX_BODY",  "1048576")),
     request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT", "0")),
 )
@@ -129,7 +129,7 @@ Base.@kwdef struct ServerConfig
     max_body::Int      = MAX_BODY
     drain_timeout::Int   = DRAIN_TIMEOUT
     request_timeout::Int = 0
-    workers::Int            = 4
+    nworkers::Int           = 4
     nqueue::Int             = 1024
     errors::Dict{Int,Response} = Dict{Int,Response}()
 end

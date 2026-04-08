@@ -61,7 +61,7 @@ end
         route!(router, :get, "/echo/:name", echo)
         route!(router, :get, "/error", error_handler)
 
-        server = AsyncServer(router; workers=1)
+        server = AsyncServer(router; nworkers=1)
         start!(server, port=8092, blocking=false)
 
         try
@@ -104,7 +104,7 @@ end
             Response("Hello $(name) type=$(typeof(name))")
         end)
 
-        server = AsyncServer(router; workers=1)
+        server = AsyncServer(router; nworkers=1)
         start!(server, port=8100, blocking=false)
         sleep(0.5)
 
@@ -140,7 +140,7 @@ end
         router = Router()
         route!(router, :get, "/echo/:name", echo)
 
-        server = AsyncServer(router; workers=4)
+        server = AsyncServer(router; nworkers=4)
         start!(server, port=8093, blocking=false)
 
         try
@@ -170,8 +170,8 @@ end
         router2 = Router()
         route!(router2, :get, "/s2", (req) -> Response(200, "", "Server 2"))
 
-        server1 = AsyncServer(router1; workers=1)
-        server2 = AsyncServer(router2; workers=1)
+        server1 = AsyncServer(router1; nworkers=1)
+        server2 = AsyncServer(router2; nworkers=1)
 
         start!(server1, port=8094, blocking=false)
         start!(server2, port=8095, blocking=false)
@@ -194,7 +194,7 @@ end
         router = Router()
         route!(router, :get, "/api/data", (req) -> Response(Json, "{\"ok\":true}"))
 
-        server = AsyncServer(router; workers=1)
+        server = AsyncServer(router; nworkers=1)
         plug!(server, cors(origins="https://example.com"))
         start!(server, port=8096, blocking=false)
         sleep(0.5)
@@ -224,7 +224,7 @@ end
             Response(Json, data)
         end)
 
-        server = AsyncServer(router; workers=1)
+        server = AsyncServer(router; nworkers=1)
         start!(server, port=8097, blocking=false)
         sleep(0.5)
 
@@ -274,7 +274,7 @@ end
         router = Router()
         route!(router, :post, "/upload", (req) -> Response(200, "", "OK"))
 
-        server = AsyncServer(router; workers=1, max_body=100)
+        server = AsyncServer(router; nworkers=1, max_body=100)
         start!(server, port=8099, blocking=false)
         sleep(0.5)
 
@@ -309,7 +309,7 @@ end
                 println("Server closed WS connection!")
             end)
 
-        server = AsyncServer(router, workers=1)
+        server = AsyncServer(router, nworkers=1)
         start!(server, port=8098, blocking=false)
         sleep(0.5)
 
@@ -358,7 +358,7 @@ end
         route!(router, :get, "/echo/:name", echo)
         route!(router, :get, "/error", error_handler)
 
-        server = AsyncServer(router; workers=4)
+        server = AsyncServer(router; nworkers=4)
         start!(server; port=8102, blocking=false)
 
         try
@@ -397,7 +397,7 @@ end
         end
 
         # Restart as async with 2 workers (same router)
-        server = AsyncServer(router; workers=2)
+        server = AsyncServer(router; nworkers=2)
         start!(server; port=8103, blocking=false)
         try
             response = HTTP.get("http://localhost:8103/ping")
@@ -408,7 +408,7 @@ end
         end
 
         # Restart again as async with 4 workers (same router)
-        server = AsyncServer(router; workers=4)
+        server = AsyncServer(router; nworkers=4)
         start!(server; port=8103, blocking=false)
         try
             response = HTTP.get("http://localhost:8103/ping")
@@ -424,7 +424,7 @@ end
         router = Router()
         route!(router, :get, "/api/data", (req) -> Response(200, "Content-Type: application/json\r\n", "{\"ok\":true}"))
 
-        server = AsyncServer(router; workers=2)
+        server = AsyncServer(router; nworkers=2)
         plug!(server, cors(origins="https://test.com"))
         start!(server; port=8104, blocking=false)
         sleep(0.5)
@@ -445,7 +445,7 @@ end
         route!(router, :get, "/secure", (req) -> Response(200, "", "Secret Data"))
 
         # 1. Bearer Auth
-        server_bearer = AsyncServer(router; workers=1)
+        server_bearer = AsyncServer(router; nworkers=1)
         plug!(server_bearer, bearer_token(token -> token == "magic-token"))
         start!(server_bearer; port=8105, blocking=false)
         sleep(0.5)
@@ -468,7 +468,7 @@ end
         end
 
         # 2. API Key Auth
-        server_api = AsyncServer(router; workers=1)
+        server_api = AsyncServer(router; nworkers=1)
         plug!(server_api, api_key(keys=Set(["key123"])))
         start!(server_api; port=8106, blocking=false)
         sleep(0.5)
@@ -491,7 +491,7 @@ end
         router = Router()
         route!(router, :get, "/limited", (req) -> Response(200, "", "OK"))
 
-        server = AsyncServer(router; workers=1)
+        server = AsyncServer(router; nworkers=1)
         # 2 requests per 10 seconds
         plug!(server, rate_limit(max_requests=2, window_seconds=10))
         start!(server; port=8107, blocking=false)
@@ -545,7 +545,7 @@ end
             Response(200, "X-Custom: Received\r\n", "UA: $user_agent")
         end)
 
-        server = AsyncServer(router; workers=1)
+        server = AsyncServer(router; nworkers=1)
         start!(server; port=8109, blocking=false)
         sleep(0.5)
 
@@ -577,7 +577,7 @@ end
         route!(router, :get, "/logged", (req) -> Response(200, "", "OK"))
 
         log_buf = IOBuffer()
-        server = AsyncServer(router; workers=1)
+        server = AsyncServer(router; nworkers=1)
         plug!(server, logger(output=log_buf))
         start!(server; port=8110, blocking=false)
         sleep(0.5)
@@ -603,7 +603,7 @@ end
         route!(router, :get, "/fast", (req) -> Response(200, "", "OK"))
 
         log_buf = IOBuffer()
-        server = AsyncServer(router; workers=1)
+        server = AsyncServer(router; nworkers=1)
         plug!(server, logger(threshold=5000, output=log_buf))
         start!(server; port=8111, blocking=false)
         sleep(0.5)
@@ -857,7 +857,7 @@ end
         router = Router()
         route!(router, :get, "/ping", (req) -> Response(200, "", "pong"))
 
-        server = AsyncServer(router; workers=2)
+        server = AsyncServer(router; nworkers=2)
         start!(server; port=8120, blocking=false)
         try
             resp = HTTP.get("http://localhost:8120/ping")
@@ -1038,7 +1038,7 @@ end
         router = Router()
         route!(router, :get, "/limited", (req) -> Response(200, "", "OK"))
 
-        server = AsyncServer(router; workers=1)
+        server = AsyncServer(router; nworkers=1)
         plug!(server, rate_limit(max_requests=2, window_seconds=60))
         start!(server; port=8129, blocking=false)
         sleep(0.5)
@@ -1271,7 +1271,7 @@ end
         route!(router, :delete,  "/item", req -> Response(204, "", ""))
         route!(router, :options, "/item", req -> Response(200, "Allow: GET, OPTIONS\r\n", ""))
 
-        server = AsyncServer(router; workers=1)
+        server = AsyncServer(router; nworkers=1)
         start!(server; port=8200, blocking=false)
         sleep(0.5)
 
@@ -1304,7 +1304,7 @@ end
         route!(router, :get, "/users/:uid::Int/posts/:pid::Int",
                (req, uid, pid) -> Response(200, "", "uid=$uid pid=$pid"))
 
-        server = AsyncServer(router; workers=1)
+        server = AsyncServer(router; nworkers=1)
         start!(server; port=8201, blocking=false)
         sleep(0.5)
 
@@ -1360,7 +1360,7 @@ end
         route!(router, :get, "/api/data",    req -> Response(200, "", "api"))
         route!(router, :get, "/public/page", req -> Response(200, "", "public"))
 
-        server = AsyncServer(router; workers=1)
+        server = AsyncServer(router; nworkers=1)
         # Bearer auth only applies to /api routes
         plug!(server, bearer_token(token -> token == "secret"); paths=["/api"])
         start!(server; port=8203, blocking=false)
@@ -1394,7 +1394,7 @@ end
         route!(router, :get,  "/api/hello", req -> Response(200, "", "hello"))
         route!(router, :post, "/api/data",  req -> Response(201, "", "created"))
 
-        server = AsyncServer(router; workers=2)
+        server = AsyncServer(router; nworkers=2)
         plug!(server, metrics())
         start!(server; port=8204, blocking=false)
         sleep(0.5)
@@ -1431,7 +1431,7 @@ end
         route!(router, :get, "/log_me", req -> Response(200, "", "ok"))
 
         log_buf = IOBuffer()
-        server  = AsyncServer(router; workers=1)
+        server  = AsyncServer(router; nworkers=1)
         plug!(server, logger(structured=true, output=log_buf))
         start!(server; port=8205, blocking=false)
         sleep(0.5)
@@ -1460,7 +1460,7 @@ end
         route!(router, :get,  "/boom",   req -> error("deliberate crash"))
         route!(router, :post, "/upload", req -> Response(200, "", "ok"))
 
-        server = AsyncServer(router; workers=1, max_body=50)
+        server = AsyncServer(router; nworkers=1, max_body=50)
         fail!(server, 500, Response(Json, """{"error":"internal","code":500}"""; status=500))
         fail!(server, 413, Response(Json, """{"error":"too large","code":413}"""; status=413))
         start!(server; port=8206, blocking=false)
@@ -1491,7 +1491,7 @@ end
         router = Router()
         route!(router, :get, "/api/secure", req -> Response(200, "", "secure data"))
 
-        server = AsyncServer(router; workers=1)
+        server = AsyncServer(router; nworkers=1)
         plug!(server, cors(origins="https://app.example.com"))
         plug!(server, bearer_token(token -> token == "tok123"))
         start!(server; port=8207, blocking=false)
@@ -1611,7 +1611,7 @@ end
             shutdown!(s_sync)
         end
 
-        cfg_async = ServerConfig(workers=2, nqueue=64, poll_timeout=0,
+        cfg_async = ServerConfig(nworkers=2, nqueue=64, poll_timeout=0,
                                  max_body=2048, drain_timeout=1000)
         s_async   = AsyncServer(router, cfg_async)
         start!(s_async; port=8211, blocking=false)
@@ -1635,7 +1635,7 @@ end
         route!(router, :get, "/fast", req -> Response(200, "", "fast"))
         route!(router, :get, "/slow", req -> (sleep(5); Response(200, "", "never")))
 
-        server = AsyncServer(router; workers=1, request_timeout=200)
+        server = AsyncServer(router; nworkers=1, request_timeout=200)
         start!(server; port=8212, blocking=false)
         sleep(0.5)
 
@@ -1672,7 +1672,7 @@ end
             on_open    = (req)  -> (open_fired[]  = true),
             on_close   = ()     -> (close_fired[] = true))
 
-        server = AsyncServer(router; workers=1)
+        server = AsyncServer(router; nworkers=1)
         start!(server; port=8213, blocking=false)
         sleep(0.5)
 
@@ -1699,7 +1699,7 @@ end
         ws!(router, "/concurrent";
             on_message = (msg) -> Message("reply: $(msg.data)"))
 
-        server = AsyncServer(router; workers=2)
+        server = AsyncServer(router; nworkers=2)
         start!(server; port=8214, blocking=false)
         sleep(0.5)
 
@@ -1915,7 +1915,7 @@ end
             Response(200, "", "$(ctx[:val])")
         end)
 
-        server = AsyncServer(router; workers=2)
+        server = AsyncServer(router; nworkers=2)
         start!(server; port=8223, blocking=false)
         sleep(0.5)
 

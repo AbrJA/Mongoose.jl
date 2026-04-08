@@ -282,7 +282,7 @@ route!(router, :get, "/compute", req -> begin
 end)
 
 # 8 worker tasks processing requests concurrently
-server = AsyncServer(router; workers=8)
+server = AsyncServer(router; nworkers=8)
 start!(server, port=8080, blocking=false)
 ```
 
@@ -343,7 +343,7 @@ ws!(router, "/ws/notifications",
 )
 
 # Server with full middleware stack
-server = AsyncServer(router; workers=4)
+server = AsyncServer(router; nworkers=4)
 plug!(server, logger(threshold=100))
 plug!(server, cors(origins="https://myapp.com"))
 plug!(server, rate_limit(max_requests=200, window_seconds=60))
@@ -436,7 +436,7 @@ using Mongoose
 router = Router()
 route!(router, :get, "/api/data", req -> Response(200, ContentType.json, """{"ok":true}"""))
 
-server = AsyncServer(router; workers=4)
+server = AsyncServer(router; nworkers=4)
 plug!(server, health())
 plug!(server, metrics())          # serves GET /metrics
 
@@ -514,7 +514,7 @@ route!(router, :get, "/api/status", req -> Response(Json, Dict(
 )))
 
 server = AsyncServer(router;
-    workers=WORKERS,
+    nworkers=WORKERS,
     max_body=MAX_BODY,
     request_timeout=REQ_TIMEOUT,
     drain_timeout=10_000
@@ -540,7 +540,7 @@ using Mongoose
 router = Router()
 route!(router, :get, "/", req -> Response(200, "Running"))
 
-server = AsyncServer(router; workers=4, drain_timeout=10_000)
+server = AsyncServer(router; nworkers=4, drain_timeout=10_000)
 plug!(server, health())
 
 start!(server; host="0.0.0.0", port=8080, blocking=false)
@@ -617,7 +617,7 @@ register_product_routes!(router)
 # Catch-all 404
 route!(router, :get, "*", req -> Response(Json, Dict("error" => "Not found"); status=404))
 
-server = AsyncServer(router; workers=4, request_timeout=15_000)
+server = AsyncServer(router; nworkers=4, request_timeout=15_000)
 
 # Public: health + CORS on everything
 plug!(server, health())

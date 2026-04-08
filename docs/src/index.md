@@ -34,7 +34,7 @@ router = Router()
 route!(router, :get, "/", req -> Response(Plain, "Hello!"))
 route!(router, :get, "/users/:id::Int", (req, id) -> Response(Plain, "User $id"))
 
-server = AsyncServer(router; workers=4)
+server = AsyncServer(router; nworkers=4)
 start!(server, port=8080, blocking=false)
 
 # When done
@@ -67,7 +67,7 @@ Mongoose.jl uses a decoupled architecture: a **Router** defines the routes and h
 
 ```julia
 server = AsyncServer(router;
-    workers=4,              # Number of worker tasks
+    nworkers=4,              # Number of worker tasks
     nqueue=1024,            # Channel buffer size
     poll_timeout=0,              # Poll timeout (ms)
     max_body=1048576,  # Max request body in bytes (default: 1MB)
@@ -94,7 +94,7 @@ All constructor keyword arguments can be consolidated into a `ServerConfig` stru
 
 ```julia
 config = ServerConfig(
-    workers            = parse(Int, get(ENV, "WORKERS", "4")),
+    nworkers           = parse(Int, get(ENV, "WORKERS", "4")),
     max_body      = parse(Int, get(ENV, "MAX_BODY", "1048576")),
     request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT", "0")),
     drain_timeout   = 10_000,
@@ -109,7 +109,7 @@ server = AsyncServer(router, config)  # or SyncServer(router, config)
 | `max_body` | 1 MB | Max request body in bytes |
 | `drain_timeout` | 5000 | Graceful-shutdown drain period in ms |
 | `request_timeout` | `0` | Per-request timeout in ms; `0` = disabled |
-| `workers` | `4` | Worker tasks (`AsyncServer` only) |
+| `nworkers` | `4` | Worker tasks (`AsyncServer` only) |
 | `nqueue` | `1024` | Channel buffer size (`AsyncServer` only) |
 | `errors` | `Dict()` | Custom `Response` keyed by status code |
 
