@@ -168,7 +168,7 @@ end
 
 function _bind!(server::AbstractServer, host::AbstractString, port::Integer)
     url = "http://$host:$port"
-    fn_data = pointer_from_objref(server)
+    fn_data = Ptr{Cvoid}(objectid(server))  # stable identity token, not heap address
     is_listen = mg_http_listen(server.core.manager.ptr, url, server.core.c_handler, fn_data)
     is_listen == C_NULL && throw(BindError("Failed to start server on $url. Port may be in use."))
     return url

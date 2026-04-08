@@ -295,8 +295,10 @@ macro router(app_type::Symbol, block)
             ev == Mongoose.MG_EV_POLL && return nothing
             fn_data = Mongoose.mg_conn_get_fn_data(conn)
             fn_data == C_NULL && return nothing
-            # Fully inferred Async recovery prevents dynamic dispatch errors in AOT
-            server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.Async{$app_type}
+            # GC-safe recovery: fn_data holds objectid token, not heap address
+            server = Mongoose._lookupserver(UInt(fn_data))
+            server === nothing && return nothing
+            server = server::Mongoose.Async{$app_type}
             try
                 Mongoose._dispatchev(server, ev, conn, ev_data)
             catch e
@@ -309,8 +311,10 @@ macro router(app_type::Symbol, block)
             ev == Mongoose.MG_EV_POLL && return nothing
             fn_data = Mongoose.mg_conn_get_fn_data(conn)
             fn_data == C_NULL && return nothing
-            # Fully inferred Server recovery
-            server = Base.unsafe_pointer_to_objref(fn_data)::Mongoose.Server{$app_type}
+            # GC-safe recovery: fn_data holds objectid token, not heap address
+            server = Mongoose._lookupserver(UInt(fn_data))
+            server === nothing && return nothing
+            server = server::Mongoose.Server{$app_type}
             try
                 Mongoose._dispatchev(server, ev, conn, ev_data)
             catch e

@@ -43,8 +43,9 @@ end
         deadline = time() + timeout
         while time() < deadline
             try
-                HTTP.get(url; readtimeout=1, connect_timeout=1)
-                return  # success
+                # status_exception=false: any HTTP response (even 404) means server is up
+                HTTP.get(url; readtimeout=1, connect_timeout=1, status_exception=false)
+                return  # server is reachable
             catch
                 sleep(interval)
             end
@@ -59,7 +60,7 @@ end
 
         server = Server(router)
         start!(server, port=8091, blocking=false)
-        sleep(0.2)
+        wait_for_server("http://localhost:8091/")
 
         try
             response = HTTP.get("http://localhost:8091/hello")
@@ -79,7 +80,7 @@ end
 
         server = Async(router; nworkers=1)
         start!(server, port=8092, blocking=false)
-        sleep(0.2)
+        wait_for_server("http://localhost:8092/")
 
         try
             # Basic GET
@@ -122,8 +123,8 @@ end
         end)
 
         server = Async(router; nworkers=1)
-        start!(server, port=8100, blocking=false)        
-        sleep(0.2)
+        start!(server, port=8100, blocking=false)
+        wait_for_server("http://localhost:8100/")
 
         try
             # Int parameter — should be parsed to Int
@@ -159,7 +160,7 @@ end
 
         server = Async(router; nworkers=4)
         start!(server, port=8093, blocking=false)
-        sleep(0.2)
+        wait_for_server("http://localhost:8093/")
 
         try
             results = Channel{Tuple{Int,Int,String}}(10)
@@ -215,7 +216,7 @@ end
         server = Async(router; nworkers=1)
         plug!(server, cors(origins="https://example.com"))
         start!(server, port=8096, blocking=false)
-        sleep(0.2)
+        wait_for_server("http://localhost:8096/")
 
         try
             # Normal request should have CORS headers
@@ -243,8 +244,8 @@ end
         end)
 
         server = Async(router; nworkers=1)
-        start!(server, port=8097, blocking=false)        
-        sleep(0.2)
+        start!(server, port=8097, blocking=false)
+        wait_for_server("http://localhost:8097/")
 
         try
             # JSON response
@@ -294,7 +295,7 @@ end
 
         server = Async(router; nworkers=1, max_body=100)
         start!(server, port=8099, blocking=false)
-        sleep(0.2)
+        wait_for_server("http://localhost:8099/")
 
         try
             # Small body — should succeed
@@ -328,8 +329,8 @@ end
             end)
 
         server = Async(router, nworkers=1)
-        start!(server, port=8098, blocking=false)        
-        sleep(0.2)
+        start!(server, port=8098, blocking=false)
+        wait_for_server("http://localhost:8098/")
 
         try
             HTTP.WebSockets.open("ws://localhost:8098/chat") do ws
@@ -518,8 +519,8 @@ end
         route!(router, :get, "/limited", (req) -> Response(200, "", "OK"))
 
         server = Async(router; nworkers=1)
-        # 2 requests per 10 seconds
-        plug!(server, rate_limit(max_requests=2, window_seconds=10))
+        # 3 requests per 10 seconds (1 consumed by wait_for_server probe + 2 actual test requests)
+        plug!(server, rate_limit(max_requests=3, window_seconds=10))
         start!(server; port=8107, blocking=false)
         wait_for_server("http://localhost:8107/")
 
@@ -527,7 +528,7 @@ end
             @test HTTP.get("http://localhost:8107/limited").status == 200
             @test HTTP.get("http://localhost:8107/limited").status == 200
 
-            # Third request should be limited
+            # Fourth request should be limited (3 already used: 1 probe + 2 test)
             resp = HTTP.get("http://localhost:8107/limited"; status_exception=false)
             @test resp.status == 429
             @test haskey(Dict(resp.headers), "Retry-After")
@@ -830,7 +831,7 @@ end
             route!(arouter, :get, "/image.png", req -> Response(200, "Content-Type: image/png\r\n", red1x1_png))
             aserver = Async(arouter)
             start!(aserver; port=8131, blocking=false)
-            sleep(0.2)
+            wait_for_server("http://localhost:8131/")
 
             try
                 resp2 = HTTP.get("http://localhost:8131/image.png")
@@ -970,7 +971,7 @@ end
         s1 = Server(router)
         plug!(s1, health(health_check=() -> true, ready_check=() -> true, live_check=() -> true))
         start!(s1; port=8124, blocking=false)
-        sleep(0.2)
+        wait_for_server("http://localhost:8124/")
 
         try
             resp = HTTP.get("http://localhost:8124/healthz")
@@ -996,7 +997,7 @@ end
         s2 = Server(router)
         plug!(s2, health(health_check=() -> false))
         start!(s2; port=8125, blocking=false)
-        sleep(0.2)
+        wait_for_server("http://localhost:8125/")
 
         try
             resp = HTTP.get("http://localhost:8125/healthz"; status_exception=false)
@@ -1050,7 +1051,8 @@ end
         s2 = Server(r2)
         start!(s1; port=8126, blocking=false)
         start!(s2; port=8127, blocking=false)
-        sleep(0.2)
+        wait_for_server("http://localhost:8126/")
+        wait_for_server("http://localhost:8127/")
 
         @test HTTP.get("http://localhost:8126/").status == 200
         @test HTTP.get("http://localhost:8127/").status == 200
@@ -1662,7 +1664,7 @@ end
         cfg_sync = Config(poll_timeout=1, max_body=1024)
         s_sync   = Server(router, cfg_sync)
         start!(s_sync; port=8210, blocking=false)
-        sleep(0.2)
+        wait_for_server("http://localhost:8210/")
 
         try
             resp = HTTP.get("http://localhost:8210/ping")
@@ -1676,7 +1678,7 @@ end
                                  max_body=2048, drain_timeout=1000)
         s_async   = Async(router, cfg_async)
         start!(s_async; port=8211, blocking=false)
-        sleep(0.2)
+        wait_for_server("http://localhost:8211/")
         
         try
             resp = HTTP.get("http://localhost:8211/ping")
@@ -1940,7 +1942,7 @@ end
         s1 = Server(router)
         plug!(s1, health(health_check=() -> true, ready_check=() -> false, live_check=() -> true))
         start!(s1; port=8221, blocking=false)
-        sleep(0.2)
+        wait_for_server("http://localhost:8221/")
 
         try
             resp = HTTP.get("http://localhost:8221/healthz"; status_exception=false)

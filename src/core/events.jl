@@ -3,12 +3,12 @@
 
 The single C callback registered with Mongoose via `@cfunction`.
 
-GC safety: the server object is recovered via `unsafe_pointer_to_objref` from
-`fn_data`, which was set to `pointer_from_objref(server)` during bind.
-The server must remain rooted (via the global REGISTRY) for the lifetime
-of the listener — otherwise GC can collect it while C still holds the pointer.
-The Mongoose `conn`, `ev_data`, and `MgStr.buf` pointers are C-owned and are
-not moved by the Julia GC, so no global GC toggle is required.
+GC safety: `fn_data` stores `objectid(server)` cast to a `Ptr{Cvoid}` — a
+stable UInt64 identity token set during `_bind!`. The server is recovered via
+`_lookupserver`, a normal Dict lookup that the GC fully understands. This
+eliminates the concurrent-GC race that `unsafe_pointer_to_objref` creates when
+the GC's marking phase writes to object headers at the same time the callback
+reads them to reconstruct the Julia object.
 """
 function _callbackev(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
     ev == MG_EV_POLL && return nothing
@@ -16,7 +16,8 @@ function _callbackev(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
     fn_data = mg_conn_get_fn_data(conn)
     fn_data == C_NULL && return nothing
 
-    server = Base.unsafe_pointer_to_objref(fn_data)
+    server = _lookupserver(UInt(fn_data))
+    server === nothing && return nothing
     try
         _dispatchev(server, ev, conn, ev_data)
     catch e
