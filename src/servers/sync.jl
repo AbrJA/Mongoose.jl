@@ -14,7 +14,7 @@ Create a single-threaded blocking server. Compatible with `juliac --trim=safe`.
 - `errors::Dict{Int,Response}`: Custom responses keyed by HTTP status code (`500`, `413`, `504`). See `fail!`.
 """
 Server(::Type{T}; kwargs...) where {T <: StaticRouter} = Server(T(); kwargs...)
-Server(::Type{T}, config::ServerConfig) where {T <: StaticRouter} = Server(T(), config)
+Server(::Type{T}, config::Config) where {T <: StaticRouter} = Server(T(), config)
 
 function Server(router::AbstractRouter=Router();
                     poll_timeout::Integer=1,
@@ -29,11 +29,11 @@ function Server(router::AbstractRouter=Router();
 end
 
 """
-    Server(router, config::ServerConfig)
+    Server(router, config::Config)
 
-Create a `Server` from a [`ServerConfig`](@ref) struct.
+Create a `Server` from a [`Config`](@ref) struct.
 """
-function Server(router::AbstractRouter, config::ServerConfig)
+function Server(router::AbstractRouter, config::Config)
     return Server(router;
         poll_timeout          = config.poll_timeout,
         max_body    = config.max_body,

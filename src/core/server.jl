@@ -85,13 +85,13 @@ mutable struct ServerCore{R <: AbstractRouter}
     end
 end
 
-# --- ServerConfig ---
+# --- Config ---
 
 """
-    ServerConfig
+    Config
 
 Consolidated configuration for `Server` and `Async`. Pass a
-`ServerConfig` as the second positional argument to either constructor instead
+`Config` as the second positional argument to either constructor instead
 of individual keyword arguments.
 
 # Fields
@@ -108,23 +108,23 @@ of individual keyword arguments.
 
 # Example
 ```julia
-config = ServerConfig(nworkers=8, request_timeout=15_000, max_body=5_242_880)
+config = Config(nworkers=8, request_timeout=15_000, max_body=5_242_880)
 
 server = Async(router, config)
 plug!(server, health())
 start!(server; host="0.0.0.0", port=8080)
 ```
 
-`ServerConfig` can be built from environment variables:
+`Config` can be built from environment variables:
 ```julia
-config = ServerConfig(
+config = Config(
     nworkers          = parse(Int, get(ENV, "WORKERS", "4")),
     max_body     = parse(Int, get(ENV, "MAX_BODY",  "1048576")),
     request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT", "0")),
 )
 ```
 """
-Base.@kwdef struct ServerConfig
+Base.@kwdef struct Config
     poll_timeout::Int            = 1
     max_body::Int      = MAX_BODY
     drain_timeout::Int   = DRAIN_TIMEOUT

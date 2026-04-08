@@ -19,7 +19,7 @@ Not compatible with `juliac --trim=safe`.
 - `errors::Dict{Int,Response}`: Custom responses keyed by HTTP status code (`500`, `413`, `504`). See `fail!`.
 """
 Async(::Type{T}; kwargs...) where {T <: StaticRouter} = Async(T(); kwargs...)
-Async(::Type{T}, config::ServerConfig) where {T <: StaticRouter} = Async(T(), config)
+Async(::Type{T}, config::Config) where {T <: StaticRouter} = Async(T(), config)
 
 function Async(router::AbstractRouter=Router();
                      nworkers::Integer=4,
@@ -42,11 +42,11 @@ function Async(router::AbstractRouter=Router();
 end
 
 """
-    Async(router, config::ServerConfig)
+    Async(router, config::Config)
 
-Create an `Async` from a [`ServerConfig`](@ref) struct.
+Create an `Async` from a [`Config`](@ref) struct.
 """
-function Async(router::AbstractRouter, config::ServerConfig)
+function Async(router::AbstractRouter, config::Config)
     return Async(router;
         nworkers = config.nworkers,
         nqueue = config.nqueue,

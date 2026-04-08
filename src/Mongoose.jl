@@ -11,7 +11,7 @@ export Server, Async, Router, Request, Response,
     cors, rate_limit, bearer_token, api_key, logger, health, metrics,
     RouteError, ServerError, BindError,
     @router,
-    ServerConfig
+    Config
 
 # 1. FFI Layer (Constants, Structs, Bindings)
 include("ffi/constants.jl")
@@ -161,10 +161,10 @@ include("middleware/metrics.jl")
         _errresponse(server_sync, 504)
         _handleerror(server_sync, req, ErrorException(""))
 
-        # --- ServerConfig ---
-        ServerConfig()
-        ServerConfig(nworkers=2, max_body=1024)
-        ServerConfig(nworkers=8, request_timeout=5000, drain_timeout=10_000)
+        # --- Config ---
+        Config()
+        Config(nworkers=2, max_body=1024)
+        Config(nworkers=8, request_timeout=5000, drain_timeout=10_000)
     end
 end
 

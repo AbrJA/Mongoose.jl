@@ -1595,14 +1595,14 @@ end
     end
 
     # ==========================================================================
-    # ServerConfig construction
+    # Config construction
     # ==========================================================================
 
-    @testset "ServerConfig for Server and Async" begin
+    @testset "Config for Server and Async" begin
         router = Router()
         route!(router, :get, "/ping", req -> Response(200, "", "pong"))
 
-        cfg_sync = ServerConfig(poll_timeout=1, max_body=1024)
+        cfg_sync = Config(poll_timeout=1, max_body=1024)
         s_sync   = Server(router, cfg_sync)
         start!(s_sync; port=8210, blocking=false)
         try
@@ -1613,7 +1613,7 @@ end
             shutdown!(s_sync)
         end
 
-        cfg_async = ServerConfig(nworkers=2, nqueue=64, poll_timeout=0,
+        cfg_async = Config(nworkers=2, nqueue=64, poll_timeout=0,
                                  max_body=2048, drain_timeout=1000)
         s_async   = Async(router, cfg_async)
         start!(s_async; port=8211, blocking=false)

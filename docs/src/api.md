@@ -36,7 +36,7 @@ context!
 ## Utilities
 
 ```@docs
-ServerConfig
+Config
 ```
 
 ## WebSocket Types

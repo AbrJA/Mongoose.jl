@@ -88,12 +88,12 @@ server = Server(router;
 )
 ```
 
-### ServerConfig
+### Config
 
-All constructor keyword arguments can be consolidated into a `ServerConfig` struct — useful for environment-driven configuration:
+All constructor keyword arguments can be consolidated into a `Config` struct — useful for environment-driven configuration:
 
 ```julia
-config = ServerConfig(
+config = Config(
     nworkers           = parse(Int, get(ENV, "WORKERS", "4")),
     max_body      = parse(Int, get(ENV, "MAX_BODY", "1048576")),
     request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT", "0")),
