@@ -37,6 +37,21 @@ end
         error("Something went wrong!")
     end
 
+    # Wait until the server is actually accepting connections.
+    # A fixed sleep is unreliable on Windows where task scheduling is non-deterministic.
+    function wait_for_server(url; timeout=10.0, interval=0.05)
+        deadline = time() + timeout
+        while time() < deadline
+            try
+                HTTP.get(url; readtimeout=1, connect_timeout=1)
+                return  # success
+            catch
+                sleep(interval)
+            end
+        end
+        error("Server at $url did not become ready within $(timeout)s")
+    end
+
     # --- Test 1: Server ---
     @testset "Server" begin
         router = Router()
@@ -44,7 +59,7 @@ end
 
         server = Server(router)
         start!(server, port=8091, blocking=false)
-        sleep(0.5)
+        sleep(0.2)
 
         try
             response = HTTP.get("http://localhost:8091/hello")
@@ -64,7 +79,7 @@ end
 
         server = Async(router; nworkers=1)
         start!(server, port=8092, blocking=false)
-        sleep(0.5)
+        sleep(0.2)
 
         try
             # Basic GET
@@ -107,8 +122,8 @@ end
         end)
 
         server = Async(router; nworkers=1)
-        start!(server, port=8100, blocking=false)
-        sleep(0.5)
+        start!(server, port=8100, blocking=false)        
+        sleep(0.2)
 
         try
             # Int parameter — should be parsed to Int
@@ -144,6 +159,7 @@ end
 
         server = Async(router; nworkers=4)
         start!(server, port=8093, blocking=false)
+        sleep(0.2)
 
         try
             results = Channel{Tuple{Int,Int,String}}(10)
@@ -199,7 +215,7 @@ end
         server = Async(router; nworkers=1)
         plug!(server, cors(origins="https://example.com"))
         start!(server, port=8096, blocking=false)
-        sleep(0.5)
+        sleep(0.2)
 
         try
             # Normal request should have CORS headers
@@ -227,8 +243,8 @@ end
         end)
 
         server = Async(router; nworkers=1)
-        start!(server, port=8097, blocking=false)
-        sleep(0.5)
+        start!(server, port=8097, blocking=false)        
+        sleep(0.2)
 
         try
             # JSON response
@@ -278,7 +294,7 @@ end
 
         server = Async(router; nworkers=1, max_body=100)
         start!(server, port=8099, blocking=false)
-        sleep(0.5)
+        sleep(0.2)
 
         try
             # Small body — should succeed
@@ -312,8 +328,8 @@ end
             end)
 
         server = Async(router, nworkers=1)
-        start!(server, port=8098, blocking=false)
-        sleep(0.5)
+        start!(server, port=8098, blocking=false)        
+        sleep(0.2)
 
         try
             HTTP.WebSockets.open("ws://localhost:8098/chat") do ws
@@ -339,6 +355,7 @@ end
 
         server = Server(router)
         start!(server; port=8101, blocking=false)
+        wait_for_server("http://localhost:8101/")
 
         try
             response = HTTP.get("http://localhost:8101/hello")
@@ -362,6 +379,7 @@ end
 
         server = Async(router; nworkers=4)
         start!(server; port=8102, blocking=false)
+        wait_for_server("http://localhost:8102/")
 
         try
             response = HTTP.get("http://localhost:8102/hello")
@@ -390,6 +408,8 @@ end
         # Start as sync
         server = Server(router)
         start!(server; port=8103, blocking=false)
+        wait_for_server("http://localhost:8103/")
+
         try
             response = HTTP.get("http://localhost:8103/ping")
             @test response.status == 200
@@ -401,6 +421,8 @@ end
         # Restart as async with 2 workers (same router)
         server = Async(router; nworkers=2)
         start!(server; port=8103, blocking=false)
+        wait_for_server("http://localhost:8103/")
+
         try
             response = HTTP.get("http://localhost:8103/ping")
             @test response.status == 200
@@ -412,6 +434,8 @@ end
         # Restart again as async with 4 workers (same router)
         server = Async(router; nworkers=4)
         start!(server; port=8103, blocking=false)
+        wait_for_server("http://localhost:8103/")
+
         try
             response = HTTP.get("http://localhost:8103/ping")
             @test response.status == 200
@@ -429,7 +453,7 @@ end
         server = Async(router; nworkers=2)
         plug!(server, cors(origins="https://test.com"))
         start!(server; port=8104, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8104/")
 
         try
             response = HTTP.get("http://localhost:8104/api/data")
@@ -450,7 +474,7 @@ end
         server_bearer = Async(router; nworkers=1)
         plug!(server_bearer, bearer_token(token -> token == "magic-token"))
         start!(server_bearer; port=8105, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8105/")
 
         try
             # Valid token
@@ -473,7 +497,7 @@ end
         server_api = Async(router; nworkers=1)
         plug!(server_api, api_key(keys=Set(["key123"])))
         start!(server_api; port=8106, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8106/")
 
         try
             # Valid key
@@ -497,7 +521,7 @@ end
         # 2 requests per 10 seconds
         plug!(server, rate_limit(max_requests=2, window_seconds=10))
         start!(server; port=8107, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8107/")
 
         try
             @test HTTP.get("http://localhost:8107/limited").status == 200
@@ -516,7 +540,7 @@ end
     @testset "Static Router (@router)" begin
         server = Server(Routes)
         start!(server; port=8108, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8108/")
 
         try
             # Basic GET
@@ -549,7 +573,7 @@ end
 
         server = Async(router; nworkers=1)
         start!(server; port=8109, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8109/")
 
         try
             resp = HTTP.get("http://localhost:8109/headers"; headers=["User-Agent" => "TestClient"])
@@ -582,7 +606,7 @@ end
         server = Async(router; nworkers=1)
         plug!(server, logger(output=log_buf))
         start!(server; port=8110, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8110/")
 
         try
             resp = HTTP.get("http://localhost:8110/logged")
@@ -608,7 +632,7 @@ end
         server = Async(router; nworkers=1)
         plug!(server, logger(threshold=5000, output=log_buf))
         start!(server; port=8111, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8111/")
 
         try
             resp = HTTP.get("http://localhost:8111/fast")
@@ -631,6 +655,7 @@ end
 
         server = Server(router)
         start!(server; port=8112, blocking=false)
+        wait_for_server("http://localhost:8112/")
 
         try
             # Fixed route with query string
@@ -654,6 +679,7 @@ end
 
         server = Server(router)
         start!(server; port=8113, blocking=false)
+        wait_for_server("http://localhost:8113/")
 
         try
             resp = HTTP.head("http://localhost:8113/page")
@@ -671,7 +697,8 @@ end
         route!(server, "GET", "/a", (req) -> Response(200, "", "from get"))
         route!(server, "POST", "/a", (req) -> Response(200, "", "from post"))
         start!(server; port=8115, blocking=false)
-
+        wait_for_server("http://localhost:8115/")
+        
         try
             resp = HTTP.get("http://localhost:8115/a")
             @test resp.status == 200
@@ -698,6 +725,7 @@ end
 
         server = Server(router)
         start!(server; port=8116, blocking=false)
+        wait_for_server("http://localhost:8116/")
 
         try
             resp = HTTP.get("http://localhost:8116/ctx")
@@ -723,6 +751,7 @@ end
             server = Server(router)
             mount!(server, dir)
             start!(server; port=8117, blocking=false)
+            wait_for_server("http://localhost:8117/")
 
             try
                 # Serve index on root
@@ -788,6 +817,8 @@ end
 
         server = Server(router)
         start!(server; port=8130, blocking=false)
+        wait_for_server("http://localhost:8130/")
+
         try
             resp = HTTP.get("http://localhost:8130/image.png")
             @test resp.status == 200
@@ -799,6 +830,8 @@ end
             route!(arouter, :get, "/image.png", req -> Response(200, "Content-Type: image/png\r\n", red1x1_png))
             aserver = Async(arouter)
             start!(aserver; port=8131, blocking=false)
+            sleep(0.2)
+
             try
                 resp2 = HTTP.get("http://localhost:8131/image.png")
                 @test resp2.status == 200
@@ -818,6 +851,7 @@ end
 
         server = Server(router)
         start!(server; port=8118, blocking=false)
+        wait_for_server("http://localhost:8118/")
 
         try
             resp = HTTP.get("http://localhost:8118/pct")
@@ -835,6 +869,8 @@ end
 
         server = Server(router)
         start!(server; port=8119, blocking=false)
+        wait_for_server("http://localhost:8119/")
+        
         try
             resp = HTTP.get("http://localhost:8119/ping")
             @test resp.status == 200
@@ -845,6 +881,8 @@ end
 
         # Restart the SAME instance
         start!(server; port=8119, blocking=false)
+        wait_for_server("http://localhost:8119/")
+
         try
             resp = HTTP.get("http://localhost:8119/ping")
             @test resp.status == 200
@@ -861,6 +899,8 @@ end
 
         server = Async(router; nworkers=2)
         start!(server; port=8120, blocking=false)
+        wait_for_server("http://localhost:8120/")
+
         try
             resp = HTTP.get("http://localhost:8120/ping")
             @test resp.status == 200
@@ -871,6 +911,8 @@ end
 
         # Restart the SAME instance
         start!(server; port=8120, blocking=false)
+        wait_for_server("http://localhost:8120/")
+
         try
             resp = HTTP.get("http://localhost:8120/ping")
             @test resp.status == 200
@@ -887,6 +929,8 @@ end
 
         server1 = Server(router)
         start!(server1; port=8121, blocking=false)
+        wait_for_server("http://localhost:8121/")
+
         try
             server2 = Server(router)
             @test_throws BindError start!(server2; port=8121, blocking=false)
@@ -904,6 +948,8 @@ end
 
         server = Server(router)
         start!(server; port=8122, blocking=false)
+        wait_for_server("http://localhost:8122/")
+        
         try
             start!(server; port=8123, blocking=false)  # different port — should be ignored
             # original port still works, 8123 never opened
@@ -924,6 +970,8 @@ end
         s1 = Server(router)
         plug!(s1, health(health_check=() -> true, ready_check=() -> true, live_check=() -> true))
         start!(s1; port=8124, blocking=false)
+        sleep(0.2)
+
         try
             resp = HTTP.get("http://localhost:8124/healthz")
             @test resp.status == 200
@@ -948,6 +996,8 @@ end
         s2 = Server(router)
         plug!(s2, health(health_check=() -> false))
         start!(s2; port=8125, blocking=false)
+        sleep(0.2)
+
         try
             resp = HTTP.get("http://localhost:8125/healthz"; status_exception=false)
             @test resp.status == 503
@@ -1000,6 +1050,7 @@ end
         s2 = Server(r2)
         start!(s1; port=8126, blocking=false)
         start!(s2; port=8127, blocking=false)
+        sleep(0.2)
 
         @test HTTP.get("http://localhost:8126/").status == 200
         @test HTTP.get("http://localhost:8127/").status == 200
@@ -1018,6 +1069,8 @@ end
         server = Server(router)
         plug!(server, bearer_token(token -> token == "secret"))
         start!(server; port=8128, blocking=false)
+        wait_for_server("http://localhost:8128/")
+
         try
             # Lowercase scheme must be accepted (RFC 7235)
             resp = HTTP.get("http://localhost:8128/secure"; headers=["Authorization" => "bearer secret"])
@@ -1043,7 +1096,7 @@ end
         server = Async(router; nworkers=1)
         plug!(server, rate_limit(max_requests=2, window_seconds=60))
         start!(server; port=8129, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8129/")
 
         try
             # Same client IP via different proxy chains must share the same bucket
@@ -1275,7 +1328,7 @@ end
 
         server = Async(router; nworkers=1)
         start!(server; port=8200, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8200/")
 
         try
             resp = HTTP.put("http://localhost:8200/item")
@@ -1308,7 +1361,7 @@ end
 
         server = Async(router; nworkers=1)
         start!(server; port=8201, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8201/")
 
         try
             resp = HTTP.get("http://localhost:8201/users/5/posts/12")
@@ -1338,6 +1391,7 @@ end
 
         server = Server(router)
         start!(server; port=8202, blocking=false)
+        wait_for_server("http://localhost:8202/")
 
         try
             resp = HTTP.get("http://localhost:8202/known")
@@ -1366,7 +1420,7 @@ end
         # Bearer auth only applies to /api routes
         plug!(server, bearer_token(token -> token == "secret"); paths=["/api"])
         start!(server; port=8203, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8203/")
 
         try
             # /public/* must pass without auth
@@ -1399,7 +1453,7 @@ end
         server = Async(router; nworkers=2)
         plug!(server, metrics())
         start!(server; port=8204, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8204/")
 
         try
             HTTP.get("http://localhost:8204/api/hello")
@@ -1436,11 +1490,11 @@ end
         server  = Async(router; nworkers=1)
         plug!(server, logger(structured=true, output=log_buf))
         start!(server; port=8205, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8205/")
 
         try
             HTTP.get("http://localhost:8205/log_me")
-            sleep(0.3)  # give worker time to flush the log line
+            sleep(0.2)  # give worker time to flush the log line
 
             out = String(take!(log_buf))
             @test occursin("{\"method\":",    out)
@@ -1466,7 +1520,7 @@ end
         fail!(server, 500, Response(Json, """{"error":"internal","code":500}"""; status=500))
         fail!(server, 413, Response(Json, """{"error":"too large","code":413}"""; status=413))
         start!(server; port=8206, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8206/")
 
         try
             resp = HTTP.get("http://localhost:8206/boom"; status_exception=false)
@@ -1497,7 +1551,8 @@ end
         plug!(server, cors(origins="https://app.example.com"))
         plug!(server, bearer_token(token -> token == "tok123"))
         start!(server; port=8207, blocking=false)
-        sleep(0.5)
+        start!(server; port=8207, blocking=false)
+        wait_for_server("http://localhost:8207/")
 
         try
             # Wrong token → 403; CORS headers must still be present (CORS runs first)
@@ -1535,6 +1590,7 @@ end
             server = Server(router)
             mount!(server, dir; uri_prefix="/static")
             start!(server; port=8208, blocking=false)
+            wait_for_server("http://localhost:8208/")
 
             try
                 # File served under prefix
@@ -1579,6 +1635,7 @@ end
             mount!(server, dir_a)                       # prefix "/"
             mount!(server, dir_b; uri_prefix="/assets") # prefix "/assets"
             start!(server; port=8209, blocking=false)
+            wait_for_server("http://localhost:8209/")
 
             try
                 resp = HTTP.get("http://localhost:8209/")
@@ -1605,6 +1662,8 @@ end
         cfg_sync = Config(poll_timeout=1, max_body=1024)
         s_sync   = Server(router, cfg_sync)
         start!(s_sync; port=8210, blocking=false)
+        sleep(0.2)
+
         try
             resp = HTTP.get("http://localhost:8210/ping")
             @test resp.status == 200
@@ -1617,7 +1676,8 @@ end
                                  max_body=2048, drain_timeout=1000)
         s_async   = Async(router, cfg_async)
         start!(s_async; port=8211, blocking=false)
-        sleep(0.3)
+        sleep(0.2)
+        
         try
             resp = HTTP.get("http://localhost:8211/ping")
             @test resp.status == 200
@@ -1639,7 +1699,7 @@ end
 
         server = Async(router; nworkers=1, request_timeout=200)
         start!(server; port=8212, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8212/")
 
         # Warm up the JIT via a request that has no timing assertions.
         # Without this the first real request compiles the full dispatch chain
@@ -1676,7 +1736,7 @@ end
 
         server = Async(router; nworkers=1)
         start!(server; port=8213, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8213/")
 
         try
             HTTP.WebSockets.open("ws://localhost:8213/lifecycle") do ws
@@ -1685,7 +1745,7 @@ end
                 @test reply == "echo: hello"
                 @test open_fired[]
             end
-            sleep(0.3)  # give event loop time to fire MG_EV_CLOSE
+            sleep(0.2)  # give event loop time to fire MG_EV_CLOSE
             @test close_fired[]
         finally
             shutdown!(server)
@@ -1703,7 +1763,7 @@ end
 
         server = Async(router; nworkers=2)
         start!(server; port=8214, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8214/")
 
         try
             results = Channel{String}(6)
@@ -1736,6 +1796,7 @@ end
         server = Server(router)
         plug!(server, api_key(header_name="X-Token", keys=Set(["valid-key"])))
         start!(server; port=8215, blocking=false)
+        wait_for_server("http://localhost:8215/")
 
         try
             # Custom header with valid key → 200
@@ -1768,6 +1829,7 @@ end
         server = Server(router)
         plug!(server, cors())  # default: origins="*"
         start!(server; port=8216, blocking=false)
+        wait_for_server("http://localhost:8216/")
 
         try
             resp = HTTP.get("http://localhost:8216/open")
@@ -1794,6 +1856,8 @@ end
         @test ret2 === server
 
         start!(server; port=8217, blocking=false)
+        wait_for_server("http://localhost:8217/")
+
         try
             @test HTTP.get("http://localhost:8217/a").status == 200
             @test HTTP.post("http://localhost:8217/b").status == 200
@@ -1809,7 +1873,7 @@ end
     @testset "@router: unknown route returns 404" begin
         server = Server(Routes)
         start!(server; port=8218, blocking=false)
-        sleep(0.3)
+        wait_for_server("http://localhost:8218/")
 
         try
             resp = HTTP.get("http://localhost:8218/nonexistent"; status_exception=false)
@@ -1826,7 +1890,7 @@ end
     @testset "@router: typed param {id::Int} non-matching value → 404" begin
         server = Server(TypedApp)
         start!(server; port=8219, blocking=false)
-        sleep(0.3)
+        wait_for_server("http://localhost:8219/")
 
         try
             # Correctly typed value → 200
@@ -1851,7 +1915,7 @@ end
     @testset "@router with wildcard catch-all route" begin
         server = Server(WildcardApp)
         start!(server; port=8220, blocking=false)
-        sleep(0.3)
+        wait_for_server("http://localhost:8220/")
 
         try
             resp = HTTP.get("http://localhost:8220/known")
@@ -1876,6 +1940,8 @@ end
         s1 = Server(router)
         plug!(s1, health(health_check=() -> true, ready_check=() -> false, live_check=() -> true))
         start!(s1; port=8221, blocking=false)
+        sleep(0.2)
+
         try
             resp = HTTP.get("http://localhost:8221/healthz"; status_exception=false)
             @test resp.status == 503
@@ -1896,6 +1962,7 @@ end
         s2 = Server(router)
         plug!(s2, health(live_check=() -> false))
         start!(s2; port=8222, blocking=false)
+
         try
             resp = HTTP.get("http://localhost:8222/livez"; status_exception=false)
             @test resp.status == 503
@@ -1919,7 +1986,7 @@ end
 
         server = Async(router; nworkers=2)
         start!(server; port=8223, blocking=false)
-        sleep(0.5)
+        wait_for_server("http://localhost:8223/")
 
         try
             results = Vector{String}(undef, 5)
@@ -1952,6 +2019,7 @@ end
 
         server = Server(router)
         start!(server; port=8224, blocking=false)
+        wait_for_server("http://localhost:8224/")
 
         try
             resp = HTTP.get("http://localhost:8224/unicode")
@@ -1978,6 +2046,7 @@ end
 
         server = Server(router)
         start!(server; port=8225, blocking=false)
+        wait_for_server("http://localhost:8225/")
 
         try
             # Valid ID is echoed back in the response header
