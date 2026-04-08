@@ -6,7 +6,7 @@ using PrecompileTools
 export SyncServer, AsyncServer, Router, Request, Response,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, plug!, mount!, fail!,
-    render_body, content_type, context!,
+    context!,
     ws!, Message,
     cors, rate_limit, bearer_token, api_key, logger, health, metrics,
     RouteError, ServerError, BindError,
@@ -95,7 +95,7 @@ include("middleware/metrics.jl")
         # These compile the serialization path without a real socket
         _statustext(200)
         _appendreqid("", "42")
-        _appendreqid(content_type(Json), "abc-123")
+        _appendreqid(_contentheader(Json), "abc-123")
         _sanitizeid("abc-123")
         _sanitizeid("bad\r\nvalue")
         _uint64tostr(UInt64(12345))

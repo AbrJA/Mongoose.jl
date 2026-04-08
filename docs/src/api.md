@@ -59,11 +59,11 @@ metrics
 
 ## JSON
 
-JSON support is enabled by extending `render_body`:
+JSON support is enabled by extending `encode`:
 
 ```julia
 using JSON
-Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 ```
 
 Then use `Response(Json, value)` anywhere in your handlers.

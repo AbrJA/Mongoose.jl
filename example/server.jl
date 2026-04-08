@@ -15,7 +15,7 @@ Demonstrates every framework feature:
   - Path-scoped middleware with paths=[...]
   - Custom error responses (500 / 413 / 504)
   - C-level static file serving via mount!
-  - render_body extension for arbitrary serialisation
+  - encode extension for arbitrary serialisation
 
     julia --project example/server.jl
     open http://localhost:9000
@@ -25,9 +25,9 @@ using Mongoose
 using JSON
 using Dates
 
-# ── render_body extension ──────────────────────────────────────────────────────
+# ── encode extension ──────────────────────────────────────────────────────
 # Extend Mongoose to serialise any Julia value to JSON via the JSON package.
-Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 
 # ── In-memory user store ───────────────────────────────────────────────────────
 const LOCK    = ReentrantLock()

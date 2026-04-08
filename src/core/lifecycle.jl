@@ -93,7 +93,7 @@ function _logstart(server::AbstractServer, url::String)
     middlewares = length(server.core.middlewares)
     mounts = length(server.core.mounts)
     workers = server isa AsyncServer ? server.nworkers : 0
-    if server.core.pretty
+    if server.core.styled
         println()
         printstyled("🚀 Mongoose started\n", color=:cyan, bold=true)
         printstyled("  URL:     ", color=:light_black); printstyled(url, color=:blue, underline=true); println()
@@ -108,7 +108,7 @@ function _logstart(server::AbstractServer, url::String)
 end
 
 function _logstop(server::AbstractServer)
-    if server.core.pretty
+    if server.core.styled
         printstyled("🛑 Mongoose shutting down...\n", color=:red, bold=true)
      else
         @info "Mongoose shutting down..." component="server"
@@ -116,7 +116,7 @@ function _logstop(server::AbstractServer)
 end
 
 function _logstopped(server::AbstractServer)
-    if server.core.pretty
+    if server.core.styled
         printstyled("✅ Mongoose stopped.\n", color=:green, bold=true)
     else
         @info "Mongoose stopped." component="server"

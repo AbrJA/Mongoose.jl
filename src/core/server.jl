@@ -35,7 +35,7 @@ end
 mutable struct ServerCore{R <: AbstractRouter}
     # --- 1. Execution State ---
     running::Threads.Atomic{Bool}
-    supervisor::Union{Nothing, Task}
+    master::Union{Nothing, Task}
     manager::Manager
     c_handler::Ptr{Cvoid}             # C-interop handler
     clients::Dict{Int, String}
@@ -54,7 +54,7 @@ mutable struct ServerCore{R <: AbstractRouter}
     max_body::Int
 
     # --- 4. UI/UX Preferences ---
-    pretty::Bool
+    styled::Bool
 
     # Inner Constructor
     function ServerCore(poll_timeout::Integer, router::R;
@@ -63,11 +63,11 @@ mutable struct ServerCore{R <: AbstractRouter}
                         request_timeout::Integer = 0,
                         errors::Dict{Int, Response} = Dict{Int, Response}(),
                         c_handler::Ptr{Cvoid} = C_NULL,
-                        pretty::Bool = true) where {R <: AbstractRouter}
+                        styled::Bool = true) where {R <: AbstractRouter}
 
         return new{R}(
             Threads.Atomic{Bool}(false),    # running
-            nothing,                        # supervisor
+            nothing,                        # master
             Manager(empty=true),            # manager
             c_handler,                      # c_handler
             Dict{Int, String}(),            # clients
@@ -80,7 +80,7 @@ mutable struct ServerCore{R <: AbstractRouter}
             request_timeout,                # request_timeout
             drain_timeout,                  # drain_timeout
             max_body,                       # max_body
-            pretty                          # pretty
+            styled                          # styled
         )
     end
 end
@@ -175,7 +175,7 @@ function _bind!(server::AbstractServer, host::AbstractString, port::Integer)
 end
 
 function _spawnloop!(server::AbstractServer)
-    server.core.supervisor = Threads.@spawn begin
+    server.core.master = Threads.@spawn begin
         try
             _eventloop(server)
         catch e
@@ -190,9 +190,9 @@ function _spawnloop!(server::AbstractServer)
 end
 
 function _stoploop!(server::AbstractServer)
-    if !isnothing(server.core.supervisor)
-        try wait(server.core.supervisor) catch end
-        server.core.supervisor = nothing
+    if !isnothing(server.core.master)
+        try wait(server.core.master) catch end
+        server.core.master = nothing
     end
     return
 end

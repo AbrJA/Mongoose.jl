@@ -66,25 +66,26 @@ struct Json <: AbstractFormat end
 struct Xml <: AbstractFormat end
 struct Binary <: AbstractFormat end
 
-function render_body end
-render_body(::Type{T}, body) where T<:AbstractFormat = error("render_body not implemented for type $T and body of type $(typeof(body))")
-render_body(::Type{T}, body::String) where T<:AbstractFormat = body
-render_body(::Type{Binary}, body::Vector{UInt8}) = body
+encode(::Type{T}, body) where T<:AbstractFormat = error("encode not implemented for type $T and body of type $(typeof(body))")
+encode(::Type{T}, body::String) where T<:AbstractFormat = body
+encode(::Type{Binary}, body::Vector{UInt8}) = body
 
-# Mapping: This is the only place you need to update when adding new format types
-function content_type end
-content_type(::Type{T}) where T<:AbstractFormat = error("Unsupported format type: $T")
-content_type(::Type{Html}) = "Content-Type: text/html; charset=utf-8\r\n"
-content_type(::Type{Css}) = "Content-Type: text/css; charset=utf-8\r\n"
-content_type(::Type{Js}) = "Content-Type: application/javascript; charset=utf-8\r\n"
-content_type(::Type{Plain}) = "Content-Type: text/plain; charset=utf-8\r\n"
-content_type(::Type{Json}) = "Content-Type: application/json; charset=utf-8\r\n"
-content_type(::Type{Xml}) = "Content-Type: application/xml; charset=utf-8\r\n"
-content_type(::Type{Binary}) = "Content-Type: application/octet-stream\r\n"
+mime(::Type{T}) where T<:AbstractFormat = error("MIME type not defined for format type $T")
+mime(::Type{Plain})  = "text/plain; charset=utf-8"
+mime(::Type{Html})   = "text/html; charset=utf-8"
+mime(::Type{Css})    = "text/css; charset=utf-8"
+mime(::Type{Js})     = "application/javascript; charset=utf-8"
+mime(::Type{Json})   = "application/json; charset=utf-8"
+mime(::Type{Binary}) = "application/octet-stream"
+mime(::Type{Xml})    = "application/xml; charset=utf-8"
+
+function _contentheader(format::Type{<:AbstractFormat})
+    return "Content-Type: $(mime(format))\r\n"
+end
 
 function Response(::Type{T}, body; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) where T<:AbstractFormat
-    rendered_body = body isa String ? body : render_body(T, body)  # Avoid dispatch trap for String
-    content_headers = isempty(headers) ? content_type(T) : content_type(T) * _formatheaders(headers)
+    rendered_body = body isa String ? body : encode(T, body)  # Avoid dispatch trap for String
+    content_headers = isempty(headers) ? _contentheader(T) : _contentheader(T) * _formatheaders(headers)
     Response(status, content_headers, rendered_body)
 end
 

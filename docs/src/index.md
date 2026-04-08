@@ -366,7 +366,7 @@ Register custom `Response` objects for specific HTTP status codes. The following
 ```julia
 using Mongoose, JSON
 
-Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 
 router = Router()
 server = AsyncServer(router)
@@ -419,12 +419,12 @@ Content-Type: text/plain
 
 ## JSON
 
-JSON support requires `JSON.jl`. Extend `render_body` once at startup to enable `Response(Json, ...)` throughout your app:
+JSON support requires `JSON.jl`. Extend `encode` once at startup to enable `Response(Json, ...)` throughout your app:
 
 ```julia
 using Mongoose, JSON
 
-Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 
 route!(router, :post, "/api", req -> begin
     # Parse body manually

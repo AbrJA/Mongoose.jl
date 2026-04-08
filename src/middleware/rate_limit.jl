@@ -67,7 +67,7 @@ function (mw::RateLimit)(request::AbstractRequest, params::Vector{Any}, next)
 
     if !allowed
         retry_after = string(mw.window_seconds)
-        return Response(429, content_type(Plain) * "Retry-After: $retry_after\r\n", "429 Too Many Requests")
+        return Response(Plain, "Too Many Requests"; status=429, headers=["Retry-After" => retry_after])
     end
 
     return next()

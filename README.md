@@ -27,7 +27,7 @@
 - **Battery-included middleware** — CORS, rate limiting, auth, logging, static files, health checks.
 - **WebSocket support** — on the same port and router as HTTP.
 - **AOT-ready** — full `juliac --trim=safe` compatibility for compiled binaries with zero startup time.
-- **JSON as an extension** — `JSON.jl` is optional; integrate it with a one-line `render_body` override (see [JSON](#json) below).
+- **JSON as an extension** — `JSON.jl` is optional; integrate it with a one-line `encode` override (see [JSON](#json) below).
 
 ---
 
@@ -279,12 +279,12 @@ ws!(router, "/chat",
 
 ## JSON
 
-Install `JSON.jl` and extend `render_body` once at startup:
+Install `JSON.jl` and extend `encode` once at startup:
 
 ```julia
 using Mongoose, JSON
 
-Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 ```
 
 Then use `Response(Json, value)` anywhere — Content-Type is set automatically:
@@ -340,7 +340,7 @@ A complete app with REST API, WebSocket, middleware stack, and custom errors:
 ```julia
 using Mongoose, JSON
 
-Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 
 router = Router()
 

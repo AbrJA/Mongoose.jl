@@ -3,7 +3,7 @@ using JSON
 using Mongoose
 using Test
 
-Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 
 @router Routes begin
     get("/hello", (req) -> Response(200, "", "Hello Static"))
@@ -44,6 +44,7 @@ end
 
         server = SyncServer(router)
         start!(server, port=8091, blocking=false)
+        sleep(0.5)
 
         try
             response = HTTP.get("http://localhost:8091/hello")
@@ -63,7 +64,8 @@ end
 
         server = AsyncServer(router; nworkers=1)
         start!(server, port=8092, blocking=false)
-
+        sleep(0.5)
+        
         try
             # Basic GET
             response = HTTP.get("http://localhost:8092/hello")
@@ -1177,7 +1179,7 @@ end
         @test r3.body   == "created"
         @test occursin("text/plain", r3.headers)
 
-        # Format-typed constructors (avoid Json which has a test-overloaded render_body)
+        # Format-typed constructors (avoid Json which has a test-overloaded encode)
         r4 = Response(Xml, "<root/>")
         @test r4.status == 200
         @test occursin("application/xml", r4.headers)

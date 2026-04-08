@@ -68,12 +68,12 @@ start!(server, port=8080, blocking=false)
 
 ## JSON Request and Response
 
-JSON support requires `JSON.jl`. Extend `render_body` once at the top of your app to enable `Response(Json, ...)` with automatic Content-Type.
+JSON support requires `JSON.jl`. Extend `encode` once at the top of your app to enable `Response(Json, ...)` with automatic Content-Type.
 
 ```julia
 using Mongoose, JSON
 
-Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 
 struct UserProfile
     username::String
@@ -359,7 +359,7 @@ Register pre-built `Response` objects for specific HTTP status codes:
 ```julia
 using Mongoose, JSON
 
-Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 
 router = Router()
 
@@ -495,7 +495,7 @@ Read server settings from environment variables with sensible defaults:
 ```julia
 using Mongoose, JSON
 
-Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 
 # --- Configuration from environment ---
 const HOST    = get(ENV, "HOST", "0.0.0.0")
@@ -569,7 +569,7 @@ Organize a larger API using separate routers merged into one server:
 ```julia
 using Mongoose, JSON
 
-Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 
 # --- User service ---
 function register_user_routes!(router)
@@ -640,7 +640,7 @@ Use middleware to inject authenticated user data into the request context:
 ```julia
 using Mongoose, JSON
 
-Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 
 # --- Auth middleware that populates context ---
 struct JWTAuth <: Mongoose.AbstractMiddleware
@@ -761,7 +761,7 @@ Handle file uploads with proper size limits and content type checking:
 ```julia
 using Mongoose, JSON
 
-Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 
 router = Router()
 
@@ -841,7 +841,7 @@ Serve a frontend SPA alongside a JSON API:
 ```julia
 using Mongoose, JSON
 
-Mongoose.render_body(::Type{Json}, body) = JSON.json(body)
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 
 struct SearchParams
     q::String
