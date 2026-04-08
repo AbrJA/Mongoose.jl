@@ -179,7 +179,7 @@ end
 
 Generate a monotonically increasing request ID.
 """
-@inline _nextreqid!(server::AbstractServer) = Threads.atomic_add!(server.core.id, UInt64(1)) + UInt64(1)
+@inline _nextreqid!(server::AbstractServer) = Threads.atomic_add!(server.core.id_seq, UInt64(1)) + UInt64(1)
 
 """
     _sanitizeid(s) → String
@@ -212,7 +212,7 @@ monotonic ID is generated from the server's atomic counter.
         safe = _sanitizeid(h)
         !isempty(safe) && return safe
     end
-    return _uint64tostr(Threads.atomic_add!(server.core.id, UInt64(1)) + UInt64(1))
+    return _uint64tostr(Threads.atomic_add!(server.core.id_seq, UInt64(1)) + UInt64(1))
 end
 
 """
@@ -233,7 +233,7 @@ headers, avoiding the cost of scanning the already-parsed `Vector{Pair}`.
             !isempty(safe) && return safe
         end
     end
-    return _uint64tostr(Threads.atomic_add!(server.core.id, UInt64(1)) + UInt64(1))
+    return _uint64tostr(Threads.atomic_add!(server.core.id_seq, UInt64(1)) + UInt64(1))
 end
 
 # Case-insensitive check for "x-request-id" (12 bytes) directly on C memory
@@ -305,11 +305,11 @@ end
     _invokehttp(server, request) → Response
 """
 function _invokehttp(server::AbstractServer, req::AbstractRequest)
-    if isempty(server.core.plugs)
+    if isempty(server.core.middlewares)
         return _dispatchhttp(server.core.router, req)
     end
     final = (r, args...) -> _dispatchhttp(server.core.router, r)
-    return _pipeline(server.core.plugs, req, Any[], final)
+    return _pipeline(server.core.middlewares, req, Any[], final)
 end
 
 # Trim-safe specialization: StaticRouter dispatches directly, bypassing the middleware pipeline

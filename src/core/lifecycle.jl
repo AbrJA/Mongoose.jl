@@ -59,7 +59,7 @@ graceful shutdown automatically — no wrapper code needed in the caller.
 - `blocking::Bool`: If `true`, blocks until the server is stopped (default: `true`).
 - `pretty::Bool`: If `true`, enables pretty printing of server logs (default: `true` if stdout is a TTY).
 """
-function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=true, pretty::Bool=isa(stdout, Base.TTY))
+function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=true)
     if Threads.atomic_xchg!(server.core.running, true)
         return
     end
@@ -69,7 +69,7 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
         _init!(server)
         url = _bind!(server, host, port)
         _spawnworkers!(server)
-        _logstart(server, url, pretty)
+        _logstart(server, url)
 
         if blocking
             # Run event loop directly on main thread (required for AOT executables)
@@ -87,37 +87,37 @@ end
 
 # Emit a single structured startup log with everything an operator needs.
 # A single entry point for both types
-function _logstart(server::AbstractServer, url::String, pretty::Bool)
+function _logstart(server::AbstractServer, url::String)
     type = nameof(typeof(server))
     routes = _routecount(server.core.router)
     threads = Threads.nthreads()
-    plugs = length(server.core.plugs)
+    middlewares = length(server.core.middlewares)
     mounts = length(server.core.mounts)
     workers = server isa AsyncServer ? server.nworkers : 1
-    if pretty
+    if server.core.pretty
         println()
         printstyled("🚀 Mongoose started\n", color=:cyan, bold=true)
         printstyled("  URL:     ", color=:light_black); printstyled(url, color=:blue, underline=true); println()
         printstyled("  API:     ", color=:light_black)
-        printstyled("$routes routes • $plugs middleware • $mounts mounts\n", color=:green)
+        printstyled("$routes routes • $middlewares middleware • $mounts mounts\n", color=:green)
         printstyled("  Type:    ", color=:light_black); println(type)
         printstyled("  System:  ", color=:light_black)
         printstyled("$workers workers • $threads threads\n", color=:green); println()
     else
-        @info "Mongoose started" component="server" type=type url=url routes=routes middleware=plugs mounts=mounts workers=workers threads=threads
+        @info "Mongoose started" component="server" type=type url=url routes=routes middleware=middlewares mounts=mounts workers=workers threads=threads
     end
 end
 
-function _logstop(pretty::Bool=true)
-    if pretty
+function _logstop(server::AbstractServer)
+    if server.core.pretty
         printstyled("🛑 Mongoose shutting down...\n", color=:red, bold=true)
      else
         @info "Mongoose shutting down..." component="server"
     end
 end
 
-function _logstopped(pretty::Bool=true)
-    if pretty
+function _logstopped(server::AbstractServer)
+    if server.core.pretty
         printstyled("✅ Mongoose stopped.\n", color=:green, bold=true)
     else
         @info "Mongoose stopped." component="server"
@@ -142,13 +142,13 @@ function shutdown!(server::AbstractServer)
     if !Threads.atomic_xchg!(server.core.running, false)
         return
     end
-    _logstop()
+    _logstop(server)
     _drain(server)
     _stopworkers!(server)
     _stoploop!(server)
     _teardown!(server)
     _unregister!(server)
-    _logstopped()
+    _logstopped(server)
     return
 end
 

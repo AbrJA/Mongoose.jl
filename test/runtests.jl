@@ -1600,7 +1600,7 @@ end
         router = Router()
         route!(router, :get, "/ping", req -> Response(200, "", "pong"))
 
-        cfg_sync = ServerConfig(timeout=1, max_body=1024)
+        cfg_sync = ServerConfig(poll_timeout=1, max_body=1024)
         s_sync   = SyncServer(router, cfg_sync)
         start!(s_sync; port=8210, blocking=false)
         try
@@ -1611,7 +1611,7 @@ end
             shutdown!(s_sync)
         end
 
-        cfg_async = ServerConfig(workers=2, nqueue=64, timeout=0,
+        cfg_async = ServerConfig(workers=2, nqueue=64, poll_timeout=0,
                                  max_body=2048, drain_timeout=1000)
         s_async   = AsyncServer(router, cfg_async)
         start!(s_async; port=8211, blocking=false)

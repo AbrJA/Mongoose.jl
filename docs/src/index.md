@@ -69,7 +69,7 @@ Mongoose.jl uses a decoupled architecture: a **Router** defines the routes and h
 server = AsyncServer(router;
     workers=4,              # Number of worker tasks
     nqueue=1024,            # Channel buffer size
-    timeout=0,              # Poll timeout (ms)
+    poll_timeout=0,              # Poll timeout (ms)
     max_body=1048576,  # Max request body in bytes (default: 1MB)
     drain_timeout=5000,  # Graceful shutdown drain timeout (ms)
     request_timeout=0,   # Per-request timeout (0 = disabled)
@@ -81,7 +81,7 @@ server = AsyncServer(router;
 
 ```julia
 server = SyncServer(router;
-    timeout=1,              # Poll timeout (ms), default: 1
+    poll_timeout=1,              # Poll timeout (ms), default: 1
     max_body=1048576,
     drain_timeout=5000,
     errors=Dict{Int,Response}()
@@ -105,7 +105,7 @@ server = AsyncServer(router, config)  # or SyncServer(router, config)
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `timeout` | `1` | Poll timeout in ms (`0` = min latency, high CPU) |
+| `poll_timeout` | `1` | Poll timeout in ms (`0` = min latency, high CPU) |
 | `max_body` | 1 MB | Max request body in bytes |
 | `drain_timeout` | 5000 | Graceful-shutdown drain period in ms |
 | `request_timeout` | `0` | Per-request timeout in ms; `0` = disabled |

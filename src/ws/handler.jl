@@ -42,7 +42,7 @@ end
 
 function _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
     mg_ws_upgrade(conn, ev_data, C_NULL)
-    server.core.sockets[Int(conn)] = uri
+    server.core.clients[Int(conn)] = uri
     if endpoint.on_open !== nothing
         req = Request(message)
         try
@@ -64,7 +64,7 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, 
     msg = MgWsMessage(ev_data)
     ws_msg = _parsewsmsg(msg)
     conn_id = Int(conn)
-    uri = get(server.core.sockets, conn_id, "")
+    uri = get(server.core.clients, conn_id, "")
     tagged = Tagged(conn_id, Intent(ws_msg, uri))
     result = _invokews(server, tagged)
     if result !== nothing
@@ -78,7 +78,7 @@ function _onevent!(server::AsyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection,
     msg = MgWsMessage(ev_data)
     ws_msg = _parsewsmsg(msg)
     conn_id = Int(conn)
-    uri = get(server.core.sockets, conn_id, "")
+    uri = get(server.core.clients, conn_id, "")
     server.connections[conn_id] = conn
     isopen(server.calls) && put!(server.calls, Tagged(conn_id, Intent(ws_msg, uri)))
     return
@@ -100,11 +100,11 @@ end
     _closews!(server, conn)
 
 Clean up WebSocket state when a connection closes: fire `on_close` if registered,
-then remove the connection URI from `sockets`.
+then remove the connection URI from `clients`.
 """
 function _closews!(server::AbstractServer, conn::MgConnection)
     conn_id = Int(conn)
-    uri = get(server.core.sockets, conn_id, nothing)
+    uri = get(server.core.clients, conn_id, nothing)
 
     if uri !== nothing
         endpoint = _wsep(server.core.router, uri)
@@ -115,7 +115,7 @@ function _closews!(server::AbstractServer, conn::MgConnection)
                 @error "WebSocket on_close error" component="websocket" uri=uri exception=(e, catch_backtrace())
             end
         end
-        delete!(server.core.sockets, conn_id)
+        delete!(server.core.clients, conn_id)
     end
     return
 end

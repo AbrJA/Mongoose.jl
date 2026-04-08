@@ -35,15 +35,15 @@ end
 mutable struct ServerCore{R <: AbstractRouter}
     # --- 1. Execution State ---
     running::Threads.Atomic{Bool}
-    server_task::Union{Nothing, Task}
+    supervisor::Union{Nothing, Task}
     manager::Manager
-    handler::Ptr{Cvoid}             # C-interop handler
-    sockets::Dict{Int, String}
-    next_id::Threads.Atomic{UInt64} # Connection/Request ID generator
+    c_handler::Ptr{Cvoid}             # C-interop handler
+    clients::Dict{Int, String}
+    id_seq::Threads.Atomic{UInt64} # Connection/Request ID generator
 
     # --- 2. Routing & Logic ---
     router::R
-    pipeline::Vector{AbstractMiddleware}
+    middlewares::Vector{AbstractMiddleware}
     mounts::Vector{Tuple{String, String}}
     errors::Dict{Int, Response}
 
@@ -67,16 +67,16 @@ mutable struct ServerCore{R <: AbstractRouter}
 
         return new{R}(
             Threads.Atomic{Bool}(false),    # running
-            nothing,                        # server_task (formerly master)
+            nothing,                        # supervisor
             Manager(empty=true),            # manager
-            c_handler,                      # handler
-            Dict{Int, String}(),            # sockets
-            Threads.Atomic{UInt64}(0),      # next_id (formerly id)
+            c_handler,                      # c_handler
+            Dict{Int, String}(),            # clients
+            Threads.Atomic{UInt64}(0),      # id_seq
             router,                         # router
-            AbstractMiddleware[],           # pipeline (formerly plugs)
+            AbstractMiddleware[],           # middlewares
             Tuple{String, String}[],        # mounts
             errors,                         # errors
-            poll_timeout,                   # poll_timeout (formerly timeout)
+            poll_timeout,                   # poll_timeout 
             request_timeout,                # request_timeout
             drain_timeout,                  # drain_timeout
             max_body,                       # max_body
@@ -98,7 +98,7 @@ of individual keyword arguments.
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `timeout` | `1` | Event-loop poll timeout in ms. Use `0` for min latency (high CPU). |
+| `poll_timeout` | `1` | Event-loop poll timeout in ms. Use `0` for min latency (high CPU). |
 | `max_body` | 1 MB | Maximum request body size in bytes. |
 | `drain_timeout` | 5000 | Graceful-shutdown drain period in ms. |
 | `request_timeout` | 0 | Per-request timeout in ms; `0` = disabled (AsyncServer only). |
@@ -125,7 +125,7 @@ config = ServerConfig(
 ```
 """
 Base.@kwdef struct ServerConfig
-    timeout::Int            = 1
+    poll_timeout::Int            = 1
     max_body::Int      = MAX_BODY
     drain_timeout::Int   = DRAIN_TIMEOUT
     request_timeout::Int = 0
@@ -169,13 +169,13 @@ end
 function _bind!(server::AbstractServer, host::AbstractString, port::Integer)
     url = "http://$host:$port"
     fn_data = pointer_from_objref(server)
-    is_listen = mg_http_listen(server.core.manager.ptr, url, server.core.handler, fn_data)
+    is_listen = mg_http_listen(server.core.manager.ptr, url, server.core.c_handler, fn_data)
     is_listen == C_NULL && throw(BindError("Failed to start server on $url. Port may be in use."))
     return url
 end
 
 function _spawnloop!(server::AbstractServer)
-    server.core.master = Threads.@spawn begin
+    server.core.supervisor = Threads.@spawn begin
         try
             _eventloop(server)
         catch e
@@ -190,9 +190,9 @@ function _spawnloop!(server::AbstractServer)
 end
 
 function _stoploop!(server::AbstractServer)
-    if !isnothing(server.core.master)
-        try wait(server.core.master) catch end
-        server.core.master = nothing
+    if !isnothing(server.core.supervisor)
+        try wait(server.core.supervisor) catch end
+        server.core.supervisor = nothing
     end
     return
 end

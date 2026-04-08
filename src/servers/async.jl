@@ -3,7 +3,7 @@
 """
 
 """
-    AsyncServer(router=Router(); workers=4, nqueue=1024, timeout=0, max_body,
+    AsyncServer(router=Router(); workers=4, nqueue=1024, poll_timeout=0, max_body,
                drain_timeout, request_timeout=0, errors=Dict{Int,Response}())
 
 Create a multi-threaded server with `workers` background tasks.
@@ -12,7 +12,7 @@ Not compatible with `juliac --trim=safe`.
 # Keyword Arguments
 - `workers::Integer`: Number of worker tasks (default: `4`).
 - `nqueue::Integer`: Channel buffer size (default: `1024`).
-- `timeout::Integer`: Event-loop poll timeout in ms (default: `0`).
+- `poll_timeout::Integer`: Event-loop poll timeout in ms (default: `0`).
 - `max_body::Integer`: Maximum request body size in bytes (default: 1MB).
 - `drain_timeout::Integer`: Graceful shutdown drain timeout (default: 5000ms).
 - `request_timeout::Integer`: Per-request timeout in ms, 0 = disabled (default: `0`).
@@ -24,13 +24,13 @@ AsyncServer(::Type{T}, config::ServerConfig) where {T <: StaticRouter} = AsyncSe
 function AsyncServer(router::AbstractRouter=Router();
                      workers::Integer=4,
                      nqueue::Integer=1024,
-                     timeout::Integer=0,
+                     poll_timeout::Integer=0,
                      max_body::Integer=MAX_BODY,
                      drain_timeout::Integer=DRAIN_TIMEOUT,
                      request_timeout::Integer=0,
                      errors::Dict{Int,Response}=Dict{Int,Response}())
     c_handler = Mongoose._cfnasync(typeof(router))
-    core = ServerCore(timeout, router; max_body=max_body, drain_timeout=drain_timeout,
+    core = ServerCore(poll_timeout, router; max_body=max_body, drain_timeout=drain_timeout,
                       request_timeout=request_timeout, errors=errors, c_handler=c_handler)
     server = AsyncServer{typeof(router)}(
         core, Task[],
@@ -48,13 +48,13 @@ Create an `AsyncServer` from a [`ServerConfig`](@ref) struct.
 """
 function AsyncServer(router::AbstractRouter, config::ServerConfig)
     return AsyncServer(router;
-        workers            = config.workers,
-        nqueue             = config.nqueue,
-        timeout            = config.timeout,
-        max_body      = config.max_body,
-        drain_timeout   = config.drain_timeout,
+        workers = config.workers,
+        nqueue = config.nqueue,
+        poll_timeout = config.poll_timeout,
+        max_body = config.max_body,
+        drain_timeout = config.drain_timeout,
         request_timeout = config.request_timeout,
-        errors    = config.errors
+        errors = config.errors
     )
 end
 
@@ -63,7 +63,7 @@ function _init!(server::AsyncServer)
     server.calls   = Channel{Call}(server.nqueue)
     server.replies = Channel{Reply}(server.nqueue)
     empty!(server.connections)
-    empty!(server.core.sockets)
+    empty!(server.core.clients)
     return
 end
 
@@ -93,20 +93,20 @@ _stopworkers!(::AbstractServer) = nothing
 function _eventloop(server::AsyncServer)
     server.core.running[] = true
     while server.core.running[]
-        mg_mgr_poll(server.core.manager.ptr, server.core.timeout)
+        mg_mgr_poll(server.core.manager.ptr, server.core.poll_timeout)
 
         # Dispatch replies from workers back to C library
         local did_ws_send = false
         while isopen(server.replies) && isready(server.replies)
-            id_res = take!(server.replies)
-            conn = get(server.connections, id_res.id, nothing)
+            res = take!(server.replies)
+            conn = get(server.connections, res.id, nothing)
             if conn !== nothing
-                if id_res.payload isa Response
-                    _sendhttp!(conn, id_res.payload)
-                    delete!(server.connections, id_res.id)
+                if res.payload isa Response
+                    _sendhttp!(conn, res.payload)
+                    delete!(server.connections, res.id)
                 else  # Message
                     try
-                        _sendws!(conn, id_res.payload)
+                        _sendws!(conn, res.payload)
                         did_ws_send = true
                     catch e
                     @error "WebSocket send error" component="websocket" exception=(e, catch_backtrace())

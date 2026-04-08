@@ -27,9 +27,9 @@ plug!(server, logger(); paths=["/api", "/admin"])               # selective logg
 """
 function plug!(server::AbstractServer, middleware::AbstractMiddleware; paths::Union{Nothing,Vector{String}}=nothing)
     if paths === nothing
-        push!(server.core.plugs, middleware)
+        push!(server.core.middlewares, middleware)
     else
-        push!(server.core.plugs, PathFilter(middleware, paths))
+        push!(server.core.middlewares, PathFilter(middleware, paths))
     end
     return server
 end
