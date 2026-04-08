@@ -10,7 +10,7 @@ using Mongoose
 router = Router()
 route!(router, :get, "/", req -> Response(Plain, "Hello, World!"))
 
-server = SyncServer(router)
+server = Server(router)
 start!(server, port=8080)
 ```
 
@@ -38,7 +38,7 @@ route!(router, :get, "/price/:amount::Float64", (req, amount) -> begin
     tax = amount * 0.16
     Response(Json, """{"amount": $amount, "tax": $tax}""")
 
-server = AsyncServer(router)
+server = Async(router)
 start!(server, port=8080, blocking=false)
 ```
 
@@ -62,7 +62,7 @@ route!(router, :get, "/search", req -> begin
     Response(Json, """{"query": "$(s.q)", "page": $(s.page)}""")
 end)
 
-server = AsyncServer(router)
+server = Async(router)
 start!(server, port=8080, blocking=false)
 ```
 
@@ -95,7 +95,7 @@ route!(router, :post, "/user/create", req -> begin
     Response(Json, Dict("message" => "Hello, $name"); status=201)
 end)
 
-server = AsyncServer(router)
+server = Async(router)
 start!(server, port=8080, blocking=false)
 ```
 
@@ -119,7 +119,7 @@ route!(router, :get, "/search", req -> begin
     Response(Plain, "Searching '$(search.q)' page $(search.page)")
 end)
 
-server = AsyncServer(router)
+server = Async(router)
 start!(server, port=8080, blocking=false)
 ```
 
@@ -144,7 +144,7 @@ ws!(router, "/echo",
     on_close = () -> println("Client disconnected")
 )
 
-server = AsyncServer(router)
+server = Async(router)
 start!(server, port=8080, blocking=false)
 ```
 
@@ -160,7 +160,7 @@ route!(router, :get, "/api/data", req -> begin
     Response(Json, """{"status": "ok"}""")
 end)
 
-server = AsyncServer(router)
+server = Async(router)
 
 # 1. Log all requests (method, URI, status, duration in ms)
 plug!(server, logger())
@@ -187,7 +187,7 @@ using Mongoose
 router = Router()
 route!(router, :get, "/internal", req -> Response(Plain, "Internal data"))
 
-server = AsyncServer(router)
+server = Async(router)
 plug!(server, api_key(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
 
 start!(server, port=8080, blocking=false)
@@ -207,7 +207,7 @@ route!(router, :get, "/slow", req -> begin
     Response(Plain, "slow")
 end)
 
-server = AsyncServer(router)
+server = Async(router)
 
 # Only log requests taking longer than 50ms
 plug!(server, logger(threshold=50))
@@ -223,7 +223,7 @@ Serve a directory of HTML, CSS, JS, and other assets using the C-level file serv
 ```julia
 using Mongoose
 
-server = AsyncServer(Router())
+server = Async(Router())
 
 # Serve files from "public/" directory
 # GET /style.css  →  public/style.css
@@ -261,7 +261,7 @@ route!(router, :get, "/me", req -> begin
     Response(Plain, "Hello, $user!")
 end)
 
-server = AsyncServer(router)
+server = Async(router)
 plug!(server, UserLookup(Dict("token-123" => "Alice", "token-456" => "Bob")))
 
 start!(server, port=8080, blocking=false)
@@ -282,7 +282,7 @@ route!(router, :get, "/compute", req -> begin
 end)
 
 # 8 worker tasks processing requests concurrently
-server = AsyncServer(router; nworkers=8)
+server = Async(router; nworkers=8)
 start!(server, port=8080, blocking=false)
 ```
 
@@ -302,7 +302,7 @@ using Mongoose
     ws("/chat", on_message = msg -> Message("Echo: $(msg.data)"))
 end
 
-server = SyncServer(MyApi())
+server = Server(MyApi())
 start!(server, port=8080)
 ```
 
@@ -343,7 +343,7 @@ ws!(router, "/ws/notifications",
 )
 
 # Server with full middleware stack
-server = AsyncServer(router; nworkers=4)
+server = Async(router; nworkers=4)
 plug!(server, logger(threshold=100))
 plug!(server, cors(origins="https://myapp.com"))
 plug!(server, rate_limit(max_requests=200, window_seconds=60))
@@ -369,7 +369,7 @@ route!(router, :get, "/ok", req -> Response(200, "All good"))
 # Custom 404: use a wildcard route
 route!(router, :get, "*", req -> Response(Html, "<h1>Not Found</h1>"; status=404))
 
-server = AsyncServer(router; request_timeout=5000)
+server = Async(router; request_timeout=5000)
 
 fail!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500))
 fail!(server, 413, Response(Json, """{"error":"Body too large"}"""; status=413))
@@ -391,7 +391,7 @@ route!(router, :get, "/", req -> Response(200, "Welcome"))
 route!(router, :get, "/api/users", req -> Response(200, "User list"))
 route!(router, :get, "/admin/dashboard", req -> Response(200, "Dashboard"))
 
-server = AsyncServer(router)
+server = Async(router)
 
 # Auth only for /api and /admin routes
 plug!(server, bearer_token(t -> t == "secret"); paths=["/api", "/admin"])
@@ -415,7 +415,7 @@ using Mongoose
 router = Router()
 route!(router, :get, "/", req -> Response(200, "ok"))
 
-server = AsyncServer(router)
+server = Async(router)
 plug!(server, logger(structured=true, output=open("access.log", "a")))
 
 start!(server, port=8080, blocking=false)
@@ -436,7 +436,7 @@ using Mongoose
 router = Router()
 route!(router, :get, "/api/data", req -> Response(Json, """{"ok":true}"""))
 
-server = AsyncServer(router; nworkers=4)
+server = Async(router; nworkers=4)
 plug!(server, health())
 plug!(server, metrics())          # serves GET /metrics
 
@@ -482,7 +482,7 @@ route!(router, :get, "/image", req -> begin
     Response(Binary, data; status=200)
 end)
 
-server = AsyncServer(router)
+server = Async(router)
 start!(server, port=8080, blocking=false)
 ```
 
@@ -513,7 +513,7 @@ route!(router, :get, "/api/status", req -> Response(Json, Dict(
     "julia_version" => string(VERSION)
 )))
 
-server = AsyncServer(router;
+server = Async(router;
     nworkers=WORKERS,
     max_body=MAX_BODY,
     request_timeout=REQ_TIMEOUT,
@@ -540,7 +540,7 @@ using Mongoose
 router = Router()
 route!(router, :get, "/", req -> Response(200, "Running"))
 
-server = AsyncServer(router; nworkers=4, drain_timeout=10_000)
+server = Async(router; nworkers=4, drain_timeout=10_000)
 plug!(server, health())
 
 start!(server; host="0.0.0.0", port=8080, blocking=false)
@@ -617,7 +617,7 @@ register_product_routes!(router)
 # Catch-all 404
 route!(router, :get, "*", req -> Response(Json, Dict("error" => "Not found"); status=404))
 
-server = AsyncServer(router; nworkers=4, request_timeout=15_000)
+server = Async(router; nworkers=4, request_timeout=15_000)
 
 # Public: health + CORS on everything
 plug!(server, health())
@@ -693,7 +693,7 @@ route!(router, :delete, "/api/admin/users/:id::Int", (req, id) -> begin
     Response(Json, Dict("deleted" => id))
 end)
 
-server = AsyncServer(router; nworkers=4)
+server = Async(router; nworkers=4)
 
 # Apply auth to all /api routes
 plug!(server, JWTAuth("my-secret"); paths=["/api"])
@@ -718,7 +718,7 @@ const CACHE_READY = Ref(true)
 router = Router()
 route!(router, :get, "/api/data", req -> Response(Json, """{"ok":true}"""))
 
-server = AsyncServer(router; nworkers=4)
+server = Async(router; nworkers=4)
 
 plug!(server, health(
     # Health check: all dependencies must be working
@@ -784,7 +784,7 @@ route!(router, :post, "/api/upload", req -> begin
 end)
 
 # 10MB body limit for upload endpoint
-server = AsyncServer(router; nworkers=4, max_body=10_485_760)
+server = Async(router; nworkers=4, max_body=10_485_760)
 
 plug!(server, logger())
 plug!(server, rate_limit(max_requests=30, window_seconds=60); paths=["/api/upload"])
@@ -830,7 +830,7 @@ ws!(router, "/ws/chat",
     on_close = () -> @info "Client disconnected"
 )
 
-server = AsyncServer(router; workers=2)
+server = Async(router; workers=2)
 start!(server; host="0.0.0.0", port=8080)
 ```
 
@@ -860,7 +860,7 @@ route!(router, :get, "/api/v1/search", req -> begin
     Response(Json, Dict("query" => s.q, "results" => []))
 end)
 
-server = AsyncServer(router; nworkers=4)
+server = Async(router; nworkers=4)
 
 # Middleware: API-only auth
 plug!(server, api_key(keys=Set([ENV["API_KEY"]])); paths=["/api"])
@@ -895,7 +895,7 @@ using Mongoose
 end
 
 function main()
-    server = SyncServer(MyAPI())
+    server = Server(MyAPI())
     start!(server; host="0.0.0.0", port=8080)
 end
 

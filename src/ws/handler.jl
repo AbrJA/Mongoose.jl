@@ -59,8 +59,8 @@ _sendws!(conn, msg::Message)        = _sendws!(conn, msg.data)
 
 # --- WS event handlers ---
 
-# SyncServer: process WS message directly on event-loop thread
-function _onevent!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
+# Server: process WS message directly on event-loop thread
+function _onevent!(server::Server, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
     ws_msg = _parsewsmsg(msg)
     conn_id = Int(conn)
@@ -73,8 +73,8 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, 
     return
 end
 
-# AsyncServer: queue WS message to worker channels
-function _onevent!(server::AsyncServer, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
+# Async: queue WS message to worker channels
+function _onevent!(server::Async, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
     ws_msg = _parsewsmsg(msg)
     conn_id = Int(conn)
@@ -90,7 +90,7 @@ function _onevent!(server::AbstractServer, ::Val{MG_EV_CLOSE}, conn::MgConnectio
     return
 end
 
-function _onevent!(server::AsyncServer, ::Val{MG_EV_CLOSE}, conn::MgConnection, ev_data::Ptr{Cvoid})
+function _onevent!(server::Async, ::Val{MG_EV_CLOSE}, conn::MgConnection, ev_data::Ptr{Cvoid})
     _closews!(server, conn)
     delete!(server.connections, Int(conn))
     return

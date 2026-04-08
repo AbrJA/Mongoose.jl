@@ -14,7 +14,7 @@ end
 end
 
 (@main)(ARGS) = begin
-    server = SyncServer(Routes)
+    server = Server(Routes)
     start!(server, port=8099, blocking=true)
     return 0
 end

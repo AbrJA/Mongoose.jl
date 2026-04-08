@@ -1,9 +1,9 @@
 """
-    SyncServer — Single-threaded blocking server methods.
+    Server — Single-threaded blocking server methods.
 """
 
 """
-    SyncServer(router=Router(); poll_timeout=1, max_body, drain_timeout, errors)
+    Server(router=Router(); poll_timeout=1, max_body, drain_timeout, errors)
 
 Create a single-threaded blocking server. Compatible with `juliac --trim=safe`.
 
@@ -13,28 +13,28 @@ Create a single-threaded blocking server. Compatible with `juliac --trim=safe`.
 - `drain_timeout::Integer`: Graceful shutdown drain timeout (default: 5000ms).
 - `errors::Dict{Int,Response}`: Custom responses keyed by HTTP status code (`500`, `413`, `504`). See `fail!`.
 """
-SyncServer(::Type{T}; kwargs...) where {T <: StaticRouter} = SyncServer(T(); kwargs...)
-SyncServer(::Type{T}, config::ServerConfig) where {T <: StaticRouter} = SyncServer(T(), config)
+Server(::Type{T}; kwargs...) where {T <: StaticRouter} = Server(T(); kwargs...)
+Server(::Type{T}, config::ServerConfig) where {T <: StaticRouter} = Server(T(), config)
 
-function SyncServer(router::AbstractRouter=Router();
+function Server(router::AbstractRouter=Router();
                     poll_timeout::Integer=1,
                     max_body::Integer=MAX_BODY,
                     drain_timeout::Integer=DRAIN_TIMEOUT,
                     errors::Dict{Int,Response}=Dict{Int,Response}())
     c_handler = Mongoose._cfnsync(typeof(router))
     core = ServerCore(poll_timeout, router; max_body=max_body, drain_timeout=drain_timeout, errors=errors, c_handler=c_handler)
-    server = SyncServer{typeof(router)}(core)
+    server = Server{typeof(router)}(core)
     finalizer(_teardown!, server)
     return server
 end
 
 """
-    SyncServer(router, config::ServerConfig)
+    Server(router, config::ServerConfig)
 
-Create a `SyncServer` from a [`ServerConfig`](@ref) struct.
+Create a `Server` from a [`ServerConfig`](@ref) struct.
 """
-function SyncServer(router::AbstractRouter, config::ServerConfig)
-    return SyncServer(router;
+function Server(router::AbstractRouter, config::ServerConfig)
+    return Server(router;
         poll_timeout          = config.poll_timeout,
         max_body    = config.max_body,
         drain_timeout = config.drain_timeout,
@@ -42,13 +42,13 @@ function SyncServer(router::AbstractRouter, config::ServerConfig)
     )
 end
 
-function _init!(server::SyncServer)
+function _init!(server::Server)
     server.core.manager = Manager()
     empty!(server.core.clients)
     return
 end
 
-function _eventloop(server::SyncServer)
+function _eventloop(server::Server)
     mgr = server.core.manager.ptr
     timeout = server.core.poll_timeout
     while server.core.running[]

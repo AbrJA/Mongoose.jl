@@ -37,12 +37,12 @@ end
         error("Something went wrong!")
     end
 
-    # --- Test 1: SyncServer ---
-    @testset "SyncServer" begin
+    # --- Test 1: Server ---
+    @testset "Server" begin
         router = Router()
         route!(router, :get, "/hello", greet)
 
-        server = SyncServer(router)
+        server = Server(router)
         start!(server, port=8091, blocking=false)
         sleep(0.5)
 
@@ -55,17 +55,17 @@ end
         end
     end
 
-    # --- Test 2: AsyncServer (Default) ---
-    @testset "AsyncServer" begin
+    # --- Test 2: Async (Default) ---
+    @testset "Async" begin
         router = Router()
         route!(router, :get, "/hello", greet)
         route!(router, :get, "/echo/:name", echo)
         route!(router, :get, "/error", error_handler)
 
-        server = AsyncServer(router; nworkers=1)
+        server = Async(router; nworkers=1)
         start!(server, port=8092, blocking=false)
         sleep(0.5)
-        
+
         try
             # Basic GET
             response = HTTP.get("http://localhost:8092/hello")
@@ -106,7 +106,7 @@ end
             Response("Hello $(name) type=$(typeof(name))")
         end)
 
-        server = AsyncServer(router; nworkers=1)
+        server = Async(router; nworkers=1)
         start!(server, port=8100, blocking=false)
         sleep(0.5)
 
@@ -134,7 +134,7 @@ end
         end
     end
 
-    # --- Test 4: Multithreading (AsyncServer with workers) ---
+    # --- Test 4: Multithreading (Async with workers) ---
     @testset "Multithreading" begin
         n_threads = Threads.nthreads()
         @info "Running multithreading tests with $n_threads threads"
@@ -142,7 +142,7 @@ end
         router = Router()
         route!(router, :get, "/echo/:name", echo)
 
-        server = AsyncServer(router; nworkers=4)
+        server = Async(router; nworkers=4)
         start!(server, port=8093, blocking=false)
 
         try
@@ -172,8 +172,8 @@ end
         router2 = Router()
         route!(router2, :get, "/s2", (req) -> Response(200, "", "Server 2"))
 
-        server1 = AsyncServer(router1; nworkers=1)
-        server2 = AsyncServer(router2; nworkers=1)
+        server1 = Async(router1; nworkers=1)
+        server2 = Async(router2; nworkers=1)
 
         start!(server1, port=8094, blocking=false)
         start!(server2, port=8095, blocking=false)
@@ -196,7 +196,7 @@ end
         router = Router()
         route!(router, :get, "/api/data", (req) -> Response(Json, "{\"ok\":true}"))
 
-        server = AsyncServer(router; nworkers=1)
+        server = Async(router; nworkers=1)
         plug!(server, cors(origins="https://example.com"))
         start!(server, port=8096, blocking=false)
         sleep(0.5)
@@ -226,7 +226,7 @@ end
             Response(Json, data)
         end)
 
-        server = AsyncServer(router; nworkers=1)
+        server = Async(router; nworkers=1)
         start!(server, port=8097, blocking=false)
         sleep(0.5)
 
@@ -276,7 +276,7 @@ end
         router = Router()
         route!(router, :post, "/upload", (req) -> Response(200, "", "OK"))
 
-        server = AsyncServer(router; nworkers=1, max_body=100)
+        server = Async(router; nworkers=1, max_body=100)
         start!(server, port=8099, blocking=false)
         sleep(0.5)
 
@@ -311,7 +311,7 @@ end
                 println("Server closed WS connection!")
             end)
 
-        server = AsyncServer(router, nworkers=1)
+        server = Async(router, nworkers=1)
         start!(server, port=8098, blocking=false)
         sleep(0.5)
 
@@ -331,13 +331,13 @@ end
         end
     end
 
-    # --- Test: SyncServer with pre-built router ---
-    @testset "SyncServer with Router" begin
+    # --- Test: Server with pre-built router ---
+    @testset "Server with Router" begin
         router = Router()
         route!(router, :get, "/hello", greet)
         route!(router, :get, "/echo/:name", echo)
 
-        server = SyncServer(router)
+        server = Server(router)
         start!(server; port=8101, blocking=false)
 
         try
@@ -353,14 +353,14 @@ end
         end
     end
 
-    # --- Test: AsyncServer with pre-built router ---
-    @testset "AsyncServer with Router" begin
+    # --- Test: Async with pre-built router ---
+    @testset "Async with Router" begin
         router = Router()
         route!(router, :get, "/hello", greet)
         route!(router, :get, "/echo/:name", echo)
         route!(router, :get, "/error", error_handler)
 
-        server = AsyncServer(router; nworkers=4)
+        server = Async(router; nworkers=4)
         start!(server; port=8102, blocking=false)
 
         try
@@ -388,7 +388,7 @@ end
         route!(router, :get, "/ping", (req) -> Response(200, "", "pong"))
 
         # Start as sync
-        server = SyncServer(router)
+        server = Server(router)
         start!(server; port=8103, blocking=false)
         try
             response = HTTP.get("http://localhost:8103/ping")
@@ -399,7 +399,7 @@ end
         end
 
         # Restart as async with 2 workers (same router)
-        server = AsyncServer(router; nworkers=2)
+        server = Async(router; nworkers=2)
         start!(server; port=8103, blocking=false)
         try
             response = HTTP.get("http://localhost:8103/ping")
@@ -410,7 +410,7 @@ end
         end
 
         # Restart again as async with 4 workers (same router)
-        server = AsyncServer(router; nworkers=4)
+        server = Async(router; nworkers=4)
         start!(server; port=8103, blocking=false)
         try
             response = HTTP.get("http://localhost:8103/ping")
@@ -421,12 +421,12 @@ end
         end
     end
 
-    # --- Test: AsyncServer with middleware ---
-    @testset "AsyncServer Middleware" begin
+    # --- Test: Async with middleware ---
+    @testset "Async Middleware" begin
         router = Router()
         route!(router, :get, "/api/data", (req) -> Response(200, "Content-Type: application/json\r\n", "{\"ok\":true}"))
 
-        server = AsyncServer(router; nworkers=2)
+        server = Async(router; nworkers=2)
         plug!(server, cors(origins="https://test.com"))
         start!(server; port=8104, blocking=false)
         sleep(0.5)
@@ -447,7 +447,7 @@ end
         route!(router, :get, "/secure", (req) -> Response(200, "", "Secret Data"))
 
         # 1. Bearer Auth
-        server_bearer = AsyncServer(router; nworkers=1)
+        server_bearer = Async(router; nworkers=1)
         plug!(server_bearer, bearer_token(token -> token == "magic-token"))
         start!(server_bearer; port=8105, blocking=false)
         sleep(0.5)
@@ -470,7 +470,7 @@ end
         end
 
         # 2. API Key Auth
-        server_api = AsyncServer(router; nworkers=1)
+        server_api = Async(router; nworkers=1)
         plug!(server_api, api_key(keys=Set(["key123"])))
         start!(server_api; port=8106, blocking=false)
         sleep(0.5)
@@ -493,7 +493,7 @@ end
         router = Router()
         route!(router, :get, "/limited", (req) -> Response(200, "", "OK"))
 
-        server = AsyncServer(router; nworkers=1)
+        server = Async(router; nworkers=1)
         # 2 requests per 10 seconds
         plug!(server, rate_limit(max_requests=2, window_seconds=10))
         start!(server; port=8107, blocking=false)
@@ -514,7 +514,7 @@ end
 
     # --- Test: Static Router (@router) ---
     @testset "Static Router (@router)" begin
-        server = SyncServer(Routes)
+        server = Server(Routes)
         start!(server; port=8108, blocking=false)
         sleep(0.5)
 
@@ -547,7 +547,7 @@ end
             Response(200, "X-Custom: Received\r\n", "UA: $user_agent")
         end)
 
-        server = AsyncServer(router; nworkers=1)
+        server = Async(router; nworkers=1)
         start!(server; port=8109, blocking=false)
         sleep(0.5)
 
@@ -579,7 +579,7 @@ end
         route!(router, :get, "/logged", (req) -> Response(200, "", "OK"))
 
         log_buf = IOBuffer()
-        server = AsyncServer(router; nworkers=1)
+        server = Async(router; nworkers=1)
         plug!(server, logger(output=log_buf))
         start!(server; port=8110, blocking=false)
         sleep(0.5)
@@ -605,7 +605,7 @@ end
         route!(router, :get, "/fast", (req) -> Response(200, "", "OK"))
 
         log_buf = IOBuffer()
-        server = AsyncServer(router; nworkers=1)
+        server = Async(router; nworkers=1)
         plug!(server, logger(threshold=5000, output=log_buf))
         start!(server; port=8111, blocking=false)
         sleep(0.5)
@@ -629,7 +629,7 @@ end
         route!(router, :get, "/search", (req) -> Response(200, "", "found"))
         route!(router, :get, "/users/:id::Int", (req, id) -> Response(200, "", "user $id"))
 
-        server = SyncServer(router)
+        server = Server(router)
         start!(server; port=8112, blocking=false)
 
         try
@@ -652,7 +652,7 @@ end
         router = Router()
         route!(router, :get, "/page", (req) -> Response(200, "X-Custom: yes\r\n", "body content"))
 
-        server = SyncServer(router)
+        server = Server(router)
         start!(server; port=8113, blocking=false)
 
         try
@@ -667,7 +667,7 @@ end
 
     # --- Test: String Method Route Registration ---
     @testset "String Method Route" begin
-        server = SyncServer(Router())
+        server = Server(Router())
         route!(server, "GET", "/a", (req) -> Response(200, "", "from get"))
         route!(server, "POST", "/a", (req) -> Response(200, "", "from post"))
         start!(server; port=8115, blocking=false)
@@ -696,7 +696,7 @@ end
             Response(200, "", "user=$(ctx[:user])")
         end)
 
-        server = SyncServer(router)
+        server = Server(router)
         start!(server; port=8116, blocking=false)
 
         try
@@ -720,7 +720,7 @@ end
             router = Router()
             route!(router, :get, "/api/hello", (req) -> Response(200, "", "hello"))
 
-            server = SyncServer(router)
+            server = Server(router)
             mount!(server, dir)
             start!(server; port=8117, blocking=false)
 
@@ -786,7 +786,7 @@ end
         router = Router()
         route!(router, :get, "/image.png", req -> Response(200, "Content-Type: image/png\r\n", red1x1_png))
 
-        server = SyncServer(router)
+        server = Server(router)
         start!(server; port=8130, blocking=false)
         try
             resp = HTTP.get("http://localhost:8130/image.png")
@@ -794,10 +794,10 @@ end
             @test resp.body == red1x1_png
             @test length(resp.body) == length(red1x1_png)
 
-            # Also test AsyncServer binary path
+            # Also test Async binary path
             arouter = Router()
             route!(arouter, :get, "/image.png", req -> Response(200, "Content-Type: image/png\r\n", red1x1_png))
-            aserver = AsyncServer(arouter)
+            aserver = Async(arouter)
             start!(aserver; port=8131, blocking=false)
             try
                 resp2 = HTTP.get("http://localhost:8131/image.png")
@@ -816,7 +816,7 @@ end
         router = Router()
         route!(router, :get, "/pct", (req) -> Response(200, "", "100% done"))
 
-        server = SyncServer(router)
+        server = Server(router)
         start!(server; port=8118, blocking=false)
 
         try
@@ -828,12 +828,12 @@ end
         end
     end
 
-    # --- Test: SyncServer Same-Instance Restart ---
-    @testset "SyncServer Same-Instance Restart" begin
+    # --- Test: Server Same-Instance Restart ---
+    @testset "Server Same-Instance Restart" begin
         router = Router()
         route!(router, :get, "/ping", (req) -> Response(200, "", "pong"))
 
-        server = SyncServer(router)
+        server = Server(router)
         start!(server; port=8119, blocking=false)
         try
             resp = HTTP.get("http://localhost:8119/ping")
@@ -854,12 +854,12 @@ end
         end
     end
 
-    # --- Test: AsyncServer Same-Instance Restart ---
-    @testset "AsyncServer Same-Instance Restart" begin
+    # --- Test: Async Same-Instance Restart ---
+    @testset "Async Same-Instance Restart" begin
         router = Router()
         route!(router, :get, "/ping", (req) -> Response(200, "", "pong"))
 
-        server = AsyncServer(router; nworkers=2)
+        server = Async(router; nworkers=2)
         start!(server; port=8120, blocking=false)
         try
             resp = HTTP.get("http://localhost:8120/ping")
@@ -885,10 +885,10 @@ end
         router = Router()
         route!(router, :get, "/", (req) -> Response(200, "", "ok"))
 
-        server1 = SyncServer(router)
+        server1 = Server(router)
         start!(server1; port=8121, blocking=false)
         try
-            server2 = SyncServer(router)
+            server2 = Server(router)
             @test_throws BindError start!(server2; port=8121, blocking=false)
             # server2 must be clean after the error
             @test !server2.core.running[]
@@ -902,7 +902,7 @@ end
         router = Router()
         route!(router, :get, "/", (req) -> Response(200, "", "ok"))
 
-        server = SyncServer(router)
+        server = Server(router)
         start!(server; port=8122, blocking=false)
         try
             start!(server; port=8123, blocking=false)  # different port — should be ignored
@@ -921,7 +921,7 @@ end
         route!(router, :get, "/api", (req) -> Response(200, "", "ok"))
 
         # Healthy server
-        s1 = SyncServer(router)
+        s1 = Server(router)
         plug!(s1, health(health_check=() -> true, ready_check=() -> true, live_check=() -> true))
         start!(s1; port=8124, blocking=false)
         try
@@ -945,7 +945,7 @@ end
         end
 
         # Unhealthy server
-        s2 = SyncServer(router)
+        s2 = Server(router)
         plug!(s2, health(health_check=() -> false))
         start!(s2; port=8125, blocking=false)
         try
@@ -996,8 +996,8 @@ end
         r2 = Router()
         route!(r2, :get, "/", (req) -> Response(200, "", "s2"))
 
-        s1 = SyncServer(r1)
-        s2 = SyncServer(r2)
+        s1 = Server(r1)
+        s2 = Server(r2)
         start!(s1; port=8126, blocking=false)
         start!(s2; port=8127, blocking=false)
 
@@ -1015,7 +1015,7 @@ end
         router = Router()
         route!(router, :get, "/secure", (req) -> Response(200, "", "ok"))
 
-        server = SyncServer(router)
+        server = Server(router)
         plug!(server, bearer_token(token -> token == "secret"))
         start!(server; port=8128, blocking=false)
         try
@@ -1040,7 +1040,7 @@ end
         router = Router()
         route!(router, :get, "/limited", (req) -> Response(200, "", "OK"))
 
-        server = AsyncServer(router; nworkers=1)
+        server = Async(router; nworkers=1)
         plug!(server, rate_limit(max_requests=2, window_seconds=60))
         start!(server; port=8129, blocking=false)
         sleep(0.5)
@@ -1273,7 +1273,7 @@ end
         route!(router, :delete,  "/item", req -> Response(204, "", ""))
         route!(router, :options, "/item", req -> Response(200, "Allow: GET, OPTIONS\r\n", ""))
 
-        server = AsyncServer(router; nworkers=1)
+        server = Async(router; nworkers=1)
         start!(server; port=8200, blocking=false)
         sleep(0.5)
 
@@ -1306,7 +1306,7 @@ end
         route!(router, :get, "/users/:uid::Int/posts/:pid::Int",
                (req, uid, pid) -> Response(200, "", "uid=$uid pid=$pid"))
 
-        server = AsyncServer(router; nworkers=1)
+        server = Async(router; nworkers=1)
         start!(server; port=8201, blocking=false)
         sleep(0.5)
 
@@ -1336,7 +1336,7 @@ end
         route!(router, :get, "/known", req -> Response(200, "", "known"))
         route!(router, :get, "*",      req -> Response(Html, "<h1>Custom 404</h1>"; status=404))
 
-        server = SyncServer(router)
+        server = Server(router)
         start!(server; port=8202, blocking=false)
 
         try
@@ -1362,7 +1362,7 @@ end
         route!(router, :get, "/api/data",    req -> Response(200, "", "api"))
         route!(router, :get, "/public/page", req -> Response(200, "", "public"))
 
-        server = AsyncServer(router; nworkers=1)
+        server = Async(router; nworkers=1)
         # Bearer auth only applies to /api routes
         plug!(server, bearer_token(token -> token == "secret"); paths=["/api"])
         start!(server; port=8203, blocking=false)
@@ -1396,7 +1396,7 @@ end
         route!(router, :get,  "/api/hello", req -> Response(200, "", "hello"))
         route!(router, :post, "/api/data",  req -> Response(201, "", "created"))
 
-        server = AsyncServer(router; nworkers=2)
+        server = Async(router; nworkers=2)
         plug!(server, metrics())
         start!(server; port=8204, blocking=false)
         sleep(0.5)
@@ -1433,7 +1433,7 @@ end
         route!(router, :get, "/log_me", req -> Response(200, "", "ok"))
 
         log_buf = IOBuffer()
-        server  = AsyncServer(router; nworkers=1)
+        server  = Async(router; nworkers=1)
         plug!(server, logger(structured=true, output=log_buf))
         start!(server; port=8205, blocking=false)
         sleep(0.5)
@@ -1462,7 +1462,7 @@ end
         route!(router, :get,  "/boom",   req -> error("deliberate crash"))
         route!(router, :post, "/upload", req -> Response(200, "", "ok"))
 
-        server = AsyncServer(router; nworkers=1, max_body=50)
+        server = Async(router; nworkers=1, max_body=50)
         fail!(server, 500, Response(Json, """{"error":"internal","code":500}"""; status=500))
         fail!(server, 413, Response(Json, """{"error":"too large","code":413}"""; status=413))
         start!(server; port=8206, blocking=false)
@@ -1493,7 +1493,7 @@ end
         router = Router()
         route!(router, :get, "/api/secure", req -> Response(200, "", "secure data"))
 
-        server = AsyncServer(router; nworkers=1)
+        server = Async(router; nworkers=1)
         plug!(server, cors(origins="https://app.example.com"))
         plug!(server, bearer_token(token -> token == "tok123"))
         start!(server; port=8207, blocking=false)
@@ -1532,7 +1532,7 @@ end
 
             router = Router()
             route!(router, :get, "/api/ping", req -> Response(200, "", "pong"))
-            server = SyncServer(router)
+            server = Server(router)
             mount!(server, dir; uri_prefix="/static")
             start!(server; port=8208, blocking=false)
 
@@ -1575,7 +1575,7 @@ end
             write(joinpath(dir_b, "app.js"),     "console.log(1)")
 
             router = Router()
-            server = SyncServer(router)
+            server = Server(router)
             mount!(server, dir_a)                       # prefix "/"
             mount!(server, dir_b; uri_prefix="/assets") # prefix "/assets"
             start!(server; port=8209, blocking=false)
@@ -1598,12 +1598,12 @@ end
     # ServerConfig construction
     # ==========================================================================
 
-    @testset "ServerConfig for SyncServer and AsyncServer" begin
+    @testset "ServerConfig for Server and Async" begin
         router = Router()
         route!(router, :get, "/ping", req -> Response(200, "", "pong"))
 
         cfg_sync = ServerConfig(poll_timeout=1, max_body=1024)
-        s_sync   = SyncServer(router, cfg_sync)
+        s_sync   = Server(router, cfg_sync)
         start!(s_sync; port=8210, blocking=false)
         try
             resp = HTTP.get("http://localhost:8210/ping")
@@ -1615,7 +1615,7 @@ end
 
         cfg_async = ServerConfig(nworkers=2, nqueue=64, poll_timeout=0,
                                  max_body=2048, drain_timeout=1000)
-        s_async   = AsyncServer(router, cfg_async)
+        s_async   = Async(router, cfg_async)
         start!(s_async; port=8211, blocking=false)
         sleep(0.3)
         try
@@ -1628,16 +1628,16 @@ end
     end
 
     # ==========================================================================
-    # AsyncServer request_timeout → 504
+    # Async request_timeout → 504
     # ==========================================================================
 
-    @testset "AsyncServer request_timeout → 504" begin
+    @testset "Async request_timeout → 504" begin
         router = Router()
         route!(router, :get, "/ping", req -> Response(200, "", "pong"))   # warmup route
         route!(router, :get, "/fast", req -> Response(200, "", "fast"))
         route!(router, :get, "/slow", req -> (sleep(5); Response(200, "", "never")))
 
-        server = AsyncServer(router; nworkers=1, request_timeout=200)
+        server = Async(router; nworkers=1, request_timeout=200)
         start!(server; port=8212, blocking=false)
         sleep(0.5)
 
@@ -1674,7 +1674,7 @@ end
             on_open    = (req)  -> (open_fired[]  = true),
             on_close   = ()     -> (close_fired[] = true))
 
-        server = AsyncServer(router; nworkers=1)
+        server = Async(router; nworkers=1)
         start!(server; port=8213, blocking=false)
         sleep(0.5)
 
@@ -1701,7 +1701,7 @@ end
         ws!(router, "/concurrent";
             on_message = (msg) -> Message("reply: $(msg.data)"))
 
-        server = AsyncServer(router; nworkers=2)
+        server = Async(router; nworkers=2)
         start!(server; port=8214, blocking=false)
         sleep(0.5)
 
@@ -1733,7 +1733,7 @@ end
         router = Router()
         route!(router, :get, "/data", req -> Response(200, "", "secret"))
 
-        server = SyncServer(router)
+        server = Server(router)
         plug!(server, api_key(header_name="X-Token", keys=Set(["valid-key"])))
         start!(server; port=8215, blocking=false)
 
@@ -1765,7 +1765,7 @@ end
         router = Router()
         route!(router, :get, "/open", req -> Response(200, "", "open"))
 
-        server = SyncServer(router)
+        server = Server(router)
         plug!(server, cors())  # default: origins="*"
         start!(server; port=8216, blocking=false)
 
@@ -1787,7 +1787,7 @@ end
     # ==========================================================================
 
     @testset "route! on server returns server for chaining" begin
-        server = SyncServer(Router())
+        server = Server(Router())
         ret1 = route!(server, :get,  "/a", req -> Response(200, "", "a"))
         @test ret1 === server
         ret2 = route!(server, :post, "/b", req -> Response(200, "", "b"))
@@ -1807,7 +1807,7 @@ end
     # ==========================================================================
 
     @testset "@router: unknown route returns 404" begin
-        server = SyncServer(Routes)
+        server = Server(Routes)
         start!(server; port=8218, blocking=false)
         sleep(0.3)
 
@@ -1824,7 +1824,7 @@ end
     end
 
     @testset "@router: typed param {id::Int} non-matching value → 404" begin
-        server = SyncServer(TypedApp)
+        server = Server(TypedApp)
         start!(server; port=8219, blocking=false)
         sleep(0.3)
 
@@ -1849,7 +1849,7 @@ end
     # ==========================================================================
 
     @testset "@router with wildcard catch-all route" begin
-        server = SyncServer(WildcardApp)
+        server = Server(WildcardApp)
         start!(server; port=8220, blocking=false)
         sleep(0.3)
 
@@ -1873,7 +1873,7 @@ end
         router = Router()
 
         # ready=false → readyz returns 503
-        s1 = SyncServer(router)
+        s1 = Server(router)
         plug!(s1, health(health_check=() -> true, ready_check=() -> false, live_check=() -> true))
         start!(s1; port=8221, blocking=false)
         try
@@ -1893,7 +1893,7 @@ end
         end
 
         # live=false → livez returns 503
-        s2 = SyncServer(router)
+        s2 = Server(router)
         plug!(s2, health(live_check=() -> false))
         start!(s2; port=8222, blocking=false)
         try
@@ -1917,7 +1917,7 @@ end
             Response(200, "", "$(ctx[:val])")
         end)
 
-        server = AsyncServer(router; nworkers=2)
+        server = Async(router; nworkers=2)
         start!(server; port=8223, blocking=false)
         sleep(0.5)
 
@@ -1950,7 +1950,7 @@ end
         route!(router, :get,  "/unicode", req -> Response(emoji_body))
         route!(router, :post, "/echo",    req -> Response(req.body))
 
-        server = SyncServer(router)
+        server = Server(router)
         start!(server; port=8224, blocking=false)
 
         try
@@ -1976,7 +1976,7 @@ end
         router = Router()
         route!(router, :get, "/id", req -> Response(200, "", "ok"))
 
-        server = SyncServer(router)
+        server = Server(router)
         start!(server; port=8225, blocking=false)
 
         try

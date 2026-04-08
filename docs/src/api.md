@@ -3,8 +3,8 @@
 ## Server Types
 
 ```@docs
-AsyncServer
-SyncServer
+Async
+Server
 ```
 
 ## Lifecycle

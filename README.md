@@ -60,7 +60,7 @@ route!(router, :get, "/users/:id::Int", (req, id) ->
 
 route!(router, :post, "/echo", req -> Response(Plain, req.body))
 
-server = AsyncServer(router; nworkers=4)
+server = Async(router; nworkers=4)
 start!(server, port=8080, blocking=false)
 
 # Graceful shutdown when done
@@ -128,12 +128,12 @@ Missing fields default to `""`, `0`, `false`, or `nothing` depending on their ty
 
 | Type | Model | Best for |
 |---|---|---|
-| `AsyncServer` | Event loop + N worker tasks via channels | Production APIs |
-| `SyncServer` | Blocking event loop on caller's thread | Scripts, AOT binaries |
+| `Async` | Event loop + N worker tasks via channels | Production APIs |
+| `Server` | Blocking event loop on caller's thread | Scripts, AOT binaries |
 
 ```julia
 # Production: 4 workers, 5s per-request timeout, 4 MB body limit
-server = AsyncServer(router;
+server = Async(router;
     nworkers=4,
     nqueue=1024,
     request_timeout=5000,
@@ -141,7 +141,7 @@ server = AsyncServer(router;
 )
 
 # AOT / simple scripts
-server = SyncServer(router)
+server = Server(router)
 ```
 
 ### ServerConfig
@@ -156,7 +156,7 @@ config = ServerConfig(
     drain_timeout   = 10_000,
 )
 
-server = AsyncServer(router, config)   # or SyncServer(router, config)
+server = Async(router, config)   # or Server(router, config)
 ```
 
 ### Custom Error Responses
@@ -204,7 +204,7 @@ The format type sets the `Content-Type` header automatically:
 Middleware runs in registration order. Each middleware can inspect and modify the request, short-circuit with a response, or pass through to the next handler.
 
 ```julia
-server = AsyncServer(router)
+server = Async(router)
 
 # Structured JSON access logs
 plug!(server, logger(structured=true))
@@ -318,7 +318,7 @@ using Mongoose
 end
 
 (@main)(ARGS) = begin
-    server = SyncServer(MyApp)
+    server = Server(MyApp)
     start!(server, port=8080, blocking=true)
     return 0
 end
@@ -368,7 +368,7 @@ ws!(router, "/ws",
 route!(router, :get, "*", req -> Response(Html, "<h1>Not Found</h1>"; status=404))
 
 # Server
-server = AsyncServer(router; nworkers=4, request_timeout=10_000)
+server = Async(router; nworkers=4, request_timeout=10_000)
 
 plug!(server, logger(structured=true))
 plug!(server, cors(origins="https://myapp.com"))

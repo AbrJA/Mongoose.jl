@@ -3,7 +3,7 @@ module Mongoose
 using Mongoose_jll
 using PrecompileTools
 
-export SyncServer, AsyncServer, Router, Request, Response,
+export Server, Async, Router, Request, Response,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, plug!, mount!, fail!,
     context!,
@@ -146,8 +146,8 @@ include("middleware/metrics.jl")
                   (r, args...) -> _dispatchhttp(router, r))
 
         # --- _invokehttp (the actual request dispatch hot path) ---
-        server_sync  = SyncServer(router)
-        server_async = AsyncServer(router; nworkers=1)
+        server_sync  = Server(router)
+        server_async = Async(router; nworkers=1)
         plug!(server_sync,  cors())
         plug!(server_async, cors())
 

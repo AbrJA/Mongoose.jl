@@ -90,7 +90,7 @@ end
 """
     ServerConfig
 
-Consolidated configuration for `SyncServer` and `AsyncServer`. Pass a
+Consolidated configuration for `Server` and `Async`. Pass a
 `ServerConfig` as the second positional argument to either constructor instead
 of individual keyword arguments.
 
@@ -101,16 +101,16 @@ of individual keyword arguments.
 | `poll_timeout` | `1` | Event-loop poll timeout in ms. Use `0` for min latency (high CPU). |
 | `max_body` | 1 MB | Maximum request body size in bytes. |
 | `drain_timeout` | 5000 | Graceful-shutdown drain period in ms. |
-| `request_timeout` | 0 | Per-request timeout in ms; `0` = disabled (AsyncServer only). |
-| `nworkers` | 4 | Number of worker tasks (AsyncServer only). |
-| `nqueue` | 1024 | Channel buffer size (AsyncServer only). |
+| `request_timeout` | 0 | Per-request timeout in ms; `0` = disabled (Async only). |
+| `nworkers` | 4 | Number of worker tasks (Async only). |
+| `nqueue` | 1024 | Channel buffer size (Async only). |
 | `errors` | `Dict()` | Custom `Response` objects keyed by HTTP status (`500`, `413`, `504`). |
 
 # Example
 ```julia
 config = ServerConfig(nworkers=8, request_timeout=15_000, max_body=5_242_880)
 
-server = AsyncServer(router, config)
+server = Async(router, config)
 plug!(server, health())
 start!(server; host="0.0.0.0", port=8080)
 ```
@@ -137,16 +137,16 @@ end
 # --- Abstract Server Implementations (Structs only) ---
 
 """
-    SyncServer — Single-threaded blocking server.
+    Server — Single-threaded blocking server.
 """
-mutable struct SyncServer{R <: AbstractRouter} <: AbstractServer
+mutable struct Server{R <: AbstractRouter} <: AbstractServer
     core::ServerCore{R}
 end
 
 """
-    AsyncServer — Multi-threaded server using worker tasks.
+    Async — Multi-threaded server using worker tasks.
 """
-mutable struct AsyncServer{R <: AbstractRouter} <: AbstractServer
+mutable struct Async{R <: AbstractRouter} <: AbstractServer
     core::ServerCore{R}
     workers::Vector{Task}
     calls::Channel{Call}

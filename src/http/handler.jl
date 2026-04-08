@@ -105,9 +105,9 @@ Return `true` if `uri` maps to a real file (or pre-compressed `.gz` variant) und
     return false
 end
 
-# --- SyncServer: direct dispatch on event-loop thread ---
+# --- Server: direct dispatch on event-loop thread ---
 
-function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
+function _onevent!(server::Server, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     message = MgHttpMessage(ev_data)
     method = _method(message)
     uri    = _uri(message)
@@ -141,9 +141,9 @@ function _onevent!(server::SyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection
     return
 end
 
-# --- AsyncServer: queue to worker channels ---
+# --- Async: queue to worker channels ---
 
-function _onevent!(server::AsyncServer, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
+function _onevent!(server::Async, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     message = MgHttpMessage(ev_data)
     method = _method(message)
     uri    = _uri(message)
@@ -313,7 +313,7 @@ function _invokehttp(server::AbstractServer, req::AbstractRequest)
 end
 
 # Trim-safe specialization: StaticRouter dispatches directly, bypassing the middleware pipeline
-@inline function _invokehttp(server::SyncServer{<:StaticRouter}, req::AbstractRequest)
+@inline function _invokehttp(server::Server{<:StaticRouter}, req::AbstractRequest)
     return _dispatchstatic(server.core.router, req)
 end
 
@@ -390,7 +390,7 @@ end
     _invoketimedhttp(server, req, timeout) → Response
 
 Execute request handling with a timeout. If the handler exceeds `timeout`,
-returns 504 Gateway Timeout. Used only by AsyncServer workers.
+returns 504 Gateway Timeout. Used only by Async workers.
 """
 function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout::Integer)
     ch = Channel{Response}(1)

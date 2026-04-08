@@ -34,7 +34,7 @@ router = Router()
 route!(router, :get, "/", req -> Response(Plain, "Hello!"))
 route!(router, :get, "/users/:id::Int", (req, id) -> Response(Plain, "User $id"))
 
-server = AsyncServer(router; nworkers=4)
+server = Async(router; nworkers=4)
 start!(server, port=8080, blocking=false)
 
 # When done
@@ -57,16 +57,16 @@ Mongoose.jl uses a decoupled architecture: a **Router** defines the routes and h
                      │  (event loop) │
                      └───┬───┬───┬──┘
                          │   │   │
-                         ▼   ▼   ▼       (AsyncServer only)
+                         ▼   ▼   ▼       (Async only)
                        Worker tasks
 ```
 
 ### Server Types
 
-**`AsyncServer`** — Runs the event loop on a background task and dispatches requests to a pool of worker tasks via channels. Ideal for production APIs and applications where you want non-blocking operation.
+**`Async`** — Runs the event loop on a background task and dispatches requests to a pool of worker tasks via channels. Ideal for production APIs and applications where you want non-blocking operation.
 
 ```julia
-server = AsyncServer(router;
+server = Async(router;
     nworkers=4,              # Number of worker tasks
     nqueue=1024,            # Channel buffer size
     poll_timeout=0,              # Poll timeout (ms)
@@ -77,10 +77,10 @@ server = AsyncServer(router;
 )
 ```
 
-**`SyncServer`** — Runs the event loop on the main thread (blocking). Suitable for simple scripts, or required for AOT compilation with `juliac --trim=safe`.
+**`Server`** — Runs the event loop on the main thread (blocking). Suitable for simple scripts, or required for AOT compilation with `juliac --trim=safe`.
 
 ```julia
-server = SyncServer(router;
+server = Server(router;
     poll_timeout=1,              # Poll timeout (ms), default: 1
     max_body=1048576,
     drain_timeout=5000,
@@ -100,7 +100,7 @@ config = ServerConfig(
     drain_timeout   = 10_000,
 )
 
-server = AsyncServer(router, config)  # or SyncServer(router, config)
+server = Async(router, config)  # or Server(router, config)
 ```
 
 | Field | Default | Description |
@@ -109,8 +109,8 @@ server = AsyncServer(router, config)  # or SyncServer(router, config)
 | `max_body` | 1 MB | Max request body in bytes |
 | `drain_timeout` | 5000 | Graceful-shutdown drain period in ms |
 | `request_timeout` | `0` | Per-request timeout in ms; `0` = disabled |
-| `nworkers` | `4` | Worker tasks (`AsyncServer` only) |
-| `nqueue` | `1024` | Channel buffer size (`AsyncServer` only) |
+| `nworkers` | `4` | Worker tasks (`Async` only) |
+| `nqueue` | `1024` | Channel buffer size (`Async` only) |
 | `errors` | `Dict()` | Custom `Response` keyed by status code |
 
 ### Lifecycle
@@ -160,7 +160,7 @@ route!(router, :get, "/price/:val::Float64", (req, val) -> ...)
 Routes can be added directly on an already-created server:
 
 ```julia
-server = AsyncServer(router)
+server = Async(router)
 route!(server, :get, "/health", req -> Response(Plain, "ok"))
 ```
 
@@ -176,7 +176,7 @@ The `@router` macro generates a compile-time dispatch function with zero dynamic
     ws("/chat", on_message = msg -> Message("Echo: $(msg.data)"))
 end
 
-server = SyncServer(MyApi())
+server = Server(MyApi())
 start!(server, port=8080)
 ```
 
@@ -369,7 +369,7 @@ using Mongoose, JSON
 Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 
 router = Router()
-server = AsyncServer(router)
+server = Async(router)
 
 # Custom JSON 500 response
 fail!(server, 500, Response(Json, Dict("error" => "Internal server error"); status=500))
@@ -386,7 +386,7 @@ errors = Dict{Int,Response}(
     500 => Response(Json, """{"error":"Internal error"}"""; status=500),
     413 => Response(Json, """{"error":"Body too large"}"""; status=413),
 )
-server = SyncServer(router; errors=errors)
+server = Server(router; errors=errors)
 ```
 
 ### Custom 404 Pages
@@ -402,7 +402,7 @@ route!(router, :get, "*", req -> Response(Html, read("404.html", String); status
 Set a per-request timeout (in milliseconds) to prevent slow handlers from blocking the server:
 
 ```julia
-server = AsyncServer(router; request_timeout=5000)
+server = Async(router; request_timeout=5000)
 ```
 
 When a request exceeds the timeout, the server returns `504 Gateway Timeout`.

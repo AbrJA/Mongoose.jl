@@ -28,14 +28,14 @@ function _countnodes(node::TrieNode)::Int
     return count
 end
 
-function Base.show(io::IO, s::SyncServer)
+function Base.show(io::IO, s::Server)
     status = s.core.running[] ? "running" : "stopped"
-    print(io, "SyncServer(", status, ", router=", s.core.router, ")")
+    print(io, "Server(", status, ", router=", s.core.router, ")")
 end
 
-function Base.show(io::IO, s::AsyncServer)
+function Base.show(io::IO, s::Async)
     status = s.core.running[] ? "running" : "stopped"
-    print(io, "AsyncServer(", status,
+    print(io, "Async(", status,
           ", workers=", s.nworkers,
           ", router=", s.core.router, ")")
 end
@@ -48,7 +48,7 @@ end
     start!(server; host, port, blocking)
 
 Start the Mongoose HTTP server. Initializes the manager, binds an HTTP listener,
-starts worker threads (for AsyncServer), and begins the event loop.
+starts worker threads (for Async), and begins the event loop.
 
 When `blocking=true`, `InterruptException` (Ctrl+C) is caught and triggers a
 graceful shutdown automatically — no wrapper code needed in the caller.
@@ -92,7 +92,7 @@ function _logstart(server::AbstractServer, url::String)
     threads = Threads.nthreads()
     middlewares = length(server.core.middlewares)
     mounts = length(server.core.mounts)
-    workers = server isa AsyncServer ? server.nworkers : 0
+    workers = server isa Async ? server.nworkers : 0
     if server.core.styled
         println()
         printstyled("🚀 Mongoose started\n", color=:cyan, bold=true)
@@ -155,7 +155,7 @@ end
     _drain(server)
 
 Wait for in-flight requests to drain, up to `drain_timeout`.
-For AsyncServer, polls the response channels until they're empty or timeout expires.
+For Async, polls the response channels until they're empty or timeout expires.
 """
 function _drain(server::AbstractServer)
     timeout_s = server.core.drain_timeout / 1000.0

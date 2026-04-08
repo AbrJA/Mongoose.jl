@@ -472,7 +472,7 @@ function main()
 
     # ── Server ─────────────────────────────────────────────────────────────────
     # request_timeout=3_000 ms so /debug/slow?ms=4000 triggers the 504 in ~3 s.
-    server = AsyncServer(router; nworkers=4, nqueue=2048, request_timeout=3_000)
+    server = Async(router; nworkers=4, nqueue=2048, request_timeout=3_000)
 
     # ── Middleware (executed in FIFO order) ────────────────────────────────────
 

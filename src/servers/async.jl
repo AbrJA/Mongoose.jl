@@ -1,9 +1,9 @@
 """
-    AsyncServer — Multi-threaded server methods.
+    Async — Multi-threaded server methods.
 """
 
 """
-    AsyncServer(router=Router(); nworkers=4, nqueue=1024, poll_timeout=0, max_body,
+    Async(router=Router(); nworkers=4, nqueue=1024, poll_timeout=0, max_body,
                drain_timeout, request_timeout=0, errors=Dict{Int,Response}())
 
 Create a multi-threaded server with `nworkers` background tasks.
@@ -18,10 +18,10 @@ Not compatible with `juliac --trim=safe`.
 - `request_timeout::Integer`: Per-request timeout in ms, 0 = disabled (default: `0`).
 - `errors::Dict{Int,Response}`: Custom responses keyed by HTTP status code (`500`, `413`, `504`). See `fail!`.
 """
-AsyncServer(::Type{T}; kwargs...) where {T <: StaticRouter} = AsyncServer(T(); kwargs...)
-AsyncServer(::Type{T}, config::ServerConfig) where {T <: StaticRouter} = AsyncServer(T(), config)
+Async(::Type{T}; kwargs...) where {T <: StaticRouter} = Async(T(); kwargs...)
+Async(::Type{T}, config::ServerConfig) where {T <: StaticRouter} = Async(T(), config)
 
-function AsyncServer(router::AbstractRouter=Router();
+function Async(router::AbstractRouter=Router();
                      nworkers::Integer=4,
                      nqueue::Integer=1024,
                      poll_timeout::Integer=0,
@@ -32,7 +32,7 @@ function AsyncServer(router::AbstractRouter=Router();
     c_handler = Mongoose._cfnasync(typeof(router))
     core = ServerCore(poll_timeout, router; max_body=max_body, drain_timeout=drain_timeout,
                       request_timeout=request_timeout, errors=errors, c_handler=c_handler)
-    server = AsyncServer{typeof(router)}(
+    server = Async{typeof(router)}(
         core, Task[],  # workers
         Channel{Call}(nqueue), Channel{Reply}(nqueue),
         Dict{Int,MgConnection}(), Int(nworkers), Int(nqueue)
@@ -42,12 +42,12 @@ function AsyncServer(router::AbstractRouter=Router();
 end
 
 """
-    AsyncServer(router, config::ServerConfig)
+    Async(router, config::ServerConfig)
 
-Create an `AsyncServer` from a [`ServerConfig`](@ref) struct.
+Create an `Async` from a [`ServerConfig`](@ref) struct.
 """
-function AsyncServer(router::AbstractRouter, config::ServerConfig)
-    return AsyncServer(router;
+function Async(router::AbstractRouter, config::ServerConfig)
+    return Async(router;
         nworkers = config.nworkers,
         nqueue = config.nqueue,
         poll_timeout = config.poll_timeout,
@@ -58,7 +58,7 @@ function AsyncServer(router::AbstractRouter, config::ServerConfig)
     )
 end
 
-function _init!(server::AsyncServer)
+function _init!(server::Async)
     server.core.manager = Manager()
     server.calls   = Channel{Call}(server.nqueue)
     server.replies = Channel{Reply}(server.nqueue)
@@ -67,7 +67,7 @@ function _init!(server::AsyncServer)
     return
 end
 
-function _spawnworkers!(server::AsyncServer)
+function _spawnworkers!(server::Async)
     empty!(server.workers)
     for i in 1:server.nworkers
         t = Threads.@spawn _workloop(server)
@@ -77,7 +77,7 @@ end
 
 _spawnworkers!(::AbstractServer) = nothing
 
-function _stopworkers!(server::AsyncServer)
+function _stopworkers!(server::Async)
     # Close channels to unblock any workers stuck on take!
     close(server.calls)
     close(server.replies)
@@ -90,7 +90,7 @@ end
 
 _stopworkers!(::AbstractServer) = nothing
 
-function _eventloop(server::AsyncServer)
+function _eventloop(server::Async)
     while server.core.running[]
         mg_mgr_poll(server.core.manager.ptr, server.core.poll_timeout)
 
@@ -119,7 +119,7 @@ function _eventloop(server::AsyncServer)
     end
 end
 
-function _workloop(server::AsyncServer)
+function _workloop(server::Async)
     timeout = server.core.request_timeout
     try
         for req in server.calls     # blocks properly — no sleep needed
@@ -147,4 +147,4 @@ function _workloop(server::AsyncServer)
     end
 end
 
-_haspending(server::AsyncServer) = isready(server.calls) || isready(server.replies)
+_haspending(server::Async) = isready(server.calls) || isready(server.replies)
