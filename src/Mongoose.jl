@@ -83,7 +83,7 @@ include("middleware/metrics.jl")
         _statustext(206); _statustext(301); _statustext(302); _statustext(304)
         _statustext(400); _statustext(401); _statustext(403); _statustext(404)
         _statustext(405); _statustext(408); _statustext(413); _statustext(429)
-        _statustext(500); _statustext(504)
+        _statustext(500); _statustext(503); _statustext(504)
 
         # --- Request + context ---
         req = Request(:get, "/", "", Pair{String,String}[], "", nothing)
@@ -160,6 +160,7 @@ include("middleware/metrics.jl")
         # --- Error responses ---
         _errresponse(server_sync, 500)
         _errresponse(server_sync, 413)
+        _errresponse(server_sync, 503)
         _errresponse(server_sync, 504)
         _handleerror(server_sync, req, ErrorException(""))
 
@@ -174,7 +175,7 @@ include("middleware/metrics.jl")
         # --- Config ---
         Config()
         Config(nworkers=2, max_body=1024)
-        Config(nworkers=8, request_timeout=5000, drain_timeout=10_000)
+        Config(nworkers=8, request_timeout=5000, drain_timeout=10_000, ws_idle_timeout=60.0)
     end
 
     # Precompile the C callback entry point at module level (outside @compile_workload

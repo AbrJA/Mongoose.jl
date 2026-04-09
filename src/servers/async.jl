@@ -3,6 +3,20 @@
 """
 
 """
+    _tryput!(ch, val) → Bool
+
+Non-blocking `put!`. Returns `false` when the channel is full or closed,
+instead of blocking the caller. Only safe when there is a single producer
+(the event-loop thread), which is the case in Mongoose.jl.
+"""
+@inline function _tryput!(ch::Channel, val)
+    isopen(ch) || return false
+    Base.n_avail(ch) >= ch.sz_max && return false
+    put!(ch, val)
+    return true
+end
+
+"""
     Async(router=Router(); nworkers=4, nqueue=1024, poll_timeout=0, max_body,
                drain_timeout, request_timeout=0, errors=Dict{Int,Response}())
 
@@ -28,11 +42,13 @@ function Async(router::AbstractRouter=Router();
                      max_body::Integer=MAX_BODY,
                      drain_timeout::Integer=DRAIN_TIMEOUT,
                      request_timeout::Integer=0,
+                     ws_idle_timeout::Real=0.0,
                      errors::Dict{Int,Response}=Dict{Int,Response}(),
                      styled::Bool=isa(stdout, Base.TTY))
     c_handler = Mongoose._cfnasync(typeof(router))
     core = ServerCore(poll_timeout, router; max_body=max_body, drain_timeout=drain_timeout,
-                      request_timeout=request_timeout, errors=errors, c_handler=c_handler, styled=styled)
+                      request_timeout=request_timeout, ws_idle_timeout=ws_idle_timeout,
+                      errors=errors, c_handler=c_handler, styled=styled)
     server = Async{typeof(router)}(
         core, Task[],  # workers
         Channel{Call}(nqueue), Channel{Reply}(nqueue),
@@ -55,6 +71,7 @@ function Async(router::AbstractRouter, config::Config)
         max_body = config.max_body,
         drain_timeout = config.drain_timeout,
         request_timeout = config.request_timeout,
+        ws_idle_timeout = config.ws_idle_timeout,
         errors = config.errors
     )
 end
@@ -92,6 +109,8 @@ end
 _stopworkers!(::AbstractServer) = nothing
 
 function _eventloop(server::Async)
+    ws_idle = server.core.ws_idle_timeout
+    last_sweep = time()
     while server.core.running[]
         mg_mgr_poll(server.core.manager.ptr, server.core.poll_timeout)
 
@@ -116,6 +135,14 @@ function _eventloop(server::Async)
         end
         # Extra poll to flush mg_ws_send buffers immediately
         did_ws_send && mg_mgr_poll(server.core.manager.ptr, 1)
+        # Periodic WS idle sweep
+        if ws_idle > 0.0 && !isempty(server.core.clients)
+            now_t = time()
+            if (now_t - last_sweep) >= 5.0
+                _wsidlesweep!(server, ws_idle)
+                last_sweep = now_t
+            end
+        end
         yield()
     end
 end

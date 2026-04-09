@@ -42,6 +42,7 @@ end
 # Body text is derived from _statustext — single source of truth.
 const _DEFAULT_500 = Response(Plain, "500 $(_statustext(500))"; status=500)
 const _DEFAULT_413 = Response(Plain, "413 $(_statustext(413))"; status=413)
+const _DEFAULT_503 = Response(Plain, "503 $(_statustext(503))"; status=503)
 const _DEFAULT_504 = Response(Plain, "504 $(_statustext(504))"; status=504)
 
 # --- Static file serving (C-level, event-loop thread only) ---
@@ -176,7 +177,16 @@ function _onevent!(server::Async, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_
 
     id = Int(_nextreqid!(server))
     server.connections[id] = conn
-    isopen(server.calls) && put!(server.calls, Tagged(id, Request(message, method, uri)))
+    if isopen(server.calls)
+        tagged = Tagged(id, Request(message, method, uri))
+        # Non-blocking enqueue: if the channel is full, return 503 immediately
+        # instead of blocking the event loop (which stalls ALL I/O).
+        res = _tryput!(server.calls, tagged)
+        if res === false
+            delete!(server.connections, id)
+            _sendhttp!(conn, _errresponse(server, 503))
+        end
+    end
     return
 end
 
@@ -265,14 +275,14 @@ end
 # Fast UInt64→String without going through `string()` (avoids Julia runtime formatting)
 @inline function _uint64tostr(n::UInt64)::String
     n == 0 && return "0"
-    buf = Vector{UInt8}(undef, 20)  # max UInt64 digits
+    buf = Base.StringVector(20)  # StringVector avoids extra copy in String()
     i = 20
     @inbounds while n > 0
         buf[i] = UInt8('0') + UInt8(n % 10)
         n = div(n, 10)
         i -= 1
     end
-    return String(view(buf, i+1:20))
+    return String(@view buf[i+1:20])
 end
 
 """
@@ -295,6 +305,7 @@ Falls back to the module-level default.
     r !== nothing && return r
     status == 500 && return _DEFAULT_500
     status == 413 && return _DEFAULT_413
+    status == 503 && return _DEFAULT_503
     status == 504 && return _DEFAULT_504
     return Response(Plain, "$status $(_statustext(status))"; status=status)
 end
@@ -399,23 +410,42 @@ end
 
 Execute request handling with a timeout. If the handler exceeds `timeout`,
 returns 504 Gateway Timeout. Used only by Async workers.
+
+An atomic counter caps concurrent timed handlers to avoid thread starvation
+when slow requests pile up. If the limit is reached, the request is rejected
+with 503 Service Unavailable.
 """
+const _TIMED_INFLIGHT = Threads.Atomic{Int}(0)
+const _MAX_TIMED = max(Threads.nthreads() * 2, 8)
+
 function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout::Integer)
+    # Fast-reject if too many timed handlers are already running
+    current = Threads.atomic_add!(_TIMED_INFLIGHT, 1)
+    if current >= _MAX_TIMED
+        Threads.atomic_sub!(_TIMED_INFLIGHT, 1)
+        @warn "Too many concurrent timed requests" component="http" uri=req.uri
+        return _errresponse(server, 503)
+    end
+
     ch = Channel{Response}(1)
     Threads.@spawn begin
-        res = try
-            _invokehttp(server, req)
-        catch e
-            @error "Handler error" component="http" uri=req.uri exception=(e, catch_backtrace())
-            _handleerror(server, req, e)
+        try
+            res = try
+                _invokehttp(server, req)
+            catch e
+                @error "Handler error" component="http" uri=req.uri exception=(e, catch_backtrace())
+                _handleerror(server, req, e)
+            end
+            try put!(ch, res) catch end
+        finally
+            Threads.atomic_sub!(_TIMED_INFLIGHT, 1)
         end
-        try put!(ch, res) catch end  # channel closed on timeout — discard result
     end
     result = timedwait(timeout / 1000.0) do
         isready(ch)
     end
     if result === :timed_out
-        close(ch)  # signal spawned task to stop waiting
+        close(ch)
         @warn "Request timed out" component="http" uri=req.uri timeout_ms=timeout
         return _errresponse(server, 504)
     end

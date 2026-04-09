@@ -19,7 +19,7 @@ const _METRICS_SHARDS = 8
 const _METRICS_CONTENT_TYPE = "Content-Type: text/plain; version=0.0.4; charset=utf-8\r\n"
 
 mutable struct _MetricsShard
-    lock::ReentrantLock
+    lock::Threads.SpinLock
     # Key: "METHOD_STATUSCODE", e.g. "GET_200", "POST_404"
     counts::Dict{String,Int}
     # raw_hist[i] = count of observations that fell in bucket i (non-cumulative).
@@ -29,7 +29,7 @@ mutable struct _MetricsShard
     hist_total::Int
 
     _MetricsShard() = new(
-        ReentrantLock(),
+        Threads.SpinLock(),
         Dict{String,Int}(),
         zeros(Int, _N_HIST_BUCKETS),
         0.0, 0
@@ -70,11 +70,14 @@ function (mw::PrometheusMetrics)(request::AbstractRequest, params::Vector{Any}, 
         bidx = _histidx(elapsed_s)
 
         shard = _shard(mw)
-        lock(shard.lock) do
+        lock(shard.lock)
+        try
             shard.counts[key] = get(shard.counts, key, 0) + 1
             @inbounds shard.raw_hist[bidx] += 1
             shard.hist_sum += elapsed_s
             shard.hist_total += 1
+        finally
+            unlock(shard.lock)
         end
     end
 
@@ -89,7 +92,8 @@ function _renderstats(mw::PrometheusMetrics)::Response
     agg_total  = 0
 
     for shard in mw.shards
-        lock(shard.lock) do
+        lock(shard.lock)
+        try
             for (k, v) in shard.counts
                 agg_counts[k] = get(agg_counts, k, 0) + v
             end
@@ -98,6 +102,8 @@ function _renderstats(mw::PrometheusMetrics)::Response
             end
             agg_sum   += shard.hist_sum
             agg_total += shard.hist_total
+        finally
+            unlock(shard.lock)
         end
     end
 

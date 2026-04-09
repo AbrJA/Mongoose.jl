@@ -2,6 +2,19 @@
     WebSocket event handling — upgrade, message dispatch, connection lifecycle.
 """
 
+# --- WS idle timeout tracking ---
+# Maps conn pointer (Int) → last activity timestamp (Float64).
+# Accessed only from the event-loop thread, so no lock needed.
+const _WS_LAST_ACTIVE = Dict{Int, Float64}()
+
+@inline function _wstouch!(conn_id::Int)
+    _WS_LAST_ACTIVE[conn_id] = time()
+end
+
+@inline function _wsforget!(conn_id::Int)
+    delete!(_WS_LAST_ACTIVE, conn_id)
+end
+
 """
     _invokews(server, request) → Tagged{Message} or nothing
 """
@@ -41,16 +54,24 @@ end
 @inline _wsep(router::StaticRouter, uri) = _wsupgrade(router, uri)
 
 function _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
-    mg_ws_upgrade(conn, ev_data, C_NULL)
-    server.core.clients[Int(conn)] = uri
+    # Upgrade rejection: if on_open returns `false`, reject with 403
     if endpoint.on_open !== nothing
         req = Request(message)
-        try
-            endpoint.on_open(req)
+        accepted = try
+            result = endpoint.on_open(req)
+            result !== false  # anything other than literal `false` means accept
         catch e
             @error "WebSocket on_open error" component="websocket" uri=uri exception=(e, catch_backtrace())
+            true  # accept by default if on_open throws
+        end
+        if !accepted
+            mg_http_reply(conn, 403, "", "Forbidden")
+            return
         end
     end
+    mg_ws_upgrade(conn, ev_data, C_NULL)
+    server.core.clients[Int(conn)] = uri
+    _wstouch!(Int(conn))
 end
 
 _sendws!(conn, data::String)        = mg_ws_send(conn, data, WS_OP_TEXT)
@@ -89,8 +110,16 @@ end
 # Server: process WS message directly on event-loop thread
 function _onevent!(server::Server, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
-    ws_msg = _parsewsmsg(msg)
     conn_id = Int(conn)
+    _wstouch!(conn_id)
+
+    # Frame size limit (reuses max_body from HTTP config)
+    if msg.data.len > server.core.max_body
+        mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
+        return
+    end
+
+    ws_msg = _parsewsmsg(msg)
     uri = get(server.core.clients, conn_id, "")
     tagged = Tagged(conn_id, Intent(ws_msg, uri))
     result = _invokews(server, tagged)
@@ -103,11 +132,21 @@ end
 # Async: queue WS message to worker channels
 function _onevent!(server::Async, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
-    ws_msg = _parsewsmsg(msg)
     conn_id = Int(conn)
+    _wstouch!(conn_id)
+
+    # Frame size limit (reuses max_body from HTTP config)
+    if msg.data.len > server.core.max_body
+        mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
+        return
+    end
+
+    ws_msg = _parsewsmsg(msg)
     uri = get(server.core.clients, conn_id, "")
     server.connections[conn_id] = conn
-    isopen(server.calls) && put!(server.calls, Tagged(conn_id, Intent(ws_msg, uri)))
+    if isopen(server.calls)
+        _tryput!(server.calls, Tagged(conn_id, Intent(ws_msg, uri)))
+    end
     return
 end
 
@@ -133,6 +172,7 @@ then remove the connection URI from `clients`.
 """
 function _closews!(server::AbstractServer, conn::MgConnection)
     conn_id = Int(conn)
+    _wsforget!(conn_id)
     uri = get(server.core.clients, conn_id, nothing)
 
     if uri !== nothing
@@ -147,4 +187,24 @@ function _closews!(server::AbstractServer, conn::MgConnection)
         delete!(server.core.clients, conn_id)
     end
     return
+end
+
+"""
+    _wsidlesweep!(server, timeout_s) → Int
+
+Close WebSocket connections that have been idle longer than `timeout_s` seconds.
+Called from the event loop. Returns the number of connections closed.
+"""
+function _wsidlesweep!(server::AbstractServer, timeout_s::Float64)
+    isempty(_WS_LAST_ACTIVE) && return 0
+    now_t = time()
+    closed = 0
+    for (conn_id, last) in collect(_WS_LAST_ACTIVE)
+        if (now_t - last) > timeout_s
+            conn = MgConnection(Ptr{Cvoid}(UInt(conn_id)))
+            mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
+            closed += 1
+        end
+    end
+    return closed
 end

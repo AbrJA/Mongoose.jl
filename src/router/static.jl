@@ -193,8 +193,13 @@ function _generatedispatch(node::StaticNode, seg_sym::Symbol, idx_sym::Symbol, p
                 $(var_sym) = $(seg_sym) # use the view directly
             end
         else
+            # Wrap parse in try/catch — invalid typed params produce 404 (not 500)
             quote
-                $(var_sym) = Base.parse($(seg.type), String($(seg_sym)))
+                $(var_sym) = try
+                    Base.parse($(seg.type), String($(seg_sym)))
+                catch
+                    return Mongoose.Response(Plain, "404 Not Found"; status=404)
+                end
             end
         end
 
@@ -337,6 +342,15 @@ macro router(app_type::Symbol, block)
             $(path_sym) = Mongoose._stripquery($(req_sym).uri)
 
             $(dispatch_body)
+
+            # Auto-HEAD: re-dispatch as GET and return headers only
+            if $(req_sym).method === :head
+                head_req = Mongoose.Request(:get, $(req_sym).uri, $(req_sym).query, $(req_sym).headers, $(req_sym).body, nothing)
+                head_path = $(path_sym)
+                # Re-run dispatch as GET
+                resp = Mongoose._dispatchstatic($(esc(app_type))(), head_req)
+                resp.status != 404 && return Mongoose.Response(resp.status, resp.headers, "")
+            end
 
             return Mongoose.Response(Plain, "404 Not Found"; status=404)
         end

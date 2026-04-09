@@ -8,7 +8,7 @@ const _RATE_LIMIT_SHARDS = 16
 
 struct _RateShard
     tracker::Dict{String, Tuple{Int, Float64}}
-    lock::ReentrantLock
+    lock::Threads.SpinLock
     last_cleanup::Base.RefValue{Float64}
 end
 
@@ -39,7 +39,8 @@ function (mw::RateLimit)(request::AbstractRequest, params::Vector{Any}, next)
     shard = _shard(mw, client_id)
     now_t = time()
 
-    allowed = lock(shard.lock) do
+    lock(shard.lock)
+    allowed = try
         if (now_t - shard.last_cleanup[]) > mw.cleanup_interval
             for (k, v) in collect(shard.tracker)
                 if (now_t - v[2]) > mw.window_seconds
@@ -53,16 +54,18 @@ function (mw::RateLimit)(request::AbstractRequest, params::Vector{Any}, next)
 
         if entry === nothing || (now_t - entry[2]) > mw.window_seconds
             shard.tracker[client_id] = (1, now_t)
-            return true
+            true
         else
             count, start = entry
             if count >= mw.max_requests
-                return false
+                false
             else
                 shard.tracker[client_id] = (count + 1, start)
-                return true
+                true
             end
         end
+    finally
+        unlock(shard.lock)
     end
 
     if !allowed
@@ -91,7 +94,7 @@ plug!(server, ratelimit(max_requests=50, window_seconds=30))
 ```
 """
 function ratelimit(; max_requests::Int=100, window_seconds::Int=60)
-    shards = [_RateShard(Dict{String,Tuple{Int,Float64}}(), ReentrantLock(), Ref(time())) for _ in 1:_RATE_LIMIT_SHARDS]
+    shards = [_RateShard(Dict{String,Tuple{Int,Float64}}(), Threads.SpinLock(), Ref(time())) for _ in 1:_RATE_LIMIT_SHARDS]
     return RateLimit(
         max_requests, window_seconds,
         max(window_seconds * 2.0, 60.0),

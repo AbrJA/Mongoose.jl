@@ -145,8 +145,8 @@ function shutdown!(server::AbstractServer)
     _drain(server)
     _stopworkers!(server)
     _stoploop!(server)
-    _teardown!(server)
     _unregister!(server)
+    _teardown!(server)
     _logstopped(server)
     return
 end
