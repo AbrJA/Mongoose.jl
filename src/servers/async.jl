@@ -137,10 +137,10 @@ function _workloop(server::Async)
                     _handleerror(server, req.payload, e)
                 end
                 res = Response(res.status, _appendreqid(res.headers, rid), res.body)
-                isopen(server.replies) && put!(server.replies, Tagged(req.id, res))
+                try isopen(server.replies) && put!(server.replies, Tagged(req.id, res)) catch end
             else  # Intent
                 res = _invokews(server, req)
-                res !== nothing && isopen(server.replies) && put!(server.replies, res)
+                try res !== nothing && isopen(server.replies) && put!(server.replies, res) catch end
             end
         end
     catch e

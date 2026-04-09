@@ -57,6 +57,33 @@ _sendws!(conn, data::String)        = mg_ws_send(conn, data, WS_OP_TEXT)
 _sendws!(conn, data::Vector{UInt8}) = mg_ws_send(conn, data, WS_OP_BINARY)
 _sendws!(conn, msg::Message)        = _sendws!(conn, msg.data)
 
+# --- WS control frame handler (close / ping / pong) ---
+
+"""
+    _onevent!(server, ::Val{MG_EV_WS_CTL}, conn, ev_data)
+
+Handle WebSocket control frames per RFC 6455:
+- **Close (0x8)**: Echo the close payload back (status code + optional reason)
+  to complete the closing handshake. Mongoose marks the connection for closing
+  on the next poll cycle.
+- **Ping (0x9)**: Reply with a Pong carrying the same payload (§5.5.3).
+- **Pong (0xA)**: Received as a keep-alive ack — no action needed.
+"""
+function _onevent!(server::AbstractServer, ::Val{MG_EV_WS_CTL}, conn::MgConnection, ev_data::Ptr{Cvoid})
+    msg = MgWsMessage(ev_data)
+    op = msg.flags & 0x0F
+    if op == WS_OP_CLOSE || op == WS_OP_PING
+        reply_op = op == WS_OP_CLOSE ? WS_OP_CLOSE : WS_OP_PONG
+        if msg.data.len > 0 && msg.data.buf != C_NULL
+            payload = copy(unsafe_wrap(Array, msg.data.buf, Int(msg.data.len)))
+            mg_ws_send(conn, payload, reply_op)
+        else
+            mg_ws_send(conn, UInt8[], reply_op)
+        end
+    end
+    return
+end
+
 # --- WS event handlers ---
 
 # Server: process WS message directly on event-loop thread
@@ -92,7 +119,9 @@ end
 
 function _onevent!(server::Async, ::Val{MG_EV_CLOSE}, conn::MgConnection, ev_data::Ptr{Cvoid})
     _closews!(server, conn)
-    delete!(server.connections, Int(conn))
+    # Remove ALL entries referencing this closed connection (both request-ID
+    # and WS-keyed entries) to prevent writing to a stale/recycled pointer.
+    filter!(kv -> kv.second != conn, server.connections)
     return
 end
 

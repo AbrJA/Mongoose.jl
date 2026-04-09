@@ -42,7 +42,7 @@ struct PrometheusMetrics <: AbstractMiddleware
 end
 
 @inline function _shard(mw::PrometheusMetrics)
-    idx = (Threads.threadid() - 1) % _METRICS_SHARDS + 1
+    idx = (hash(objectid(current_task())) % _METRICS_SHARDS) + 1
     return mw.shards[idx]
 end
 

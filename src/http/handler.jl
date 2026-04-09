@@ -12,22 +12,30 @@ Return the standard HTTP reason phrase for a status code.
 @inline function _statustext(code::Int)
     code == 200 && return "OK"
     code == 201 && return "Created"
+    code == 202 && return "Accepted"
     code == 204 && return "No Content"
+    code == 206 && return "Partial Content"
     code == 301 && return "Moved Permanently"
     code == 302 && return "Found"
     code == 304 && return "Not Modified"
+    code == 307 && return "Temporary Redirect"
+    code == 308 && return "Permanent Redirect"
     code == 400 && return "Bad Request"
     code == 401 && return "Unauthorized"
     code == 403 && return "Forbidden"
     code == 404 && return "Not Found"
     code == 405 && return "Method Not Allowed"
+    code == 408 && return "Request Timeout"
+    code == 409 && return "Conflict"
     code == 413 && return "Payload Too Large"
+    code == 415 && return "Unsupported Media Type"
+    code == 422 && return "Unprocessable Entity"
     code == 429 && return "Too Many Requests"
     code == 500 && return "Internal Server Error"
     code == 502 && return "Bad Gateway"
     code == 503 && return "Service Unavailable"
     code == 504 && return "Gateway Timeout"
-    return "OK"
+    return ""
 end
 
 # Pre-built responses for the three codes that _errresponse must handle without allocation.
@@ -394,16 +402,20 @@ returns 504 Gateway Timeout. Used only by Async workers.
 """
 function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout::Integer)
     ch = Channel{Response}(1)
-    Threads.@spawn try
-        put!(ch, _invokehttp(server, req))
-    catch e
-        @error "Handler error" component="http" uri=req.uri exception=(e, catch_backtrace())
-        put!(ch, _handleerror(server, req, e))
+    Threads.@spawn begin
+        res = try
+            _invokehttp(server, req)
+        catch e
+            @error "Handler error" component="http" uri=req.uri exception=(e, catch_backtrace())
+            _handleerror(server, req, e)
+        end
+        try put!(ch, res) catch end  # channel closed on timeout — discard result
     end
     result = timedwait(timeout / 1000.0) do
         isready(ch)
     end
     if result === :timed_out
+        close(ch)  # signal spawned task to stop waiting
         @warn "Request timed out" component="http" uri=req.uri timeout_ms=timeout
         return _errresponse(server, 504)
     end

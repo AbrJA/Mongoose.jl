@@ -292,7 +292,7 @@ macro router(app_type::Symbol, block)
 
     handler_definitions = esc(quote
         function $async_handler_sym(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})::Cvoid
-            ev == Mongoose.MG_EV_POLL && return nothing
+            Mongoose._ishandled(ev) || return nothing
             fn_data = Mongoose.mg_conn_get_fn_data(conn)
             fn_data == C_NULL && return nothing
             # GC-safe recovery: fn_data holds objectid token, not heap address
@@ -308,7 +308,7 @@ macro router(app_type::Symbol, block)
         end
 
         function $sync_handler_sym(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})::Cvoid
-            ev == Mongoose.MG_EV_POLL && return nothing
+            Mongoose._ishandled(ev) || return nothing
             fn_data = Mongoose.mg_conn_get_fn_data(conn)
             fn_data == C_NULL && return nothing
             # GC-safe recovery: fn_data holds objectid token, not heap address

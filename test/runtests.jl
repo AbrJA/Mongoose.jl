@@ -2067,4 +2067,43 @@ end
             shutdown!(server)
         end
     end
+
+    # ==========================================================================
+    # WebSocket graceful close (RFC 6455 close handshake)
+    # ==========================================================================
+
+    @testset "WebSocket graceful close" begin
+        router = Router()
+        ws!(router, "/wsclose",
+            on_message = (msg) -> Message("reply: $(msg.data)"))
+
+        server = Server(router)
+        start!(server; port=8226, blocking=false)
+        wait_for_server("http://localhost:8226/")
+
+        try
+            # The do-block sends a message, receives the reply, then HTTP.jl sends a
+            # close frame. The server must respond with a close frame (MG_EV_WS_CTL
+            # handler) so the handshake completes without IOError.
+            HTTP.WebSockets.open("ws://localhost:8226/wsclose") do ws
+                HTTP.WebSockets.send(ws, "test")
+                reply = String(HTTP.WebSockets.receive(ws))
+                @test reply == "reply: test"
+            end
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # _statustext returns empty string for unknown codes
+    # ==========================================================================
+
+    @testset "Unit: _statustext unknown code" begin
+        @test Mongoose._statustext(200) == "OK"
+        @test Mongoose._statustext(418) == ""
+        @test Mongoose._statustext(999) == ""
+        @test Mongoose._statustext(206) == "Partial Content"
+        @test Mongoose._statustext(422) == "Unprocessable Entity"
+    end
 end
