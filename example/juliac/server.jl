@@ -19,4 +19,4 @@ end
     return 0
 end
 
-# juliac --trim=safe --project . --output-exe binary juliac_example.jl 2>&1
+# juliac --trim=safe --project . --output-exe binary example/juliac/server.jl 2>&1

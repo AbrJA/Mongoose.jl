@@ -79,9 +79,13 @@ mime(::Type{Json})   = "application/json; charset=utf-8"
 mime(::Type{Binary}) = "application/octet-stream"
 mime(::Type{Xml})    = "application/xml; charset=utf-8"
 
-function _contentheader(format::Type{<:AbstractFormat})
-    return "Content-Type: $(mime(format))\r\n"
-end
+_contentheader(::Type{Plain})  = "Content-Type: text/plain; charset=utf-8\r\n"
+_contentheader(::Type{Html})   = "Content-Type: text/html; charset=utf-8\r\n"
+_contentheader(::Type{Css})    = "Content-Type: text/css; charset=utf-8\r\n"
+_contentheader(::Type{Js})     = "Content-Type: application/javascript; charset=utf-8\r\n"
+_contentheader(::Type{Json})   = "Content-Type: application/json; charset=utf-8\r\n"
+_contentheader(::Type{Xml})    = "Content-Type: application/xml; charset=utf-8\r\n"
+_contentheader(::Type{Binary}) = "Content-Type: application/octet-stream\r\n"
 
 function Response(::Type{T}, body; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) where T<:AbstractFormat
     rendered_body = body isa String ? body : encode(T, body)  # Avoid dispatch trap for String
