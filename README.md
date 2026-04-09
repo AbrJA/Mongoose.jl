@@ -150,7 +150,7 @@ Consolidate all options into a `Config` struct — particularly useful for envir
 
 ```julia
 config = Config(
-    workers = parse(Int, get(ENV, "WORKERS", "4")),
+    nworkers = parse(Int, get(ENV, "NWORKERS", "4")),
     max_body = parse(Int, get(ENV, "MAX_BODY", "1048576")),
     request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT", "0")),
     drain_timeout = 10_000,
