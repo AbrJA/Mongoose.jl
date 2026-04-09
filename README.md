@@ -18,7 +18,7 @@
 
 ---
 
-## Why Mongoose.jl?
+## Why Mongoose.jl? 🚀
 
 | Category | Highlights |
 |---|---|
@@ -33,7 +33,7 @@
 
 ---
 
-## Installation
+## Installation 📦
 
 ```julia
 ] add Mongoose
@@ -47,7 +47,7 @@ For JSON support:
 
 ---
 
-## Quick Start
+## Quick Start ⚡
 
 ```julia
 using Mongoose
@@ -71,9 +71,9 @@ shutdown!(server)
 
 ---
 
-## Routing
+## Routing 🧭
 
-### HTTP Methods
+### HTTP Methods 🌐
 
 ```julia
 route!(router, :get,    "/items",     req -> ...)
@@ -85,7 +85,7 @@ route!(router, :delete, "/items/:id", (req, id) -> ...)
 
 GET routes automatically handle HEAD requests (body stripped, headers preserved).
 
-### Typed Path Parameters
+### Typed Path Parameters 🔢
 
 Append `::Type` to a segment for automatic parsing. Invalid values return 404 (e.g. `/users/abc` when `Int` is expected):
 
@@ -95,7 +95,7 @@ route!(router, :get, "/price/:val::Float64",  (req, val)  -> ...)  # val::Float6
 route!(router, :get, "/posts/:slug",          (req, slug) -> ...)  # slug::String
 ```
 
-### Query String
+### Query String 🔍
 
 Define a struct and parse the whole query string at once:
 
@@ -114,7 +114,7 @@ end)
 
 Missing fields default to `""`, `0`, `false`, or `nothing` depending on their type.
 
-### Request Helpers
+### Request Helpers 🛠️
 
 | Expression | Returns | Description |
 |---|---|---|
@@ -126,7 +126,7 @@ Missing fields default to `""`, `0`, `false`, or `nothing` depending on their ty
 
 ---
 
-## Server Types
+## Server Types 🖥️
 
 | Type | Model | Best for |
 |---|---|---|
@@ -147,7 +147,7 @@ server = Async(router;
 server = Server(router)
 ```
 
-### Config
+### Config ⚙️
 
 Consolidate all options into a `Config` struct — particularly useful for environment-driven configuration:
 
@@ -163,7 +163,7 @@ config = Config(
 server = Async(router, config)   # or Server(router, config)
 ```
 
-### Custom Error Responses
+### Custom Error Responses 🧯
 
 Register pre-built responses for specific status codes — no function callbacks, fully trim-safe:
 
@@ -179,7 +179,7 @@ route!(router, :get, "*", req -> Response(Html, read("404.html", String); status
 
 ---
 
-## Responses
+## Responses 📬
 
 ```julia
 Response(Plain, "Hello!")                    # text/plain, status 200
@@ -204,7 +204,7 @@ The format type sets the `Content-Type` header automatically:
 
 ---
 
-## Middleware
+## Middleware 🧩
 
 Middleware runs in registration order. Each middleware can inspect and modify the request, short-circuit with a response, or pass through to the next handler.
 
@@ -236,7 +236,7 @@ plug!(server, metrics())
 plug!(server, health())
 ```
 
-### Path-Scoped Middleware
+### Path-Scoped Middleware 🎯
 
 The `paths` keyword limits a middleware to specific URL prefixes only:
 
@@ -245,7 +245,7 @@ plug!(server, bearer(t -> t == "secret"); paths=["/api", "/admin"])
 plug!(server, ratelimit(max_requests=10);       paths=["/api/expensive"])
 ```
 
-### Custom Middleware
+### Custom Middleware 🧪
 
 Subtype `AbstractMiddleware` and implement the call operator:
 
@@ -265,7 +265,7 @@ plug!(server, RequestTimer())
 
 ---
 
-## WebSocket Support
+## WebSocket Support 🔌
 
 ```julia
 ws!(router, "/chat",
@@ -292,9 +292,11 @@ ws!(router, "/chat",
 - **Upgrade rejection** — return `false` from `on_open` to refuse the connection with 403.
 - **Ping/pong** — automatic RFC 6455 control frame handling.
 
+💡 **Tip:** start with `ws_idle_timeout=60` and tune based on your client behavior.
+
 ---
 
-## JSON
+## JSON 🧾
 
 Install `JSON.jl` and extend `encode` once at startup:
 
@@ -319,7 +321,7 @@ end)
 
 ---
 
-## AOT Compilation with `juliac`
+## AOT Compilation with `juliac` 🧊
 
 Use the `@router` macro to generate a **zero-allocation, compile-time dispatch function** — required for `juliac --trim=safe`. No dynamic dispatch, no closures, no allocations on the hot path.
 
@@ -350,7 +352,7 @@ juliac --trim=safe --project . --output-exe myapp app.jl
 
 ---
 
-## Full Example
+## Full Example 🏗️
 
 A complete app with REST API, WebSocket, middleware stack, and custom errors:
 
@@ -401,10 +403,10 @@ start!(server, port=8080)
 
 ---
 
-## Documentation
+## Documentation 📚
 
 Full API reference and examples: **[AbrJA.github.io/Mongoose.jl](https://AbrJA.github.io/Mongoose.jl/dev)**
 
-## License
+## License ⚖️
 
 Distributed under the GPL-2 License. See [`LICENSE`](LICENSE) for details.
