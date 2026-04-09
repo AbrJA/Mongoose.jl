@@ -87,6 +87,16 @@ _contentheader(::Type{Json})   = "Content-Type: application/json; charset=utf-8\
 _contentheader(::Type{Xml})    = "Content-Type: application/xml; charset=utf-8\r\n"
 _contentheader(::Type{Binary}) = "Content-Type: application/octet-stream\r\n"
 
+# Fallback for user-defined formats: implement mime() and get _contentheader for free.
+# Uses IOBuffer (concrete type) to avoid Vararg string dispatch — trim=safe compatible.
+function _contentheader(format::Type{<:AbstractFormat})
+    buf = IOBuffer()
+    write(buf, "Content-Type: ")
+    write(buf, mime(format))
+    write(buf, "\r\n")
+    return String(take!(buf))
+end
+
 function Response(::Type{T}, body; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) where T<:AbstractFormat
     rendered_body = body isa String ? body : encode(T, body)  # Avoid dispatch trap for String
     content_headers = isempty(headers) ? _contentheader(T) : _contentheader(T) * _formatheaders(headers)
