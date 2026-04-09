@@ -8,7 +8,7 @@ export Server, Async, Router, Request, Response,
     start!, shutdown!, route!, plug!, mount!, fail!,
     context!,
     ws!, Message,
-    cors, rate_limit, bearer_token, api_key, logger, health, metrics,
+    cors, ratelimit, bearer, apikey, logger, health, metrics,
     RouteError, ServerError, BindError,
     @router,
     Config
@@ -47,7 +47,7 @@ include("servers/async.jl")
 
 # 7. Middleware
 include("middleware/cors.jl")
-include("middleware/rate_limit.jl")
+include("middleware/ratelimit.jl")
 include("middleware/auth.jl")
 include("middleware/logger.jl")
 include("middleware/health.jl")
@@ -114,10 +114,10 @@ include("middleware/metrics.jl")
         mw_cors2    = cors(origins="https://example.com", methods="GET,POST")
         mw_logger   = logger(threshold=100)
         mw_logger2  = logger(threshold=100, structured=true)
-        mw_rl       = rate_limit()
-        mw_rl2      = rate_limit(max_requests=10, window_seconds=30)
-        mw_bearer   = bearer_token(t -> true)
-        mw_apikey   = api_key(keys=Set(["k"]))
+        mw_rl       = ratelimit()
+        mw_rl2      = ratelimit(max_requests=10, window_seconds=30)
+        mw_bearer   = bearer(t -> true)
+        mw_apikey   = apikey(keys=Set(["k"]))
         mw_health   = health()
         mw_metrics  = metrics()
 

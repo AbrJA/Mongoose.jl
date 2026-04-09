@@ -20,9 +20,10 @@ function Server(router::AbstractRouter=Router();
                     poll_timeout::Integer=1,
                     max_body::Integer=MAX_BODY,
                     drain_timeout::Integer=DRAIN_TIMEOUT,
-                    errors::Dict{Int,Response}=Dict{Int,Response}())
+                    errors::Dict{Int,Response}=Dict{Int,Response}(),
+                    styled::Bool=isa(stdout, Base.TTY))
     c_handler = Mongoose._cfnsync(typeof(router))
-    core = ServerCore(poll_timeout, router; max_body=max_body, drain_timeout=drain_timeout, errors=errors, c_handler=c_handler)
+    core = ServerCore(poll_timeout, router; max_body=max_body, drain_timeout=drain_timeout, errors=errors, c_handler=c_handler, styled=styled)
     server = Server{typeof(router)}(core)
     finalizer(_teardown!, server)
     return server
@@ -38,7 +39,8 @@ function Server(router::AbstractRouter, config::Config)
         poll_timeout          = config.poll_timeout,
         max_body    = config.max_body,
         drain_timeout = config.drain_timeout,
-        errors  = config.errors
+        errors  = config.errors,
+        styled = config.styled
     )
 end
 

@@ -49,9 +49,9 @@ Message
 
 ```@docs
 cors
-rate_limit
-bearer_token
-api_key
+ratelimit
+bearer
+apikey
 logger
 health
 metrics

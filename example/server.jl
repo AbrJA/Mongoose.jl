@@ -9,8 +9,8 @@ Demonstrates every framework feature:
   - request context! for middleware→handler data passing
   - Binary responses (generated PNG, CSV download, protected files)
   - WebSocket with on_open / on_message / on_close
-  - All built-in middleware: cors, logger (plain + threshold), rate_limit,
-    health (custom callbacks), metrics (Prometheus), api_key, bearer_token
+  - All built-in middleware: cors, logger (plain + threshold), ratelimit,
+    health (custom callbacks), metrics (Prometheus), apikey, bearer
   - Custom middleware (InjectUser) to demonstrate AbstractMiddleware + context!
   - Path-scoped middleware with paths=[...]
   - Custom error responses (500 / 413 / 504)
@@ -257,7 +257,7 @@ end
 
 # mount! runs at the C level before middleware, so it cannot enforce auth.
 # These routes read files into Vector{UInt8} inside the middleware pipeline,
-# where api_key middleware has already verified credentials.
+# where apikey middleware has already verified credentials.
 const PROTECTED_MIME = Dict(
     ".png"  => "image/png",
     ".jpg"  => "image/jpeg",
@@ -490,7 +490,7 @@ function main()
     plug!(server, logger(threshold=500))
 
     # 4. Rate limiter — 300 req / 60 s per client IP.
-    plug!(server, rate_limit(max_requests=300, window_seconds=60))
+    plug!(server, ratelimit(max_requests=300, window_seconds=60))
 
     # 5. Health checks with custom callbacks.
     #    DB_ONLINE is toggled via PUT /admin/db/down|up to simulate failures.
@@ -507,10 +507,10 @@ function main()
 
     # 7. API-key auth, scoped to /api/* only.
     valid_api_keys = Set(["demo-key-1234", "prod-key-secret"])
-    plug!(server, api_key(keys=valid_api_keys); paths=["/api"])
+    plug!(server, apikey(keys=valid_api_keys); paths=["/api"])
 
     # 9. Tight scoped rate limit on /debug/limited — hit it 4+ times in 30s to get 429.
-    plug!(server, rate_limit(max_requests=3, window_seconds=30); paths=["/debug/limited"])
+    plug!(server, ratelimit(max_requests=3, window_seconds=30); paths=["/debug/limited"])
 
     # 8. Bearer-token auth for /admin/*, also injects user info into context!.
     #    Handlers read Mongoose.context!(req)[:user_id] and [:role].
@@ -526,7 +526,7 @@ function main()
     fail!(server, 504, Response(Json, Dict("error"=>"Request timed out");      status=504))
 
     # ── Static file serving (C-level, bypasses middleware pipeline) ────────────
-    # All three mounts are auth-free (api_key only covers /api).
+    # All three mounts are auth-free (apikey only covers /api).
     mount!(server, joinpath(@__DIR__, "public"))
     mount!(server, joinpath(@__DIR__, "public", "assets"); uri_prefix="/assets")
 

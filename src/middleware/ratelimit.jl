@@ -74,7 +74,7 @@ function (mw::RateLimit)(request::AbstractRequest, params::Vector{Any}, next)
 end
 
 """
-    rate_limit(; max_requests, window_seconds)
+    ratelimit(; max_requests, window_seconds)
 
 Create a rate-limiting middleware using a sharded fixed-window counter.
 Returns 429 Too Many Requests when the limit is exceeded.
@@ -87,10 +87,10 @@ Uses $(_RATE_LIMIT_SHARDS) independent shards internally to minimize lock conten
 
 # Example
 ```julia
-plug!(server, rate_limit(max_requests=50, window_seconds=30))
+plug!(server, ratelimit(max_requests=50, window_seconds=30))
 ```
 """
-function rate_limit(; max_requests::Int=100, window_seconds::Int=60)
+function ratelimit(; max_requests::Int=100, window_seconds::Int=60)
     shards = [_RateShard(Dict{String,Tuple{Int,Float64}}(), ReentrantLock(), Ref(time())) for _ in 1:_RATE_LIMIT_SHARDS]
     return RateLimit(
         max_requests, window_seconds,

@@ -169,10 +169,10 @@ plug!(server, logger())
 plug!(server, cors(origins="https://example.com"))
 
 # 3. Rate limiting: 100 requests per 60 seconds per client IP
-plug!(server, rate_limit(max_requests=100, window_seconds=60))
+plug!(server, ratelimit(max_requests=100, window_seconds=60))
 
 # 4. Bearer token authentication
-plug!(server, bearer_token(token -> token == "my-secret-token"))
+plug!(server, bearer(token -> token == "my-secret-token"))
 
 start!(server, port=8080, blocking=false)
 ```
@@ -188,7 +188,7 @@ router = Router()
 route!(router, :get, "/internal", req -> Response(Plain, "Internal data"))
 
 server = Async(router)
-plug!(server, api_key(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
+plug!(server, apikey(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
 
 start!(server, port=8080, blocking=false)
 ```
@@ -346,7 +346,7 @@ ws!(router, "/ws/notifications",
 server = Async(router; nworkers=4)
 plug!(server, logger(threshold=100))
 plug!(server, cors(origins="https://myapp.com"))
-plug!(server, rate_limit(max_requests=200, window_seconds=60))
+plug!(server, ratelimit(max_requests=200, window_seconds=60))
 mount!(server, "public")
 
 start!(server, port=8080, blocking=false)
@@ -394,10 +394,10 @@ route!(router, :get, "/admin/dashboard", req -> Response(200, "Dashboard"))
 server = Async(router)
 
 # Auth only for /api and /admin routes
-plug!(server, bearer_token(t -> t == "secret"); paths=["/api", "/admin"])
+plug!(server, bearer(t -> t == "secret"); paths=["/api", "/admin"])
 
 # Rate limit only expensive API endpoints
-plug!(server, rate_limit(max_requests=10, window_seconds=60); paths=["/api"])
+plug!(server, ratelimit(max_requests=10, window_seconds=60); paths=["/api"])
 
 # Logger for everything
 plug!(server, logger(structured=true))
@@ -625,10 +625,10 @@ plug!(server, cors())
 plug!(server, logger(structured=true))
 
 # Auth only on API routes
-plug!(server, bearer_token(t -> t == ENV["API_TOKEN"]); paths=["/api"])
+plug!(server, bearer(t -> t == ENV["API_TOKEN"]); paths=["/api"])
 
 # Rate limit per-client
-plug!(server, rate_limit(max_requests=200, window_seconds=60); paths=["/api"])
+plug!(server, ratelimit(max_requests=200, window_seconds=60); paths=["/api"])
 
 start!(server; host="0.0.0.0", port=8080)
 ```
@@ -787,7 +787,7 @@ end)
 server = Async(router; nworkers=4, max_body=10_485_760)
 
 plug!(server, logger())
-plug!(server, rate_limit(max_requests=30, window_seconds=60); paths=["/api/upload"])
+plug!(server, ratelimit(max_requests=30, window_seconds=60); paths=["/api/upload"])
 
 start!(server; port=8080, blocking=false)
 ```
@@ -863,7 +863,7 @@ end)
 server = Async(router; nworkers=4)
 
 # Middleware: API-only auth
-plug!(server, api_key(keys=Set([ENV["API_KEY"]])); paths=["/api"])
+plug!(server, apikey(keys=Set([ENV["API_KEY"]])); paths=["/api"])
 
 # CORS for API
 plug!(server, cors(origins="https://myapp.com"); paths=["/api"])

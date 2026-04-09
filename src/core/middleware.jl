@@ -17,7 +17,7 @@ and must call `next()` or return early.
 # Example
 ```julia
 plug!(server, cors())                                          # all paths
-plug!(server, api_key(keys=Set(["k"])); paths=["/api"])         # only /api/*
+plug!(server, apikey(keys=Set(["k"])); paths=["/api"])         # only /api/*
 plug!(server, logger(); paths=["/api", "/admin"])               # selective logging
 ```
 

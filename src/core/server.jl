@@ -63,7 +63,7 @@ mutable struct ServerCore{R <: AbstractRouter}
                         request_timeout::Integer = 0,
                         errors::Dict{Int, Response} = Dict{Int, Response}(),
                         c_handler::Ptr{Cvoid} = C_NULL,
-                        styled::Bool = true) where {R <: AbstractRouter}
+                        styled::Bool = isa(stdout, Base.TTY)) where {R <: AbstractRouter}
 
         return new{R}(
             Threads.Atomic{Bool}(false),    # running
@@ -132,6 +132,7 @@ Base.@kwdef struct Config
     nworkers::Int           = 4
     nqueue::Int             = 1024
     errors::Dict{Int,Response} = Dict{Int,Response}()
+    styled::Bool = isa(stdout, Base.TTY)
 end
 
 # --- Abstract Server Implementations (Structs only) ---

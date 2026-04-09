@@ -270,8 +270,8 @@ Middleware is added with `plug!` and executes in registration order. Each middle
 Apply middleware only to specific path prefixes:
 
 ```julia
-plug!(server, bearer_token(t -> t == "secret"); paths=["/api", "/admin"])
-plug!(server, rate_limit(max_requests=10); paths=["/api/expensive"])
+plug!(server, bearer(t -> t == "secret"); paths=["/api", "/admin"])
+plug!(server, ratelimit(max_requests=10); paths=["/api/expensive"])
 ```
 
 Requests to other paths bypass the middleware entirely.
@@ -307,8 +307,8 @@ plug!(server, cors(methods="GET, POST", headers="Authorization", max_age=3600))
 Fixed-window rate limiter keyed by client IP address.
 
 ```julia
-plug!(server, rate_limit())                                  # 100 req / 60s (defaults)
-plug!(server, rate_limit(max_requests=10, window_seconds=30)) # Stricter limits
+plug!(server, ratelimit())                                  # 100 req / 60s (defaults)
+plug!(server, ratelimit(max_requests=10, window_seconds=30)) # Stricter limits
 ```
 
 Returns `429 Too Many Requests` with a `Retry-After` header when exceeded.
@@ -318,7 +318,7 @@ Returns `429 Too Many Requests` with a `Retry-After` header when exceeded.
 **Bearer token:**
 
 ```julia
-plug!(server, bearer_token(token -> token == "secret-123"))
+plug!(server, bearer(token -> token == "secret-123"))
 ```
 
 Returns `401` with `WWW-Authenticate: Bearer` if missing or invalid scheme, `403` if the validator returns `false`.
@@ -326,7 +326,7 @@ Returns `401` with `WWW-Authenticate: Bearer` if missing or invalid scheme, `403
 **API key:**
 
 ```julia
-plug!(server, api_key(header_name="X-API-Key", keys=Set(["key1", "key2"])))
+plug!(server, apikey(header_name="X-API-Key", keys=Set(["key1", "key2"])))
 ```
 
 Returns `401` if the header is missing or the key is not in the allowed set.

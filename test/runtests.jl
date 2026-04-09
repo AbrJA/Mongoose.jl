@@ -473,7 +473,7 @@ end
 
         # 1. Bearer Auth
         server_bearer = Async(router; nworkers=1)
-        plug!(server_bearer, bearer_token(token -> token == "magic-token"))
+        plug!(server_bearer, bearer(token -> token == "magic-token"))
         start!(server_bearer; port=8105, blocking=false)
         wait_for_server("http://localhost:8105/")
 
@@ -496,7 +496,7 @@ end
 
         # 2. API Key Auth
         server_api = Async(router; nworkers=1)
-        plug!(server_api, api_key(keys=Set(["key123"])))
+        plug!(server_api, apikey(keys=Set(["key123"])))
         start!(server_api; port=8106, blocking=false)
         wait_for_server("http://localhost:8106/")
 
@@ -520,7 +520,7 @@ end
 
         server = Async(router; nworkers=1)
         # 3 requests per 10 seconds (1 consumed by wait_for_server probe + 2 actual test requests)
-        plug!(server, rate_limit(max_requests=3, window_seconds=10))
+        plug!(server, ratelimit(max_requests=3, window_seconds=10))
         start!(server; port=8107, blocking=false)
         wait_for_server("http://localhost:8107/")
 
@@ -1069,7 +1069,7 @@ end
         route!(router, :get, "/secure", (req) -> Response(200, "", "ok"))
 
         server = Server(router)
-        plug!(server, bearer_token(token -> token == "secret"))
+        plug!(server, bearer(token -> token == "secret"))
         start!(server; port=8128, blocking=false)
         wait_for_server("http://localhost:8128/")
 
@@ -1096,7 +1096,7 @@ end
         route!(router, :get, "/limited", (req) -> Response(200, "", "OK"))
 
         server = Async(router; nworkers=1)
-        plug!(server, rate_limit(max_requests=2, window_seconds=60))
+        plug!(server, ratelimit(max_requests=2, window_seconds=60))
         start!(server; port=8129, blocking=false)
         wait_for_server("http://localhost:8129/")
 
@@ -1420,7 +1420,7 @@ end
 
         server = Async(router; nworkers=1)
         # Bearer auth only applies to /api routes
-        plug!(server, bearer_token(token -> token == "secret"); paths=["/api"])
+        plug!(server, bearer(token -> token == "secret"); paths=["/api"])
         start!(server; port=8203, blocking=false)
         wait_for_server("http://localhost:8203/")
 
@@ -1551,7 +1551,7 @@ end
 
         server = Async(router; nworkers=1)
         plug!(server, cors(origins="https://app.example.com"))
-        plug!(server, bearer_token(token -> token == "tok123"))
+        plug!(server, bearer(token -> token == "tok123"))
         start!(server; port=8207, blocking=false)
         start!(server; port=8207, blocking=false)
         wait_for_server("http://localhost:8207/")
@@ -1796,7 +1796,7 @@ end
         route!(router, :get, "/data", req -> Response(200, "", "secret"))
 
         server = Server(router)
-        plug!(server, api_key(header_name="X-Token", keys=Set(["valid-key"])))
+        plug!(server, apikey(header_name="X-Token", keys=Set(["valid-key"])))
         start!(server; port=8215, blocking=false)
         wait_for_server("http://localhost:8215/")
 

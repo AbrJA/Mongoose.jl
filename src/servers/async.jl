@@ -28,10 +28,11 @@ function Async(router::AbstractRouter=Router();
                      max_body::Integer=MAX_BODY,
                      drain_timeout::Integer=DRAIN_TIMEOUT,
                      request_timeout::Integer=0,
-                     errors::Dict{Int,Response}=Dict{Int,Response}())
+                     errors::Dict{Int,Response}=Dict{Int,Response}(),
+                     styled::Bool=isa(stdout, Base.TTY))
     c_handler = Mongoose._cfnasync(typeof(router))
     core = ServerCore(poll_timeout, router; max_body=max_body, drain_timeout=drain_timeout,
-                      request_timeout=request_timeout, errors=errors, c_handler=c_handler)
+                      request_timeout=request_timeout, errors=errors, c_handler=c_handler, styled=styled)
     server = Async{typeof(router)}(
         core, Task[],  # workers
         Channel{Call}(nqueue), Channel{Reply}(nqueue),

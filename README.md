@@ -213,13 +213,13 @@ plug!(server, logger(structured=true))
 plug!(server, cors(origins="https://myapp.com"))
 
 # Rate limiting — 200 requests per 60s per client IP
-plug!(server, rate_limit(max_requests=200, window_seconds=60))
+plug!(server, ratelimit(max_requests=200, window_seconds=60))
 
 # Auth — scoped to /api routes only
-plug!(server, bearer_token(token -> token == "my-secret"); paths=["/api"])
+plug!(server, bearer(token -> token == "my-secret"); paths=["/api"])
 
 # API key auth
-plug!(server, api_key(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
+plug!(server, apikey(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
 
 # Serve static files from the "public/" directory (C-level, with Range/ETag/gzip)
 mount!(server, "public")
@@ -236,8 +236,8 @@ plug!(server, health())
 The `paths` keyword limits a middleware to specific URL prefixes only:
 
 ```julia
-plug!(server, bearer_token(t -> t == "secret"); paths=["/api", "/admin"])
-plug!(server, rate_limit(max_requests=10);       paths=["/api/expensive"])
+plug!(server, bearer(t -> t == "secret"); paths=["/api", "/admin"])
+plug!(server, ratelimit(max_requests=10);       paths=["/api/expensive"])
 ```
 
 ### Custom Middleware
@@ -247,7 +247,7 @@ Subtype `AbstractMiddleware` and implement the call operator:
 ```julia
 struct RequestTimer <: Mongoose.AbstractMiddleware end
 
-function (::RequestTimer)(req, params, next)
+function (::RequestTimer)(req::Request, params, next)
     t = time()
     res = next()
     elapsed = round((time() - t) * 1000, digits=1)
@@ -372,8 +372,8 @@ server = Async(router; nworkers=4, request_timeout=10_000)
 
 plug!(server, logger(structured=true))
 plug!(server, cors(origins="https://myapp.com"))
-plug!(server, rate_limit(max_requests=300, window_seconds=60))
-plug!(server, bearer_token(t -> t == get(ENV, "API_TOKEN", "secret")); paths=["/api"])
+plug!(server, ratelimit(max_requests=300, window_seconds=60))
+plug!(server, bearer(t -> t == get(ENV, "API_TOKEN", "secret")); paths=["/api"])
 mount!(server, "public")
 
 fail!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500))
