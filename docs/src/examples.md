@@ -25,7 +25,7 @@ router = Router()
 
 # String parameter (default)
 route!(router, :get, "/greet/:name", (req, name) -> begin
-    Response(Plain, "Hello, $name!")
+    Response(Plain, "Hello, $(name)!")
 end)
 
 # Typed integer parameter
@@ -37,6 +37,7 @@ end)
 route!(router, :get, "/price/:amount::Float64", (req, amount) -> begin
     tax = amount * 0.16
     Response(Json, """{"amount": $amount, "tax": $tax}""")
+end)
 
 server = Async(router)
 start!(server, port=8080, blocking=false)
