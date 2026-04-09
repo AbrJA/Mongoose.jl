@@ -42,7 +42,7 @@ function Async(router::AbstractRouter=Router();
                      max_body::Integer=MAX_BODY,
                      drain_timeout::Integer=DRAIN_TIMEOUT,
                      request_timeout::Integer=0,
-                     ws_idle_timeout::Real=0.0,
+                     ws_idle_timeout::Integer=0,
                      errors::Dict{Int,Response}=Dict{Int,Response}(),
                      styled::Bool=isa(stdout, Base.TTY))
     c_handler = Mongoose._cfnasync(typeof(router))
@@ -136,7 +136,7 @@ function _eventloop(server::Async)
         # Extra poll to flush mg_ws_send buffers immediately
         did_ws_send && mg_mgr_poll(server.core.manager.ptr, 1)
         # Periodic WS idle sweep
-        if ws_idle > 0.0 && !isempty(server.core.clients)
+        if ws_idle > 0 && !isempty(server.core.clients)
             now_t = time()
             if (now_t - last_sweep) >= 5.0
                 _wsidlesweep!(server, ws_idle)

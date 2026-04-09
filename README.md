@@ -140,7 +140,7 @@ server = Async(router;
     nqueue          = 1024,
     request_timeout = 5000,
     max_body        = 4 * 1024 * 1024,
-    ws_idle_timeout = 60.0,
+    ws_idle_timeout = 60,
 )
 
 # AOT / simple scripts
@@ -156,7 +156,7 @@ config = Config(
     nworkers        = parse(Int, get(ENV, "NWORKERS", "4")),
     max_body        = parse(Int, get(ENV, "MAX_BODY", "1048576")),
     request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT", "0")),
-    ws_idle_timeout = 60.0,
+    ws_idle_timeout = 60,
     drain_timeout   = 10_000,
 )
 
@@ -385,7 +385,7 @@ ws!(router, "/ws",
 route!(router, :get, "*", req -> Response(Html, "<h1>Not Found</h1>"; status=404))
 
 # Server
-server = Async(router; nworkers=4, request_timeout=10_000, ws_idle_timeout=60.0)
+server = Async(router; nworkers=4, request_timeout=10_000, ws_idle_timeout=60)
 
 plug!(server, logger(structured=true))
 plug!(server, cors(origins="https://myapp.com"))

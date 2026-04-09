@@ -52,7 +52,7 @@ mutable struct ServerCore{R <: AbstractRouter}
     request_timeout::Int
     drain_timeout::Int
     max_body::Int
-    ws_idle_timeout::Float64      # seconds; 0.0 = disabled
+    ws_idle_timeout::Int      # seconds; 0 = disabled
 
     # --- 4. UI/UX Preferences ---
     styled::Bool
@@ -62,7 +62,7 @@ mutable struct ServerCore{R <: AbstractRouter}
                         max_body::Integer = MAX_BODY,
                         drain_timeout::Integer = DRAIN_TIMEOUT,
                         request_timeout::Integer = 0,
-                        ws_idle_timeout::Real = 0.0,
+                        ws_idle_timeout::Integer = 0,
                         errors::Dict{Int, Response} = Dict{Int, Response}(),
                         c_handler::Ptr{Cvoid} = C_NULL,
                         styled::Bool = isa(stdout, Base.TTY)) where {R <: AbstractRouter}
@@ -82,7 +82,7 @@ mutable struct ServerCore{R <: AbstractRouter}
             request_timeout,                # request_timeout
             drain_timeout,                  # drain_timeout
             max_body,                       # max_body
-            Float64(ws_idle_timeout),       # ws_idle_timeout
+            ws_idle_timeout,                # ws_idle_timeout
             styled                          # styled
         )
     end
@@ -132,7 +132,7 @@ Base.@kwdef struct Config
     max_body::Int      = MAX_BODY
     drain_timeout::Int   = DRAIN_TIMEOUT
     request_timeout::Int = 0
-    ws_idle_timeout::Float64 = 0.0
+    ws_idle_timeout::Int = 0
     nworkers::Int           = 4
     nqueue::Int             = 1024
     errors::Dict{Int,Response} = Dict{Int,Response}()

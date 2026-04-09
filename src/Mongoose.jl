@@ -175,7 +175,7 @@ include("middleware/metrics.jl")
         # --- Config ---
         Config()
         Config(nworkers=2, max_body=1024)
-        Config(nworkers=8, request_timeout=5000, drain_timeout=10_000, ws_idle_timeout=60.0)
+        Config(nworkers=8, request_timeout=5000, drain_timeout=10_000, ws_idle_timeout=60)
     end
 
     # Precompile the C callback entry point at module level (outside @compile_workload

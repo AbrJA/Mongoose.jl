@@ -2288,7 +2288,7 @@ end
     # ==========================================================================
 
     @testset "Config: ws_idle_timeout parameter" begin
-        config = Config(ws_idle_timeout=30.0)
+        config = Config(ws_idle_timeout=30)
         router = Router()
         route!(router, :get, "/", req -> Response(Plain, "ok"))
         server = Async(router, config)
