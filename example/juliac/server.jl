@@ -1,7 +1,7 @@
 using Mongoose
 
 function greet(req)
-    Response(Json, 200, "{\"message\":\"Hello World from trimmed Julia!\"}")
+    Response(Json, "{\"message\":\"Hello World from trimmed Julia!\"}")
 end
 
 function echo(req, name)
