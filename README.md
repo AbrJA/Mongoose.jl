@@ -372,7 +372,7 @@ server = Async(router; nworkers=4, request_timeout=10_000)
 
 plug!(server, logger(structured=true))
 plug!(server, cors(origins="https://myapp.com"))
-plug!(server, ratelimit(max_requests=300, window_seconds=60))
+plug!(server, ratelimit(max_requests=30, window_seconds=60))
 plug!(server, bearer(t -> t == get(ENV, "API_TOKEN", "secret")); paths=["/api"])
 mount!(server, "public")
 
