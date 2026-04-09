@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mongoose.jl Demo</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>🦦 Mongoose.jl Comprehensive Demo</h1>
+    <p class="subtitle">Async · CRUD · PATCH · Float64 params · Bool query · Auth-Gated Files · Admin · Debug Playground · WebSocket · Metrics</p>
+    <div class="api-key-bar">
+      <label for="apiKeyInput">API Key</label>
+      <input id="apiKeyInput" type="text" placeholder="X-API-Key value…" value="demo-key-1234" spellcheck="false" />
+      <label for="bearerInput" style="margin-left:0.75rem">Bearer token</label>
+      <input id="bearerInput" type="text" placeholder="Authorization token…" spellcheck="false" />
+      <button onclick="applyAuth()">Apply</button>
+      <span id="apiKeyStatus" class="badge badge-on">key: demo-key-1234</span>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ─── Health & Ping ────────────────────────────────────────── -->
+    <section class="card">
+      <h2>Health &amp; Ping</h2>
+      <div class="btn-row">
+        <button onclick="ping()">GET /api/ping</button>
+        <button onclick="checkHealth('/healthz')">GET /healthz</button>
+        <button onclick="checkHealth('/readyz')">GET /readyz</button>
+        <button onclick="checkHealth('/livez')">GET /livez</button>
+      </div>
+      <pre id="ping-output">—</pre>
+    </section>
+
+    <!-- ─── CRUD Users ──────────────────────────────────────────── -->
+    <section class="card">
+      <h2>CRUD — /api/users</h2>
+      <div class="btn-row">
+        <button onclick="getUsers()">GET all</button>
+        <button onclick="getUsersFiltered()">GET ?role=admin</button>
+        <button onclick="getUsersLimited()">GET ?limit=2</button>
+        <button onclick="getUsersActive(true)">GET ?active=true</button>
+        <button onclick="getUsersActive(false)">GET ?active=false</button>
+        <button onclick="getUser(1)">GET /1</button>
+      </div>
+      <div class="btn-row">
+        <button onclick="createUser()">POST (create)</button>
+        <button onclick="patchUser(1)">PATCH /1 (partial)</button>
+        <button onclick="updateUser(1)">PUT /1 (full)</button>
+        <button onclick="deleteUser(99)">DELETE /99</button>
+      </div>
+      <pre id="rest-output">Results will appear here…</pre>
+    </section>
+
+    <!-- ─── Math / Float64 URL params ──────────────────────────── -->
+    <section class="card">
+      <h2>Math — Float64 URL Params</h2>
+      <p class="card-note">Tests typed <code>Float64</code> path parameters: <code>GET /api/calc/:op/:a/:b</code></p>
+      <div class="btn-row align-center">
+        <select id="calcOp" class="select-input">
+          <option value="add">add</option>
+          <option value="sub">sub</option>
+          <option value="mul">mul</option>
+          <option value="div">div</option>
+        </select>
+        <label>a <input id="calcA" type="number" value="1.5" step="0.1" style="width:80px" /></label>
+        <label>b <input id="calcB" type="number" value="2.3" step="0.1" style="width:80px" /></label>
+        <button onclick="calc()">Calculate</button>
+      </div>
+      <pre id="calc-output">—</pre>
+    </section>
+
+    <!-- ─── Binary Image ────────────────────────────────────────── -->
+    <section class="card">
+      <h2>Binary Image Response</h2>
+      <p class="card-note">Server generates a solid-colour 8×8 PNG in Julia — no disk I/O, no external libs.</p>
+      <div class="btn-row align-center">
+        <label>R <input id="imgR" type="number" value="255" min="0" max="255" style="width:60px"/></label>
+        <label>G <input id="imgG" type="number" value="128" min="0" max="255" style="width:60px"/></label>
+        <label>B <input id="imgB" type="number" value="0"   min="0" max="255" style="width:60px"/></label>
+        <button onclick="fetchImage()">GET /api/image</button>
+      </div>
+      <div id="img-container" style="margin-top:0.5rem">
+        <img id="img-preview" style="width:128px;height:128px;image-rendering:pixelated;display:none;border:1px solid #888" />
+        <span id="img-status">—</span>
+      </div>
+    </section>
+
+    <!-- ─── File Download ───────────────────────────────────────── -->
+    <section class="card">
+      <h2>File Download</h2>
+      <p class="card-note">Server streams users.csv from memory with <code>Content-Disposition: attachment</code>.</p>
+      <div class="btn-row">
+        <button onclick="downloadCSV()">Download users.csv</button>
+        <a id="csv-link" style="display:none"></a>
+      </div>
+      <pre id="download-output">—</pre>
+    </section>
+
+    <!-- ─── Asset Files (protected, auth-gated binary response) ───────── -->
+    <section class="card">
+      <h2>Protected Files <small style="color:#888;font-weight:normal">(auth-gated binary response)</small></h2>
+      <p class="card-note">
+        Files in <code>example/public/assets/</code> served through a Julia route handler (<code>GET /api/protected/:name</code>),
+        not <code>mount!</code>. Auth is checked by the middleware pipeline before any file I/O runs.
+      </p>
+      <div class="btn-row">
+        <button onclick="listProtected()">Refresh list</button>
+      </div>
+      <div id="asset-list" style="margin-bottom:0.75rem"></div>
+      <pre id="asset-status" style="min-height:1.5rem"></pre>
+      <div id="asset-preview"></div>
+    </section>
+
+    <!-- ─── Admin ───────────────────────────────────────────────── -->
+    <section class="card">
+      <h2>Admin <small style="color:#888;font-weight:normal">(requires Bearer token)</small></h2>
+      <p class="card-note">
+        Set <strong>Bearer token</strong> in the auth bar above — use <code>admin-token-abc</code>.
+        <code>InjectUser</code> middleware validates it and injects <code>user_id</code> + <code>role</code>
+        into <code>context!(req)</code>, readable by the handler.
+      </p>
+      <div class="btn-row align-center">
+        <button onclick="adminWhoami()">GET /admin/whoami</button>
+        <button class="btn-danger" onclick="toggleDb('down')">PUT /admin/db/down → /healthz 503</button>
+        <button class="btn-ok"     onclick="toggleDb('up')">PUT /admin/db/up → /healthz 200</button>
+        <span id="db-badge" class="badge badge-on">DB: online</span>
+      </div>
+      <pre id="admin-output">—</pre>
+    </section>
+
+    <!-- ─── Debug Playground ────────────────────────────────────── -->
+    <section class="card">
+      <h2>Debug Playground <small style="color:#888;font-weight:normal">(no auth required)</small></h2>
+
+      <div class="debug-group">
+        <div class="debug-label">Request Echo — reflects exactly what the server parsed (method, URI, query, headers, body)</div>
+        <div class="btn-row">
+          <button onclick="debugEcho('GET')">GET /debug/echo</button>
+          <button onclick="debugEcho('POST')">POST /debug/echo (with body)</button>
+        </div>
+      </div>
+
+      <div class="debug-group">
+        <div class="debug-label">Custom 500 — intentional <code>error()</code> in handler → custom <code>fail!(500, …)</code></div>
+        <div class="btn-row">
+          <button class="btn-danger" onclick="debugPanic()">GET /debug/panic</button>
+        </div>
+      </div>
+
+      <div class="debug-group">
+        <div class="debug-label">Slow Request — 600 ms triggers <code>logger(threshold=500)</code> in stderr · 4000 ms triggers 504</div>
+        <div class="btn-row align-center">
+          <label>ms <input id="slowMs" type="number" value="200" step="100" style="width:80px" /></label>
+          <button onclick="debugSlow()">Send</button>
+          <button onclick="document.getElementById('slowMs').value=600;debugSlow()">Try 600 ms</button>
+          <button class="btn-danger" onclick="document.getElementById('slowMs').value=4000;debugSlow()">Try 4000 ms (504)</button>
+        </div>
+      </div>
+
+      <div class="debug-group">
+        <div class="debug-label">Response Format Types — every <code>Response(Format, body)</code> variant; check Content-Type in output</div>
+        <div class="btn-row">
+          <button onclick="debugFormats('plain')">Plain</button>
+          <button onclick="debugFormats('html')">Html</button>
+          <button onclick="debugFormats('xml')">Xml</button>
+          <button onclick="debugFormats('css')">Css</button>
+          <button onclick="debugFormats('js')">Js</button>
+          <button onclick="debugFormats('binary')">Binary</button>
+        </div>
+      </div>
+
+      <div class="debug-group">
+        <div class="debug-label">Rate Limit 429 — 3 req / 30 s scoped to this endpoint · hit it 4+ times quickly</div>
+        <div class="btn-row align-center">
+          <button onclick="debugLimited()">GET /debug/limited</button>
+          <span id="limited-counter" class="hit-counter">0 hits</span>
+          <button onclick="limitedHits=0;document.getElementById('limited-counter').textContent='0 hits'">Reset</button>
+        </div>
+      </div>
+
+      <pre id="debug-output">—</pre>
+    </section>
+
+    <!-- ─── WebSocket ───────────────────────────────────────────── -->
+    <section class="card">
+      <h2>WebSocket Echo Chat</h2>
+      <div class="btn-row">
+        <button onclick="wsConnect()">Connect</button>
+        <button onclick="wsDisconnect()">Disconnect</button>
+        <span id="ws-status" class="badge badge-off">Disconnected</span>
+      </div>
+      <div class="input-row">
+        <input id="ws-input" type="text" placeholder="Type a message…" />
+        <button onclick="wsSend()">Send</button>
+      </div>
+      <pre id="ws-output">—</pre>
+    </section>
+
+    <!-- ─── Metrics ─────────────────────────────────────────────── -->
+    <section class="card">
+      <h2>Prometheus Metrics</h2>
+      <p class="card-note">Served by the <code>metrics()</code> middleware — sharded per-thread counters + latency histogram.</p>
+      <button onclick="getMetrics()">GET /metrics</button>
+      <pre id="metrics-output">—</pre>
+    </section>
+
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

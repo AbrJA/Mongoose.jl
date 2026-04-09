@@ -1,119 +1,171 @@
 module Mongoose
 
 using Mongoose_jll
+using PrecompileTools
 
-export AsyncServer, SyncServer, Request, Response, start!, shutdown!, route!, deserialize, serialize
+export Server, Async, Router, Request, Response,
+    Plain, Html, Json, Css, Js, Xml, Binary,
+    start!, shutdown!, route!, plug!, mount!, fail!,
+    context!,
+    ws!, Message,
+    cors, ratelimit, bearer, apikey, logger, health, metrics,
+    RouteError, ServerError, BindError,
+    @router,
+    Config
 
-include("wrappers.jl")
-include("structs.jl")
-include("routes.jl")
-include("events.jl")
-include("servers.jl")
-include("registry.jl")
+# 1. FFI Layer (Constants, Structs, Bindings)
+include("ffi/constants.jl")
+include("ffi/structs.jl")
+include("ffi/bindings.jl")
 
-const VALID_METHODS = Set([:get, :post, :put, :patch, :delete])
+# 2. Base Types and Errors
+include("core/types.jl")
+include("core/errors.jl")
+include("http/types.jl")
+include("ws/types.jl")
 
-"""
-    route!(server::Server, method::Symbol, path::String, handler::Function)
-    Registers an HTTP request handler for a specific method and URI.
-    # Arguments
-    - `server::Server`: The server to register the handler with.
-    - `method::Symbol`: The HTTP method (e.g., :get, :post, :put, :patch, :delete).
-    - `path::AbstractString`: The URI path to register the handler for (e.g., "/api/users").
-    - `handler::Function`: The Julia function to be called when a matching request arrives.
-    This function should accept a `Request` object as its first argument, followed by any additional keyword arguments.
-"""
-function route!(server::Server, method::Symbol, path::AbstractString, handler::Function)
-    if method ∉ VALID_METHODS
-        error("Invalid HTTP method: $method")
-    end
-    if !occursin(':', path)
-        if !haskey(server.router.fixed, path)
-            server.router.fixed[path] = Fixed()
+# 3. Router Implementations
+include("router/static.jl")
+include("router/dynamic.jl")
+include("ws/router.jl")
+
+# 4. Core Server Logic
+include("core/server.jl")
+include("core/registry.jl")
+include("core/middleware.jl")
+include("core/events.jl")
+include("core/lifecycle.jl")
+
+# 5. Protocol Handlers
+include("http/handler.jl")
+include("http/utils.jl")
+include("ws/handler.jl")
+
+# 6. Server Implementations
+include("servers/sync.jl")
+include("servers/async.jl")
+
+# 7. Middleware
+include("middleware/cors.jl")
+include("middleware/ratelimit.jl")
+include("middleware/auth.jl")
+include("middleware/logger.jl")
+include("middleware/health.jl")
+include("middleware/metrics.jl")
+
+# 8. Precompilation
+@setup_workload begin
+    @compile_workload begin
+        # --- Router setup ---
+        router = Router()
+        route!(router, :get,    "/",              req -> Response(200, "", ""))
+        route!(router, :get,    "/users/:id::Int", (req, id) -> Response(200, "", ""))
+        route!(router, :post,   "/data",           req -> Response(200, "", ""))
+        route!(router, :delete, "/data/:id::Int",  (req, id) -> Response(200, "", ""))
+
+        _matchroute(router, :get,  "/")
+        _matchroute(router, :get,  "/users/1")
+        _matchroute(router, :post, "/data")
+        _matchroute(router, :get,  "/nonexistent")
+
+        # --- Response constructors (all common forms) ---
+        Response(Plain, "ok")
+        Response(Json, "{}")
+        Response(Html, "<p>ok</p>")
+        Response(Plain, "ok"; status=200)
+        Response(404, "", "")
+        Response(500, "", "")
+        Response(204, "", "")
+        Response(200, "", UInt8[])     # binary body path
+
+        # --- Status text ---
+        _statustext(200); _statustext(201); _statustext(204)
+        _statustext(400); _statustext(401); _statustext(403); _statustext(404)
+        _statustext(413); _statustext(429); _statustext(500); _statustext(504)
+
+        # --- Request + context ---
+        req = Request(:get, "/", "", Pair{String,String}[], "", nothing)
+        req_with_headers = Request(:get, "/users/1", "a=1&b=2",
+            ["content-type" => "application/json", "authorization" => "Bearer tok",
+             "x-request-id" => "abc-123", "x-forwarded-for" => "10.0.0.1"],
+            "{}", nothing)
+        context!(req)
+
+        # --- _sendhttp! (string and binary) ---
+        # These compile the serialization path without a real socket
+        _statustext(200)
+        _appendreqid("", "42")
+        _appendreqid(_contentheader(Json), "abc-123")
+        _sanitizeid("abc-123")
+        _sanitizeid("bad\r\nvalue")
+        _uint64tostr(UInt64(12345))
+
+        # --- Query parsing ---
+        struct QueryTest
+            q::String
+            page::Int
         end
-        server.router.fixed[path].handlers[method] = handler
-        return server
+        _req_q = Request(:get, "/search", "q=hello&page=1", Pair{String,String}[], "", nothing)
+        query(QueryTest, _req_q)
+        query(QueryTest, "q=world&page=2")
+
+        # --- Middleware construction ---
+        mw_cors     = cors()
+        mw_cors2    = cors(origins="https://example.com", methods="GET,POST")
+        mw_logger   = logger(threshold=100)
+        mw_logger2  = logger(threshold=100, structured=true)
+        mw_rl       = ratelimit()
+        mw_rl2      = ratelimit(max_requests=10, window_seconds=30)
+        mw_bearer   = bearer(t -> true)
+        mw_apikey   = apikey(keys=Set(["k"]))
+        mw_health   = health()
+        mw_metrics  = metrics()
+
+        # --- Middleware call operators (hot path in _pipeline) ---
+        noop = () -> Response(200, "", "ok")
+        mw_cors(req, Any[], noop)
+        mw_cors(req_with_headers, Any[], noop)
+        mw_logger(req, Any[], noop)
+        mw_logger2(req, Any[], noop)
+        mw_rl(req_with_headers, Any[], noop)
+        mw_bearer(req_with_headers, Any[], noop)
+        mw_apikey(req_with_headers, Any[], noop)
+        mw_health(req, Any[], noop)
+        mw_health(Request(:get, "/healthz", "", Pair{String,String}[], "", nothing), Any[], noop)
+        mw_health(Request(:get, "/readyz",  "", Pair{String,String}[], "", nothing), Any[], noop)
+        mw_health(Request(:get, "/livez",   "", Pair{String,String}[], "", nothing), Any[], noop)
+        mw_metrics(req, Any[], noop)
+
+        # --- PathFilter (path-scoped middleware) ---
+        pf = PathFilter(mw_cors, ["/api"])
+        pf(req, Any[], noop)
+        pf(Request(:get, "/api/users", "", Pair{String,String}[], "", nothing), Any[], noop)
+
+        # --- Full _pipeline with multiple middleware ---
+        _pipeline(AbstractMiddleware[mw_cors, mw_logger], req, Any[],
+                  (r, args...) -> _dispatchhttp(router, r))
+
+        # --- _invokehttp (the actual request dispatch hot path) ---
+        server_sync  = Server(router)
+        server_async = Async(router; nworkers=1)
+        plug!(server_sync,  cors())
+        plug!(server_async, cors())
+
+        _invokehttp(server_sync,  req)
+        _invokehttp(server_async, req)
+        _invokehttp(server_sync,  req_with_headers)
+
+        # --- Error responses ---
+        _errresponse(server_sync, 500)
+        _errresponse(server_sync, 413)
+        _errresponse(server_sync, 504)
+        _handleerror(server_sync, req, ErrorException(""))
+
+        # --- Config ---
+        Config()
+        Config(nworkers=2, max_body=1024)
+        Config(nworkers=8, request_timeout=5000, drain_timeout=10_000)
     end
-    segments = eachsplit(path, '/'; keepempty=false)
-    node = server.router.node
-    for seg in segments
-        if startswith(seg, ':')
-            param = seg[2:end]
-            # Create or validate dynamic child
-            if (dyn = node.dynamic) === nothing
-                dyn = Node()
-                dyn.param = param
-                node.dynamic = dyn
-            elseif dyn.param != param
-                error("Parameter conflict: :$param vs existing :$(dyn.param)")
-            end
-            node = dyn
-        else
-            # Static segment
-            if (child = get(node.static, seg, nothing)) === nothing
-                child = Node()
-                node.static[seg] = child
-            end
-            node = child
-        end
-    end
-    # Attach handler at final node
-    node.handlers[method] = handler
-    return server
 end
 
-# --- 6. Server Management ---
-"""
-    start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=false)
-
-    Starts the Mongoose HTTP server. Initialize the Mongoose manager, binds an HTTP listener, and starts a background Task to poll the Mongoose event loop.
-
-    Arguments
-    - `server::Server`: The server object to start.
-    - `host::AbstractString="127.0.0.1"`: The IP address or hostname to listen on. Defaults to "127.0.0.1" (localhost).
-    - `port::Integer=8080`: The port number to listen on. Defaults to 8080.
-    - `blocking::Bool=true`: If true, blocks until the server is stopped. If false, runs the server in a non-blocking mode.
-"""
-function start!(server::Server; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=true)
-    if server.running
-        @info "Server already running. Nothing to do."
-        return
-    end
-    @info "Starting server..."
-    server.running = true
-    try
-        register!(server)
-        setup_resources!(server)
-        setup_listener!(server, host, port)
-        start_workers!(server)
-        start_master!(server)
-        blocking && run_blocking!(server)
-    catch e
-        shutdown!(server)
-        rethrow(e)
-    end
-    return
-end
-
-"""
-    shutdown!(server::Server)
-    Stops the running Mongoose HTTP server. Sets a flag to stop the background event loop task, and then frees the Mongoose associated resources.
-    Arguments
-    - `server::Server`: The server object to shutdown.
-"""
-function shutdown!(server::Server)
-    if !server.running
-        @info "Server not running. Nothing to do."
-        return
-    end
-    @info "Stopping server..."
-    server.running = false
-    stop_workers!(server)
-    stop_master!(server)
-    free_resources!(server)
-    unregister!(server)
-    @info "Server stopped successfully."
-    return
-end
-
-end
+end # module Mongoose
