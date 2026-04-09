@@ -150,10 +150,10 @@ Consolidate all options into a `Config` struct — particularly useful for envir
 
 ```julia
 config = Config(
-    workers            = parse(Int, get(ENV, "WORKERS", "4")),
-    max_body      = parse(Int, get(ENV, "MAX_BODY", "1048576")),
+    workers = parse(Int, get(ENV, "WORKERS", "4")),
+    max_body = parse(Int, get(ENV, "MAX_BODY", "1048576")),
     request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT", "0")),
-    drain_timeout   = 10_000,
+    drain_timeout = 10_000,
 )
 
 server = Async(router, config)   # or Server(router, config)
@@ -265,8 +265,8 @@ plug!(server, RequestTimer())
 ```julia
 ws!(router, "/chat",
     on_message = (msg::Message) -> Message("Echo: $(msg.data)"),
-    on_open    = (req::Request) -> @info "Connected" uri=req.uri headers=req.headers,
-    on_close   = ()             -> @info "Disconnected"
+    on_open = (req::Request) -> @info "Connected" uri=req.uri headers=req.headers,
+    on_close = () -> @info "Disconnected"
 )
 ```
 
@@ -311,10 +311,10 @@ Use the `@router` macro to generate a **zero-allocation, compile-time dispatch f
 using Mongoose
 
 @router MyApp begin
-    get("/",               req      -> Response(Plain, "Hello!"))
+    get("/", req -> Response(Plain, "Hello!"))
     get("/users/:id::Int", (req, id) -> Response(Plain, "User $id"))
-    post("/echo",          req      -> Response(Plain, req.body))
-    ws("/live", on_message = msg   -> Message("Echo: $(msg.data)"))
+    post("/echo", req -> Response(Plain, req.body))
+    ws("/live", on_message = msg -> Message("Echo: $(msg.data)"))
 end
 
 (@main)(ARGS) = begin
@@ -360,8 +360,8 @@ end)
 # WebSocket
 ws!(router, "/ws",
     on_message = (msg::Message) -> Message("""{"ack":true}"""),
-    on_open    = (req::Request) -> @info "WS connected" uri=req.uri,
-    on_close   = ()             -> @info "WS disconnected"
+    on_open = (req::Request) -> @info "WS connected" uri=req.uri,
+    on_close = () -> @info "WS disconnected"
 )
 
 # Custom 404
