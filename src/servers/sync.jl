@@ -49,23 +49,22 @@ end
 
 function _init!(server::Server)
     server.core.manager = Manager()
-    empty!(server.core.clients)
+    empty!(server.core.ws_clients)
     return
 end
 
 function _eventloop(server::Server)
     mgr = server.core.manager.ptr
     timeout = server.core.poll_timeout
-    ws_idle = server.core.ws_idle_timeout
     last_sweep = time()
     while server.core.running[]
         mg_mgr_poll(mgr, timeout)
-        isempty(server.core.clients) || mg_mgr_poll(mgr, 0)
+        isempty(server.core.ws_clients) || mg_mgr_poll(mgr, 0)
         # Periodic WS idle sweep
-        if ws_idle > 0.0 && !isempty(server.core.clients)
+        if server.core.ws_idle_timeout > 0 && !isempty(server.core.ws_clients)
             now_t = time()
             if (now_t - last_sweep) >= 5.0  # sweep every 5s
-                _wsidlesweep!(server, ws_idle)
+                _wsidlesweep!(server)
                 last_sweep = now_t
             end
         end

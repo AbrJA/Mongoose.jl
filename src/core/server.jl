@@ -38,7 +38,7 @@ mutable struct ServerCore{R <: AbstractRouter}
     master::Union{Nothing, Task}
     manager::Manager
     c_handler::Ptr{Cvoid}             # C-interop handler
-    clients::Dict{Int, String}
+    ws_clients::Dict{Int, WsConn}      # conn_id → (uri, last_active); per-server, event-loop only
     id_seq::Threads.Atomic{UInt64} # Connection/Request ID generator
 
     # --- 2. Routing & Logic ---
@@ -72,7 +72,7 @@ mutable struct ServerCore{R <: AbstractRouter}
             nothing,                        # master
             Manager(empty=true),            # manager
             c_handler,                      # c_handler
-            Dict{Int, String}(),            # clients
+            Dict{Int, WsConn}(),            # ws_clients
             Threads.Atomic{UInt64}(0),      # id_seq
             router,                         # router
             AbstractMiddleware[],           # middlewares

@@ -181,7 +181,7 @@ function _onevent!(server::Async, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_
         tagged = Tagged(id, Request(message, method, uri))
         # Non-blocking enqueue: if the channel is full, return 503 immediately
         # instead of blocking the event loop (which stalls ALL I/O).
-        res = _tryput!(server.calls, tagged)
+        res = _tryput!(server.calls, tagged, server.nqueue)
         if res === false
             delete!(server.connections, id)
             _sendhttp!(conn, _errresponse(server, 503))

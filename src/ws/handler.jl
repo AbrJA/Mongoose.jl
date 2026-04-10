@@ -2,17 +2,22 @@
     WebSocket event handling — upgrade, message dispatch, connection lifecycle.
 """
 
-# --- WS idle timeout tracking ---
-# Maps conn pointer (Int) → last activity timestamp (Float64).
-# Accessed only from the event-loop thread, so no lock needed.
-const _WS_LAST_ACTIVE = Dict{Int, Float64}()
-
-@inline function _wstouch!(conn_id::Int)
-    _WS_LAST_ACTIVE[conn_id] = time()
+# Touch: update last_active in-place — no allocation, no write barrier (Float64 field).
+# Safe to call inside C callbacks.
+@inline function _wstouch!(server::AbstractServer, conn_id::Int)
+    entry = get(server.core.ws_clients, conn_id, nothing)
+    entry === nothing && return
+    entry.last_active = time()
 end
 
-@inline function _wsforget!(conn_id::Int)
-    delete!(_WS_LAST_ACTIVE, conn_id)
+# Register a new connection (called once, right after mg_ws_upgrade).
+@inline function _wsregister!(server::AbstractServer, conn_id::Int, uri::String)
+    server.core.ws_clients[conn_id] = WsConn(uri, time())
+end
+
+# Forget: remove on close (idempotent — fine if already absent).
+@inline function _wsforget!(server::AbstractServer, conn_id::Int)
+    pop!(server.core.ws_clients, conn_id, nothing)
 end
 
 """
@@ -70,8 +75,7 @@ function _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
         end
     end
     mg_ws_upgrade(conn, ev_data, C_NULL)
-    server.core.clients[Int(conn)] = uri
-    _wstouch!(Int(conn))
+    _wsregister!(server, Int(conn), uri)
 end
 
 _sendws!(conn, data::String)        = mg_ws_send(conn, data, WS_OP_TEXT)
@@ -93,6 +97,10 @@ Handle WebSocket control frames per RFC 6455:
 function _onevent!(server::AbstractServer, ::Val{MG_EV_WS_CTL}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
     op = msg.flags & 0x0F
+    # Ping and Pong indicate the client is alive — update idle timestamp
+    if op == WS_OP_PING || op == WS_OP_PONG
+        _wstouch!(server, Int(conn))
+    end
     if op == WS_OP_CLOSE || op == WS_OP_PING
         reply_op = op == WS_OP_CLOSE ? WS_OP_CLOSE : WS_OP_PONG
         if msg.data.len > 0 && msg.data.buf != C_NULL
@@ -111,7 +119,7 @@ end
 function _onevent!(server::Server, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
     conn_id = Int(conn)
-    _wstouch!(conn_id)
+    _wstouch!(server, conn_id)
 
     # Frame size limit (reuses max_body from HTTP config)
     if msg.data.len > server.core.max_body
@@ -120,7 +128,7 @@ function _onevent!(server::Server, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_d
     end
 
     ws_msg = _parsewsmsg(msg)
-    uri = get(server.core.clients, conn_id, "")
+    uri = let e = get(server.core.ws_clients, conn_id, nothing); e === nothing ? "" : e.uri end
     tagged = Tagged(conn_id, Intent(ws_msg, uri))
     result = _invokews(server, tagged)
     if result !== nothing
@@ -129,11 +137,11 @@ function _onevent!(server::Server, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_d
     return
 end
 
-# Async: queue WS message to worker channels
+# Async: queue WS message to worker tasks
 function _onevent!(server::Async, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
     conn_id = Int(conn)
-    _wstouch!(conn_id)
+    _wstouch!(server, conn_id)
 
     # Frame size limit (reuses max_body from HTTP config)
     if msg.data.len > server.core.max_body
@@ -142,10 +150,10 @@ function _onevent!(server::Async, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_da
     end
 
     ws_msg = _parsewsmsg(msg)
-    uri = get(server.core.clients, conn_id, "")
+    uri = let e = get(server.core.ws_clients, conn_id, nothing); e === nothing ? "" : e.uri end
     server.connections[conn_id] = conn
-    if isopen(server.calls)
-        _tryput!(server.calls, Tagged(conn_id, Intent(ws_msg, uri)))
+    if !_tryput!(server.calls, Tagged(conn_id, Intent(ws_msg, uri)), server.nqueue)
+        @warn "WebSocket message dropped: worker queue full" component="websocket" conn_id=conn_id
     end
     return
 end
@@ -172,8 +180,8 @@ then remove the connection URI from `clients`.
 """
 function _closews!(server::AbstractServer, conn::MgConnection)
     conn_id = Int(conn)
-    _wsforget!(conn_id)
-    uri = get(server.core.clients, conn_id, nothing)
+    entry = pop!(server.core.ws_clients, conn_id, nothing)
+    uri = entry === nothing ? nothing : entry.uri
 
     if uri !== nothing
         endpoint = _wsep(server.core.router, uri)
@@ -184,25 +192,31 @@ function _closews!(server::AbstractServer, conn::MgConnection)
                 @error "WebSocket on_close error" component="websocket" uri=uri exception=(e, catch_backtrace())
             end
         end
-        delete!(server.core.clients, conn_id)
     end
     return
 end
 
 """
-    _wsidlesweep!(server, timeout_s) → Int
+    _wsidlesweep!(server) → Int
 
-Close WebSocket connections that have been idle longer than `timeout_s` seconds.
-Called from the event loop. Returns the number of connections closed.
+Close WebSocket connections that have been idle longer than
+`server.core.ws_idle_timeout` seconds. Called periodically from the event
+loop. Removes the entry immediately after sending the close frame so
+repeated sweeps cannot fire a second close to the same connection.
+Returns the number of connections closed.
 """
-function _wsidlesweep!(server::AbstractServer, timeout_s::Float64)
-    isempty(_WS_LAST_ACTIVE) && return 0
+function _wsidlesweep!(server::AbstractServer)
+    clients = server.core.ws_clients
+    isempty(clients) && return 0
+    timeout_s = Float64(server.core.ws_idle_timeout)
     now_t = time()
     closed = 0
-    for (conn_id, last) in collect(_WS_LAST_ACTIVE)
-        if (now_t - last) > timeout_s
+    for (conn_id, entry) in collect(clients)
+        if (now_t - entry.last_active) > timeout_s
             conn = MgConnection(Ptr{Cvoid}(UInt(conn_id)))
             mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
+            # Remove immediately — prevents duplicate close frames on future sweeps.
+            pop!(clients, conn_id, nothing)
             closed += 1
         end
     end
