@@ -61,7 +61,7 @@ function Async(router::AbstractRouter=Router();
                       request_timeout=request_timeout, ws_idle_timeout=ws_idle_timeout,
                       errors=errors, c_handler=c_handler, styled=styled)
     server = Async{typeof(router)}(
-        core, Task[],  # workers
+        core, Task[],
         Channel{Call}(nqueue), Channel{Reply}(nqueue),
         Dict{Int,MgConnection}(), Int(nworkers), Int(nqueue)
     )

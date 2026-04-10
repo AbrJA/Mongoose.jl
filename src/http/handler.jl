@@ -2,8 +2,6 @@
     HTTP handler — translates Mongoose C events into high-level Request/Response.
 """
 
-# --- HTTP status text lookup ---
-
 """
     _statustext(code) → String
 
@@ -38,14 +36,10 @@ Return the standard HTTP reason phrase for a status code.
     return ""
 end
 
-# Pre-built responses for the three codes that _errresponse must handle without allocation.
-# Body text is derived from _statustext — single source of truth.
 const _DEFAULT_500 = Response(Plain, "500 $(_statustext(500))"; status=500)
 const _DEFAULT_413 = Response(Plain, "413 $(_statustext(413))"; status=413)
 const _DEFAULT_503 = Response(Plain, "503 $(_statustext(503))"; status=503)
 const _DEFAULT_504 = Response(Plain, "504 $(_statustext(504))"; status=504)
-
-# --- Static file serving (C-level, event-loop thread only) ---
 
 """
     _servestatic!(server, conn, ev_data) → Bool
@@ -65,8 +59,7 @@ during the C callback and `mg_http_serve_dir` writes directly to `conn`.
     # Try each registered static directory in order. The first one matches wins.
     for (dir, prefix) in server.core.mounts
         _staticexists(dir, prefix, uri) || continue
-
-        # Build the root_dir string Mongoose expects. "default,/prefix=dir"
+        # Mongoose expects "root_dir" as "dir" or "dir,/prefix=dir"
         root_dir = prefix == "/" ? dir : "$dir,$prefix=$dir"
         opts = Ref(MgHttpServeOpts(Base.unsafe_convert(Cstring, root_dir)))
         GC.@preserve root_dir begin
@@ -114,14 +107,11 @@ Return `true` if `uri` maps to a real file (or pre-compressed `.gz` variant) und
     return false
 end
 
-# --- Server: direct dispatch on event-loop thread ---
-
 function _onevent!(server::Server, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     message = MgHttpMessage(ev_data)
     method = _method(message)
     uri    = _uri(message)
 
-    # WebSocket upgrade check (skip entirely when no WS routes are registered)
     if _haswsroutes(server.core.router)
         endpoint = _wsep(server.core.router, uri)
         if endpoint !== nothing
@@ -150,14 +140,11 @@ function _onevent!(server::Server, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev
     return
 end
 
-# --- Async: queue to worker channels ---
-
 function _onevent!(server::Async, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     message = MgHttpMessage(ev_data)
     method = _method(message)
     uri    = _uri(message)
 
-    # WebSocket upgrade check (skip entirely when no WS routes are registered)
     if _haswsroutes(server.core.router)
         endpoint = _wsep(server.core.router, uri)
         if endpoint !== nothing
@@ -166,7 +153,6 @@ function _onevent!(server::Async, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_
         end
     end
 
-    # Body size limit check
     if message.body.len > server.core.max_body
         _sendhttp!(conn, _errresponse(server, 413))
         return
@@ -194,8 +180,6 @@ function _onevent!(server::Async, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_
     end
     return
 end
-
-# --- Dispatch pipeline (used by both sync handler and async workers) ---
 
 """
     _nextreqid!(server) → UInt64
@@ -241,11 +225,10 @@ end
 """
     _resolveid(message, server) → String
 
-Fast-path request ID extraction that reads directly from the raw C `MgHttpMessage`
-headers, avoiding the cost of scanning the already-parsed `Vector{Pair}`.
+Fast-path request ID extraction from raw C `MgHttpMessage` headers,
+avoiding the cost of scanning the already-parsed `Vector{Pair}`.
 """
 @inline function _resolveid(message::MgHttpMessage, server::AbstractServer)::String
-    # Scan raw C headers for "x-request-id" (12 chars, case-insensitive)
     for h in message.headers
         h.name.buf == C_NULL && break
         h.name.len == 0 && break
@@ -259,9 +242,13 @@ headers, avoiding the cost of scanning the already-parsed `Vector{Pair}`.
     return _uint64tostr(Threads.atomic_add!(server.core.id_seq, UInt64(1)) + UInt64(1))
 end
 
-# Case-insensitive check for "x-request-id" (12 bytes) directly on C memory
+"""
+    _isxrequestid(ptr) → Bool
+
+Case-insensitive match for the 12-byte header name `"x-request-id"` directly
+on a C pointer, without allocating a Julia string.
+"""
 @inline function _isxrequestid(ptr::Ptr{UInt8})::Bool
-    # Expected: x-request-id (any case)
     _tolower(unsafe_load(ptr, 1))  == UInt8('x') || return false
     unsafe_load(ptr, 2)            == UInt8('-') || return false
     _tolower(unsafe_load(ptr, 3))  == UInt8('r') || return false
@@ -277,7 +264,12 @@ end
     return true
 end
 
-# Fast UInt64→String without going through `string()` (avoids Julia runtime formatting)
+"""
+    _uint64tostr(n) → String
+
+Convert a `UInt64` to its decimal string representation without going through
+`string()`. Avoids Julia runtime formatting overhead on the hot request-ID path.
+"""
 @inline function _uint64tostr(n::UInt64)::String
     n == 0 && return "0"
     buf = Vector{UInt8}(undef, 20)
@@ -365,8 +357,6 @@ end
     return _dispatchstatic(router, req)
 end
 
-# --- Response serialization ---
-
 """
     _sendhttp!(conn, response)
 
@@ -424,7 +414,6 @@ const _TIMED_INFLIGHT = Threads.Atomic{Int}(0)
 const _MAX_TIMED = max(Threads.nthreads() * 2, 8)
 
 function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout::Integer)
-    # Fast-reject if too many timed handlers are already running
     current = Threads.atomic_add!(_TIMED_INFLIGHT, 1)
     if current >= _MAX_TIMED
         Threads.atomic_sub!(_TIMED_INFLIGHT, 1)

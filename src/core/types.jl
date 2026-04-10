@@ -29,7 +29,6 @@ abstract type AbstractServer end
 abstract type AbstractMiddleware end
 abstract type AbstractRouter end
 
-# Interface fallback — subtypes must implement the call operator
 function (mw::AbstractMiddleware)(args...)
     error("Middleware of type $(typeof(mw)) does not support the arguments provided. Expected signature: (mw)(req, params, next)")
 end

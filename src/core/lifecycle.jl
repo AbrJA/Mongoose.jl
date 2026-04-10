@@ -2,10 +2,6 @@
     Server lifecycle management — start, shutdown, graceful drain.
 """
 
-# ---------------------------------------------------------------------------
-# Base.show — human-readable display for Router and server types
-# ---------------------------------------------------------------------------
-
 function Base.show(io::IO, r::Router)
     n_fixed   = length(r.fixed)
     n_dynamic = _countnodes(r.node)
@@ -16,7 +12,11 @@ function Base.show(io::IO, r::Router)
     print(io, ")")
 end
 
-# Count the number of nodes that carry at least one handler in the trie.
+"""
+    _countnodes(node) → Int
+
+Count the number of trie nodes that carry at least one handler.
+"""
 function _countnodes(node::TrieNode)::Int
     count = _hashandlers(node.handlers) ? 1 : 0
     for (_, child) in node.children
@@ -39,10 +39,6 @@ function Base.show(io::IO, s::Async)
           ", workers=", s.nworkers,
           ", router=", s.core.router, ")")
 end
-
-# ---------------------------------------------------------------------------
-# Lifecycle
-# ---------------------------------------------------------------------------
 
 """
     start!(server; host, port, blocking)
@@ -84,8 +80,6 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
     return
 end
 
-# Emit a single structured startup log with everything an operator needs.
-# A single entry point for both types
 function _logstart(server::AbstractServer, url::String)
     type = nameof(typeof(server))
     routes = _routecount(server.core.router)

@@ -2,20 +2,23 @@
     WebSocket event handling — upgrade, message dispatch, connection lifecycle.
 """
 
-# Touch: update last_active in-place — no allocation, no write barrier (Float64 field).
-# Safe to call inside C callbacks.
+"""
+    _wstouch!(server, conn_id)
+
+Update `last_active` in-place. Zero allocation, no GC write barrier — safe inside C callbacks.
+"""
 @inline function _wstouch!(server::AbstractServer, conn_id::Int)
     entry = get(server.core.ws_clients, conn_id, nothing)
     entry === nothing && return
     entry.last_active = time()
 end
 
-# Register a new connection (called once, right after mg_ws_upgrade).
+"Register a new connection immediately after `mg_ws_upgrade`."
 @inline function _wsregister!(server::AbstractServer, conn_id::Int, uri::String)
     server.core.ws_clients[conn_id] = WsConn(uri, time(), false)
 end
 
-# Forget: remove on close (idempotent — fine if already absent).
+"Remove a connection from `ws_clients`. Idempotent — safe if already absent."
 @inline function _wsforget!(server::AbstractServer, conn_id::Int)
     pop!(server.core.ws_clients, conn_id, nothing)
 end
@@ -54,12 +57,10 @@ function _callwsep(endpoint::WsEndpoint, request::Tagged{Intent})
     return nothing
 end
 
-# --- WS route lookup and dispatch helpers ---
 @inline _wsep(router::Router, uri) = get(router.ws_routes, uri, nothing)
 @inline _wsep(router::StaticRouter, uri) = _wsupgrade(router, uri)
 
 function _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
-    # Upgrade rejection: if on_open returns `false`, reject with 403
     if endpoint.on_open !== nothing
         req = Request(message)
         accepted = try
@@ -67,7 +68,7 @@ function _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
             result !== false  # anything other than literal `false` means accept
         catch e
             _log_error("WebSocket on_open error component=websocket uri=$uri", e, catch_backtrace())
-            true  # accept by default if on_open throws
+            true
         end
         if !accepted
             mg_http_reply(conn, 403, "", "Forbidden")
@@ -82,22 +83,17 @@ _sendws!(conn, data::String)        = mg_ws_send(conn, data, WS_OP_TEXT)
 _sendws!(conn, data::Vector{UInt8}) = mg_ws_send(conn, data, WS_OP_BINARY)
 _sendws!(conn, msg::Message)        = _sendws!(conn, msg.data)
 
-# --- WS control frame handler (close / ping / pong) ---
-
 """
     _onevent!(server, ::Val{MG_EV_WS_CTL}, conn, ev_data)
 
 Handle WebSocket control frames per RFC 6455:
-- **Close (0x8)**: Echo the close payload back (status code + optional reason)
-  to complete the closing handshake. Mongoose marks the connection for closing
-  on the next poll cycle.
+- **Close (0x8)**: Echo the close payload back to complete the closing handshake.
 - **Ping (0x9)**: Reply with a Pong carrying the same payload (§5.5.3).
-- **Pong (0xA)**: Received as a keep-alive ack — no action needed.
+- **Pong (0xA)**: Update the idle timestamp — no reply needed.
 """
 function _onevent!(server::AbstractServer, ::Val{MG_EV_WS_CTL}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
     op = msg.flags & 0x0F
-    # Ping and Pong indicate the client is alive — update idle timestamp
     if op == WS_OP_PING || op == WS_OP_PONG
         _wstouch!(server, Int(conn))
     end
@@ -112,8 +108,6 @@ function _onevent!(server::AbstractServer, ::Val{MG_EV_WS_CTL}, conn::MgConnecti
     end
     return
 end
-
-# --- WS event handlers ---
 
 # Server: process WS message directly on event-loop thread
 function _onevent!(server::Server, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
@@ -219,12 +213,10 @@ function _wsidlesweep!(server::AbstractServer)
     now_t = time()
     closed = 0
     for (conn_id, entry) in collect(clients)
-        entry.closing && continue   # already sent close, waiting for MG_EV_CLOSE
+        entry.closing && continue
         if (now_t - entry.last_active) > timeout_s
             conn = MgConnection(Ptr{Cvoid}(UInt(conn_id)))
             mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
-            # Mark as closing but keep the entry so _closews! can still
-            # find the URI and invoke on_close when MG_EV_CLOSE fires.
             entry.closing = true
             closed += 1
         end

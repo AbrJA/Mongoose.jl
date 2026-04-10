@@ -42,8 +42,7 @@ struct PrometheusMetrics <: AbstractMiddleware
 end
 
 @inline function _shard(mw::PrometheusMetrics)
-    idx = (hash(objectid(current_task())) % _METRICS_SHARDS) + 1
-    return mw.shards[idx]
+    return mw.shards[mod1(hash(objectid(current_task())), _METRICS_SHARDS)]
 end
 
 # Find the raw (non-cumulative) histogram bucket index for an elapsed time.

@@ -60,7 +60,6 @@ function _eventloop(server::Server)
     while server.core.running[]
         mg_mgr_poll(mgr, timeout)
         isempty(server.core.ws_clients) || mg_mgr_poll(mgr, 0)
-        # Periodic WS idle sweep
         if server.core.ws_idle_timeout > 0 && !isempty(server.core.ws_clients)
             now_t = time()
             if (now_t - last_sweep) >= 5.0  # sweep every 5s

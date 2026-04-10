@@ -33,31 +33,26 @@ end
     ServerCore{R} — Shared state. R <: AbstractRouter
 """
 mutable struct ServerCore{R <: AbstractRouter}
-    # --- 1. Execution State ---
     running::Threads.Atomic{Bool}
     master::Union{Nothing, Task}
     manager::Manager
-    c_handler::Ptr{Cvoid}             # C-interop handler
-    ws_clients::Dict{Int, WsConn}      # conn_id → (uri, last_active); per-server, event-loop only
-    id_seq::Threads.Atomic{UInt64} # Connection/Request ID generator
+    c_handler::Ptr{Cvoid}
+    ws_clients::Dict{Int, WsConn}
+    id_seq::Threads.Atomic{UInt64}
 
-    # --- 2. Routing & Logic ---
     router::R
     middlewares::Vector{AbstractMiddleware}
     mounts::Vector{Tuple{String, String}}
     errors::Dict{Int, Response}
 
-    # --- 3. Configuration & Limits ---
     poll_timeout::Int
     request_timeout::Int
     drain_timeout::Int
     max_body::Int
-    ws_idle_timeout::Int      # seconds; 0 = disabled
+    ws_idle_timeout::Int
 
-    # --- 4. UI/UX Preferences ---
     styled::Bool
 
-    # Inner Constructor
     function ServerCore(poll_timeout::Integer, router::R;
                         max_body::Integer = MAX_BODY,
                         drain_timeout::Integer = DRAIN_TIMEOUT,
@@ -68,27 +63,25 @@ mutable struct ServerCore{R <: AbstractRouter}
                         styled::Bool = isa(stdout, Base.TTY)) where {R <: AbstractRouter}
 
         return new{R}(
-            Threads.Atomic{Bool}(false),    # running
-            nothing,                        # master
-            Manager(empty=true),            # manager
-            c_handler,                      # c_handler
-            Dict{Int, WsConn}(),            # ws_clients
-            Threads.Atomic{UInt64}(0),      # id_seq
-            router,                         # router
-            AbstractMiddleware[],           # middlewares
-            Tuple{String, String}[],        # mounts
-            errors,                         # errors
-            poll_timeout,                   # poll_timeout 
-            request_timeout,                # request_timeout
-            drain_timeout,                  # drain_timeout
-            max_body,                       # max_body
-            ws_idle_timeout,                # ws_idle_timeout
-            styled                          # styled
+            Threads.Atomic{Bool}(false),
+            nothing,
+            Manager(empty=true),
+            c_handler,
+            Dict{Int, WsConn}(),
+            Threads.Atomic{UInt64}(0),
+            router,
+            AbstractMiddleware[],
+            Tuple{String, String}[],
+            errors,
+            poll_timeout,
+            request_timeout,
+            drain_timeout,
+            max_body,
+            ws_idle_timeout,
+            styled
         )
     end
 end
-
-# --- Config ---
 
 """
     Config
@@ -139,18 +132,10 @@ Base.@kwdef struct Config
     styled::Bool = isa(stdout, Base.TTY)
 end
 
-# --- Abstract Server Implementations (Structs only) ---
-
-"""
-    Server — Single-threaded blocking server.
-"""
 mutable struct Server{R <: AbstractRouter} <: AbstractServer
     core::ServerCore{R}
 end
 
-"""
-    Async — Multi-threaded server using worker tasks.
-"""
 mutable struct Async{R <: AbstractRouter} <: AbstractServer
     core::ServerCore{R}
     workers::Vector{Task}
@@ -160,8 +145,6 @@ mutable struct Async{R <: AbstractRouter} <: AbstractServer
     nworkers::Int
     nqueue::Int
 end
-
-# --- Shared Lifecycle Primitives ---
 
 _cfnasync(::Type{T}) where {T} = C_NULL
 _cfnsync(::Type{T}) where {T} = C_NULL
