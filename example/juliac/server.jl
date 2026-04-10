@@ -1,7 +1,7 @@
 using Mongoose
 
 function greet(req)
-    Response(Json, 200, "{\"message\":\"Hello World from trimmed Julia!\"}")
+    Response(Json, "{\"message\":\"Hello World from trimmed Julia!\"}")
 end
 
 function echo(req, name)
@@ -19,4 +19,4 @@ end
     return 0
 end
 
-# juliac --trim=safe --project . --output-exe binary juliac_example.jl 2>&1
+# juliac --trim=safe --project . --output-exe binary example/juliac/server.jl 2>&1
