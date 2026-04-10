@@ -124,6 +124,9 @@ function _onevent!(server::Server, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_d
     # Frame size limit (reuses max_body from HTTP config)
     if msg.data.len > server.core.max_body
         mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
+        let e = get(server.core.ws_clients, conn_id, nothing)
+            e !== nothing && (e.closing = true)
+        end
         return
     end
 
@@ -146,6 +149,9 @@ function _onevent!(server::Async, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_da
     # Frame size limit (reuses max_body from HTTP config)
     if msg.data.len > server.core.max_body
         mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
+        let e = get(server.core.ws_clients, conn_id, nothing)
+            e !== nothing && (e.closing = true)
+        end
         return
     end
 
@@ -201,8 +207,9 @@ end
 
 Close WebSocket connections that have been idle longer than
 `server.core.ws_idle_timeout` seconds. Called periodically from the event
-loop. Removes the entry immediately after sending the close frame so
-repeated sweeps cannot fire a second close to the same connection.
+loop. Marks the entry as `closing` after sending the close frame to prevent
+duplicate close frames on future sweeps, while keeping the entry alive so
+`_closews!` can still invoke `on_close` when `MG_EV_CLOSE` fires.
 Returns the number of connections closed.
 """
 function _wsidlesweep!(server::AbstractServer)

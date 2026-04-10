@@ -346,7 +346,6 @@ macro router(app_type::Symbol, block)
             # Auto-HEAD: re-dispatch as GET and return headers only
             if $(req_sym).method === :head
                 head_req = Mongoose.Request(:get, $(req_sym).uri, $(req_sym).query, $(req_sym).headers, $(req_sym).body, nothing)
-                head_path = $(path_sym)
                 # Re-run dispatch as GET
                 resp = Mongoose._dispatchstatic($(esc(app_type))(), head_req)
                 resp.status != 404 && return Mongoose.Response(resp.status, resp.headers, "")

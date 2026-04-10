@@ -83,7 +83,8 @@ function Async(router::AbstractRouter, config::Config)
         drain_timeout = config.drain_timeout,
         request_timeout = config.request_timeout,
         ws_idle_timeout = config.ws_idle_timeout,
-        errors = config.errors
+        errors = config.errors,
+        styled = config.styled
     )
 end
 
@@ -127,7 +128,12 @@ function _eventloop(server::Async)
         # Dispatch replies from workers back to C library
         local did_ws_send = false
         while isopen(server.replies) && isready(server.replies)
-            res = take!(server.replies)
+            res = try
+                take!(server.replies)
+            catch e
+                e isa InvalidStateException && break
+                rethrow(e)
+            end
             conn = get(server.connections, res.id, nothing)
             if conn !== nothing
                 if res.payload isa Response
@@ -174,10 +180,10 @@ function _workloop(server::Async)
                     _handleerror(server, req.payload, e)
                 end
                 res = Response(res.status, _appendreqid(res.headers, rid), res.body)
-                try isopen(server.replies) && put!(server.replies, Tagged(req.id, res)) catch end
+                try isopen(server.replies) && put!(server.replies, Tagged(req.id, res)) catch e; e isa InvalidStateException || rethrow(e) end
             else  # Intent
                 res = _invokews(server, req)
-                try res !== nothing && isopen(server.replies) && put!(server.replies, res) catch end
+                try res !== nothing && isopen(server.replies) && put!(server.replies, res) catch e; e isa InvalidStateException || rethrow(e) end
             end
         end
     catch e

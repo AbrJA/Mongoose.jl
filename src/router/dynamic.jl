@@ -132,6 +132,10 @@ function _matchrouteexact(router::Router, method::Symbol, path::AbstractString)
     return _match(router.node, clean, 1, method, params)
 end
 
+# StaticRouter routes are compiled at build time and not queryable at runtime.
+# Return nothing so _servestatic! always proceeds to its own _staticexists check.
+_matchrouteexact(::StaticRouter, ::Symbol, ::AbstractString) = nothing
+
 @inline function _match(node::TrieNode, path::AbstractString, path_idx::Int, method::Symbol, params::Vector{Any})
     seg, next_idx = _nextseg(path, path_idx)
     if seg === nothing
