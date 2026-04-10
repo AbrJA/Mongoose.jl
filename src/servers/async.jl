@@ -132,7 +132,7 @@ function _eventloop(server::Async)
                         _sendws!(conn, res.payload)
                         did_ws_send = true
                     catch e
-                    _log_error("WebSocket send error component=websocket", e)
+                    _log_error("WebSocket send error component=websocket", e, catch_backtrace())
                     end
                 end
             end
@@ -164,7 +164,7 @@ function _workloop(server::Async)
                         _invokehttp(server, req.payload)
                     end
                 catch e
-                    _log_error("Handler error component=http uri=$(req.payload.uri)", e)
+                    _log_error("Handler error component=http uri=$(req.payload.uri)", e, catch_backtrace())
                     _handleerror(server, req.payload, e)
                 end
                 res = Response(res.status, _appendreqid(res.headers, rid), res.body)

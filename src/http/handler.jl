@@ -142,7 +142,7 @@ function _onevent!(server::Server, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev
     res = try
         _invokehttp(server, req)
     catch e
-        _log_error("Handler error component=http uri=$(req.uri)", e)
+        _log_error("Handler error component=http uri=$(req.uri)", e, catch_backtrace())
         _handleerror(server, req, e)
     end
     rid = _resolveid(message, server)
@@ -433,7 +433,7 @@ function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout:
             res = try
                 _invokehttp(server, req)
             catch e
-                _log_error("Handler error component=http uri=$(req.uri)", e)
+                _log_error("Handler error component=http uri=$(req.uri)", e, catch_backtrace())
                 _handleerror(server, req, e)
             end
             try put!(ch, res) catch end

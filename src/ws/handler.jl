@@ -49,7 +49,7 @@ function _callwsep(endpoint::WsEndpoint, request::Tagged{Intent})
         res = endpoint.on_message(request.payload.body)
         return _tagws(request.id, res)
     catch e
-        _log_error("WebSocket on_message error component=websocket uri=$(request.payload.uri)", e)
+        _log_error("WebSocket on_message error component=websocket uri=$(request.payload.uri)", e, catch_backtrace())
     end
     return nothing
 end
@@ -66,7 +66,7 @@ function _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
             result = endpoint.on_open(req)
             result !== false  # anything other than literal `false` means accept
         catch e
-            _log_error("WebSocket on_open error component=websocket uri=$uri", e)
+            _log_error("WebSocket on_open error component=websocket uri=$uri", e, catch_backtrace())
             true  # accept by default if on_open throws
         end
         if !accepted
@@ -189,7 +189,7 @@ function _closews!(server::AbstractServer, conn::MgConnection)
             try
                 endpoint.on_close()
             catch e
-                _log_error("WebSocket on_close error component=websocket uri=$uri", e)
+                _log_error("WebSocket on_close error component=websocket uri=$uri", e, catch_backtrace())
             end
         end
     end
