@@ -163,7 +163,7 @@ function _bind!(server::AbstractServer, host::AbstractString, port::Integer)
 end
 
 function _spawnloop!(server::AbstractServer)
-    server.core.master = Threads.@spawn begin
+    server.core.master = @async begin
         try
             _eventloop(server)
         catch e
