@@ -19,9 +19,10 @@
 # Raw pre-formatted output to stdout — used by the styled (ANSI) log paths.
 @noinline _print(s::String) = print(Core.stdout, s)
 
+# Add colors?
 # Plain-text structured log lines — used when styled=false or in trim=safe binaries.
-@noinline _log_info(msg::String)  = print(Core.stdout, "[ Info] [Mongoose] ", msg, "\n")
-@noinline _log_warn(msg::String)  = print(Core.stderr, "[ Warn] [Mongoose] ", msg, "\n")
+@noinline _log_info(msg::String)  = print(Core.stdout, "[Info] [Mongoose] ", msg, "\n")
+@noinline _log_warn(msg::String)  = print(Core.stderr, "[Warn] [Mongoose] ", msg, "\n")
 @noinline _log_error(msg::String) = print(Core.stderr, "[Error] [Mongoose] ", msg, "\n")
 
 @noinline function _log_error(msg::String, e::Exception)
