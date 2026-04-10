@@ -13,11 +13,14 @@ always in sync.
 Declared `mutable` so `_wstouch!` can update `last_active` in-place without
 allocating a new struct — critical for GC safety inside C callbacks.
 
-`last_active` is `0.0` for connections created when `ws_idle_timeout == 0`.
+`closing` is set to `true` by `_wsidlesweep!` after sending a close frame,
+preventing duplicate close frames on future sweeps while keeping the entry
+alive until `MG_EV_CLOSE` fires and `_closews!` can still invoke `on_close`.
 """
 mutable struct WsConn
     const uri::String
     last_active::Float64
+    closing::Bool
 end
 
 abstract type AbstractRequest end

@@ -186,6 +186,11 @@ function _onevent!(server::Async, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_
             delete!(server.connections, id)
             _sendhttp!(conn, _errresponse(server, 503))
         end
+    else
+        # Channel closed (server shutting down) — reply immediately so the
+        # client is not left hanging, and clean up the connection entry.
+        delete!(server.connections, id)
+        _sendhttp!(conn, _errresponse(server, 503))
     end
     return
 end
@@ -275,7 +280,7 @@ end
 # Fast UInt64→String without going through `string()` (avoids Julia runtime formatting)
 @inline function _uint64tostr(n::UInt64)::String
     n == 0 && return "0"
-    buf = Base.StringVector(20)  # StringVector avoids extra copy in String()
+    buf = Vector{UInt8}(undef, 20)
     i = 20
     @inbounds while n > 0
         buf[i] = UInt8('0') + UInt8(n % 10)

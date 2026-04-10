@@ -12,7 +12,7 @@ end
 
 # Register a new connection (called once, right after mg_ws_upgrade).
 @inline function _wsregister!(server::AbstractServer, conn_id::Int, uri::String)
-    server.core.ws_clients[conn_id] = WsConn(uri, time())
+    server.core.ws_clients[conn_id] = WsConn(uri, time(), false)
 end
 
 # Forget: remove on close (idempotent — fine if already absent).
@@ -212,11 +212,13 @@ function _wsidlesweep!(server::AbstractServer)
     now_t = time()
     closed = 0
     for (conn_id, entry) in collect(clients)
+        entry.closing && continue   # already sent close, waiting for MG_EV_CLOSE
         if (now_t - entry.last_active) > timeout_s
             conn = MgConnection(Ptr{Cvoid}(UInt(conn_id)))
             mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
-            # Remove immediately — prevents duplicate close frames on future sweeps.
-            pop!(clients, conn_id, nothing)
+            # Mark as closing but keep the entry so _closews! can still
+            # find the URI and invoke on_close when MG_EV_CLOSE fires.
+            entry.closing = true
             closed += 1
         end
     end

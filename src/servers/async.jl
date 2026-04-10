@@ -17,7 +17,13 @@ reliable occupancy check without blocking.
 @inline function _tryput!(ch::Channel, val, capacity::Int)
     isopen(ch) || return false
     Base.n_avail(ch) >= capacity && return false
-    put!(ch, val)
+    try
+        put!(ch, val)
+    catch e
+        # Channel was closed between the isopen check and put! (shutdown race).
+        e isa InvalidStateException || rethrow(e)
+        return false
+    end
     return true
 end
 

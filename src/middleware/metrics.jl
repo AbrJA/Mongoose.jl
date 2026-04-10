@@ -85,26 +85,36 @@ function (mw::PrometheusMetrics)(request::AbstractRequest, params::Vector{Any}, 
 end
 
 function _renderstats(mw::PrometheusMetrics)::Response
-    # --- Aggregate all shards under their individual locks ---
+    # --- Aggregate all shards ---
     agg_counts = Dict{String,Int}()
     agg_raw    = zeros(Int, _N_HIST_BUCKETS)
     agg_sum    = 0.0
     agg_total  = 0
 
     for shard in mw.shards
+        # Snapshot under lock — only copies, no aggregation.
+        local_counts = nothing
+        local_hist   = nothing
+        local_sum    = 0.0
+        local_total  = 0
         lock(shard.lock)
         try
-            for (k, v) in shard.counts
-                agg_counts[k] = get(agg_counts, k, 0) + v
-            end
-            for i in 1:_N_HIST_BUCKETS
-                @inbounds agg_raw[i] += shard.raw_hist[i]
-            end
-            agg_sum   += shard.hist_sum
-            agg_total += shard.hist_total
+            local_counts = copy(shard.counts)
+            local_hist   = copy(shard.raw_hist)
+            local_sum    = shard.hist_sum
+            local_total  = shard.hist_total
         finally
             unlock(shard.lock)
         end
+        # Aggregate outside the lock.
+        for (k, v) in local_counts
+            agg_counts[k] = get(agg_counts, k, 0) + v
+        end
+        for i in 1:_N_HIST_BUCKETS
+            @inbounds agg_raw[i] += local_hist[i]
+        end
+        agg_sum   += local_sum
+        agg_total += local_total
     end
 
     # --- Build Prometheus text output ---

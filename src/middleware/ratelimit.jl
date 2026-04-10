@@ -39,15 +39,13 @@ function (mw::RateLimit)(request::AbstractRequest, params::Vector{Any}, next)
     shard = _shard(mw, client_id)
     now_t = time()
 
+    # --- Phase 1: fast path — O(1) dict lookup + increment under the lock.
+    needs_cleanup = false
     lock(shard.lock)
     allowed = try
-        if (now_t - shard.last_cleanup[]) > mw.cleanup_interval
-            for (k, v) in collect(shard.tracker)
-                if (now_t - v[2]) > mw.window_seconds
-                    delete!(shard.tracker, k)
-                end
-            end
-            shard.last_cleanup[] = now_t
+        needs_cleanup = (now_t - shard.last_cleanup[]) > mw.cleanup_interval
+        if needs_cleanup
+            shard.last_cleanup[] = now_t  # reset timer now, cleanup happens below
         end
 
         entry = get(shard.tracker, client_id, nothing)
@@ -66,6 +64,20 @@ function (mw::RateLimit)(request::AbstractRequest, params::Vector{Any}, next)
         end
     finally
         unlock(shard.lock)
+    end
+
+    # --- Phase 2: amortized cleanup —
+    if needs_cleanup
+        lock(shard.lock)
+        try
+            for (k, v) in collect(shard.tracker)
+                if (now_t - v[2]) > mw.window_seconds
+                    delete!(shard.tracker, k)
+                end
+            end
+        finally
+            unlock(shard.lock)
+        end
     end
 
     if !allowed
