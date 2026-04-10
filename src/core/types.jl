@@ -2,6 +2,27 @@
     Core abstract types and the middleware pipeline.
 """
 
+"""
+    WsConn — Per-connection WebSocket state stored in `ServerCore.ws_clients`.
+
+Combines the route URI (needed for endpoint dispatch and `on_close` callbacks)
+with the last-activity timestamp (needed for idle-timeout sweeps). Using a
+single dict avoids duplicate key lookups and guarantees the two values are
+always in sync.
+
+Declared `mutable` so `_wstouch!` can update `last_active` in-place without
+allocating a new struct — critical for GC safety inside C callbacks.
+
+`closing` is set to `true` by `_wsidlesweep!` after sending a close frame,
+preventing duplicate close frames on future sweeps while keeping the entry
+alive until `MG_EV_CLOSE` fires and `_closews!` can still invoke `on_close`.
+"""
+mutable struct WsConn
+    const uri::String
+    last_active::Float64
+    closing::Bool
+end
+
 abstract type AbstractRequest end
 
 abstract type AbstractServer end

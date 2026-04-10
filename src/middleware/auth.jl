@@ -17,7 +17,7 @@ function (mw::Bearer)(request::AbstractRequest, params::Vector{Any}, next)
         return Response(Plain, "401 Unauthorized"; status=401, headers=["WWW-Authenticate" => "Bearer"])
     end
 
-    if length(auth_header) < 7 || lowercase(auth_header[1:7]) != "bearer "
+    if length(auth_header) < 7 || !_isbearer(auth_header)
         return Response(Plain, "401 Unauthorized: Invalid scheme"; status=401, headers=["WWW-Authenticate" => "Bearer"])
     end
 
@@ -28,6 +28,18 @@ function (mw::Bearer)(request::AbstractRequest, params::Vector{Any}, next)
     end
 
     return next()
+end
+
+# Case-insensitive "bearer " check without allocation
+@inline function _isbearer(s::AbstractString)::Bool
+    _tolower(codeunit(s, 1)) == UInt8('b') || return false
+    _tolower(codeunit(s, 2)) == UInt8('e') || return false
+    _tolower(codeunit(s, 3)) == UInt8('a') || return false
+    _tolower(codeunit(s, 4)) == UInt8('r') || return false
+    _tolower(codeunit(s, 5)) == UInt8('e') || return false
+    _tolower(codeunit(s, 6)) == UInt8('r') || return false
+    codeunit(s, 7) == UInt8(' ') || return false
+    return true
 end
 
 """

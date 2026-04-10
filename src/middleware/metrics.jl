@@ -19,7 +19,7 @@ const _METRICS_SHARDS = 8
 const _METRICS_CONTENT_TYPE = "Content-Type: text/plain; version=0.0.4; charset=utf-8\r\n"
 
 mutable struct _MetricsShard
-    lock::ReentrantLock
+    lock::Threads.SpinLock
     # Key: "METHOD_STATUSCODE", e.g. "GET_200", "POST_404"
     counts::Dict{String,Int}
     # raw_hist[i] = count of observations that fell in bucket i (non-cumulative).
@@ -29,7 +29,7 @@ mutable struct _MetricsShard
     hist_total::Int
 
     _MetricsShard() = new(
-        ReentrantLock(),
+        Threads.SpinLock(),
         Dict{String,Int}(),
         zeros(Int, _N_HIST_BUCKETS),
         0.0, 0
@@ -42,7 +42,7 @@ struct PrometheusMetrics <: AbstractMiddleware
 end
 
 @inline function _shard(mw::PrometheusMetrics)
-    idx = (Threads.threadid() - 1) % _METRICS_SHARDS + 1
+    idx = (hash(objectid(current_task())) % _METRICS_SHARDS) + 1
     return mw.shards[idx]
 end
 
@@ -70,11 +70,14 @@ function (mw::PrometheusMetrics)(request::AbstractRequest, params::Vector{Any}, 
         bidx = _histidx(elapsed_s)
 
         shard = _shard(mw)
-        lock(shard.lock) do
+        lock(shard.lock)
+        try
             shard.counts[key] = get(shard.counts, key, 0) + 1
             @inbounds shard.raw_hist[bidx] += 1
             shard.hist_sum += elapsed_s
             shard.hist_total += 1
+        finally
+            unlock(shard.lock)
         end
     end
 
@@ -82,23 +85,36 @@ function (mw::PrometheusMetrics)(request::AbstractRequest, params::Vector{Any}, 
 end
 
 function _renderstats(mw::PrometheusMetrics)::Response
-    # --- Aggregate all shards under their individual locks ---
+    # --- Aggregate all shards ---
     agg_counts = Dict{String,Int}()
     agg_raw    = zeros(Int, _N_HIST_BUCKETS)
     agg_sum    = 0.0
     agg_total  = 0
 
     for shard in mw.shards
-        lock(shard.lock) do
-            for (k, v) in shard.counts
-                agg_counts[k] = get(agg_counts, k, 0) + v
-            end
-            for i in 1:_N_HIST_BUCKETS
-                @inbounds agg_raw[i] += shard.raw_hist[i]
-            end
-            agg_sum   += shard.hist_sum
-            agg_total += shard.hist_total
+        # Snapshot under lock — only copies, no aggregation.
+        local_counts = nothing
+        local_hist   = nothing
+        local_sum    = 0.0
+        local_total  = 0
+        lock(shard.lock)
+        try
+            local_counts = copy(shard.counts)
+            local_hist   = copy(shard.raw_hist)
+            local_sum    = shard.hist_sum
+            local_total  = shard.hist_total
+        finally
+            unlock(shard.lock)
         end
+        # Aggregate outside the lock.
+        for (k, v) in local_counts
+            agg_counts[k] = get(agg_counts, k, 0) + v
+        end
+        for i in 1:_N_HIST_BUCKETS
+            @inbounds agg_raw[i] += local_hist[i]
+        end
+        agg_sum   += local_sum
+        agg_total += local_total
     end
 
     # --- Build Prometheus text output ---

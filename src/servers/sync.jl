@@ -20,10 +20,12 @@ function Server(router::AbstractRouter=Router();
                     poll_timeout::Integer=1,
                     max_body::Integer=MAX_BODY,
                     drain_timeout::Integer=DRAIN_TIMEOUT,
+                    ws_idle_timeout::Integer=0,
                     errors::Dict{Int,Response}=Dict{Int,Response}(),
                     styled::Bool=isa(stdout, Base.TTY))
     c_handler = Mongoose._cfnsync(typeof(router))
-    core = ServerCore(poll_timeout, router; max_body=max_body, drain_timeout=drain_timeout, errors=errors, c_handler=c_handler, styled=styled)
+    core = ServerCore(poll_timeout, router; max_body=max_body, drain_timeout=drain_timeout,
+                      ws_idle_timeout=ws_idle_timeout, errors=errors, c_handler=c_handler, styled=styled)
     server = Server{typeof(router)}(core)
     finalizer(_teardown!, server)
     return server
@@ -39,6 +41,7 @@ function Server(router::AbstractRouter, config::Config)
         poll_timeout          = config.poll_timeout,
         max_body    = config.max_body,
         drain_timeout = config.drain_timeout,
+        ws_idle_timeout = config.ws_idle_timeout,
         errors  = config.errors,
         styled = config.styled
     )
@@ -46,16 +49,25 @@ end
 
 function _init!(server::Server)
     server.core.manager = Manager()
-    empty!(server.core.clients)
+    empty!(server.core.ws_clients)
     return
 end
 
 function _eventloop(server::Server)
     mgr = server.core.manager.ptr
     timeout = server.core.poll_timeout
+    last_sweep = time()
     while server.core.running[]
         mg_mgr_poll(mgr, timeout)
-        isempty(server.core.clients) || mg_mgr_poll(mgr, 0)
+        isempty(server.core.ws_clients) || mg_mgr_poll(mgr, 0)
+        # Periodic WS idle sweep
+        if server.core.ws_idle_timeout > 0 && !isempty(server.core.ws_clients)
+            now_t = time()
+            if (now_t - last_sweep) >= 5.0  # sweep every 5s
+                _wsidlesweep!(server)
+                last_sweep = now_t
+            end
+        end
         yield()
     end
 end

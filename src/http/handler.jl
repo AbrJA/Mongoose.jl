@@ -12,28 +12,37 @@ Return the standard HTTP reason phrase for a status code.
 @inline function _statustext(code::Int)
     code == 200 && return "OK"
     code == 201 && return "Created"
+    code == 202 && return "Accepted"
     code == 204 && return "No Content"
+    code == 206 && return "Partial Content"
     code == 301 && return "Moved Permanently"
     code == 302 && return "Found"
     code == 304 && return "Not Modified"
+    code == 307 && return "Temporary Redirect"
+    code == 308 && return "Permanent Redirect"
     code == 400 && return "Bad Request"
     code == 401 && return "Unauthorized"
     code == 403 && return "Forbidden"
     code == 404 && return "Not Found"
     code == 405 && return "Method Not Allowed"
+    code == 408 && return "Request Timeout"
+    code == 409 && return "Conflict"
     code == 413 && return "Payload Too Large"
+    code == 415 && return "Unsupported Media Type"
+    code == 422 && return "Unprocessable Entity"
     code == 429 && return "Too Many Requests"
     code == 500 && return "Internal Server Error"
     code == 502 && return "Bad Gateway"
     code == 503 && return "Service Unavailable"
     code == 504 && return "Gateway Timeout"
-    return "OK"
+    return ""
 end
 
 # Pre-built responses for the three codes that _errresponse must handle without allocation.
 # Body text is derived from _statustext — single source of truth.
 const _DEFAULT_500 = Response(Plain, "500 $(_statustext(500))"; status=500)
 const _DEFAULT_413 = Response(Plain, "413 $(_statustext(413))"; status=413)
+const _DEFAULT_503 = Response(Plain, "503 $(_statustext(503))"; status=503)
 const _DEFAULT_504 = Response(Plain, "504 $(_statustext(504))"; status=504)
 
 # --- Static file serving (C-level, event-loop thread only) ---
@@ -133,7 +142,7 @@ function _onevent!(server::Server, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev
     res = try
         _invokehttp(server, req)
     catch e
-        @error "Handler error" component="http" uri=req.uri exception=(e, catch_backtrace())
+        _log_error("Handler error component=http uri=$(req.uri)", e, catch_backtrace())
         _handleerror(server, req, e)
     end
     rid = _resolveid(message, server)
@@ -168,7 +177,21 @@ function _onevent!(server::Async, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_
 
     id = Int(_nextreqid!(server))
     server.connections[id] = conn
-    isopen(server.calls) && put!(server.calls, Tagged(id, Request(message, method, uri)))
+    if isopen(server.calls)
+        tagged = Tagged(id, Request(message, method, uri))
+        # Non-blocking enqueue: if the channel is full, return 503 immediately
+        # instead of blocking the event loop (which stalls ALL I/O).
+        res = _tryput!(server.calls, tagged, server.nqueue)
+        if res === false
+            delete!(server.connections, id)
+            _sendhttp!(conn, _errresponse(server, 503))
+        end
+    else
+        # Channel closed (server shutting down) — reply immediately so the
+        # client is not left hanging, and clean up the connection entry.
+        delete!(server.connections, id)
+        _sendhttp!(conn, _errresponse(server, 503))
+    end
     return
 end
 
@@ -257,14 +280,14 @@ end
 # Fast UInt64→String without going through `string()` (avoids Julia runtime formatting)
 @inline function _uint64tostr(n::UInt64)::String
     n == 0 && return "0"
-    buf = Vector{UInt8}(undef, 20)  # max UInt64 digits
+    buf = Vector{UInt8}(undef, 20)
     i = 20
     @inbounds while n > 0
         buf[i] = UInt8('0') + UInt8(n % 10)
         n = div(n, 10)
         i -= 1
     end
-    return String(view(buf, i+1:20))
+    return String(@view buf[i+1:20])
 end
 
 """
@@ -287,6 +310,7 @@ Falls back to the module-level default.
     r !== nothing && return r
     status == 500 && return _DEFAULT_500
     status == 413 && return _DEFAULT_413
+    status == 503 && return _DEFAULT_503
     status == 504 && return _DEFAULT_504
     return Response(Plain, "$status $(_statustext(status))"; status=status)
 end
@@ -391,20 +415,43 @@ end
 
 Execute request handling with a timeout. If the handler exceeds `timeout`,
 returns 504 Gateway Timeout. Used only by Async workers.
+
+An atomic counter caps concurrent timed handlers to avoid thread starvation
+when slow requests pile up. If the limit is reached, the request is rejected
+with 503 Service Unavailable.
 """
+const _TIMED_INFLIGHT = Threads.Atomic{Int}(0)
+const _MAX_TIMED = max(Threads.nthreads() * 2, 8)
+
 function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout::Integer)
+    # Fast-reject if too many timed handlers are already running
+    current = Threads.atomic_add!(_TIMED_INFLIGHT, 1)
+    if current >= _MAX_TIMED
+        Threads.atomic_sub!(_TIMED_INFLIGHT, 1)
+        _log_warn("Too many concurrent timed requests component=http uri=$(req.uri)")
+        return _errresponse(server, 503)
+    end
+
     ch = Channel{Response}(1)
-    Threads.@spawn try
-        put!(ch, _invokehttp(server, req))
-    catch e
-        @error "Handler error" component="http" uri=req.uri exception=(e, catch_backtrace())
-        put!(ch, _handleerror(server, req, e))
+    Threads.@spawn begin
+        try
+            res = try
+                _invokehttp(server, req)
+            catch e
+                _log_error("Handler error component=http uri=$(req.uri)", e, catch_backtrace())
+                _handleerror(server, req, e)
+            end
+            try put!(ch, res) catch end
+        finally
+            Threads.atomic_sub!(_TIMED_INFLIGHT, 1)
+        end
     end
     result = timedwait(timeout / 1000.0) do
         isready(ch)
     end
     if result === :timed_out
-        @warn "Request timed out" component="http" uri=req.uri timeout_ms=timeout
+        close(ch)
+        _log_warn("Request timed out component=http uri=$(req.uri) timeout_ms=$timeout")
         return _errresponse(server, 504)
     end
     return take!(ch)

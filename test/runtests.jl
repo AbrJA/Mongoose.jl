@@ -1902,9 +1902,9 @@ end
             @test occursin("id=42", body42)
             @test occursin("Int",   body42)
 
-            # Non-integer value causes Base.parse to throw; the server catches it → 500
+            # Non-integer value for typed param → 404 (not a valid route)
             resp = HTTP.get("http://localhost:8219/item/notanint"; status_exception=false)
-            @test resp.status == 500
+            @test resp.status == 404
         finally
             shutdown!(server)
         end
@@ -2063,6 +2063,241 @@ end
                             headers=["X-Request-Id" => long_id])
             @test resp.status == 200
             @test HTTP.header(resp, "X-Request-Id") == long_id
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # WebSocket graceful close (RFC 6455 close handshake)
+    # ==========================================================================
+
+    @testset "WebSocket graceful close" begin
+        router = Router()
+        ws!(router, "/wsclose",
+            on_message = (msg) -> Message("reply: $(msg.data)"))
+
+        server = Server(router)
+        start!(server; port=8226, blocking=false)
+        wait_for_server("http://localhost:8226/")
+
+        try
+            # The do-block sends a message, receives the reply, then HTTP.jl sends a
+            # close frame. The server must respond with a close frame (MG_EV_WS_CTL
+            # handler) so the handshake completes without IOError.
+            HTTP.WebSockets.open("ws://localhost:8226/wsclose") do ws
+                HTTP.WebSockets.send(ws, "test")
+                reply = String(HTTP.WebSockets.receive(ws))
+                @test reply == "reply: test"
+            end
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # _statustext returns empty string for unknown codes
+    # ==========================================================================
+
+    @testset "Unit: _statustext unknown code" begin
+        @test Mongoose._statustext(200) == "OK"
+        @test Mongoose._statustext(418) == ""
+        @test Mongoose._statustext(999) == ""
+        @test Mongoose._statustext(206) == "Partial Content"
+        @test Mongoose._statustext(422) == "Unprocessable Entity"
+    end
+
+    # ==========================================================================
+    # WebSocket upgrade rejection — on_open returning false → 403
+    # ==========================================================================
+
+    @testset "WS upgrade rejection: on_open returns false → 403" begin
+        router = Router()
+        route!(router, :get, "/", req -> Response(Plain, "ok"))
+
+        ws!(router, "/ws/reject",
+            on_message = (msg::Message) -> Message("echo"),
+            on_open    = (req::Request) -> false,
+        )
+
+        ws!(router, "/ws/accept",
+            on_message = (msg::Message) -> Message("accepted"),
+            on_open    = (req::Request) -> true,
+        )
+
+        server = Async(router; nworkers=1)
+        start!(server; port=8227, blocking=false)
+        wait_for_server("http://localhost:8227/")
+
+        try
+            # Rejected upgrade: should get 403
+            resp = HTTP.get("http://localhost:8227/ws/reject";
+                headers=["Upgrade" => "websocket", "Connection" => "Upgrade",
+                         "Sec-WebSocket-Key" => "dGhlIHNhbXBsZSBub25jZQ==",
+                         "Sec-WebSocket-Version" => "13"],
+                status_exception=false)
+            @test resp.status == 403
+
+            # Accepted upgrade: should work normally
+            HTTP.WebSockets.open("ws://localhost:8227/ws/accept") do ws
+                HTTP.WebSockets.send(ws, "hello")
+                reply = String(HTTP.WebSockets.receive(ws))
+                @test reply == "accepted"
+            end
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # @router auto-HEAD: HEAD on GET route → 200 with empty body
+    # ==========================================================================
+
+    @testset "@router: HEAD request on GET route returns 200 empty body" begin
+        server = Server(Routes)
+        start!(server; port=8228, blocking=false)
+        wait_for_server("http://localhost:8228/")
+
+        try
+            # GET should return body
+            resp_get = HTTP.get("http://localhost:8228/hello")
+            @test resp_get.status == 200
+            @test String(resp_get.body) == "Hello Static"
+
+            # HEAD should return 200 but no body
+            resp_head = HTTP.head("http://localhost:8228/hello"; status_exception=false)
+            @test resp_head.status == 200
+            @test isempty(resp_head.body)
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Dynamic router auto-HEAD: HEAD on GET route → 200 with empty body
+    # ==========================================================================
+
+    @testset "Router: HEAD request on GET route returns 200 empty body" begin
+        router = Router()
+        route!(router, :get, "/headtest", req -> Response(Plain, "head-body"))
+
+        server = Async(router; nworkers=1)
+        start!(server; port=8229, blocking=false)
+        wait_for_server("http://localhost:8229/")
+
+        try
+            resp_get = HTTP.get("http://localhost:8229/headtest")
+            @test resp_get.status == 200
+            @test String(resp_get.body) == "head-body"
+
+            resp_head = HTTP.head("http://localhost:8229/headtest"; status_exception=false)
+            @test resp_head.status == 200
+            @test isempty(resp_head.body)
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Server + ratelimit middleware (validates SpinLock fix)
+    # ==========================================================================
+
+    @testset "Server + ratelimit middleware (SpinLock)" begin
+        router = Router()
+        route!(router, :get, "/", req -> Response(Plain, "ok"))
+
+        server = Server(router)
+        plug!(server, ratelimit(max_requests=3, window_seconds=60))
+        start!(server; port=8230, blocking=false)
+        wait_for_server("http://localhost:8230/")
+
+        try
+            # wait_for_server consumed 1 request
+            resp1 = HTTP.get("http://localhost:8230/")
+            @test resp1.status == 200
+            resp2 = HTTP.get("http://localhost:8230/")
+            @test resp2.status == 200
+            # 4th request should be rate-limited
+            resp3 = HTTP.get("http://localhost:8230/"; status_exception=false)
+            @test resp3.status == 429
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Server + metrics middleware (validates SpinLock fix)
+    # ==========================================================================
+
+    @testset "Server + metrics middleware (SpinLock)" begin
+        router = Router()
+        route!(router, :get, "/ping", req -> Response(Plain, "pong"))
+
+        server = Server(router)
+        plug!(server, metrics())
+        start!(server; port=8231, blocking=false)
+        wait_for_server("http://localhost:8231/")
+
+        try
+            HTTP.get("http://localhost:8231/ping")
+            HTTP.get("http://localhost:8231/ping")
+
+            resp = HTTP.get("http://localhost:8231/metrics")
+            body = String(resp.body)
+            @test occursin("http_requests_total", body)
+            @test occursin("method=\"GET\"", body)
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # 503 status text
+    # ==========================================================================
+
+    @testset "Unit: _statustext 503" begin
+        @test Mongoose._statustext(503) == "Service Unavailable"
+    end
+
+    # ==========================================================================
+    # Dynamic router: typed param 404 on bad parse
+    # ==========================================================================
+
+    @testset "Router: typed param bad value → 404" begin
+        router = Router()
+        route!(router, :get, "/item/:id::Int", (req, id) -> Response(Plain, "id=$id"))
+
+        server = Async(router; nworkers=1)
+        start!(server; port=8232, blocking=false)
+        wait_for_server("http://localhost:8232/")
+
+        try
+            resp = HTTP.get("http://localhost:8232/item/42")
+            @test resp.status == 200
+            @test occursin("id=42", String(resp.body))
+
+            resp = HTTP.get("http://localhost:8232/item/abc"; status_exception=false)
+            @test resp.status == 404
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Config with ws_idle_timeout
+    # ==========================================================================
+
+    @testset "Config: ws_idle_timeout parameter" begin
+        config = Config(ws_idle_timeout=30)
+        router = Router()
+        route!(router, :get, "/", req -> Response(Plain, "ok"))
+        server = Async(router, config)
+        start!(server; port=8233, blocking=false)
+        wait_for_server("http://localhost:8233/")
+
+        try
+            resp = HTTP.get("http://localhost:8233/")
+            @test resp.status == 200
         finally
             shutdown!(server)
         end

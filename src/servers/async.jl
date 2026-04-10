@@ -3,6 +3,31 @@
 """
 
 """
+    _tryput!(ch, val, capacity) → Bool
+
+Non-blocking `put!`. Returns `false` when the channel is full or closed,
+instead of blocking the caller. Safe when there is a single producer
+(the event-loop task), which is always the case in Mongoose.jl.
+
+`capacity` must equal the buffer size the channel was created with.
+`Base.n_avail` is an internal function; we use it here because
+`length(::Channel)` is not defined in Julia 1.12, making this the only
+reliable occupancy check without blocking.
+"""
+@inline function _tryput!(ch::Channel, val, capacity::Int)
+    isopen(ch) || return false
+    Base.n_avail(ch) >= capacity && return false
+    try
+        put!(ch, val)
+    catch e
+        # Channel was closed between the isopen check and put! (shutdown race).
+        e isa InvalidStateException || rethrow(e)
+        return false
+    end
+    return true
+end
+
+"""
     Async(router=Router(); nworkers=4, nqueue=1024, poll_timeout=0, max_body,
                drain_timeout, request_timeout=0, errors=Dict{Int,Response}())
 
@@ -28,11 +53,13 @@ function Async(router::AbstractRouter=Router();
                      max_body::Integer=MAX_BODY,
                      drain_timeout::Integer=DRAIN_TIMEOUT,
                      request_timeout::Integer=0,
+                     ws_idle_timeout::Integer=0,
                      errors::Dict{Int,Response}=Dict{Int,Response}(),
                      styled::Bool=isa(stdout, Base.TTY))
     c_handler = Mongoose._cfnasync(typeof(router))
     core = ServerCore(poll_timeout, router; max_body=max_body, drain_timeout=drain_timeout,
-                      request_timeout=request_timeout, errors=errors, c_handler=c_handler, styled=styled)
+                      request_timeout=request_timeout, ws_idle_timeout=ws_idle_timeout,
+                      errors=errors, c_handler=c_handler, styled=styled)
     server = Async{typeof(router)}(
         core, Task[],  # workers
         Channel{Call}(nqueue), Channel{Reply}(nqueue),
@@ -55,7 +82,9 @@ function Async(router::AbstractRouter, config::Config)
         max_body = config.max_body,
         drain_timeout = config.drain_timeout,
         request_timeout = config.request_timeout,
-        errors = config.errors
+        ws_idle_timeout = config.ws_idle_timeout,
+        errors = config.errors,
+        styled = config.styled
     )
 end
 
@@ -64,7 +93,7 @@ function _init!(server::Async)
     server.calls   = Channel{Call}(server.nqueue)
     server.replies = Channel{Reply}(server.nqueue)
     empty!(server.connections)
-    empty!(server.core.clients)
+    empty!(server.core.ws_clients)
     return
 end
 
@@ -92,13 +121,19 @@ end
 _stopworkers!(::AbstractServer) = nothing
 
 function _eventloop(server::Async)
+    last_sweep = time()
     while server.core.running[]
         mg_mgr_poll(server.core.manager.ptr, server.core.poll_timeout)
 
         # Dispatch replies from workers back to C library
         local did_ws_send = false
         while isopen(server.replies) && isready(server.replies)
-            res = take!(server.replies)
+            res = try
+                take!(server.replies)
+            catch e
+                e isa InvalidStateException && break
+                rethrow(e)
+            end
             conn = get(server.connections, res.id, nothing)
             if conn !== nothing
                 if res.payload isa Response
@@ -109,13 +144,21 @@ function _eventloop(server::Async)
                         _sendws!(conn, res.payload)
                         did_ws_send = true
                     catch e
-                    @error "WebSocket send error" component="websocket" exception=(e, catch_backtrace())
+                    _log_error("WebSocket send error component=websocket", e, catch_backtrace())
                     end
                 end
             end
         end
         # Extra poll to flush mg_ws_send buffers immediately
         did_ws_send && mg_mgr_poll(server.core.manager.ptr, 1)
+        # Periodic WS idle sweep
+        if server.core.ws_idle_timeout > 0 && !isempty(server.core.ws_clients)
+            now_t = time()
+            if (now_t - last_sweep) >= 5.0
+                _wsidlesweep!(server)
+                last_sweep = now_t
+            end
+        end
         yield()
     end
 end
@@ -133,14 +176,14 @@ function _workloop(server::Async)
                         _invokehttp(server, req.payload)
                     end
                 catch e
-                    @error "Handler error" component="http" uri=req.payload.uri exception=(e, catch_backtrace())
+                    _log_error("Handler error component=http uri=$(req.payload.uri)", e, catch_backtrace())
                     _handleerror(server, req.payload, e)
                 end
                 res = Response(res.status, _appendreqid(res.headers, rid), res.body)
-                isopen(server.replies) && put!(server.replies, Tagged(req.id, res))
+                try isopen(server.replies) && put!(server.replies, Tagged(req.id, res)) catch e; e isa InvalidStateException || rethrow(e) end
             else  # Intent
                 res = _invokews(server, req)
-                res !== nothing && isopen(server.replies) && put!(server.replies, res)
+                try res !== nothing && isopen(server.replies) && put!(server.replies, res) catch e; e isa InvalidStateException || rethrow(e) end
             end
         end
     catch e

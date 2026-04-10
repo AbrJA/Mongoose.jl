@@ -94,32 +94,42 @@ function _logstart(server::AbstractServer, url::String)
     mounts = length(server.core.mounts)
     workers = server isa Async ? server.nworkers : 0
     if server.core.styled
-        println()
-        printstyled("🚀 Mongoose started\n", color=:cyan, bold=true)
-        printstyled("  URL:     ", color=:light_black); printstyled(url, color=:blue, underline=true); println()
-        printstyled("  API:     ", color=:light_black)
-        printstyled("$routes routes • $middlewares middleware • $mounts mounts\n", color=:green)
-        printstyled("  Type:    ", color=:light_black); println(type)
-        printstyled("  System:  ", color=:light_black)
-        printstyled("$workers workers • $threads threads\n", color=:green); println()
+        buf = IOBuffer()
+        write(buf, "\n\e[1;36m🚀 Mongoose started\e[0m\n")
+        write(buf, "\e[90m  URL:     \e[0m\e[4;34m")
+        write(buf, url)
+        write(buf, "\e[0m\n\e[90m  API:     \e[0m\e[32m")
+        print(buf, routes)
+        write(buf, " routes • ")
+        print(buf, middlewares)
+        write(buf, " middleware • ")
+        print(buf, mounts)
+        write(buf, " mounts\e[0m\n\e[90m  Type:    \e[0m")
+        print(buf, type)
+        write(buf, "\n\e[90m  System:  \e[0m\e[32m")
+        print(buf, workers)
+        write(buf, " workers • ")
+        print(buf, threads)
+        write(buf, " threads\e[0m\n\n")
+        _print(String(take!(buf)))
     else
-        @info "Mongoose started" component="server" type=type url=url routes=routes middleware=middlewares mounts=mounts workers=workers threads=threads
+        _log_info("Mongoose started component=server type=$type url=$url routes=$routes middleware=$middlewares mounts=$mounts workers=$workers threads=$threads")
     end
 end
 
 function _logstop(server::AbstractServer)
     if server.core.styled
-        printstyled("🛑 Mongoose shutting down...\n", color=:red, bold=true)
-     else
-        @info "Mongoose shutting down..." component="server"
+        _print("\e[1;31m🛑 Mongoose shutting down...\e[0m\n")
+    else
+        _log_info("Mongoose shutting down... component=server")
     end
 end
 
 function _logstopped(server::AbstractServer)
     if server.core.styled
-        printstyled("✅ Mongoose stopped.\n", color=:green, bold=true)
+        _print("\e[1;32m✅ Mongoose stopped.\e[0m\n")
     else
-        @info "Mongoose stopped." component="server"
+        _log_info("Mongoose stopped. component=server")
     end
 end
 
@@ -145,8 +155,8 @@ function shutdown!(server::AbstractServer)
     _drain(server)
     _stopworkers!(server)
     _stoploop!(server)
-    _teardown!(server)
     _unregister!(server)
+    _teardown!(server)
     _logstopped(server)
     return
 end

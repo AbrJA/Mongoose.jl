@@ -28,9 +28,9 @@ route!(router, :get, "/greet/:name", (req, name) -> begin
     Response(Plain, "Hello, $(name)!")
 end)
 
-# Typed integer parameter
+# Typed integer parameter — invalid value (e.g. /users/abc) returns 404
 route!(router, :get, "/users/:id::Int", (req, id) -> begin
-    Response(Json, """{"id": $id, "type": "$(typeof(id))"}""")
+    Response(Json, """{"id": $id, "type": "$(typeof(id))"}""")  
 end)
 
 # Float parameter
@@ -143,6 +143,32 @@ ws!(router, "/echo",
     end,
     on_open  = (req::Request) -> println("Client connected from ", req.uri),
     on_close = () -> println("Client disconnected")
+)
+
+server = Async(router)
+start!(server, port=8080, blocking=false)
+```
+
+## WebSocket Upgrade Rejection
+
+Return `false` from `on_open` to reject the upgrade. The client receives `403 Forbidden` and no WebSocket connection is established.
+
+```julia
+using Mongoose
+
+router = Router()
+
+ws!(router, "/secure",
+    on_message = (msg::Message) -> Message("Hello, authenticated user!"),
+    on_open    = (req::Request) -> begin
+        token = get(req.headers, "authorization", nothing)
+        # Reject if no token or wrong token
+        if token === nothing || token != "Bearer secret"
+            return false  # → client gets 403 Forbidden
+        end
+        @info "WS authenticated" uri=req.uri
+    end,
+    on_close   = () -> @info "WS disconnected"
 )
 
 server = Async(router)
@@ -337,14 +363,15 @@ route!(router, :post, "/api/users", req -> begin
     Response(Json, Dict("created" => name); status=201)
 end)
 
-# WebSocket
+# WebSocket with idle timeout
 ws!(router, "/ws/notifications",
     on_message = (msg::Message) -> Message("""{"ack": true}"""),
     on_open    = (req::Request) -> @info "WS client connected"
 )
 
 # Server with full middleware stack
-server = Async(router; nworkers=4)
+# ws_idle_timeout: close WS connections that are idle for more than 60 seconds
+server = Async(router; nworkers=4, ws_idle_timeout=60)
 plug!(server, logger(threshold=100))
 plug!(server, cors(origins="https://myapp.com"))
 plug!(server, ratelimit(max_requests=200, window_seconds=60))
@@ -374,6 +401,7 @@ server = Async(router; request_timeout=5000)
 
 fail!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500))
 fail!(server, 413, Response(Json, """{"error":"Body too large"}"""; status=413))
+fail!(server, 503, Response(Json, """{"error":"Service temporarily unavailable"}"""; status=503))
 fail!(server, 504, Response(Json, """{"error":"Request timed out"}"""; status=504))
 
 start!(server, port=8080, blocking=false)
@@ -518,6 +546,7 @@ server = Async(router;
     nworkers=WORKERS,
     max_body=MAX_BODY,
     request_timeout=REQ_TIMEOUT,
+    ws_idle_timeout=60,
     drain_timeout=10_000
 )
 

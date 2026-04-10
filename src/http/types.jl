@@ -79,8 +79,22 @@ mime(::Type{Json})   = "application/json; charset=utf-8"
 mime(::Type{Binary}) = "application/octet-stream"
 mime(::Type{Xml})    = "application/xml; charset=utf-8"
 
+_contentheader(::Type{Plain})  = "Content-Type: text/plain; charset=utf-8\r\n"
+_contentheader(::Type{Html})   = "Content-Type: text/html; charset=utf-8\r\n"
+_contentheader(::Type{Css})    = "Content-Type: text/css; charset=utf-8\r\n"
+_contentheader(::Type{Js})     = "Content-Type: application/javascript; charset=utf-8\r\n"
+_contentheader(::Type{Json})   = "Content-Type: application/json; charset=utf-8\r\n"
+_contentheader(::Type{Xml})    = "Content-Type: application/xml; charset=utf-8\r\n"
+_contentheader(::Type{Binary}) = "Content-Type: application/octet-stream\r\n"
+
+# Fallback for user-defined formats: implement mime() and get _contentheader for free.
+# Uses IOBuffer (concrete type) to avoid Vararg string dispatch — trim=safe compatible.
 function _contentheader(format::Type{<:AbstractFormat})
-    return "Content-Type: $(mime(format))\r\n"
+    buf = IOBuffer()
+    write(buf, "Content-Type: ")
+    write(buf, mime(format))
+    write(buf, "\r\n")
+    return String(take!(buf))
 end
 
 function Response(::Type{T}, body; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) where T<:AbstractFormat

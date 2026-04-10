@@ -7,8 +7,10 @@
 - Sub-100ms time-to-first-response via `PrecompileTools`
 - Sync and async server modes with configurable worker pools
 - Dynamic and static (AOT-compatible) routing with typed path parameters
+- Automatic HEAD responses from GET handlers; typed param mismatch returns 404
 - Built-in middleware: CORS, rate limiting, authentication, logging, static files
-- WebSocket support on the same router
+- WebSocket support on the same router — with upgrade rejection, frame limits, and idle timeout
+- 503 backpressure when the worker queue is full or too many concurrent timed tasks
 - Optional JSON integration via `JSON.jl` with explicit setup by the user
 - Full compatibility with `juliac --trim=safe` for compiled binaries
 
@@ -67,12 +69,13 @@ Mongoose.jl uses a decoupled architecture: a **Router** defines the routes and h
 
 ```julia
 server = Async(router;
-    nworkers=4,              # Number of worker tasks
-    nqueue=1024,            # Channel buffer size
+    nworkers=4,                  # Number of worker tasks
+    nqueue=1024,                 # Channel buffer size
     poll_timeout=0,              # Poll timeout (ms)
-    max_body=1048576,  # Max request body in bytes (default: 1MB)
-    drain_timeout=5000,  # Graceful shutdown drain timeout (ms)
-    request_timeout=0,   # Per-request timeout (0 = disabled)
+    max_body=1048576,            # Max request/WS-frame body in bytes (default: 1 MB)
+    drain_timeout=5000,          # Graceful shutdown drain timeout (ms)
+    request_timeout=0,           # Per-request timeout (0 = disabled)
+    ws_idle_timeout=0,         # WebSocket idle timeout in seconds (0 = disabled)
     errors=Dict{Int,Response}()  # Custom responses by status code
 )
 ```
@@ -94,9 +97,10 @@ All constructor keyword arguments can be consolidated into a `Config` struct —
 
 ```julia
 config = Config(
-    nworkers           = parse(Int, get(ENV, "WORKERS", "4")),
-    max_body      = parse(Int, get(ENV, "MAX_BODY", "1048576")),
+    nworkers        = parse(Int, get(ENV, "WORKERS", "4")),
+    max_body        = parse(Int, get(ENV, "MAX_BODY", "1048576")),
     request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT", "0")),
+    ws_idle_timeout = 60,
     drain_timeout   = 10_000,
 )
 
@@ -106,9 +110,10 @@ server = Async(router, config)  # or Server(router, config)
 | Field | Default | Description |
 |-------|---------|-------------|
 | `poll_timeout` | `1` | Poll timeout in ms (`0` = min latency, high CPU) |
-| `max_body` | 1 MB | Max request body in bytes |
+| `max_body` | 1 MB | Max request body in bytes; also the WebSocket frame size limit |
 | `drain_timeout` | 5000 | Graceful-shutdown drain period in ms |
 | `request_timeout` | `0` | Per-request timeout in ms; `0` = disabled |
+| `ws_idle_timeout` | `0` | WebSocket idle timeout in seconds; `0` = disabled |
 | `nworkers` | `4` | Worker tasks (`Async` only) |
 | `nqueue` | `1024` | Channel buffer size (`Async` only) |
 | `errors` | `Dict()` | Custom `Response` keyed by status code |
@@ -150,8 +155,8 @@ Path segments prefixed with `:` are captured as parameters. Optional type annota
 # String parameter (default)
 route!(router, :get, "/users/:name", (req, name) -> ...)
 
-# Typed parameters
-route!(router, :get, "/items/:id::Int", (req, id) -> ...)
+# Typed parameters — invalid values return 404 (not 500)
+route!(router, :get, "/items/:id::Int", (req, id) -> ...)    # /items/abc → 404
 route!(router, :get, "/price/:val::Float64", (req, val) -> ...)
 ```
 
@@ -251,15 +256,27 @@ Register WebSocket endpoints with `ws!`:
 ```julia
 ws!(router, "/chat",
     on_message = (msg::Message) -> Message("Echo: $(msg.data)"),
-    on_open    = (req::Request) -> println("connected: ", req.uri),
+    on_open    = (req::Request) -> begin
+        # Return false to reject the upgrade — sends 403 to the client
+        auth = get(req.headers, "authorization", nothing)
+        auth === nothing && return false
+        @info "WS connected" uri=req.uri
+    end,
     on_close   = () -> println("disconnected")
 )
 ```
 
-- `on_message` receives a `Message` — `msg.data` is `String` (text frame) or `Vector{UInt8}` (binary frame)
-- Return a `Message`, `String`, or `Vector{UInt8}` to send a reply; `nothing` for no reply
-- `on_open` receives the HTTP upgrade `Request` (headers, URI, etc.); `on_close` takes no arguments
-- Both `on_open` and `on_close` are optional
+| Callback | Signature | Notes |
+|----------|-----------|-------|
+| `on_open` | `(req::Request) → Any` | Called before upgrade. Return `false` to reject (sends 403). Optional. |
+| `on_message` | `(msg::Message) → Message \| String \| Vector{UInt8} \| nothing` | Called per frame. Return `nothing` for no reply. |
+| `on_close` | `() → Any` | Called after close. Connection already gone — no arguments. Optional. |
+
+**Production features:**
+- **Frame size limit** — WebSocket frames are subject to the same `max_body` limit as HTTP requests. Oversized frames close the connection.
+- **Idle timeout** — set `ws_idle_timeout` (seconds) on the server to auto-close connections that send no frames within the window. Connections are checked every 5 seconds.
+- **Upgrade rejection** — return `false` from `on_open` to refuse the WebSocket upgrade. The client receives `403 Forbidden` and no WebSocket connection is established.
+- **Ping/pong** — RFC 6455 control frames are handled automatically.
 
 ## Middleware
 
@@ -361,7 +378,7 @@ Serves `index.html` for directory requests. Returns `404` for missing files. Pat
 
 ### Custom Error Responses
 
-Register custom `Response` objects for specific HTTP status codes. The following codes are customizable: `500` (unhandled exception), `413` (body too large), `504` (request timeout).
+Register custom `Response` objects for specific HTTP status codes. The following codes are customizable: `500` (unhandled exception), `413` (body too large), `503` (worker queue full / server overloaded), `504` (request timeout).
 
 ```julia
 using Mongoose, JSON
@@ -376,6 +393,10 @@ fail!(server, 500, Response(Json, Dict("error" => "Internal server error"); stat
 
 # Custom 413 response
 fail!(server, 413, Response(Json, """{"error":"Request body too large"}"""; status=413))
+
+# Custom 503 response — returned when the worker channel is full or too many
+# concurrent timed tasks are in-flight (server overloaded)
+fail!(server, 503, Response(Json, """{"error":"Service temporarily unavailable"}"""; status=503))
 ```
 
 You can also pass a pre-built dict at construction time:
@@ -385,6 +406,7 @@ router = Router()
 errors = Dict{Int,Response}(
     500 => Response(Json, """{"error":"Internal error"}"""; status=500),
     413 => Response(Json, """{"error":"Body too large"}"""; status=413),
+    503 => Response(Json, """{"error":"Service unavailable"}"""; status=503),
 )
 server = Server(router; errors=errors)
 ```

@@ -6,7 +6,7 @@ using PrecompileTools
 export Server, Async, Router, Request, Response,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, plug!, mount!, fail!,
-    context!,
+    context!, # query,
     ws!, Message,
     cors, ratelimit, bearer, apikey, logger, health, metrics,
     RouteError, ServerError, BindError,
@@ -21,6 +21,7 @@ include("ffi/bindings.jl")
 # 2. Base Types and Errors
 include("core/types.jl")
 include("core/errors.jl")
+include("core/log.jl")
 include("http/types.jl")
 include("ws/types.jl")
 
@@ -79,9 +80,11 @@ include("middleware/metrics.jl")
         Response(200, "", UInt8[])     # binary body path
 
         # --- Status text ---
-        _statustext(200); _statustext(201); _statustext(204)
+        _statustext(200); _statustext(201); _statustext(202); _statustext(204)
+        _statustext(206); _statustext(301); _statustext(302); _statustext(304)
         _statustext(400); _statustext(401); _statustext(403); _statustext(404)
-        _statustext(413); _statustext(429); _statustext(500); _statustext(504)
+        _statustext(405); _statustext(408); _statustext(413); _statustext(429)
+        _statustext(500); _statustext(503); _statustext(504)
 
         # --- Request + context ---
         req = Request(:get, "/", "", Pair{String,String}[], "", nothing)
@@ -158,14 +161,27 @@ include("middleware/metrics.jl")
         # --- Error responses ---
         _errresponse(server_sync, 500)
         _errresponse(server_sync, 413)
+        _errresponse(server_sync, 503)
         _errresponse(server_sync, 504)
         _handleerror(server_sync, req, ErrorException(""))
+
+        # --- Event dispatch chain (prevents JIT inside C callback frames) ---
+        _ishandled(MG_EV_HTTP_MSG)
+        _ishandled(MG_EV_POLL)
+        for ev in (MG_EV_HTTP_MSG, MG_EV_WS_MSG, MG_EV_WS_CTL, MG_EV_CLOSE, MG_EV_WS_OPEN)
+            try _dispatchev(server_sync,  ev, MgConnection(C_NULL), C_NULL) catch end
+            try _dispatchev(server_async, ev, MgConnection(C_NULL), C_NULL) catch end
+        end
 
         # --- Config ---
         Config()
         Config(nworkers=2, max_body=1024)
-        Config(nworkers=8, request_timeout=5000, drain_timeout=10_000)
+        Config(nworkers=8, request_timeout=5000, drain_timeout=10_000, ws_idle_timeout=60)
     end
+
+    # Precompile the C callback entry point at module level (outside @compile_workload
+    # because it cannot be called safely without a real Mongoose connection pointer)
+    precompile(_callbackev, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
 end
 
 end # module Mongoose

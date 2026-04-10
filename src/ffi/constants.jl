@@ -4,6 +4,7 @@
 """
 
 # Event types from mongoose.h
+const MG_EV_OPEN = Cint(1)          # Connection created (partially initialized)
 const MG_EV_POLL = Cint(2)          # Periodic poll event (most frequent)
 const MG_EV_CLOSE = Cint(9)         # Connection closed
 const MG_EV_HTTP_MSG = Cint(11)     # Full HTTP message received

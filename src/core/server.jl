@@ -38,7 +38,7 @@ mutable struct ServerCore{R <: AbstractRouter}
     master::Union{Nothing, Task}
     manager::Manager
     c_handler::Ptr{Cvoid}             # C-interop handler
-    clients::Dict{Int, String}
+    ws_clients::Dict{Int, WsConn}      # conn_id → (uri, last_active); per-server, event-loop only
     id_seq::Threads.Atomic{UInt64} # Connection/Request ID generator
 
     # --- 2. Routing & Logic ---
@@ -52,6 +52,7 @@ mutable struct ServerCore{R <: AbstractRouter}
     request_timeout::Int
     drain_timeout::Int
     max_body::Int
+    ws_idle_timeout::Int      # seconds; 0 = disabled
 
     # --- 4. UI/UX Preferences ---
     styled::Bool
@@ -61,6 +62,7 @@ mutable struct ServerCore{R <: AbstractRouter}
                         max_body::Integer = MAX_BODY,
                         drain_timeout::Integer = DRAIN_TIMEOUT,
                         request_timeout::Integer = 0,
+                        ws_idle_timeout::Integer = 0,
                         errors::Dict{Int, Response} = Dict{Int, Response}(),
                         c_handler::Ptr{Cvoid} = C_NULL,
                         styled::Bool = isa(stdout, Base.TTY)) where {R <: AbstractRouter}
@@ -70,7 +72,7 @@ mutable struct ServerCore{R <: AbstractRouter}
             nothing,                        # master
             Manager(empty=true),            # manager
             c_handler,                      # c_handler
-            Dict{Int, String}(),            # clients
+            Dict{Int, WsConn}(),            # ws_clients
             Threads.Atomic{UInt64}(0),      # id_seq
             router,                         # router
             AbstractMiddleware[],           # middlewares
@@ -80,6 +82,7 @@ mutable struct ServerCore{R <: AbstractRouter}
             request_timeout,                # request_timeout
             drain_timeout,                  # drain_timeout
             max_body,                       # max_body
+            ws_idle_timeout,                # ws_idle_timeout
             styled                          # styled
         )
     end
@@ -129,6 +132,7 @@ Base.@kwdef struct Config
     max_body::Int      = MAX_BODY
     drain_timeout::Int   = DRAIN_TIMEOUT
     request_timeout::Int = 0
+    ws_idle_timeout::Int = 0
     nworkers::Int           = 4
     nqueue::Int             = 1024
     errors::Dict{Int,Response} = Dict{Int,Response}()
@@ -181,7 +185,7 @@ function _spawnloop!(server::AbstractServer)
             _eventloop(server)
         catch e
             if !isa(e, InterruptException)
-                @error "Server event loop error" component="eventloop" exception=(e, catch_backtrace())
+                _log_error("Server event loop error component=eventloop", e, catch_backtrace())
             end
         finally
             server.core.running[] = false

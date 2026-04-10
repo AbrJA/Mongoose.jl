@@ -42,6 +42,7 @@ struct MgHttpMessage
     proto::MgStr
     headers::NTuple{MG_MAX_HTTP_HEADERS,MgHttpHeader}
     body::MgStr
+    head::MgStr           # Request line + headers span
     message::MgStr
 
     function MgHttpMessage(ev_data::Ptr{Cvoid})
