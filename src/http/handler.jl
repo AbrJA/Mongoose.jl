@@ -142,7 +142,7 @@ function _onevent!(server::Server, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev
     res = try
         _invokehttp(server, req)
     catch e
-        @error "Handler error" component="http" uri=req.uri exception=(e, catch_backtrace())
+        _log_error("Handler error component=http uri=$(req.uri)", e)
         _handleerror(server, req, e)
     end
     rid = _resolveid(message, server)
@@ -423,7 +423,7 @@ function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout:
     current = Threads.atomic_add!(_TIMED_INFLIGHT, 1)
     if current >= _MAX_TIMED
         Threads.atomic_sub!(_TIMED_INFLIGHT, 1)
-        @warn "Too many concurrent timed requests" component="http" uri=req.uri
+        _log_warn("Too many concurrent timed requests component=http uri=$(req.uri)")
         return _errresponse(server, 503)
     end
 
@@ -433,7 +433,7 @@ function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout:
             res = try
                 _invokehttp(server, req)
             catch e
-                @error "Handler error" component="http" uri=req.uri exception=(e, catch_backtrace())
+                _log_error("Handler error component=http uri=$(req.uri)", e)
                 _handleerror(server, req, e)
             end
             try put!(ch, res) catch end
@@ -446,7 +446,7 @@ function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout:
     end
     if result === :timed_out
         close(ch)
-        @warn "Request timed out" component="http" uri=req.uri timeout_ms=timeout
+        _log_warn("Request timed out component=http uri=$(req.uri) timeout_ms=$timeout")
         return _errresponse(server, 504)
     end
     return take!(ch)

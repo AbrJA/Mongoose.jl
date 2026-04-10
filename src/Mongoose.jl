@@ -21,6 +21,7 @@ include("ffi/bindings.jl")
 # 2. Base Types and Errors
 include("core/types.jl")
 include("core/errors.jl")
+include("core/log.jl")
 include("http/types.jl")
 include("ws/types.jl")
 

@@ -307,7 +307,7 @@ macro router(app_type::Symbol, block)
             try
                 Mongoose._dispatchev(server, ev, conn, ev_data)
             catch e
-                @error "Event handler error" component="eventloop" exception=(e, Base.catch_backtrace())
+                Mongoose._log_error("Event handler error component=eventloop", e)
             end
             return nothing
         end
@@ -323,7 +323,7 @@ macro router(app_type::Symbol, block)
             try
                 Mongoose._dispatchev(server, ev, conn, ev_data)
             catch e
-                @error "Event handler error" component="eventloop" exception=(e, Base.catch_backtrace())
+                Mongoose._log_error("Event handler error component=eventloop", e)
             end
             return nothing
         end

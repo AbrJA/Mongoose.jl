@@ -84,16 +84,6 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
     return
 end
 
-# Trim-safe stdout writer — uses POSIX write(2) to bypass abstract IO dispatch.
-# Required because juliac --trim=safe cannot verify calls through stdout::IO.
-@noinline function _puts(s::String)
-    GC.@preserve s begin
-        ccall(:write, Cssize_t, (Cint, Ptr{UInt8}, Csize_t),
-              Cint(1), pointer(s), Csize_t(sizeof(s)))
-    end
-    return
-end
-
 # Emit a single structured startup log with everything an operator needs.
 # A single entry point for both types
 function _logstart(server::AbstractServer, url::String)
@@ -121,25 +111,25 @@ function _logstart(server::AbstractServer, url::String)
         write(buf, " workers • ")
         print(buf, threads)
         write(buf, " threads\e[0m\n\n")
-        _puts(String(take!(buf)))
+        _print(String(take!(buf)))
     else
-        @info "Mongoose started" component="server" type=type url=url routes=routes middleware=middlewares mounts=mounts workers=workers threads=threads
+        _log_info("Mongoose started component=server type=$type url=$url routes=$routes middleware=$middlewares mounts=$mounts workers=$workers threads=$threads")
     end
 end
 
 function _logstop(server::AbstractServer)
     if server.core.styled
-        _puts("\e[1;31m🛑 Mongoose shutting down...\e[0m\n")
+        _print("\e[1;31m🛑 Mongoose shutting down...\e[0m\n")
     else
-        @info "Mongoose shutting down..." component="server"
+        _log_info("Mongoose shutting down... component=server")
     end
 end
 
 function _logstopped(server::AbstractServer)
     if server.core.styled
-        _puts("\e[1;32m✅ Mongoose stopped.\e[0m\n")
+        _print("\e[1;32m✅ Mongoose stopped.\e[0m\n")
     else
-        @info "Mongoose stopped." component="server"
+        _log_info("Mongoose stopped. component=server")
     end
 end
 
