@@ -56,7 +56,6 @@ during the C callback and `mg_http_serve_dir` writes directly to `conn`.
 
     _matchrouteexact(server.core.router, method, uri) !== nothing && return false
 
-    # Try each registered static directory in order. The first one matches wins.
     for (dir, prefix) in server.core.mounts
         _staticexists(dir, prefix, uri) || continue
         # Mongoose expects "root_dir" as "dir" or "dir,/prefix=dir"
@@ -100,7 +99,6 @@ Return `true` if `uri` maps to a real file (or pre-compressed `.gz` variant) und
     isfile(candidate) && return true
     isfile(candidate * ".gz") && return true
 
-    # Directory index fallback (empty path or trailing slash)
     index = joinpath(isempty(rel) ? root : candidate, "index.html")
     isfile(index) && return true
 
@@ -340,7 +338,6 @@ end
         if handler !== nothing
             return handler(req, matched.params...)
         end
-        # Auto HEAD: use GET handler, return headers only
         if req.method === :head
             get_h = matched.handlers.get
             if get_h !== nothing

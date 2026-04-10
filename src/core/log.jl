@@ -29,17 +29,17 @@ const _RD = "\e[31m"
 
 @noinline function _log_info(msg::String)
     if _STDOUT_COLOR
-        print(Core.stdout, _CY, _B, "[ Info]", _R, " [Mongoose] ", msg, "\n")
+        print(Core.stdout, _CY, _B, "[Info]", _R, " [Mongoose] ", msg, "\n")
     else
-        print(Core.stdout, "[ Info] [Mongoose] ", msg, "\n")
+        print(Core.stdout, "[Info] [Mongoose] ", msg, "\n")
     end
 end
 
 @noinline function _log_warn(msg::String)
     if _STDERR_COLOR
-        print(Core.stderr, _YL, _B, "[ Warn]", _R, " [Mongoose] ", msg, "\n")
+        print(Core.stderr, _YL, _B, "[Warn]", _R, " [Mongoose] ", msg, "\n")
     else
-        print(Core.stderr, "[ Warn] [Mongoose] ", msg, "\n")
+        print(Core.stderr, "[Warn] [Mongoose] ", msg, "\n")
     end
 end
 

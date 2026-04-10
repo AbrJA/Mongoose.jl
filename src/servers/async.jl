@@ -151,7 +151,6 @@ function _eventloop(server::Async)
         end
         # Extra poll to flush mg_ws_send buffers immediately
         did_ws_send && mg_mgr_poll(server.core.manager.ptr, 1)
-        # Periodic WS idle sweep
         if server.core.ws_idle_timeout > 0 && !isempty(server.core.ws_clients)
             now_t = time()
             if (now_t - last_sweep) >= 5.0

@@ -17,7 +17,6 @@ abstract type StaticRouter <: AbstractRouter end
 """
 function _dispatchstatic end
 
-# Interface fallback — @router generates the real methods
 _dispatchstatic(app::T, ::AbstractRequest) where {T<:StaticRouter} =
     error("$(T) must implement _dispatchstatic via the @router macro")
 

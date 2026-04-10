@@ -109,7 +109,6 @@ function _onevent!(server::AbstractServer, ::Val{MG_EV_WS_CTL}, conn::MgConnecti
     return
 end
 
-# Server: process WS message directly on event-loop thread
 function _onevent!(server::Server, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
     conn_id = Int(conn)
@@ -134,7 +133,6 @@ function _onevent!(server::Server, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_d
     return
 end
 
-# Async: queue WS message to worker tasks
 function _onevent!(server::Async, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
     conn_id = Int(conn)
@@ -158,7 +156,6 @@ function _onevent!(server::Async, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_da
     return
 end
 
-# Connection close — cleanup WS state
 function _onevent!(server::AbstractServer, ::Val{MG_EV_CLOSE}, conn::MgConnection, ev_data::Ptr{Cvoid})
     _closews!(server, conn)
     return
