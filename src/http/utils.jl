@@ -147,7 +147,7 @@ end
 
 Return `true` when `s` contains no uppercase ASCII letters (A–Z).
 """
-@inline function _islowerascii(s::String)::Bool
+@inline function _islowerascii(s::String)
     @inbounds for i in 1:ncodeunits(s)
         b = codeunit(s, i)
         (UInt8('A') <= b <= UInt8('Z')) && return false

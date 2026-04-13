@@ -17,7 +17,7 @@ end
 
 Count the number of trie nodes that carry at least one handler.
 """
-function _countnodes(node::TrieNode)::Int
+function _countnodes(node::TrieNode)
     count = _hashandlers(node.handlers) ? 1 : 0
     for (_, child) in node.children
         count += _countnodes(child)
@@ -80,55 +80,8 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
     return
 end
 
-function _logstart(server::AbstractServer, url::String)
-    type = nameof(typeof(server))
-    routes = _routecount(server.core.router)
-    threads = Threads.nthreads()
-    middlewares = length(server.core.middlewares)
-    mounts = length(server.core.mounts)
-    workers = server isa Async ? server.nworkers : 0
-    if server.core.styled
-        buf = IOBuffer()
-        write(buf, "\n\e[1;36m🚀 Mongoose started\e[0m\n")
-        write(buf, "\e[90m  URL:     \e[0m\e[4;34m")
-        write(buf, url)
-        write(buf, "\e[0m\n\e[90m  API:     \e[0m\e[32m")
-        print(buf, routes)
-        write(buf, " routes • ")
-        print(buf, middlewares)
-        write(buf, " middleware • ")
-        print(buf, mounts)
-        write(buf, " mounts\e[0m\n\e[90m  Type:    \e[0m")
-        print(buf, type)
-        write(buf, "\n\e[90m  System:  \e[0m\e[32m")
-        print(buf, workers)
-        write(buf, " workers • ")
-        print(buf, threads)
-        write(buf, " threads\e[0m\n\n")
-        _print(String(take!(buf)))
-    else
-        _log_info("Mongoose started component=server type=$type url=$url routes=$routes middleware=$middlewares mounts=$mounts workers=$workers threads=$threads")
-    end
-end
-
-function _logstop(server::AbstractServer)
-    if server.core.styled
-        _print("\e[1;31m🛑 Mongoose shutting down...\e[0m\n")
-    else
-        _log_info("Mongoose shutting down... component=server")
-    end
-end
-
-function _logstopped(server::AbstractServer)
-    if server.core.styled
-        _print("\e[1;32m✅ Mongoose stopped.\e[0m\n")
-    else
-        _log_info("Mongoose stopped. component=server")
-    end
-end
-
 # Total registered handler-bearing nodes across fixed + dynamic trie.
-_routecount(r::Router) = length(r.fixed) + _countnodes(r.node)
+_routecount(r::Router) = string(length(r.fixed) + _countnodes(r.node))
 _routecount(::StaticRouter) = "static"  # routes compiled at build time via @router
 
 """

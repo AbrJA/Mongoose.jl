@@ -48,7 +48,7 @@ end
 
 Return the raw (non-cumulative) histogram bucket index for a given elapsed time in seconds.
 """
-@inline function _histidx(elapsed_s::Float64)::Int
+@inline function _histidx(elapsed_s::Float64)
     @inbounds for i in 1:length(_HIST_BOUNDS)
         elapsed_s <= _HIST_BOUNDS[i] && return i
     end
@@ -84,7 +84,7 @@ function (mw::PrometheusMetrics)(request::AbstractRequest, params::Vector{Any}, 
     return response
 end
 
-function _renderstats(mw::PrometheusMetrics)::Response
+function _renderstats(mw::PrometheusMetrics)
     # --- Aggregate all shards ---
     agg_counts = Dict{String,Int}()
     agg_raw    = zeros(Int, _N_HIST_BUCKETS)

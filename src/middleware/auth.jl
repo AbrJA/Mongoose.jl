@@ -35,7 +35,7 @@ end
 
 Case-insensitive, zero-allocation check that `s` starts with `"bearer "`.
 """
-@inline function _isbearer(s::AbstractString)::Bool
+@inline function _isbearer(s::AbstractString)
     _tolower(codeunit(s, 1)) == UInt8('b') || return false
     _tolower(codeunit(s, 2)) == UInt8('e') || return false
     _tolower(codeunit(s, 3)) == UInt8('a') || return false

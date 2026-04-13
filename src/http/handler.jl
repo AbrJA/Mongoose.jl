@@ -130,7 +130,7 @@ function _onevent!(server::Server, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev
     res = try
         _invokehttp(server, req)
     catch e
-        _log_error("Handler error component=http uri=$(req.uri)", e, catch_backtrace())
+        @log_error "Handler error component=http uri=" * req.uri e catch_backtrace()
         _handleerror(server, req, e)
     end
     rid = _resolveid(message, server)
@@ -194,7 +194,7 @@ or an empty string if it contains HTTP header-injection characters (`\r`, `\n`)
 or exceeds 128 bytes. This prevents response-splitting attacks when echoing
 an untrusted client-supplied ID into a response header.
 """
-@inline function _sanitizeid(s::String)::String
+@inline function _sanitizeid(s::String)
     length(s) > 128 && return ""
     @inbounds for i in 1:ncodeunits(s)
         b = codeunit(s, i)
@@ -211,7 +211,7 @@ If the incoming request carries a valid `X-Request-Id` header it is forwarded
 verbatim (enabling end-to-end distributed-trace correlation). Otherwise a new
 monotonic ID is generated from the server's atomic counter.
 """
-@inline function _requestid(req::AbstractRequest, server::AbstractServer)::String
+@inline function _requestid(req::AbstractRequest, server::AbstractServer)
     h = get(req.headers, "x-request-id", nothing)
     if h !== nothing
         safe = _sanitizeid(h)
@@ -226,7 +226,7 @@ end
 Fast-path request ID extraction from raw C `MgHttpMessage` headers,
 avoiding the cost of scanning the already-parsed `Vector{Pair}`.
 """
-@inline function _resolveid(message::MgHttpMessage, server::AbstractServer)::String
+@inline function _resolveid(message::MgHttpMessage, server::AbstractServer)
     for h in message.headers
         h.name.buf == C_NULL && break
         h.name.len == 0 && break
@@ -246,7 +246,7 @@ end
 Case-insensitive match for the 12-byte header name `"x-request-id"` directly
 on a C pointer, without allocating a Julia string.
 """
-@inline function _isxrequestid(ptr::Ptr{UInt8})::Bool
+@inline function _isxrequestid(ptr::Ptr{UInt8})
     _tolower(unsafe_load(ptr, 1))  == UInt8('x') || return false
     unsafe_load(ptr, 2)            == UInt8('-') || return false
     _tolower(unsafe_load(ptr, 3))  == UInt8('r') || return false
@@ -268,7 +268,7 @@ end
 Convert a `UInt64` to its decimal string representation without going through
 `string()`. Avoids Julia runtime formatting overhead on the hot request-ID path.
 """
-@inline function _uint64tostr(n::UInt64)::String
+@inline function _uint64tostr(n::UInt64)
     n == 0 && return "0"
     buf = Vector{UInt8}(undef, 20)
     i = 20
@@ -414,7 +414,7 @@ function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout:
     current = Threads.atomic_add!(_TIMED_INFLIGHT, 1)
     if current >= _MAX_TIMED
         Threads.atomic_sub!(_TIMED_INFLIGHT, 1)
-        _log_warn("Too many concurrent timed requests component=http uri=$(req.uri)")
+        @log_warn "Too many concurrent timed requests component=http uri=" * req.uri
         return _errresponse(server, 503)
     end
 
@@ -424,7 +424,7 @@ function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout:
             res = try
                 _invokehttp(server, req)
             catch e
-                _log_error("Handler error component=http uri=$(req.uri)", e, catch_backtrace())
+                @log_error "Handler error component=http uri=" * req.uri e catch_backtrace()
                 _handleerror(server, req, e)
             end
             try put!(ch, res) catch end
@@ -437,7 +437,7 @@ function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout:
     end
     if result === :timed_out
         close(ch)
-        _log_warn("Request timed out component=http uri=$(req.uri) timeout_ms=$timeout")
+        @log_warn "Request timed out component=http uri=" * req.uri * " timeout_ms=" * string(timeout)
         return _errresponse(server, 504)
     end
     return take!(ch)

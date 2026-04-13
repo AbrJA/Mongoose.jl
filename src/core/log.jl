@@ -1,90 +1,98 @@
 """
-    Trim-safe logging primitives for Mongoose.jl.
+    Logging for Mongoose.jl — trim=safe compatible.
 
-    Writes directly to `Core.stdout` / `Core.stderr` — concrete boot-time
-    `IOStream` values that survive `juliac --trim=safe` without the abstract
-    dispatch overhead of `@info` / `@warn` / `@error`. Color support is
-    detected once at module load via `isatty` and cached, so there is zero
-    overhead on the hot logging path.
+    All log calls use `print(Core.stdout/stderr, …)` with concrete String
+    dispatch, fully compatible with `juliac --trim=safe` AOT compilation.
+
+    Source location (file and line number) is captured at compile time by the
+    `@log_info`, `@log_warn`, and `@log_error` macros and embedded as string
+    literals in the generated code — zero runtime cost, no abstract dispatch.
+
+    Usage:
+        @log_info  "Server ready"
+        @log_warn  "Queue full"
+        @log_error "Handler failed"
+        @log_error "Handler failed" exception
+        @log_error "Handler failed" exception catch_backtrace()
 """
 
-# Windows CRT exports _isatty; POSIX systems export isatty.
-@static if Sys.iswindows()
-    const _STDOUT_COLOR = ccall(:_isatty, Cint, (Cint,), Cint(1)) != 0
-    const _STDERR_COLOR = ccall(:_isatty, Cint, (Cint,), Cint(2)) != 0
-else
-    const _STDOUT_COLOR = ccall(:isatty, Cint, (Cint,), Cint(1)) != 0
-    const _STDERR_COLOR = ccall(:isatty, Cint, (Cint,), Cint(2)) != 0
+# ── Underlying @noinline implementations ──────────────────────────────────────
+
+@noinline function _log_info_impl(file::String, line::Int, msg::String)
+    print(Core.stdout, "[Info] [Mongoose] " * file * ":" * string(line) * " — " * msg * "\n")
 end
 
-const _R  = "\e[0m"
-const _B  = "\e[1m"
-const _D  = "\e[2m"
-const _CY = "\e[36m"
-const _YL = "\e[33m"
-const _RD = "\e[31m"
-
-"Write a pre-formatted ANSI string directly to stdout. Used by the styled log paths."
-@noinline _print(s::String) = print(Core.stdout, s)
-
-@noinline function _log_info(msg::String)
-    if _STDOUT_COLOR
-        print(Core.stdout, _CY, _B, "[Info]", _R, " [Mongoose] ", msg, "\n")
-    else
-        print(Core.stdout, "[Info] [Mongoose] ", msg, "\n")
-    end
+@noinline function _log_warn_impl(file::String, line::Int, msg::String)
+    print(Core.stderr, "[Warn] [Mongoose] " * file * ":" * string(line) * " — " * msg * "\n")
 end
 
-@noinline function _log_warn(msg::String)
-    if _STDERR_COLOR
-        print(Core.stderr, _YL, _B, "[Warn]", _R, " [Mongoose] ", msg, "\n")
-    else
-        print(Core.stderr, "[Warn] [Mongoose] ", msg, "\n")
-    end
+# Errors don't include a call-site — the catch block location is not useful.
+# The component= field in the message and the exception type identify the issue.
+@noinline function _log_error_impl(msg::String)
+    print(Core.stderr, "[Error] [Mongoose] " * msg * "\n")
 end
 
-@noinline function _log_error(msg::String)
-    if _STDERR_COLOR
-        print(Core.stderr, _RD, _B, "[Error]", _R, " [Mongoose] ", msg, "\n")
-    else
-        print(Core.stderr, "[Error] [Mongoose] ", msg, "\n")
-    end
-end
-
-"""
-    _log_error(msg, e, bt=nothing)
-
-Log an error with exception details and optional backtrace.
-`bt` must be captured via `catch_backtrace()` inside the `catch` block.
-Both `showerror` and `Base.show_backtrace` are wrapped in `try/catch` so the
-output degrades gracefully to the exception type name in trimmed binaries.
-"""
-@noinline function _log_error(msg::String, e::Exception, bt=nothing)
+@noinline function _log_error_impl(msg::String, @nospecialize(e))
     estr = try
-        sprint(showerror, e)
+        String(nameof(typeof(e)))
     catch
-        string(nameof(typeof(e)))
+        "unknown error"
     end
+    print(Core.stderr, "[Error] [Mongoose] " * msg * "\n        exception=" * estr * "\n")
+end
 
-    btstr = if bt !== nothing
-        try
-            buf = IOBuffer()
-            Base.show_backtrace(buf, bt)
-            String(take!(buf))
-        catch
-            ""
-        end
-    else
-        ""
-    end
+# ── Macros ──────────────────────────────────────────────────────────────
+#
+macro log_info(msg)
+    file = basename(string(__source__.file))
+    line = __source__.line
+    :(_log_info_impl($file, $line, $(esc(msg))))
+end
 
-    if _STDERR_COLOR
-        print(Core.stderr, _RD, _B, "[Error]", _R, " [Mongoose] ", msg, "\n",
-              "       ", _B, estr, _R, "\n")
-        isempty(btstr) || print(Core.stderr, _D, btstr, _R, "\n")
-    else
-        print(Core.stderr, "[Error] [Mongoose] ", msg, "\n",
-              "       ", estr, "\n")
-        isempty(btstr) || print(Core.stderr, btstr, "\n")
-    end
+macro log_warn(msg)
+    file = basename(string(__source__.file))
+    line = __source__.line
+    :(_log_warn_impl($file, $line, $(esc(msg))))
+end
+
+macro log_error(msg)
+    :(_log_error_impl($(esc(msg))))
+end
+
+macro log_error(msg, e)
+    :(_log_error_impl($(esc(msg)), $(esc(e))))
+end
+
+macro log_error(msg, e, bt)
+    :(_log_error_impl($(esc(msg)), $(esc(e))))
+end
+
+# ── Lifecycle helpers ──────────────────────────────────────────────────────────
+
+function _logstart(server::AbstractServer, url::String)
+    s_routes  = string(_routecount(server.core.router))
+    s_mw      = string(length(server.core.middlewares))
+    s_mounts  = string(length(server.core.mounts))
+    s_workers = string(server isa Async ? server.nworkers : 0)
+    s_threads = string(Threads.nthreads())
+    io = Core.stdout
+    print(io, "\n")
+    printstyled(io, "🚀 Mongoose started\n"; bold=true, color=:cyan)
+    printstyled(io, "  URL:     "; color=:light_black)
+    printstyled(io, url * "\n"; underline=true, color=:blue)
+    printstyled(io, "  API:     "; color=:light_black)
+    printstyled(io, s_routes * " routes • " * s_mw * " middleware • " * s_mounts * " mounts\n"; color=:green)
+    printstyled(io, "  Type:    "; color=:light_black)
+    print(io, String(nameof(typeof(server))) * "\n")
+    printstyled(io, "  System:  "; color=:light_black)
+    printstyled(io, s_workers * " workers • " * s_threads * " threads\n"; color=:green)
+    print(io, "\n")
+end
+
+function _logstop(server::AbstractServer)
+    printstyled(Core.stdout, "🛑 Mongoose shutting down...\n"; bold=true, color=:red)
+end
+
+function _logstopped(server::AbstractServer)
+    printstyled(Core.stdout, "✅ Mongoose stopped.\n"; bold=true, color=:green)
 end

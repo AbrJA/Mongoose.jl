@@ -52,7 +52,7 @@ function _callwsep(endpoint::WsEndpoint, request::Tagged{Intent})
         res = endpoint.on_message(request.payload.body)
         return _tagws(request.id, res)
     catch e
-        _log_error("WebSocket on_message error component=websocket uri=$(request.payload.uri)", e, catch_backtrace())
+        @log_error "WebSocket on_message error component=websocket uri=" * request.payload.uri e catch_backtrace()
     end
     return nothing
 end
@@ -67,7 +67,7 @@ function _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
             result = endpoint.on_open(req)
             result !== false  # anything other than literal `false` means accept
         catch e
-            _log_error("WebSocket on_open error component=websocket uri=$uri", e, catch_backtrace())
+            @log_error "WebSocket on_open error component=websocket uri=" * uri e catch_backtrace()
             true
         end
         if !accepted
@@ -151,7 +151,7 @@ function _onevent!(server::Async, ::Val{MG_EV_WS_MSG}, conn::MgConnection, ev_da
     uri = let e = get(server.core.ws_clients, conn_id, nothing); e === nothing ? "" : e.uri end
     server.connections[conn_id] = conn
     if !_tryput!(server.calls, Tagged(conn_id, Intent(ws_msg, uri)), server.nqueue)
-        _log_warn("WebSocket message dropped: worker queue full component=websocket conn_id=$conn_id")
+        @log_warn "WebSocket message dropped: worker queue full component=websocket conn_id=" * string(conn_id)
     end
     return
 end
@@ -186,7 +186,7 @@ function _closews!(server::AbstractServer, conn::MgConnection)
             try
                 endpoint.on_close()
             catch e
-                _log_error("WebSocket on_close error component=websocket uri=$uri", e, catch_backtrace())
+                @log_error "WebSocket on_close error component=websocket uri=" * uri e catch_backtrace()
             end
         end
     end

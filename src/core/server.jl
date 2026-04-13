@@ -51,16 +51,13 @@ mutable struct ServerCore{R <: AbstractRouter}
     max_body::Int
     ws_idle_timeout::Int
 
-    styled::Bool
-
     function ServerCore(poll_timeout::Integer, router::R;
                         max_body::Integer = MAX_BODY,
                         drain_timeout::Integer = DRAIN_TIMEOUT,
                         request_timeout::Integer = 0,
                         ws_idle_timeout::Integer = 0,
                         errors::Dict{Int, Response} = Dict{Int, Response}(),
-                        c_handler::Ptr{Cvoid} = C_NULL,
-                        styled::Bool = isa(stdout, Base.TTY)) where {R <: AbstractRouter}
+                        c_handler::Ptr{Cvoid} = C_NULL) where {R <: AbstractRouter}
 
         return new{R}(
             Threads.Atomic{Bool}(false),
@@ -77,8 +74,7 @@ mutable struct ServerCore{R <: AbstractRouter}
             request_timeout,
             drain_timeout,
             max_body,
-            ws_idle_timeout,
-            styled
+            ws_idle_timeout
         )
     end
 end
@@ -129,7 +125,6 @@ Base.@kwdef struct Config
     nworkers::Int           = 4
     nqueue::Int             = 1024
     errors::Dict{Int,Response} = Dict{Int,Response}()
-    styled::Bool = isa(stdout, Base.TTY)
 end
 
 mutable struct Server{R <: AbstractRouter} <: AbstractServer
@@ -168,7 +163,7 @@ function _spawnloop!(server::AbstractServer)
             _eventloop(server)
         catch e
             if !isa(e, InterruptException)
-                _log_error("Server event loop error component=eventloop", e, catch_backtrace())
+                @log_error "Server event loop error component=eventloop" e catch_backtrace()
             end
         finally
             server.core.running[] = false

@@ -72,18 +72,15 @@ function _parseroute(path::String)
     segments = RouteSegment[]
     parts = split(path, '/', keepempty=false)
     for (i, part) in enumerate(parts)
-        if startswith(part, "{") && endswith(part, "}")
-            inner = part[2:end-1]
-            if occursin("::", inner)
-                name, typestr = split(inner, "::", limit=2)
+        if startswith(part, ":")
+            # :name  or  :name::Type  — mirrors dynamic router syntax
+            spec = part[2:end]
+            if occursin("::", spec)
+                name, typestr = split(spec, "::", limit=2)
                 push!(segments, RouteSegment(true, String(name), Symbol(typestr)))
             else
-                push!(segments, RouteSegment(true, String(inner), SubString{String}))
+                push!(segments, RouteSegment(true, String(spec), SubString{String}))
             end
-        elseif startswith(part, ":")
-            # Support :name syntax but convert to SubString for performance
-            name = part[2:end]
-            push!(segments, RouteSegment(true, String(name), SubString{String}))
         elseif startswith(part, "*")
             i < length(parts) && error("RouteError: wildcard segment *$(part[2:end]) must be the last segment in route \"$path\"")
             name = part[2:end]
@@ -272,11 +269,12 @@ end
 
 Generate a static router for `AppType`.
 Routes are defined as: `METHOD("/path", handler)`
-Example:
+
+Typed parameters use `:name::Type` syntax (mirrors the dynamic router):
 ```julia
 @router MyApp begin
-    get("/", (req) -> Response(200, "OK"))
-    get("/users/{id::Int}", (req, id) -> Response(200, "User \$id"))
+    get("/",               (req) -> Response(200, "OK"))
+    get("/users/:id::Int", (req, id) -> Response(200, "User \$id"))
 end
 ```
 """
@@ -306,7 +304,7 @@ macro router(app_type::Symbol, block)
             try
                 Mongoose._dispatchev(server, ev, conn, ev_data)
             catch e
-                Mongoose._log_error("Event handler error component=eventloop", e, Base.catch_backtrace())
+                Mongoose._log_error_impl("Event handler error component=eventloop", e)
             end
             return nothing
         end
@@ -322,7 +320,7 @@ macro router(app_type::Symbol, block)
             try
                 Mongoose._dispatchev(server, ev, conn, ev_data)
             catch e
-                Mongoose._log_error("Event handler error component=eventloop", e, Base.catch_backtrace())
+                Mongoose._log_error_impl("Event handler error component=eventloop", e)
             end
             return nothing
         end

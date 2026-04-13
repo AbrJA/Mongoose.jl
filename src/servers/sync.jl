@@ -21,11 +21,10 @@ function Server(router::AbstractRouter=Router();
                     max_body::Integer=MAX_BODY,
                     drain_timeout::Integer=DRAIN_TIMEOUT,
                     ws_idle_timeout::Integer=0,
-                    errors::Dict{Int,Response}=Dict{Int,Response}(),
-                    styled::Bool=isa(stdout, Base.TTY))
+                    errors::Dict{Int,Response}=Dict{Int,Response}())
     c_handler = Mongoose._cfnsync(typeof(router))
     core = ServerCore(poll_timeout, router; max_body=max_body, drain_timeout=drain_timeout,
-                      ws_idle_timeout=ws_idle_timeout, errors=errors, c_handler=c_handler, styled=styled)
+                      ws_idle_timeout=ws_idle_timeout, errors=errors, c_handler=c_handler)
     server = Server{typeof(router)}(core)
     finalizer(_teardown!, server)
     return server
@@ -42,8 +41,7 @@ function Server(router::AbstractRouter, config::Config)
         max_body    = config.max_body,
         drain_timeout = config.drain_timeout,
         ws_idle_timeout = config.ws_idle_timeout,
-        errors  = config.errors,
-        styled = config.styled
+        errors  = config.errors
     )
 end
 

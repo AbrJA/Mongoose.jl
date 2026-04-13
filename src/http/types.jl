@@ -119,7 +119,7 @@ end
 
 Return the request context, creating it on first access.
 """
-@inline function context!(req::Request)::Dict{Symbol,Any}
+@inline function context!(req::Request)
     req.context === nothing && (req.context = Dict{Symbol,Any}())
     return req.context::Dict{Symbol,Any}
 end
@@ -188,7 +188,7 @@ end
 Convert an MgStr to a lowercase Julia String in a single pass.
 Avoids the double allocation of `lowercase(_tostring(str))`.
 """
-@inline function _tolowerstr(str::MgStr)::String
+@inline function _tolowerstr(str::MgStr)
     len = Int(str.len)
     buf = Vector{UInt8}(undef, len)
     src = str.buf

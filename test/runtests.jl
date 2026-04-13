@@ -17,7 +17,7 @@ end
 end
 
 @router TypedApp begin
-    get("/item/{id::Int}", (req, id) -> Response(200, "", "id=$id type=$(typeof(id))"))
+    get("/item/:id::Int", (req, id) -> Response(200, "", "id=$id type=$(typeof(id))"))
 end
 
 @testset "Mongoose.jl" begin
@@ -699,7 +699,7 @@ end
         route!(server, "POST", "/a", (req) -> Response(200, "", "from post"))
         start!(server; port=8115, blocking=false)
         wait_for_server("http://localhost:8115/")
-        
+
         try
             resp = HTTP.get("http://localhost:8115/a")
             @test resp.status == 200
@@ -871,7 +871,7 @@ end
         server = Server(router)
         start!(server; port=8119, blocking=false)
         wait_for_server("http://localhost:8119/")
-        
+
         try
             resp = HTTP.get("http://localhost:8119/ping")
             @test resp.status == 200
@@ -950,7 +950,7 @@ end
         server = Server(router)
         start!(server; port=8122, blocking=false)
         wait_for_server("http://localhost:8122/")
-        
+
         try
             start!(server; port=8123, blocking=false)  # different port — should be ignored
             # original port still works, 8123 never opened
@@ -1679,7 +1679,7 @@ end
         s_async   = Async(router, cfg_async)
         start!(s_async; port=8211, blocking=false)
         wait_for_server("http://localhost:8211/")
-        
+
         try
             resp = HTTP.get("http://localhost:8211/ping")
             @test resp.status == 200
@@ -1889,7 +1889,7 @@ end
         end
     end
 
-    @testset "@router: typed param {id::Int} non-matching value → 404" begin
+    @testset "@router: typed param :id::Int → typed dispatch and 404 on mismatch" begin
         server = Server(TypedApp)
         start!(server; port=8219, blocking=false)
         wait_for_server("http://localhost:8219/")
