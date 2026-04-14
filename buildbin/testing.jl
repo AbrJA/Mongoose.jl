@@ -1,9 +1,9 @@
 #!/usr/bin/env julia
 #
-# buildbin/test_trim.jl — Compile + smoke-test the juliac trim=safe binary.
+# buildbin/testing.jl — Compile + smoke-test the juliac trim=safe binary.
 # Run from the repository root:
 #
-#   julia --project buildbin/test_trim.jl
+#   julia --project buildbin/testing.jl
 #
 # This script:
 #   1. Compiles example/juliac/server.jl with juliac --trim=safe
@@ -14,6 +14,9 @@
 #
 # Exit code 0 = all checks passed.
 
+using Base64
+using Random
+using SHA
 using Sockets
 
 const ROOT = dirname(@__DIR__)
@@ -21,6 +24,17 @@ const SRC  = joinpath(ROOT, "example", "juliac", "server.jl")
 const BIN  = joinpath(ROOT, "binary")
 const HOST = "127.0.0.1"
 const PORT = 8099
+const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+const WS_TEXT = UInt8(0x1)
+const WS_BINARY = UInt8(0x2)
+const WS_CLOSE = UInt8(0x8)
+const WS_PING = UInt8(0x9)
+const WS_PONG = UInt8(0xA)
+
+mutable struct WsClient
+    sock::TCPSocket
+    buffer::Vector{UInt8}
+end
 
 # ── Helpers ──────────────────────────────────────────
 
@@ -45,6 +59,53 @@ function _read_cl(data::Vector{UInt8}, sep::Int)
     return nothing
 end
 
+function _read_http_response(sock::TCPSocket, method::String; timeout=5)
+    data = UInt8[]
+    deadline = time() + timeout
+    sep = 0
+
+    while sep == 0 && time() < deadline
+        isopen(sock) || break
+        chunk = readavailable(sock)
+        if isempty(chunk)
+            sleep(0.01)
+            continue
+        end
+        append!(data, chunk)
+        sep = _find_hdr_end(data)
+    end
+
+    sep == 0 && return String(data)
+
+    body_off = sep + 4
+    cl = _read_cl(data, sep)
+
+    if method == "HEAD"
+        nothing
+    elseif cl !== nothing && cl > 0
+        while length(data) - body_off + 1 < cl && time() < deadline
+            isopen(sock) || break
+            chunk = readavailable(sock)
+            if isempty(chunk)
+                sleep(0.01)
+                continue
+            end
+            append!(data, chunk)
+        end
+    elseif cl === nothing
+        while isopen(sock) && time() < deadline
+            chunk = readavailable(sock)
+            if isempty(chunk)
+                sleep(0.01)
+                continue
+            end
+            append!(data, chunk)
+        end
+    end
+
+    return String(data)
+end
+
 function http_request(host, port, method, path; body="", headers=Pair{String,String}[], timeout=5)
     sock = nothing
     try
@@ -61,46 +122,7 @@ function http_request(host, port, method, path; body="", headers=Pair{String,Str
         write(buf, "Connection: close\r\n\r\n")
         !isempty(body) && write(buf, body)
         write(sock, take!(buf))
-
-        # --- Read response with Content-Length framing ---
-        data = UInt8[]
-        deadline = time() + timeout
-        sep = 0
-
-        # Phase 1: accumulate bytes until \r\n\r\n
-        while sep == 0 && time() < deadline
-            isopen(sock) || break
-            chunk = readavailable(sock)
-            if isempty(chunk); sleep(0.01); continue; end
-            append!(data, chunk)
-            sep = _find_hdr_end(data)
-        end
-
-        sep == 0 && return String(data)
-
-        # Phase 2: read body according to Content-Length
-        body_off = sep + 4
-        cl = _read_cl(data, sep)
-
-        if method == "HEAD"
-            # HEAD never has a body
-        elseif cl !== nothing && cl > 0
-            while length(data) - body_off + 1 < cl && time() < deadline
-                isopen(sock) || break
-                chunk = readavailable(sock)
-                if isempty(chunk); sleep(0.01); continue; end
-                append!(data, chunk)
-            end
-        elseif cl === nothing
-            # No Content-Length — read until close or timeout
-            while isopen(sock) && time() < deadline
-                chunk = readavailable(sock)
-                if isempty(chunk); sleep(0.01); continue; end
-                append!(data, chunk)
-            end
-        end
-
-        return String(data)
+        return _read_http_response(sock, method; timeout=timeout)
     catch
         return ""
     finally
@@ -143,23 +165,149 @@ function wait_for_server(host, port; timeout=15.0)
     return false
 end
 
+function _ws_take!(client::WsClient, n::Int; timeout=5)
+    deadline = time() + timeout
+    while length(client.buffer) < n && time() < deadline
+        isopen(client.sock) || break
+        chunk = readavailable(client.sock)
+        if isempty(chunk)
+            sleep(0.01)
+            continue
+        end
+        append!(client.buffer, chunk)
+    end
+    length(client.buffer) < n && error("WebSocket read timed out")
+    data = copy(client.buffer[1:n])
+    client.buffer = n == length(client.buffer) ? UInt8[] : client.buffer[n+1:end]
+    return data
+end
+
+function _ws_read_headers!(client::WsClient; timeout=5)
+    deadline = time() + timeout
+    sep = _find_hdr_end(client.buffer)
+    while sep == 0 && time() < deadline
+        isopen(client.sock) || break
+        chunk = readavailable(client.sock)
+        if isempty(chunk)
+            sleep(0.01)
+            continue
+        end
+        append!(client.buffer, chunk)
+        sep = _find_hdr_end(client.buffer)
+    end
+    sep == 0 && error("WebSocket handshake timed out")
+    hdr_end = sep + 3
+    raw = String(copy(client.buffer[1:hdr_end]))
+    client.buffer = hdr_end == length(client.buffer) ? UInt8[] : client.buffer[hdr_end+1:end]
+    return raw
+end
+
+function _ws_accept(key::String)
+    return base64encode(sha1(key * WS_GUID))
+end
+
+function ws_open(path; headers=Pair{String,String}[], timeout=5)
+    sock = connect(HOST, PORT)
+    client = WsClient(sock, UInt8[])
+    key = base64encode(rand(UInt8, 16))
+
+    buf = IOBuffer()
+    write(buf, "GET ", path, " HTTP/1.1\r\n")
+    write(buf, "Host: ", HOST, ":", string(PORT), "\r\n")
+    write(buf, "Upgrade: websocket\r\n")
+    write(buf, "Connection: Upgrade\r\n")
+    write(buf, "Sec-WebSocket-Key: ", key, "\r\n")
+    write(buf, "Sec-WebSocket-Version: 13\r\n")
+    for (k, v) in headers
+        write(buf, k, ": ", v, "\r\n")
+    end
+    write(buf, "\r\n")
+    write(sock, take!(buf))
+
+    raw = _ws_read_headers!(client; timeout=timeout)
+    parse_status(raw) == 101 || error("WebSocket upgrade failed: " * raw)
+    parse_header(raw, "Sec-WebSocket-Accept") == _ws_accept(key) || error("Invalid WebSocket accept header")
+    return client
+end
+
+function ws_send_frame(client::WsClient, opcode::UInt8, payload::Vector{UInt8}=UInt8[]; fin=true)
+    len = length(payload)
+    len <= typemax(UInt16) || error("Payload too large for smoke test WebSocket client")
+
+    buf = IOBuffer()
+    first = (fin ? 0x80 : 0x00) | Int(opcode)
+    write(buf, UInt8(first))
+    if len < 126
+        write(buf, UInt8(0x80 | len))
+    else
+        write(buf, UInt8(0x80 | 126))
+        write(buf, UInt8((len >> 8) & 0xff))
+        write(buf, UInt8(len & 0xff))
+    end
+
+    mask = rand(UInt8, 4)
+    write(buf, mask)
+    masked = similar(payload)
+    for i in eachindex(payload)
+        masked[i] = xor(payload[i], mask[mod1(i, 4)])
+    end
+    write(buf, masked)
+    write(client.sock, take!(buf))
+    return nothing
+end
+
+function ws_send_text(client::WsClient, text::String)
+    ws_send_frame(client, WS_TEXT, collect(codeunits(text)))
+end
+
+function ws_send_binary(client::WsClient, bytes::Vector{UInt8})
+    ws_send_frame(client, WS_BINARY, bytes)
+end
+
+function ws_receive_frame(client::WsClient; timeout=5)
+    hdr = _ws_take!(client, 2; timeout=timeout)
+    opcode = hdr[1] & 0x0f
+    masked = (hdr[2] & 0x80) != 0
+    len_tag = Int(hdr[2] & 0x7f)
+
+    len = if len_tag < 126
+        len_tag
+    elseif len_tag == 126
+        ext = _ws_take!(client, 2; timeout=timeout)
+        (Int(ext[1]) << 8) | Int(ext[2])
+    else
+        error("Unsupported 64-bit WebSocket payload in smoke test")
+    end
+
+    mask = masked ? _ws_take!(client, 4; timeout=timeout) : UInt8[]
+    payload = len == 0 ? UInt8[] : _ws_take!(client, len; timeout=timeout)
+    if masked
+        for i in eachindex(payload)
+            payload[i] = xor(payload[i], mask[mod1(i, 4)])
+        end
+    end
+    return opcode, payload
+end
+
+function ws_close(client::WsClient)
+    try
+        ws_send_frame(client, WS_CLOSE)
+        ws_receive_frame(client; timeout=1)
+    catch
+    finally
+        isopen(client.sock) && close(client.sock)
+    end
+    return nothing
+end
+
 # ── Compile ──────────────────────────────────────────
 
-# Rebuild the Mongoose precompile cache with TRIMABLE_LOGS=true so that juliac finds
-# the correct const value and can dead-code-eliminate the :julia backend branch.
-println("┌─ Precompiling Mongoose with TRIMABLE_LOGS=true …")
-precompile_cmd = addenv(
-    Cmd(`julia --project $ROOT -e 'import Mongoose'`; dir=ROOT),
-    "TRIMABLE_LOGS" => "true"
-)
-run(pipeline(precompile_cmd; stderr=stderr); wait=true)
-
-println("├─ Compiling with juliac --trim=safe …")
+# No precompile step needed: @log_* macros select their backend at expansion time
+# (compile time), not via a runtime const. juliac sees only trim-safe print
+# calls because LOG_NATIVE is unset.
+println("┌─ Compiling with juliac --trim=safe …")
 t0 = time()
-compile_cmd = addenv(
-    Cmd(`juliac --trim=safe --project $ROOT --output-exe binary $SRC`; dir=ROOT),
-    "TRIMABLE_LOGS" => "true"
-)
+compile_cmd = Cmd(`juliac --trim=safe --project $ROOT --output-exe binary $SRC`; dir=ROOT)
 compile = run(pipeline(compile_cmd; stderr=stderr); wait=true)
 if compile.exitcode != 0
     printstyled("│  ✗ Compilation failed (exit $(compile.exitcode))\n"; color=:red, bold=true)
@@ -236,6 +384,10 @@ raw = http_get("/format/json")
 check("JSON format → Content-Type: application/json",
     parse_status(raw) == 200 && occursin("application/json", raw))
 
+raw = http_get("/format/plain")
+check("Plain format → default Content-Type: text/plain",
+    parse_status(raw) == 200 && occursin("text/plain", raw) && parse_body(raw) == "plain response body")
+
 raw = http_get("/format/html")
 check("HTML format → Content-Type: text/html",
     parse_status(raw) == 200 && occursin("text/html", raw))
@@ -255,6 +407,10 @@ check("JS format → Content-Type: application/javascript",
 raw = http_get("/format/binary")
 check("Binary format → Content-Type: application/octet-stream",
     parse_status(raw) == 200 && occursin("application/octet-stream", raw))
+
+raw = http_get("/format/binary/typed")
+check("Binary Response(Binary, bytes) → typed constructor works",
+    parse_status(raw) == 200 && occursin("application/octet-stream", raw) && sizeof(parse_body(raw)) == 4)
 
 # ── CRUD methods ─────────────────────────────────────
 println("│")
@@ -281,6 +437,10 @@ raw = http_head("/hello")
 check("HEAD /hello → 200 (empty body)",
     parse_status(raw) == 200 && isempty(strip(parse_body(raw))))
 
+raw = http_head("/head-probe")
+check("HEAD /head-probe → headers preserved, empty body",
+    parse_status(raw) == 200 && parse_header(raw, "X-Head-Check") == "yes" && isempty(strip(parse_body(raw))))
+
 # ── Query parsing ────────────────────────────────────
 println("│")
 printstyled("│  ── Features ──\n"; color=:cyan)
@@ -288,6 +448,10 @@ printstyled("│  ── Features ──\n"; color=:cyan)
 raw = http_get("/search?q=hello&page=3")
 check("Query parsing → struct(q,page)",
     parse_status(raw) == 200 && occursin("\"q\":\"hello\"", parse_body(raw)) && occursin("\"page\":3", parse_body(raw)))
+
+raw = http_get("/calc/add/1.5/2.25")
+check("Typed Float64 params → parse and compute",
+    parse_status(raw) == 200 && occursin("\"sum\":3.75", parse_body(raw)))
 
 # ── Context ──────────────────────────────────────────
 
@@ -326,6 +490,23 @@ raw = http_get("/static/index.html")
 check("mount! static → index.html served",
     parse_status(raw) == 200 && occursin("Static Index", parse_body(raw)))
 
+raw = http_get("/static/test.txt"; headers=["Range" => "bytes=0-4"])
+check("mount! static → Range request returns 206",
+    parse_status(raw) == 206 && parse_body(raw) == "hello")
+
+raw = http_get("/static/test.txt")
+etag = parse_header(raw, "ETag")
+check("mount! static → ETag present",
+    etag !== nothing && !isempty(etag))
+
+if etag !== nothing && !isempty(etag)
+    raw = http_get("/static/test.txt"; headers=["If-None-Match" => etag])
+    check("mount! static → If-None-Match returns 304",
+        parse_status(raw) == 304)
+else
+    check("mount! static → If-None-Match returns 304", false; detail="ETag header missing from initial static response")
+end
+
 # ── X-Request-Id header ─────────────────────────────
 println("│")
 printstyled("│  ── Infrastructure ──\n"; color=:cyan)
@@ -340,6 +521,54 @@ raw = http_get("/hello"; headers=["X-Request-Id" => "trace-abc-123"])
 rid = parse_header(raw, "X-Request-Id")
 check("X-Request-Id → echo-back supplied ID",
     rid == "trace-abc-123")
+
+# ── WebSocket lifecycle ─────────────────────────────
+println("│")
+printstyled("│  ── WebSocket ──\n"; color=:cyan)
+
+ws_client_ref = Ref{Union{Nothing,WsClient}}(nothing)
+try
+    ws_client_ref[] = ws_open("/ws/chat"; headers=["X-Chat-Auth" => "trim-safe"])
+    check("WS /ws/chat → 101 upgrade", true)
+
+    ws_send_text(ws_client_ref[]::WsClient, "hello")
+    opcode, payload = ws_receive_frame(ws_client_ref[]::WsClient)
+    check("WS text echo → Message(String)",
+        opcode == WS_TEXT && String(payload) == "echo:text:hello")
+
+    ws_send_binary(ws_client_ref[]::WsClient, UInt8[0x10, 0x20, 0x30])
+    opcode, payload = ws_receive_frame(ws_client_ref[]::WsClient)
+    check("WS binary echo → Message(Vector{UInt8})",
+        opcode == WS_BINARY && payload == UInt8[0x42, 0x10, 0x20, 0x30])
+
+    ws_send_frame(ws_client_ref[]::WsClient, WS_PING, UInt8[0xaa, 0xbb])
+    opcode, payload = ws_receive_frame(ws_client_ref[]::WsClient)
+    check("WS ping → automatic pong",
+        opcode == WS_PONG && payload == UInt8[0xaa, 0xbb])
+catch e
+    check("WS /ws/chat → 101 upgrade", false; detail=sprint(showerror, e))
+finally
+    ws_client_ref[] !== nothing && ws_close(ws_client_ref[]::WsClient)
+end
+
+sleep(0.2)
+raw = http_get("/ws/state")
+body = parse_body(raw)
+check("WS lifecycle callbacks → open/close tracked",
+    parse_status(raw) == 200 &&
+    occursin("\"opened\":1", body) &&
+    occursin("\"closed\":1", body) &&
+    occursin("\"last_auth\":\"trim-safe\"", body))
+
+reject_headers = [
+    "Upgrade" => "websocket",
+    "Connection" => "Upgrade",
+    "Sec-WebSocket-Key" => base64encode(rand(UInt8, 16)),
+    "Sec-WebSocket-Version" => "13",
+]
+raw = http_get("/ws/reject"; headers=reject_headers)
+check("WS /ws/reject → 403 from on_open=false",
+    parse_status(raw) == 403)
 
 # ── Cleanup ──────────────────────────────────────────
 

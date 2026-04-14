@@ -304,7 +304,7 @@ macro router(app_type::Symbol, block)
             try
                 Mongoose._dispatchev(server, ev, conn, ev_data)
             catch e
-                Mongoose._log_error_impl("Event handler error component=eventloop", e)
+                Mongoose._log_error_impl("router/static.jl", 0, "Event handler error component=eventloop", e)
             end
             return nothing
         end
@@ -320,7 +320,7 @@ macro router(app_type::Symbol, block)
             try
                 Mongoose._dispatchev(server, ev, conn, ev_data)
             catch e
-                Mongoose._log_error_impl("Event handler error component=eventloop", e)
+                Mongoose._log_error_impl("router/static.jl", 0, "Event handler error component=eventloop", e)
             end
             return nothing
         end
@@ -352,11 +352,11 @@ macro router(app_type::Symbol, block)
         end
 
         # --- Static WebSocket Dispatch ---
-        function Mongoose._wsupgrade(::$(esc(app_type)), uri::String)::Union{Mongoose.WsEndpoint,Nothing}
+        function Mongoose._wsupgrade(::$(esc(app_type)), uri::String)
             $(Expr(:block, [
                 quote
                     if uri == $path
-                        return Mongoose.WsEndpoint(; $([Expr(:kw, k, esc(v)) for (k, v) in kwargs]...))
+                        return Mongoose.StaticWsEndpoint(; $([Expr(:kw, k, esc(v)) for (k, v) in kwargs]...))
                     end
                 end for (path, kwargs) in ws_routes
             ]...))

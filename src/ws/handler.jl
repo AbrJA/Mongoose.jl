@@ -57,6 +57,16 @@ function _callwsep(endpoint::WsEndpoint, request::Tagged{Intent})
     return nothing
 end
 
+function _callwsep(endpoint::StaticWsEndpoint{M,O,C}, request::Tagged{Intent}) where {M,O,C}
+    try
+        res = endpoint.on_message(request.payload.body)
+        return _tagws(request.id, res)
+    catch e
+        @log_error "WebSocket on_message error component=websocket uri=" * request.payload.uri e catch_backtrace()
+    end
+    return nothing
+end
+
 @inline _wsep(router::Router, uri) = get(router.ws_routes, uri, nothing)
 @inline _wsep(router::StaticRouter, uri) = _wsupgrade(router, uri)
 
@@ -74,6 +84,28 @@ function _wsupgrade!(server, conn, ev_data, uri, endpoint, message)
             mg_http_reply(conn, 403, "", "Forbidden")
             return
         end
+    end
+    mg_ws_upgrade(conn, ev_data, C_NULL)
+    _wsregister!(server, Int(conn), uri)
+end
+
+function _wsupgrade!(server, conn, ev_data, uri, endpoint::StaticWsEndpoint{M,Nothing,C}, message) where {M,C}
+    mg_ws_upgrade(conn, ev_data, C_NULL)
+    _wsregister!(server, Int(conn), uri)
+end
+
+function _wsupgrade!(server, conn, ev_data, uri, endpoint::StaticWsEndpoint{M,O,C}, message) where {M,O,C}
+    req = Request(message)
+    accepted = try
+        result = endpoint.on_open(req)
+        result !== false
+    catch e
+        @log_error "WebSocket on_open error component=websocket uri=" * uri e catch_backtrace()
+        true
+    end
+    if !accepted
+        mg_http_reply(conn, 403, "", "Forbidden")
+        return
     end
     mg_ws_upgrade(conn, ev_data, C_NULL)
     _wsregister!(server, Int(conn), uri)
@@ -182,15 +214,31 @@ function _closews!(server::AbstractServer, conn::MgConnection)
 
     if uri !== nothing
         endpoint = _wsep(server.core.router, uri)
-        if endpoint !== nothing && endpoint.on_close !== nothing
-            try
-                endpoint.on_close()
-            catch e
-                @log_error "WebSocket on_close error component=websocket uri=" * uri e catch_backtrace()
-            end
-        end
+        endpoint !== nothing && _invokewsclose(endpoint, uri)
     end
     return
+end
+
+function _invokewsclose(endpoint::WsEndpoint, uri::String)
+    if endpoint.on_close !== nothing
+        try
+            endpoint.on_close()
+        catch e
+            @log_error "WebSocket on_close error component=websocket uri=" * uri e catch_backtrace()
+        end
+    end
+    return nothing
+end
+
+_invokewsclose(::StaticWsEndpoint{M,O,Nothing}, ::String) where {M,O} = nothing
+
+function _invokewsclose(endpoint::StaticWsEndpoint{M,O,C}, uri::String) where {M,O,C}
+    try
+        endpoint.on_close()
+    catch e
+        @log_error "WebSocket on_close error component=websocket uri=" * uri e catch_backtrace()
+    end
+    return nothing
 end
 
 """
