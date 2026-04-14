@@ -112,16 +112,39 @@ end
     _drain(server)
 
 Wait for in-flight requests to drain, up to `drain_timeout`.
-For Async, polls the response channels until they're empty or timeout expires.
+For Async, polls the event loop to flush replies back to clients
+while waiting for workers to finish processing.
 """
 function _drain(server::AbstractServer)
     timeout_s = server.core.drain_timeout / 1000.0
     deadline = time() + timeout_s
     while time() < deadline
         _haspending(server) || break
+        # Keep the event loop turning so replies reach clients
+        _drainpoll(server)
         sleep(0.01)
     end
     return
+end
+
+_drainpoll(::AbstractServer) = nothing
+
+function _drainpoll(server::Async)
+    mg_mgr_poll(server.core.manager.ptr, server.core.poll_timeout)
+    # Flush any replies that workers produced during drain
+    while isopen(server.replies) && isready(server.replies)
+        res = try take!(server.replies) catch; break end
+        conn = get(server.connections, res.id, nothing)
+        if conn !== nothing
+            if res.payload isa Response
+                _sendhttp!(conn, res.payload)
+                delete!(server.connections, res.id)
+            else
+                try _sendws!(conn, res.payload) catch end
+            end
+        end
+    end
+    mg_mgr_poll(server.core.manager.ptr, 0)
 end
 
 _haspending(::AbstractServer) = false

@@ -34,8 +34,14 @@ end
     Server(router, config::Config)
 
 Create a `Server` from a [`Config`](@ref) struct.
+
+!!! note
+    `request_timeout` is ignored by `Server` (single-threaded, no task to enforce it).
+    Use `Async` for per-request timeouts.
 """
 function Server(router::AbstractRouter, config::Config)
+    _validate(config)
+    config.request_timeout > 0 && @log_warn "request_timeout=" * string(config.request_timeout) * " ignored by Server (use Async for per-request timeouts)"
     return Server(router;
         poll_timeout          = config.poll_timeout,
         max_body    = config.max_body,

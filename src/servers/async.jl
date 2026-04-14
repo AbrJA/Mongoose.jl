@@ -66,7 +66,8 @@ function Async(router::AbstractRouter=Router();
     server = Async{typeof(router)}(
         core, Task[],
         Channel{Call}(nqueue), Channel{Reply}(nqueue),
-        Dict{Int,MgConnection}(), Int(nworkers), Int(nqueue)
+        Dict{Int,MgConnection}(), Int(nworkers), Int(nqueue),
+        Threads.Atomic{Int}(0)
     )
     finalizer(_teardown!, server)
     return server
@@ -78,6 +79,7 @@ end
 Create an `Async` from a [`Config`](@ref) struct.
 """
 function Async(router::AbstractRouter, config::Config)
+    _validate(config)
     return Async(router;
         nworkers = config.nworkers,
         nqueue = config.nqueue,
@@ -110,13 +112,16 @@ end
 _spawnworkers!(::AbstractServer) = nothing
 
 function _stopworkers!(server::Async)
-    # Close channels to unblock any workers stuck on take!
+    # Close calls channel first — workers exit their `for req in server.calls` loop
     close(server.calls)
-    close(server.replies)
 
+    # Wait for workers to finish processing in-flight requests
     for t in server.workers
         try wait(t) catch end
     end
+
+    # Now close replies — all workers are done
+    close(server.replies)
     empty!(server.workers)
 end
 
@@ -124,6 +129,7 @@ _stopworkers!(::AbstractServer) = nothing
 
 function _eventloop(server::Async)
     last_sweep = time()
+    last_health = time()
     while server.core.running[]
         mg_mgr_poll(server.core.manager.ptr, server.core.poll_timeout)
 
@@ -153,8 +159,16 @@ function _eventloop(server::Async)
         end
         # Extra poll to flush mg_ws_send buffers immediately
         did_ws_send && mg_mgr_poll(server.core.manager.ptr, 1)
+
+        now_t = time()
+
+        # Worker health check — respawn dead workers (every 2s)
+        if (now_t - last_health) >= 2.0
+            _supervise!(server)
+            last_health = now_t
+        end
+
         if server.core.ws_idle_timeout > 0 && !isempty(server.core.ws_clients)
-            now_t = time()
             if (now_t - last_sweep) >= 5.0
                 _wsidlesweep!(server)
                 last_sweep = now_t
@@ -164,27 +178,49 @@ function _eventloop(server::Async)
     end
 end
 
+"""
+    _supervise!(server::Async)
+
+Check worker tasks and respawn any that have died unexpectedly.
+"""
+function _supervise!(server::Async)
+    for i in eachindex(server.workers)
+        t = server.workers[i]
+        if istaskdone(t)
+            if istaskfailed(t)
+                @log_warn "Worker " * string(i) * " died unexpectedly, respawning component=supervisor"
+            end
+            server.workers[i] = Threads.@spawn _workloop(server)
+        end
+    end
+end
+
 function _workloop(server::Async)
     timeout = server.core.request_timeout
     try
         for req in server.calls     # blocks properly — no sleep needed
-            if req.payload isa Request
-                rid = _requestid(req.payload, server)
-                res = try
-                    if timeout > 0
-                        _invoketimedhttp(server, req.payload, timeout)
-                    else
-                        _invokehttp(server, req.payload)
+            Threads.atomic_add!(server.inflight, 1)
+            try
+                if req.payload isa Request
+                    rid = _requestid(req.payload, server)
+                    res = try
+                        if timeout > 0
+                            _invoketimedhttp(server, req.payload, timeout)
+                        else
+                            _invokehttp(server, req.payload)
+                        end
+                    catch e
+                        @log_error "Handler error component=http uri=" * req.payload.uri e catch_backtrace()
+                        _handleerror(server, req.payload, e)
                     end
-                catch e
-                    @log_error "Handler error component=http uri=" * req.payload.uri e catch_backtrace()
-                    _handleerror(server, req.payload, e)
+                    res = Response(res.status, _appendreqid(res.headers, rid), res.body)
+                    try isopen(server.replies) && put!(server.replies, Tagged(req.id, res)) catch e; e isa InvalidStateException || rethrow(e) end
+                else  # Intent
+                    res = _invokews(server, req)
+                    try res !== nothing && isopen(server.replies) && put!(server.replies, res) catch e; e isa InvalidStateException || rethrow(e) end
                 end
-                res = Response(res.status, _appendreqid(res.headers, rid), res.body)
-                try isopen(server.replies) && put!(server.replies, Tagged(req.id, res)) catch e; e isa InvalidStateException || rethrow(e) end
-            else  # Intent
-                res = _invokews(server, req)
-                try res !== nothing && isopen(server.replies) && put!(server.replies, res) catch e; e isa InvalidStateException || rethrow(e) end
+            finally
+                Threads.atomic_sub!(server.inflight, 1)
             end
         end
     catch e
@@ -192,4 +228,4 @@ function _workloop(server::Async)
     end
 end
 
-_haspending(server::Async) = isready(server.calls) || isready(server.replies)
+_haspending(server::Async) = isready(server.calls) || isready(server.replies) || server.inflight[] > 0

@@ -403,6 +403,20 @@ start!(server, port=8080)
 
 ---
 
+## Deployment 🌐
+
+Mongoose.jl serves plain HTTP. For HTTPS in production, terminate TLS at a reverse proxy in front of your Mongoose.jl process.
+
+| Proxy | Notes |
+|---|---|
+| Caddy | Use automatic certificate management and proxy to `127.0.0.1:8080`. |
+| nginx | Terminate TLS at the edge and `proxy_pass` to `http://127.0.0.1:8080`. |
+| Envoy | Terminate TLS at the listener and route to the Mongoose.jl upstream cluster. |
+
+This deployment model keeps certificate rotation, HTTP/2 negotiation, and edge policy out of application code.
+
+---
+
 ## Documentation 📚
 
 Full API reference and examples: **[AbrJA.github.io/Mongoose.jl](https://AbrJA.github.io/Mongoose.jl/dev)**

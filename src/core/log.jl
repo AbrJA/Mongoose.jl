@@ -72,35 +72,35 @@ end
 
 macro log_info(msg)
     file, line = basename(string(__source__.file)), __source__.line
-    get(ENV, "LOG_NATIVE", "true") == "true" ?
+    get(ENV, "LOG_NATIVE", "false") == "true" ?
         :(Base.@info $(esc(msg))) :
         :(_log_info_impl($file, $line, $(esc(msg))))
 end
 
 macro log_warn(msg)
     file, line = basename(string(__source__.file)), __source__.line
-    get(ENV, "LOG_NATIVE", "true") == "true" ?
+    get(ENV, "LOG_NATIVE", "false") == "true" ?
         :(Base.@warn $(esc(msg))) :
         :(_log_warn_impl($file, $line, $(esc(msg))))
 end
 
 macro log_error(msg)
     file, line = basename(string(__source__.file)), __source__.line
-    get(ENV, "LOG_NATIVE", "true") == "true" ?
+    get(ENV, "LOG_NATIVE", "false") == "true" ?
         :(Base.@error $(esc(msg))) :
         :(_log_error_impl($file, $line, $(esc(msg))))
 end
 
 macro log_error(msg, e)
     file, line = basename(string(__source__.file)), __source__.line
-    get(ENV, "LOG_NATIVE", "true") == "true" ?
+    get(ENV, "LOG_NATIVE", "false") == "true" ?
         :(Base.@error $(esc(msg)) exception=$(esc(e))) :
         :(_log_error_impl($file, $line, $(esc(msg)), $(esc(e))))
 end
 
 macro log_error(msg, e, bt)
     file, line = basename(string(__source__.file)), __source__.line
-    get(ENV, "LOG_NATIVE", "true") == "true" ?
+    get(ENV, "LOG_NATIVE", "false") == "true" ?
         :(Base.@error $(esc(msg)) exception=($(esc(e)), $(esc(bt)))) :
         :(_log_error_impl($file, $line, $(esc(msg)), $(esc(e))))
 end

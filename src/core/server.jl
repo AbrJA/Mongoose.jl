@@ -127,6 +127,23 @@ Base.@kwdef struct Config
     errors::Dict{Int,Response} = Dict{Int,Response}()
 end
 
+"""
+    _validate(config::Config) → nothing
+
+Fail fast on invalid configuration values. Called by `Server` and `Async`
+constructors to surface mistakes at construction time, not at `start!`.
+"""
+function _validate(config::Config)
+    config.nworkers   > 0 || throw(ServerError("nworkers must be > 0, got $(config.nworkers)"))
+    config.nqueue     > 0 || throw(ServerError("nqueue must be > 0, got $(config.nqueue)"))
+    config.max_body   > 0 || throw(ServerError("max_body must be > 0, got $(config.max_body)"))
+    config.poll_timeout >= 0 || throw(ServerError("poll_timeout must be >= 0, got $(config.poll_timeout)"))
+    config.drain_timeout >= 0 || throw(ServerError("drain_timeout must be >= 0, got $(config.drain_timeout)"))
+    config.request_timeout >= 0 || throw(ServerError("request_timeout must be >= 0, got $(config.request_timeout)"))
+    config.ws_idle_timeout >= 0 || throw(ServerError("ws_idle_timeout must be >= 0, got $(config.ws_idle_timeout)"))
+    return
+end
+
 mutable struct Server{R <: AbstractRouter} <: AbstractServer
     core::ServerCore{R}
 end
@@ -139,6 +156,7 @@ mutable struct Async{R <: AbstractRouter} <: AbstractServer
     connections::Dict{Int,MgConnection}
     nworkers::Int
     nqueue::Int
+    inflight::Threads.Atomic{Int}
 end
 
 _cfnasync(::Type{T}) where {T} = C_NULL

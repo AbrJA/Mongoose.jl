@@ -2302,4 +2302,66 @@ end
             shutdown!(server)
         end
     end
+
+    # ==========================================================================
+    # WS idle timeout behavioral test
+    # ==========================================================================
+
+    @testset "WebSocket idle timeout closes stale connection" begin
+        router = Router()
+        close_count = Threads.Atomic{Int}(0)
+        route!(router, :get, "/", req -> Response(Plain, "ok"))
+        ws!(router, "/idle",
+            on_message = (msg::Message) -> Message("echo"),
+            on_open    = (req::Request) -> nothing,
+            on_close   = () -> Threads.atomic_add!(close_count, 1)
+        )
+
+        # ws_idle_timeout=1 means connections idle >1s are eligible for close.
+        # The event loop sweeps every 5s, so the close arrives within ~6s.
+        server = Server(router; ws_idle_timeout=1)
+        start!(server; port=8234, blocking=false)
+        wait_for_server("http://localhost:8234/")
+
+        try
+            client_observed_close = Ref(false)
+            client_task = @async begin
+                try
+                    HTTP.WebSockets.open("ws://localhost:8234/idle") do ws
+                        # Don't send anything — block until server closes the idle socket.
+                        try
+                            HTTP.WebSockets.receive(ws)
+                        catch
+                            client_observed_close[] = true
+                        end
+                    end
+                catch
+                    # If the connection fails unexpectedly, assertions below will fail.
+                end
+            end
+
+            # Wait up to 10s for idle sweep + close propagation.
+            deadline = time() + 10.0
+            while close_count[] == 0 && time() < deadline
+                sleep(0.2)
+            end
+            @test close_count[] >= 1
+            @test client_observed_close[] == true
+            wait(client_task)
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Config validation
+    # ==========================================================================
+
+    @testset "Config validation rejects invalid values" begin
+        @test_throws Mongoose.ServerError Async(Router(), Config(nworkers=0))
+        @test_throws Mongoose.ServerError Async(Router(), Config(nqueue=0))
+        @test_throws Mongoose.ServerError Async(Router(), Config(max_body=0))
+        @test_throws Mongoose.ServerError Async(Router(), Config(drain_timeout=-1))
+        @test_throws Mongoose.ServerError Server(Router(), Config(nworkers=0))
+    end
 end
