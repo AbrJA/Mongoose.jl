@@ -22,6 +22,9 @@ function Server(router::AbstractRouter=Router();
                     drain_timeout::Integer=DRAIN_TIMEOUT,
                     ws_idle_timeout::Integer=0,
                     errors::Dict{Int,Response}=Dict{Int,Response}())
+    _validate_core(poll_timeout, max_body, drain_timeout, 0, ws_idle_timeout)
+    _validate_errors(errors)
+
     c_handler = Mongoose._cfnsync(typeof(router))
     core = ServerCore(poll_timeout, router; max_body=max_body, drain_timeout=drain_timeout,
                       ws_idle_timeout=ws_idle_timeout, errors=errors, c_handler=c_handler)

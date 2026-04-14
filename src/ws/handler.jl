@@ -257,7 +257,7 @@ function _wsidlesweep!(server::AbstractServer)
     timeout_s = Float64(server.core.ws_idle_timeout)
     now_t = time()
     closed = 0
-    for (conn_id, entry) in collect(clients)
+    for (conn_id, entry) in clients
         entry.closing && continue
         if (now_t - entry.last_active) > timeout_s
             conn = MgConnection(Ptr{Cvoid}(UInt(conn_id)))

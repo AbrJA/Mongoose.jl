@@ -134,13 +134,38 @@ Fail fast on invalid configuration values. Called by `Server` and `Async`
 constructors to surface mistakes at construction time, not at `start!`.
 """
 function _validate(config::Config)
+    _validate_core(config.poll_timeout, config.max_body, config.drain_timeout,
+                   config.request_timeout, config.ws_idle_timeout)
+    _validate_errors(config.errors)
     config.nworkers   > 0 || throw(ServerError("nworkers must be > 0, got $(config.nworkers)"))
     config.nqueue     > 0 || throw(ServerError("nqueue must be > 0, got $(config.nqueue)"))
-    config.max_body   > 0 || throw(ServerError("max_body must be > 0, got $(config.max_body)"))
-    config.poll_timeout >= 0 || throw(ServerError("poll_timeout must be >= 0, got $(config.poll_timeout)"))
-    config.drain_timeout >= 0 || throw(ServerError("drain_timeout must be >= 0, got $(config.drain_timeout)"))
-    config.request_timeout >= 0 || throw(ServerError("request_timeout must be >= 0, got $(config.request_timeout)"))
-    config.ws_idle_timeout >= 0 || throw(ServerError("ws_idle_timeout must be >= 0, got $(config.ws_idle_timeout)"))
+    return
+end
+
+"""
+    _validate_core(poll_timeout, max_body, drain_timeout, request_timeout, ws_idle_timeout)
+
+Validate shared core runtime limits used by both `Server` and `Async` constructors.
+"""
+function _validate_core(poll_timeout::Integer, max_body::Integer, drain_timeout::Integer,
+                        request_timeout::Integer, ws_idle_timeout::Integer)
+    max_body > 0 || throw(ServerError("max_body must be > 0, got $(max_body)"))
+    poll_timeout >= 0 || throw(ServerError("poll_timeout must be >= 0, got $(poll_timeout)"))
+    drain_timeout >= 0 || throw(ServerError("drain_timeout must be >= 0, got $(drain_timeout)"))
+    request_timeout >= 0 || throw(ServerError("request_timeout must be >= 0, got $(request_timeout)"))
+    ws_idle_timeout >= 0 || throw(ServerError("ws_idle_timeout must be >= 0, got $(ws_idle_timeout)"))
+    return
+end
+
+"""
+    _validate_errors(errors)
+
+Validate custom error response map keys as HTTP status codes in [100, 599].
+"""
+function _validate_errors(errors::Dict{Int,Response})
+    for code in keys(errors)
+        (100 <= code <= 599) || throw(ServerError("errors key must be an HTTP status code in [100, 599], got $(code)"))
+    end
     return
 end
 

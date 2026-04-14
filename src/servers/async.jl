@@ -59,6 +59,11 @@ function Async(router::AbstractRouter=Router();
                      request_timeout::Integer=0,
                      ws_idle_timeout::Integer=0,
                      errors::Dict{Int,Response}=Dict{Int,Response}())
+    nworkers > 0 || throw(ServerError("nworkers must be > 0, got $(nworkers)"))
+    nqueue > 0 || throw(ServerError("nqueue must be > 0, got $(nqueue)"))
+    _validate_core(poll_timeout, max_body, drain_timeout, request_timeout, ws_idle_timeout)
+    _validate_errors(errors)
+
     c_handler = Mongoose._cfnasync(typeof(router))
     core = ServerCore(poll_timeout, router; max_body=max_body, drain_timeout=drain_timeout,
                       request_timeout=request_timeout, ws_idle_timeout=ws_idle_timeout,

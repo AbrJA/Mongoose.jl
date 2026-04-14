@@ -20,6 +20,12 @@ end
     get("/item/:id::Int", (req, id) -> Response(200, "", "id=$id type=$(typeof(id))"))
 end
 
+@router PrecedenceApp begin
+    get("/match/exact", req -> Response(200, "", "exact"))
+    get("/match/:id::Int", (req, id) -> Response(200, "", "typed:$id"))
+    get("/*rest", (req, rest) -> Response(404, "", "wild:$rest"))
+end
+
 @testset "Mongoose.jl" begin
 
     # --- Helper Functions ---
@@ -2325,6 +2331,7 @@ end
 
         try
             client_observed_close = Ref(false)
+            unexpected_client_error = Ref{Any}(nothing)
             client_task = @async begin
                 try
                     HTTP.WebSockets.open("ws://localhost:8234/idle") do ws
@@ -2335,8 +2342,8 @@ end
                             client_observed_close[] = true
                         end
                     end
-                catch
-                    # If the connection fails unexpectedly, assertions below will fail.
+                catch e
+                    unexpected_client_error[] = e
                 end
             end
 
@@ -2347,7 +2354,67 @@ end
             end
             @test close_count[] >= 1
             @test client_observed_close[] == true
+            @test unexpected_client_error[] === nothing
             wait(client_task)
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Routing precedence: static router and dynamic router
+    # ==========================================================================
+
+    @testset "@router precedence: exact/typed before catch-all" begin
+        server = Server(PrecedenceApp)
+        start!(server; port=8235, blocking=false)
+        wait_for_server("http://localhost:8235/")
+
+        try
+            resp = HTTP.get("http://localhost:8235/match/exact")
+            @test resp.status == 200
+            @test String(resp.body) == "exact"
+
+            resp = HTTP.get("http://localhost:8235/match/42")
+            @test resp.status == 200
+            @test String(resp.body) == "typed:42"
+
+            resp = HTTP.get("http://localhost:8235/match/abc"; status_exception=false)
+            @test resp.status == 404
+
+            resp = HTTP.get("http://localhost:8235/match/abc/def"; status_exception=false)
+            @test resp.status == 404
+        finally
+            shutdown!(server)
+        end
+    end
+
+    @testset "Router precedence: exact/typed before catch-all" begin
+        router = Router()
+        route!(router, :get, "/match/exact", req -> Response(Plain, "exact"))
+        route!(router, :get, "/match/:id::Int", (req, id) -> Response(Plain, "typed:$id"))
+        route!(router, :get, "*", req -> Response(404, "", "wild:" * req.uri))
+
+        server = Async(router; nworkers=1)
+        start!(server; port=8236, blocking=false)
+        wait_for_server("http://localhost:8236/")
+
+        try
+            resp = HTTP.get("http://localhost:8236/match/exact")
+            @test resp.status == 200
+            @test String(resp.body) == "exact"
+
+            resp = HTTP.get("http://localhost:8236/match/7")
+            @test resp.status == 200
+            @test String(resp.body) == "typed:7"
+
+            resp = HTTP.get("http://localhost:8236/match/slug"; status_exception=false)
+            @test resp.status == 404
+            @test String(resp.body) == "wild:/match/slug"
+
+            resp = HTTP.get("http://localhost:8236/match/slug/deep"; status_exception=false)
+            @test resp.status == 404
+            @test String(resp.body) == "wild:/match/slug/deep"
         finally
             shutdown!(server)
         end
@@ -2363,5 +2430,16 @@ end
         @test_throws Mongoose.ServerError Async(Router(), Config(max_body=0))
         @test_throws Mongoose.ServerError Async(Router(), Config(drain_timeout=-1))
         @test_throws Mongoose.ServerError Server(Router(), Config(nworkers=0))
+
+        # Keyword constructor paths should fail fast too.
+        @test_throws Mongoose.ServerError Async(Router(); nworkers=0)
+        @test_throws Mongoose.ServerError Async(Router(); nqueue=0)
+        @test_throws Mongoose.ServerError Async(Router(); request_timeout=-1)
+        @test_throws Mongoose.ServerError Server(Router(); max_body=0)
+        @test_throws Mongoose.ServerError Server(Router(); drain_timeout=-1)
+
+        bad_errors = Dict(42 => Response(Plain, "bad"))
+        @test_throws Mongoose.ServerError Async(Router(); errors=bad_errors)
+        @test_throws Mongoose.ServerError Server(Router(); errors=bad_errors)
     end
 end
