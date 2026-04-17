@@ -1,5 +1,9 @@
 # API Reference
 
+```@meta
+CurrentModule = Mongoose
+```
+
 ## Server Types
 
 ```@docs
@@ -13,6 +17,7 @@ Server
 start!
 shutdown!
 plug!
+mount!
 fail!
 ```
 
@@ -29,8 +34,6 @@ ws!
 ```@docs
 Request
 Response
-Binary
-context!
 ```
 
 ## Utilities
@@ -57,6 +60,14 @@ health
 metrics
 ```
 
+## Errors
+
+```@docs
+RouteError
+ServerError
+BindError
+```
+
 ## JSON
 
 JSON support is enabled by extending `encode`:
@@ -74,9 +85,3 @@ Then use `Response(Json, value)` anywhere in your handlers.
 @router
 ```
 
-## All Symbols
-
-```@autodocs
-Modules = [Mongoose]
-Order = [:constant, :type, :function, :macro]
-```
