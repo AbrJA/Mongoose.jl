@@ -60,7 +60,7 @@ end
     end
 
     # --- Test 1: Server ---
-    @testset "Server" begin
+    @testset "Server" begin        
         router = Router()
         route!(router, :get, "/hello", greet)
 
@@ -1878,7 +1878,7 @@ end
     # @router static router: 404, 405, and invalid typed param
     # ==========================================================================
 
-    @testset "@router: unknown route returns 404" begin
+    @testset "@router: unknown route returns 404 and method mismatch returns 405" begin
         server = Server(Routes)
         start!(server; port=8218, blocking=false)
         wait_for_server("http://localhost:8218/")
@@ -1887,9 +1887,9 @@ end
             resp = HTTP.get("http://localhost:8218/nonexistent"; status_exception=false)
             @test resp.status == 404
 
-            # Static router falls through to 404 for any unmatched method/path combination
+            # Static router returns 405 when path exists but method is not allowed
             resp = HTTP.post("http://localhost:8218/hello"; status_exception=false)
-            @test resp.status == 404
+            @test resp.status == 405
         finally
             shutdown!(server)
         end

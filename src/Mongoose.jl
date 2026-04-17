@@ -6,7 +6,7 @@ using PrecompileTools
 export Server, Async, Router, Request, Response,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, plug!, mount!, fail!,
-    context!, query,
+    context!, # query,
     ws!, Message,
     cors, ratelimit, bearer, apikey, logger, health, metrics,
     RouteError, ServerError, BindError,

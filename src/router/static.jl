@@ -231,6 +231,80 @@ function _generatedispatch(node::StaticNode, seg_sym::Symbol, idx_sym::Symbol, p
     return Expr(:block, exprs...)
 end
 
+# Generate a method-specific path matcher body (no handler execution).
+# The generated function returns true when the path matches a route for that method.
+function _generatematchbody(node::StaticNode, seg_sym::Symbol, idx_sym::Symbol, path_sym::Symbol)
+    exprs = []
+
+    # 1. Exact path match reached at a handler node
+    if node.handler !== nothing
+        push!(exprs, quote
+            if length($(seg_sym)) == 0
+                return true
+            end
+        end)
+    end
+
+    # 2. Static children
+    if !isempty(node.static_children)
+        static_blocks = []
+        for (val, child) in node.static_children
+            next_seg = gensym("seg")
+            next_idx = gensym("idx")
+            child_expr = _generatematchbody(child, next_seg, next_idx, path_sym)
+
+            push!(static_blocks, quote
+                if $(seg_sym) == $val
+                    $(next_seg), $(next_idx) = _staticnextseg($(path_sym), $(idx_sym))
+                    $(child_expr)
+                end
+            end)
+        end
+        push!(exprs, Expr(:block, static_blocks...))
+    end
+
+    # 3. Variable child
+    if node.variable_child !== nothing
+        seg, child = node.variable_child
+        next_seg = gensym("seg")
+        next_idx = gensym("idx")
+        child_expr = _generatematchbody(child, next_seg, next_idx, path_sym)
+
+        parse_guard = if seg.type == SubString{String} || seg.type == String || seg.type == :String
+            :(true)
+        else
+            quote
+                try
+                    Base.parse($(seg.type), String($(seg_sym)))
+                    true
+                catch
+                    false
+                end
+            end
+        end
+
+        push!(exprs, quote
+            if length($(seg_sym)) != 0
+                if $(parse_guard)
+                    $(next_seg), $(next_idx) = _staticnextseg($(path_sym), $(idx_sym))
+                    $(child_expr)
+                end
+            end
+        end)
+    end
+
+    # 4. Wildcard child
+    if node.wildcard_child !== nothing
+        push!(exprs, quote
+            if length($(seg_sym)) != 0
+                return true
+            end
+        end)
+    end
+
+    return Expr(:block, exprs...)
+end
+
 function _extractroutes(block)
     http_routes = []
     ws_routes = []
@@ -288,6 +362,31 @@ macro router(app_type::Symbol, block)
     req_sym = gensym("req")
 
     dispatch_body = _generatedispatch(root, :_, :_, path_sym, req_sym, Symbol[], true)
+
+    # Build per-method path matcher functions so static dispatch can emit 405 when
+    # a path exists but the requested HTTP method is not allowed.
+    method_syms = unique(Symbol[r[1] for r in http_routes])
+    method_matchers = Tuple{Symbol,Symbol}[]
+    matcher_defs = Expr[]
+    for method_sym in method_syms
+        method_node = get(root.static_children, String(method_sym), nothing)
+        method_node === nothing && continue
+
+        match_fn = Symbol("_match_", app_type, "_", method_sym)
+        push!(method_matchers, (method_sym, match_fn))
+
+        seg = gensym("seg")
+        idx = gensym("idx")
+        match_body = _generatematchbody(method_node, seg, idx, path_sym)
+
+        push!(matcher_defs, quote
+            @inline function $(match_fn)($(path_sym)::AbstractString)::Bool
+                $(seg), $(idx) = _staticnextseg($(path_sym), 1)
+                $(match_body)
+                return false
+            end
+        end)
+    end
 
     async_handler_sym = Symbol("_async_", app_type, "_c_handler")
     sync_handler_sym = Symbol("_sync_", app_type, "_c_handler")
@@ -348,8 +447,24 @@ macro router(app_type::Symbol, block)
                 resp.status != 404 && return Mongoose.Response(resp.status, resp.headers, "")
             end
 
+            # Method mismatch on an existing path => 405 Method Not Allowed.
+            allow = String[]
+            $(Expr(:block, [quote
+                if $(req_sym).method !== $(QuoteNode(method_sym)) && $(match_fn)($(path_sym))
+                    push!(allow, uppercase(String($(QuoteNode(method_sym)))))
+                end
+            end for (method_sym, match_fn) in method_matchers]...))
+
+            if !isempty(allow)
+                return Mongoose.Response(Plain, "405 Method Not Allowed";
+                    status=405,
+                    headers=["Allow" => join(allow, ", ")])
+            end
+
             return Mongoose.Response(Plain, "404 Not Found"; status=404)
         end
+
+        $(Expr(:block, matcher_defs...))
 
         # --- Static WebSocket Dispatch ---
         function Mongoose._wsupgrade(::$(esc(app_type)), uri::String)

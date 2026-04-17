@@ -15,12 +15,137 @@ struct SearchQuery
     page::Int
 end
 
+# --- In-memory user store (trim-safe compatible, concrete types only) ---
+mutable struct User
+    id::Int
+    name::String
+    email::String
+    role::String
+end
+
+@inline function _json_get_string(body::String, key::String, default::String)::String
+    needle = "\"" * key * "\""
+    r = findfirst(needle, body)
+    r === nothing && return default
+
+    i = last(r) + 1
+    n = ncodeunits(body)
+
+    while i <= n
+        c = codeunit(body, i)
+        if c == UInt8(' ') || c == UInt8('\t') || c == UInt8('\r') || c == UInt8('\n') || c == UInt8(':')
+            i += 1
+        else
+            break
+        end
+    end
+
+    i > n && return default
+    codeunit(body, i) == UInt8('"') || return default
+    i += 1
+    start_i = i
+
+    while i <= n && codeunit(body, i) != UInt8('"')
+        i += 1
+    end
+
+    i > n && return default
+    return String(view(body, start_i:i-1))
+end
+
+@inline function _query_get_string(query::AbstractString, key::String, default::String)::String
+    q = String(query)
+    isempty(q) && return default
+    prefix = key * "="
+    for pair in split(q, '&')
+        startswith(pair, prefix) || continue
+        return String(view(pair, ncodeunits(prefix)+1:ncodeunits(pair)))
+    end
+    return default
+end
+
+@inline function _user_json(u::User)::String
+    return "{\"id\":" * string(u.id) *
+           ",\"name\":\"" * u.name * "\"" *
+           ",\"email\":\"" * u.email * "\"" *
+           ",\"role\":\"" * u.role * "\"}"
+end
+
+const USERS = Ref(Dict(
+    1 => User(1, "Alice", "alice@example.com", "admin"),
+    2 => User(2, "Bob", "bob@example.com", "user"),
+    3 => User(3, "Charlie", "charlie@example.com", "user"),
+))
+const NEXT_ID = Ref(4)
+
 const WS_OPEN_COUNT = Ref(0)
 const WS_CLOSE_COUNT = Ref(0)
 const WS_LAST_AUTH = Ref("none")
 
 # --- Handlers ---
 
+# --- CRUD Handlers ---
+
+function users_list(req)
+    users = USERS[]
+    json_items = String[]
+    for (_, user) in users
+        push!(json_items, _user_json(user))
+    end
+    body = "[" * join(json_items, ",") * "]"
+    Response(Json, body)
+end
+
+function user_detail(req, id)
+    users = USERS[]
+    if !haskey(users, id)
+        return Response(Json, "{\"error\":\"user not found\"}";
+            status=404)
+    end
+    Response(Json, _user_json(users[id]))
+end
+
+function user_create(req)
+    users = USERS[]
+    id = NEXT_ID[]
+    NEXT_ID[] += 1
+    name = _json_get_string(req.body, "name", "NewUser")
+    email = _json_get_string(req.body, "email", "new@example.com")
+    role = _json_get_string(req.body, "role", "user")
+    new_user = User(id, name, email, role)
+    users[id] = new_user
+    Response(Json, _user_json(new_user); status=201)
+end
+
+function user_update(req, id)
+    users = USERS[]
+    if !haskey(users, id)
+        return Response(Json, "{\"error\":\"user not found\"}";
+            status=404)
+    end
+    user = users[id]
+    user.name = _json_get_string(req.body, "name", user.name)
+    user.email = _json_get_string(req.body, "email", user.email)
+    user.role = _json_get_string(req.body, "role", user.role)
+    Response(Json, _user_json(user))
+end
+
+function user_delete(req, id)
+    users = USERS[]
+    if !haskey(users, id)
+        return Response(Json, "{\"error\":\"user not found\"}";
+            status=404)
+    end
+    delete!(users, id)
+    Response(204, "", "")
+end
+
+function serve_test_dashboard(req)
+    html = read(joinpath(@__DIR__, "public", "test.html"), String)
+    Response(Html, html)
+end
+
+# --- Other Handlers ---
 function greet(req)
     Response(Json, "{\"message\":\"Hello World from trimmed Julia!\"}")
 end
@@ -60,7 +185,7 @@ end
 
 function search(req)
     # Query string parsing into a typed struct
-    params = query(SearchQuery, req)::SearchQuery
+    params = Mongoose.query(SearchQuery, req)::SearchQuery
     Response(Json, "{\"q\":\"" * params.q * "\",\"page\":" * string(params.page) * "}")
 end
 
@@ -129,7 +254,8 @@ end
 
 function ws_chat_open(req)
     WS_OPEN_COUNT[] += 1
-    WS_LAST_AUTH[] = get(req.headers, "x-chat-auth", "none")
+    h_auth = get(req.headers, "x-chat-auth", "")
+    WS_LAST_AUTH[] = isempty(h_auth) ? _query_get_string(req.query, "auth", "none") : h_auth
     return true
 end
 
@@ -158,7 +284,7 @@ end
 
 @router Routes begin
     # Basic GET
-    get("/",                  html_page)
+    get("/",                  serve_test_dashboard)
     get("/hello",             greet)
     get("/health",            health)
     get("/head-probe",        head_probe)
@@ -200,6 +326,13 @@ end
     # WebSocket endpoints
     ws("/ws/chat", on_message=ws_chat_message, on_open=ws_chat_open, on_close=ws_chat_close)
     ws("/ws/reject", on_message=ws_chat_message, on_open=ws_reject_open)
+
+    # CRUD Users API
+    get("/api/users",              users_list)
+    get("/api/users/:id::Int",     user_detail)
+    post("/api/users",             user_create)
+    put("/api/users/:id::Int",     user_update)
+    delete("/api/users/:id::Int",  user_delete)
 
     # Wildcard catch-all (must be last)
     get("/*path",             not_found_handler)
