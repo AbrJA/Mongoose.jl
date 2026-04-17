@@ -274,26 +274,6 @@ end
         end
     end
 
-    # --- Test 7: Parse query ---
-    @testset "Parse query" begin
-        struct TestParams
-            q::String
-            page::Int
-            active::Bool
-        end
-
-        params = Mongoose.query(TestParams, "q=hello+world&page=3&active=true")
-        @test params.q == "hello world"
-        @test params.page == 3
-        @test params.active == true
-
-        # Missing fields default to zero values
-        params2 = Mongoose.query(TestParams, "q=test")
-        @test params2.q == "test"
-        @test params2.page == 0
-        @test params2.active == false
-    end
-
     # --- Test 8: Body Size Limit ---
     @testset "Body Size Limit" begin
         router = Router()
@@ -1031,19 +1011,14 @@ end
 
     # --- Test: URL Percent-Decode ---
     @testset "URL Percent-Decode" begin
-        struct PctParams
-            q::String
-            msg::String
-        end
-
-        p = Mongoose.query(PctParams, "q=hello%20world&msg=100%25+done")
-        @test p.q == "hello world"
-        @test p.msg == "100% done"
+        d = Mongoose._query2dict("q=hello%20world&msg=100%25+done")
+        @test d["q"] == "hello world"
+        @test d["msg"] == "100% done"
 
         # Invalid hex escape is passed through literally
-        p2 = Mongoose.query(PctParams, "q=%ZZtest&msg=ok")
-        @test p2.q == "%ZZtest"
-        @test p2.msg == "ok"
+        d2 = Mongoose._query2dict("q=%ZZtest&msg=ok")
+        @test d2["q"] == "%ZZtest"
+        @test d2["msg"] == "ok"
     end
 
     # --- Test: Global shutdown!() ---
@@ -1256,31 +1231,6 @@ end
         @test r6.body == "hello"
     end
 
-    @testset "Unit: query struct deserialization with optional fields" begin
-        struct _QOptFields
-            name::String
-            age::Union{Int,Nothing}
-            flag::Bool
-        end
-
-        # All fields present
-        p1 = Mongoose.query(_QOptFields, "name=Alice&age=30&flag=true")
-        @test p1.name == "Alice"
-        @test p1.age  == 30
-        @test p1.flag == true
-
-        # Optional (Union{Int,Nothing}) absent → nothing
-        p2 = Mongoose.query(_QOptFields, "name=Bob&flag=yes")
-        @test p2.name == "Bob"
-        @test p2.age  === nothing
-        @test p2.flag == true
-
-        # Unknown query keys are silently ignored
-        p3 = Mongoose.query(_QOptFields, "name=X&unknown=42&age=1")
-        @test p3.name == "X"
-        @test p3.age  == 1
-    end
-
     @testset "Unit: _staticexists path traversal boundary" begin
         mktempdir() do base
             # Two adjacent directories to test the prefix-check boundary
@@ -1309,7 +1259,7 @@ end
     @testset "Unit: structured logger JSON format" begin
         log_buf = IOBuffer()
         lg  = logger(structured=true, output=log_buf)
-        req = Request(:get, "/api/v1", "", Pair{String,String}[], "", nothing)
+        req = Request(:get, "/api/v1", Dict{String,String}(), Pair{String,String}[], "", nothing)
         lg(req, Any[], () -> Response(200, "", "ok"))
         out = String(take!(log_buf))
 

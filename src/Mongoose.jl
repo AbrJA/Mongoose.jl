@@ -6,7 +6,7 @@ using PrecompileTools
 export Server, Async, Router, Request, Response,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, plug!, mount!, fail!,
-    context!, # query,
+    context!,
     ws!, Message,
     cors, ratelimit, bearer, apikey, logger, health, metrics,
     RouteError, ServerError, BindError,
@@ -92,8 +92,8 @@ end
         _statustext(500); _statustext(503); _statustext(504)
 
         # --- Request + context ---
-        req = Request(:get, "/", "", Pair{String,String}[], "", nothing)
-        req_with_headers = Request(:get, "/users/1", "a=1&b=2",
+        req = Request(:get, "/", Dict{String,String}(), Pair{String,String}[], "", nothing)
+        req_with_headers = Request(:get, "/users/1", Dict("a" => "1", "b" => "2"),
             ["content-type" => "application/json", "authorization" => "Bearer tok",
              "x-request-id" => "abc-123", "x-forwarded-for" => "10.0.0.1"],
             "{}", nothing)
@@ -107,15 +107,6 @@ end
         _sanitizeid("abc-123")
         _sanitizeid("bad\r\nvalue")
         _uint64tostr(UInt64(12345))
-
-        # --- Query parsing ---
-        struct QueryTest
-            q::String
-            page::Int
-        end
-        _req_q = Request(:get, "/search", "q=hello&page=1", Pair{String,String}[], "", nothing)
-        query(QueryTest, _req_q)
-        query(QueryTest, "q=world&page=2")
 
         # --- Middleware construction ---
         mw_cors     = cors()
@@ -139,15 +130,15 @@ end
         mw_bearer(req_with_headers, Any[], noop)
         mw_apikey(req_with_headers, Any[], noop)
         mw_health(req, Any[], noop)
-        mw_health(Request(:get, "/healthz", "", Pair{String,String}[], "", nothing), Any[], noop)
-        mw_health(Request(:get, "/readyz",  "", Pair{String,String}[], "", nothing), Any[], noop)
-        mw_health(Request(:get, "/livez",   "", Pair{String,String}[], "", nothing), Any[], noop)
+        mw_health(Request(:get, "/healthz", Dict{String,String}(), Pair{String,String}[], "", nothing), Any[], noop)
+        mw_health(Request(:get, "/readyz",  Dict{String,String}(), Pair{String,String}[], "", nothing), Any[], noop)
+        mw_health(Request(:get, "/livez",   Dict{String,String}(), Pair{String,String}[], "", nothing), Any[], noop)
         mw_metrics(req, Any[], noop)
 
         # --- PathFilter (path-scoped middleware) ---
         pf = PathFilter(mw_cors, ["/api"])
         pf(req, Any[], noop)
-        pf(Request(:get, "/api/users", "", Pair{String,String}[], "", nothing), Any[], noop)
+        pf(Request(:get, "/api/users", Dict{String,String}(), Pair{String,String}[], "", nothing), Any[], noop)
 
         # --- Full _pipeline with multiple middleware ---
         _pipeline(AbstractMiddleware[mw_cors, mw_logger], req, Any[],

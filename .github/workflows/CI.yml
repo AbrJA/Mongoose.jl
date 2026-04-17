@@ -17,11 +17,12 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.10'
+          - 'lts'
           - '1'
-          #- 'nightly'
         os:
           - ubuntu-latest
+          - macos-latest
+          - windows-latest
         arch:
           - x64
     steps:
@@ -59,4 +60,4 @@ jobs:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
             DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
           run: julia --project=docs/ docs/make.jl
-      needs: test # The docs job will wait until the test job is successful.
+      needs: [test] # The docs job will wait until core checks pass.
