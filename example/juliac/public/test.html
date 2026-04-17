@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mongoose.jl Test Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 2.5em;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .card h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #333;
+            font-size: 0.9em;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+            font-size: 0.9em;
+            width: 100%;
+        }
+
+        button:hover {
+            background: #5568d3;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .method-select {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .method-btn {
+            padding: 8px;
+            border: 2px solid #ddd;
+            background: white;
+            color: #333;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85em;
+            transition: all 0.2s;
+        }
+
+        .method-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .output {
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.85em;
+            color: #333;
+            word-break: break-all;
+            white-space: pre-wrap;
+        }
+
+        .output.success {
+            border-color: #4caf50;
+            background: #f1f8e9;
+            color: #2e7d32;
+        }
+
+        .output.error {
+            border-color: #f44336;
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .ws-status {
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .ws-status.connected {
+            background: #c8e6c9;
+            color: #2e7d32;
+        }
+
+        .ws-status.disconnected {
+            background: #ffccbc;
+            color: #d84315;
+        }
+
+        .ws-messages {
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 12px;
+            max-height: 250px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.85em;
+            margin-bottom: 15px;
+        }
+
+        .ws-message {
+            padding: 6px;
+            margin-bottom: 6px;
+            border-left: 3px solid #667eea;
+            background: white;
+            padding-left: 10px;
+        }
+
+        .ws-message.sent {
+            border-left-color: #4caf50;
+            color: #2e7d32;
+        }
+
+        .ws-message.received {
+            border-left-color: #2196f3;
+            color: #1565c0;
+        }
+
+        .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .test-results {
+            background: #f5f5f5;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+        .test-item {
+            padding: 8px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        .test-item.pass {
+            background: #c8e6c9;
+            color: #2e7d32;
+        }
+
+        .test-item.fail {
+            background: #ffccbc;
+            color: #d84315;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            font-weight: 600;
+            margin-right: 8px;
+        }
+
+        .badge.get { background: #bbdefb; color: #1565c0; }
+        .badge.post { background: #c8e6c9; color: #2e7d32; }
+        .badge.put { background: #ffe0b2; color: #e65100; }
+        .badge.delete { background: #ffccbc; color: #d84315; }
+        .badge.ws { background: #e1bee7; color: #6a1b9a; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Mongoose.jl Test Dashboard</h1>
+
+        <div class="grid">
+            <!-- HTTP Tester -->
+            <div class="card">
+                <h2>HTTP Tester</h2>
+
+                <div class="form-group">
+                    <label>Method</label>
+                    <div class="method-select">
+                        <button class="method-btn active" data-method="GET">GET</button>
+                        <button class="method-btn" data-method="POST">POST</button>
+                        <button class="method-btn" data-method="PUT">PUT</button>
+                        <button class="method-btn" data-method="PATCH">PATCH</button>
+                        <button class="method-btn" data-method="DELETE">DELETE</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Path <span class="badge get">GET</span></label>
+                    <input type="text" id="httpPath" value="/health" placeholder="/path">
+                </div>
+
+                <div class="form-group">
+                    <label>Body (JSON)</label>
+                    <textarea id="httpBody" placeholder='{"key": "value"}'></textarea>
+                </div>
+
+                <button onclick="sendHTTP()">Send Request</button>
+
+                <div style="margin-top: 15px;">
+                    <label>Response</label>
+                    <div class="output" id="httpOutput">Ready...</div>
+                </div>
+            </div>
+
+            <!-- WebSocket Tester -->
+            <div class="card">
+                <h2>WebSocket Tester</h2>
+
+                <div id="wsStatus" class="ws-status disconnected">Disconnected</div>
+
+                <div class="form-group">
+                    <label>Path</label>
+                    <input type="text" id="wsPath" value="/ws/chat" placeholder="/ws/path">
+                </div>
+
+                <div class="form-group">
+                    <label>Auth Header (optional)</label>
+                    <input type="text" id="wsAuth" placeholder="token-value">
+                </div>
+
+                <div class="button-group">
+                    <button id="wsConnectBtn" onclick="connectWS()">Connect</button>
+                    <button id="wsDisconnectBtn" onclick="disconnectWS()" style="display:none;">Disconnect</button>
+                </div>
+
+                <div style="margin-top: 15px;">
+                    <label>Messages</label>
+                    <div class="ws-messages" id="wsMessages"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>Send Message</label>
+                    <input type="text" id="wsMessage" placeholder="Your message" onkeypress="if(event.key==='Enter')sendWSMessage()">
+                </div>
+
+                <button onclick="sendWSMessage()">Send</button>
+            </div>
+        </div>
+
+        <!-- Quick Tests -->
+        <div class="card">
+            <h2>Quick Tests</h2>
+            <button onclick="runQuickTests()">Run All Tests</button>
+
+            <div class="test-results" id="testResults" style="display:none;">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentMethod = 'GET';
+        let ws = null;
+
+        // HTTP Method selector
+        document.querySelectorAll('.method-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.method-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                currentMethod = this.dataset.method;
+            });
+        });
+
+        async function sendHTTP() {
+            const path = document.getElementById('httpPath').value;
+            const body = document.getElementById('httpBody').value;
+            const output = document.getElementById('httpOutput');
+
+            try {
+                output.textContent = 'Sending...';
+                const options = {
+                    method: currentMethod,
+                    headers: { 'Content-Type': 'application/json' }
+                };
+
+                if (body && currentMethod !== 'GET') {
+                    options.body = body;
+                }
+
+                const response = await fetch(path, options);
+                const text = await response.text();
+
+                const status = response.status;
+                const isSuccess = status >= 200 && status < 300;
+
+                output.className = isSuccess ? 'output success' : 'output error';
+                output.textContent = `${status} ${response.statusText}\n\n${text}`;
+            } catch (e) {
+                output.className = 'output error';
+                output.textContent = `Error: ${e.message}`;
+            }
+        }
+
+        function connectWS() {
+            const path = document.getElementById('wsPath').value;
+            const auth = document.getElementById('wsAuth').value;
+            const fullUrl = `ws://${window.location.host}${path}`;
+
+            try {
+                ws = new WebSocket(fullUrl);
+
+                ws.onopen = () => {
+                    if (auth) ws.send(`AUTH:${auth}`);
+                    updateWSStatus(true);
+                    addWSMessage('Connected', 'received');
+                };
+
+                ws.onmessage = (e) => {
+                    addWSMessage(e.data, 'received');
+                };
+
+                ws.onerror = (e) => {
+                    addWSMessage(`Error: ${e}`, 'received');
+                    updateWSStatus(false);
+                };
+
+                ws.onclose = () => {
+                    updateWSStatus(false);
+                    addWSMessage('Disconnected', 'received');
+                };
+            } catch (e) {
+                addWSMessage(`Failed to connect: ${e.message}`, 'received');
+            }
+        }
+
+        function disconnectWS() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function sendWSMessage() {
+            const msg = document.getElementById('wsMessage').value;
+            if (!msg || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+            ws.send(msg);
+            addWSMessage(msg, 'sent');
+            document.getElementById('wsMessage').value = '';
+        }
+
+        function addWSMessage(msg, type) {
+            const container = document.getElementById('wsMessages');
+            const div = document.createElement('div');
+            div.className = `ws-message ${type}`;
+            div.textContent = msg;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function updateWSStatus(connected) {
+            const status = document.getElementById('wsStatus');
+            const connectBtn = document.getElementById('wsConnectBtn');
+            const disconnectBtn = document.getElementById('wsDisconnectBtn');
+
+            if (connected) {
+                status.className = 'ws-status connected';
+                status.textContent = '✓ Connected';
+                connectBtn.style.display = 'none';
+                disconnectBtn.style.display = 'block';
+            } else {
+                status.className = 'ws-status disconnected';
+                status.textContent = '✗ Disconnected';
+                connectBtn.style.display = 'block';
+                disconnectBtn.style.display = 'none';
+            }
+        }
+
+        async function runQuickTests() {
+            const results = document.getElementById('testResults');
+            results.innerHTML = '';
+            results.style.display = 'block';
+
+            const tests = [
+                { name: 'GET /health', method: 'GET', path: '/health', expect: 200 },
+                { name: 'GET /hello', method: 'GET', path: '/hello', expect: 200 },
+                { name: 'GET /user/42', method: 'GET', path: '/user/42', expect: 200 },
+                { name: 'GET /nonexistent', method: 'GET', path: '/nonexistent', expect: 404 },
+                { name: 'POST /items', method: 'POST', path: '/items', body: '{"test":"data"}', expect: 201 },
+                { name: 'GET /ws/state', method: 'GET', path: '/ws/state', expect: 200 },
+            ];
+
+            for (const test of tests) {
+                try {
+                    const options = {
+                        method: test.method,
+                        headers: { 'Content-Type': 'application/json' }
+                    };
+                    if (test.body) options.body = test.body;
+
+                    const response = await fetch(test.path, options);
+                    const pass = response.status === test.expect;
+
+                    const div = document.createElement('div');
+                    div.className = `test-item ${pass ? 'pass' : 'fail'}`;
+                    div.innerHTML = `<span class="badge ${test.method.toLowerCase()}">${test.method}</span>
+                        ${test.name}: ${response.status} ${pass ? '✓' : '✗ (expected ' + test.expect + ')'}`;
+                    results.appendChild(div);
+                } catch (e) {
+                    const div = document.createElement('div');
+                    div.className = 'test-item fail';
+                    div.innerHTML = `<span class="badge">${test.method}</span> ${test.name}: Error - ${e.message}`;
+                    results.appendChild(div);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

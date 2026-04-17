@@ -1,22 +1,21 @@
-# Logging for Mongoose.jl — trim=safe, colors auto-detected at runtime.
+# Logging for Mongoose.jl — native Julia logging by default, with trim-safe mode.
 #
-# Default: pretty colored output via concrete print() calls. No config needed.
+# Default: route @log_* to Julia's @info/@warn/@error.
 # Colors auto-detected in __init__ (works in JIT + AOT binaries).
 #
-# Optional: set LOG_NATIVE=true to expand @log_* to Julia's
-# standard @info/@warn/@error, integrating with ConsoleLogger/TeeLogger.
-# Selection is at macro-expansion (compile) time — juliac never sees the
-# @info branch in AOT builds.
+# For trim-safe/static binaries, set LOG_TRIMMABLE=true
+# to force concrete print()-based logging instead of Base logging macros.
 #
-#   Normal JIT:      julia --project server.jl
-#   Julia logging:   LOG_NATIVE=true julia --project server.jl
-#   juliac AOT:      juliac --trim=safe --project . --output-exe binary server.jl
+#   juliac AOT:      LOG_TRIMMABLE=true juliac --trim=safe --project . --output-exe binary server.jl
 
 # ── TTY detection ─────────────────────────────────────────────────────────────
 # Must run at module init time (binary startup), NOT at precompile time —
 # there is no terminal attached during package precompilation.
 
 const _TTY_REF = Ref{Bool}(false)
+const _LOG_TRIMMABLE_REF = Ref{Bool}(false)
+
+@inline _log_trimmable_enabled() = _LOG_TRIMMABLE_REF[]
 
 function _init_tty()
     _TTY_REF[] = @static if Sys.iswindows()
@@ -24,6 +23,16 @@ function _init_tty()
     else
         (@ccall isatty(1::Cint)::Cint) == 1
     end
+end
+
+@inline function _parse_env_bool(v::AbstractString)::Bool
+    s = lowercase(strip(v))
+    return s == "1" || s == "true" || s == "yes" || s == "on"
+end
+
+function _init_log_backend!()
+    wants_trim_safe = _parse_env_bool(get(ENV, "LOG_TRIMMABLE", "false"))
+    _LOG_TRIMMABLE_REF[] = wants_trim_safe
 end
 
 # Returns the escape code if TTY, "" otherwise — always a concrete String.
@@ -68,41 +77,61 @@ end
     return nothing
 end
 
-# ── Macros — backend chosen at macro-expansion (compile) time ────────────────
+# ── Macros — backend chosen at runtime ───────────────────────────────────────
 
 macro log_info(msg)
     file, line = basename(string(__source__.file)), __source__.line
-    get(ENV, "LOG_NATIVE", "true") == "true" ?
-        :(Base.@info $(esc(msg))) :
-        :(_log_info_impl($file, $line, $(esc(msg))))
+    quote
+        if !_log_trimmable_enabled()
+            Base.@info $(esc(msg))
+        else
+            _log_info_impl($file, $line, $(esc(msg)))
+        end
+    end
 end
 
 macro log_warn(msg)
     file, line = basename(string(__source__.file)), __source__.line
-    get(ENV, "LOG_NATIVE", "true") == "true" ?
-        :(Base.@warn $(esc(msg))) :
-        :(_log_warn_impl($file, $line, $(esc(msg))))
+    quote
+        if !_log_trimmable_enabled()
+            Base.@warn $(esc(msg))
+        else
+            _log_warn_impl($file, $line, $(esc(msg)))
+        end
+    end
 end
 
 macro log_error(msg)
     file, line = basename(string(__source__.file)), __source__.line
-    get(ENV, "LOG_NATIVE", "true") == "true" ?
-        :(Base.@error $(esc(msg))) :
-        :(_log_error_impl($file, $line, $(esc(msg))))
+    quote
+        if !_log_trimmable_enabled()
+            Base.@error $(esc(msg))
+        else
+            _log_error_impl($file, $line, $(esc(msg)))
+        end
+    end
 end
 
 macro log_error(msg, e)
     file, line = basename(string(__source__.file)), __source__.line
-    get(ENV, "LOG_NATIVE", "true") == "true" ?
-        :(Base.@error $(esc(msg)) exception=$(esc(e))) :
-        :(_log_error_impl($file, $line, $(esc(msg)), $(esc(e))))
+    quote
+        if !_log_trimmable_enabled()
+            Base.@error $(esc(msg)) exception=$(esc(e))
+        else
+            _log_error_impl($file, $line, $(esc(msg)), $(esc(e)))
+        end
+    end
 end
 
 macro log_error(msg, e, bt)
     file, line = basename(string(__source__.file)), __source__.line
-    get(ENV, "LOG_NATIVE", "true") == "true" ?
-        :(Base.@error $(esc(msg)) exception=($(esc(e)), $(esc(bt)))) :
-        :(_log_error_impl($file, $line, $(esc(msg)), $(esc(e))))
+    quote
+        if !_log_trimmable_enabled()
+            Base.@error $(esc(msg)) exception=($(esc(e)), $(esc(bt)))
+        else
+            _log_error_impl($file, $line, $(esc(msg)), $(esc(e)))
+        end
+    end
 end
 
 # ── Lifecycle ────────────────────────────────────────────────────────────────

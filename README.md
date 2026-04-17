@@ -352,6 +352,23 @@ juliac --trim=safe --project . --output-exe myapp app.jl
 
 ---
 
+## Logging 📋
+
+By default, Mongoose.jl routes `@log_info`, `@log_warn`, and `@log_error` macros to **Julia's native `@info`, `@warn`, `@error`** — integrating seamlessly with ConsoleLogger, TeeLogger, and log filtering.
+
+**For `juliac --trim=safe` binaries**, set `LOG_TRIMMABLE=true` to force concrete `print()`-based logging instead (required because macros are not available during trim-safe compilation):
+
+```bash
+# Native logging (default, works in JIT and AOT binary)
+julia --project app.jl
+
+# For trim-safe binaries, use concrete logging
+LOG_TRIMMABLE=true juliac --trim=safe --project . --output-exe binary app.jl
+./binary                              # macros automatically route to print()
+```
+
+---
+
 ## Full Example 🏗️
 
 A complete app with REST API, WebSocket, middleware stack, and custom errors:
