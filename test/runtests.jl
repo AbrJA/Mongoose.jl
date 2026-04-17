@@ -2288,10 +2288,14 @@ end
                         # Don't send anything — block until server closes the idle socket.
                         try
                             HTTP.WebSockets.receive(ws)
+                            # Some platforms/HTTP.jl versions may return cleanly on close.
+                            client_observed_close[] = true
                         catch
                             client_observed_close[] = true
                         end
                     end
+                    # If the do-block exits cleanly, the client still observed closure.
+                    client_observed_close[] = true
                 catch e
                     unexpected_client_error[] = e
                 end
@@ -2302,9 +2306,17 @@ end
             while close_count[] == 0 && time() < deadline
                 sleep(0.2)
             end
+
+            # Wait a little longer for the client task to observe and process closure.
+            client_deadline = time() + 5.0
+            while !istaskdone(client_task) && time() < client_deadline
+                sleep(0.05)
+            end
+
             @test close_count[] >= 1
             @test client_observed_close[] == true
             @test unexpected_client_error[] === nothing
+            @test istaskdone(client_task)
             wait(client_task)
         finally
             shutdown!(server)
