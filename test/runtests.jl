@@ -60,7 +60,7 @@ end
     end
 
     # --- Test 1: Server ---
-    @testset "Server" begin        
+    @testset "Server" begin
         router = Router()
         route!(router, :get, "/hello", greet)
 

@@ -1,7 +1,7 @@
 # Logging for Mongoose.jl — native Julia logging by default, with trim-safe mode.
 #
 # Default: route @log_* to Julia's @info/@warn/@error.
-# Colors auto-detected in __init__ (works in JIT + AOT binaries).
+# Colors auto-detected in __init__ per output stream (works in JIT + AOT binaries).
 #
 # For trim-safe/static binaries, set LOG_TRIMMABLE=true
 # to force concrete print()-based logging instead of Base logging macros.
@@ -12,16 +12,19 @@
 # Must run at module init time (binary startup), NOT at precompile time —
 # there is no terminal attached during package precompilation.
 
-const _TTY_REF = Ref{Bool}(false)
+const _TTY_OUT_REF = Ref{Bool}(false)
+const _TTY_ERR_REF = Ref{Bool}(false)
 const _LOG_TRIMMABLE_REF = Ref{Bool}(false)
 
 @inline _log_trimmable_enabled() = _LOG_TRIMMABLE_REF[]
 
 function _init_tty()
-    _TTY_REF[] = @static if Sys.iswindows()
-        (@ccall _isatty(1::Cint)::Cint) == 1
+    @static if Sys.iswindows()
+        _TTY_OUT_REF[] = (@ccall _isatty(1::Cint)::Cint) == 1
+        _TTY_ERR_REF[] = (@ccall _isatty(2::Cint)::Cint) == 1
     else
-        (@ccall isatty(1::Cint)::Cint) == 1
+        _TTY_OUT_REF[] = (@ccall isatty(1::Cint)::Cint) == 1
+        _TTY_ERR_REF[] = (@ccall isatty(2::Cint)::Cint) == 1
     end
 end
 
@@ -35,8 +38,8 @@ function _init_log_backend!()
     _LOG_TRIMMABLE_REF[] = wants_trim_safe
 end
 
-# Returns the escape code if TTY, "" otherwise — always a concrete String.
-@inline _c(s::String) = _TTY_REF[] ? s : ""
+# Returns the escape code if destination is a TTY, "" otherwise.
+@inline _c(s::String, to_stderr::Bool=false) = (to_stderr ? _TTY_ERR_REF[] : _TTY_OUT_REF[]) ? s : ""
 
 const _RST   = "\e[0m"
 const _BOLD  = "\e[1m"
@@ -57,23 +60,23 @@ end
 
 @noinline function _log_warn_impl(file::String, line::Int, msg::String)
     print(Core.stderr,
-        _c(_BOLD) * _c(_YORNG) * "[Warn]" * _c(_RST) *
-        _c(_DIM)  * " [Mongoose] " * file * ":" * string(line) * " — " * _c(_RST) * msg * "\n")
+    _c(_BOLD, true) * _c(_YORNG, true) * "[Warn]" * _c(_RST, true) *
+    _c(_DIM, true)  * " [Mongoose] " * file * ":" * string(line) * " — " * _c(_RST, true) * msg * "\n")
 end
 
 @noinline function _log_error_impl(file::String, line::Int, msg::String)::Nothing
     print(Core.stderr,
-        _c(_BOLD) * _c(_RED) * "[Error]" * _c(_RST) *
-        _c(_DIM)  * " [Mongoose] " * file * ":" * string(line) * " — " * _c(_RST) * msg * "\n")
+        _c(_BOLD, true) * _c(_RED, true) * "[Error]" * _c(_RST, true) *
+        _c(_DIM, true)  * " [Mongoose] " * file * ":" * string(line) * " — " * _c(_RST, true) * msg * "\n")
     return nothing
 end
 
 @noinline function _log_error_impl(file::String, line::Int, msg::String, @nospecialize(e))::Nothing
     print(Core.stderr,
-        _c(_BOLD) * _c(_RED) * "[Error]" * _c(_RST) *
-        _c(_DIM)  * " [Mongoose] " * file * ":" * string(line) * " — " * _c(_RST) * msg * "\n")
+        _c(_BOLD, true) * _c(_RED, true) * "[Error]" * _c(_RST, true) *
+        _c(_DIM, true)  * " [Mongoose] " * file * ":" * string(line) * " — " * _c(_RST, true) * msg * "\n")
     detail = try getfield(e, :msg)::String catch; "error" end
-    print(Core.stderr, "        " * _c(_RED) * detail * _c(_RST) * "\n")
+    print(Core.stderr, "        " * _c(_RED, true) * detail * _c(_RST, true) * "\n")
     return nothing
 end
 
