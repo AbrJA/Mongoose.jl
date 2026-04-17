@@ -1,16 +1,19 @@
 name = "Mongoose"
 uuid = "494b707d-6180-4d60-8018-fdbee1ff8085"
+version = "0.3.0"
 authors = ["Abraham Jaimes"]
-version = "0.2.1"
 
 [deps]
 Mongoose_jll = "0a8a3f5b-4c0e-5906-8e29-5b3fee15539c"
+PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 
 [compat]
-julia = "1.6.7"
+PrecompileTools = "1"
+julia = "1.10"
 
 [extras]
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["Test", "HTTP"]
