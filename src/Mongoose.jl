@@ -54,6 +54,11 @@ include("middleware/logger.jl")
 include("middleware/health.jl")
 include("middleware/metrics.jl")
 
+function __init__()
+    _init_tty()
+    _init_log_backend!()
+end
+
 # 8. Precompilation
 @setup_workload begin
     @compile_workload begin

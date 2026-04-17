@@ -33,62 +33,51 @@ end
     ServerCore{R} — Shared state. R <: AbstractRouter
 """
 mutable struct ServerCore{R <: AbstractRouter}
-    # --- 1. Execution State ---
     running::Threads.Atomic{Bool}
     master::Union{Nothing, Task}
     manager::Manager
-    c_handler::Ptr{Cvoid}             # C-interop handler
-    ws_clients::Dict{Int, WsConn}      # conn_id → (uri, last_active); per-server, event-loop only
-    id_seq::Threads.Atomic{UInt64} # Connection/Request ID generator
+    c_handler::Ptr{Cvoid}
+    ws_clients::Dict{Int, WsConn}
+    id_seq::Threads.Atomic{UInt64}
 
-    # --- 2. Routing & Logic ---
     router::R
     middlewares::Vector{AbstractMiddleware}
     mounts::Vector{Tuple{String, String}}
     errors::Dict{Int, Response}
 
-    # --- 3. Configuration & Limits ---
     poll_timeout::Int
     request_timeout::Int
     drain_timeout::Int
     max_body::Int
-    ws_idle_timeout::Int      # seconds; 0 = disabled
+    ws_idle_timeout::Int
 
-    # --- 4. UI/UX Preferences ---
-    styled::Bool
-
-    # Inner Constructor
     function ServerCore(poll_timeout::Integer, router::R;
                         max_body::Integer = MAX_BODY,
                         drain_timeout::Integer = DRAIN_TIMEOUT,
                         request_timeout::Integer = 0,
                         ws_idle_timeout::Integer = 0,
                         errors::Dict{Int, Response} = Dict{Int, Response}(),
-                        c_handler::Ptr{Cvoid} = C_NULL,
-                        styled::Bool = isa(stdout, Base.TTY)) where {R <: AbstractRouter}
+                        c_handler::Ptr{Cvoid} = C_NULL) where {R <: AbstractRouter}
 
         return new{R}(
-            Threads.Atomic{Bool}(false),    # running
-            nothing,                        # master
-            Manager(empty=true),            # manager
-            c_handler,                      # c_handler
-            Dict{Int, WsConn}(),            # ws_clients
-            Threads.Atomic{UInt64}(0),      # id_seq
-            router,                         # router
-            AbstractMiddleware[],           # middlewares
-            Tuple{String, String}[],        # mounts
-            errors,                         # errors
-            poll_timeout,                   # poll_timeout 
-            request_timeout,                # request_timeout
-            drain_timeout,                  # drain_timeout
-            max_body,                       # max_body
-            ws_idle_timeout,                # ws_idle_timeout
-            styled                          # styled
+            Threads.Atomic{Bool}(false),
+            nothing,
+            Manager(empty=true),
+            c_handler,
+            Dict{Int, WsConn}(),
+            Threads.Atomic{UInt64}(0),
+            router,
+            AbstractMiddleware[],
+            Tuple{String, String}[],
+            errors,
+            poll_timeout,
+            request_timeout,
+            drain_timeout,
+            max_body,
+            ws_idle_timeout
         )
     end
 end
-
-# --- Config ---
 
 """
     Config
@@ -136,21 +125,54 @@ Base.@kwdef struct Config
     nworkers::Int           = 4
     nqueue::Int             = 1024
     errors::Dict{Int,Response} = Dict{Int,Response}()
-    styled::Bool = isa(stdout, Base.TTY)
 end
 
-# --- Abstract Server Implementations (Structs only) ---
+"""
+    _validate(config::Config) → nothing
+
+Fail fast on invalid configuration values. Called by `Server` and `Async`
+constructors to surface mistakes at construction time, not at `start!`.
+"""
+function _validate(config::Config)
+    _validate_core(config.poll_timeout, config.max_body, config.drain_timeout,
+                   config.request_timeout, config.ws_idle_timeout)
+    _validate_errors(config.errors)
+    config.nworkers   > 0 || throw(ServerError("nworkers must be > 0, got $(config.nworkers)"))
+    config.nqueue     > 0 || throw(ServerError("nqueue must be > 0, got $(config.nqueue)"))
+    return
+end
 
 """
-    Server — Single-threaded blocking server.
+    _validate_core(poll_timeout, max_body, drain_timeout, request_timeout, ws_idle_timeout)
+
+Validate shared core runtime limits used by both `Server` and `Async` constructors.
 """
+function _validate_core(poll_timeout::Integer, max_body::Integer, drain_timeout::Integer,
+                        request_timeout::Integer, ws_idle_timeout::Integer)
+    max_body > 0 || throw(ServerError("max_body must be > 0, got $(max_body)"))
+    poll_timeout >= 0 || throw(ServerError("poll_timeout must be >= 0, got $(poll_timeout)"))
+    drain_timeout >= 0 || throw(ServerError("drain_timeout must be >= 0, got $(drain_timeout)"))
+    request_timeout >= 0 || throw(ServerError("request_timeout must be >= 0, got $(request_timeout)"))
+    ws_idle_timeout >= 0 || throw(ServerError("ws_idle_timeout must be >= 0, got $(ws_idle_timeout)"))
+    return
+end
+
+"""
+    _validate_errors(errors)
+
+Validate custom error response map keys as HTTP status codes in [100, 599].
+"""
+function _validate_errors(errors::Dict{Int,Response})
+    for code in keys(errors)
+        (100 <= code <= 599) || throw(ServerError("errors key must be an HTTP status code in [100, 599], got $(code)"))
+    end
+    return
+end
+
 mutable struct Server{R <: AbstractRouter} <: AbstractServer
     core::ServerCore{R}
 end
 
-"""
-    Async — Multi-threaded server using worker tasks.
-"""
 mutable struct Async{R <: AbstractRouter} <: AbstractServer
     core::ServerCore{R}
     workers::Vector{Task}
@@ -159,9 +181,8 @@ mutable struct Async{R <: AbstractRouter} <: AbstractServer
     connections::Dict{Int,MgConnection}
     nworkers::Int
     nqueue::Int
+    inflight::Threads.Atomic{Int}
 end
-
-# --- Shared Lifecycle Primitives ---
 
 _cfnasync(::Type{T}) where {T} = C_NULL
 _cfnsync(::Type{T}) where {T} = C_NULL
@@ -180,12 +201,12 @@ function _bind!(server::AbstractServer, host::AbstractString, port::Integer)
 end
 
 function _spawnloop!(server::AbstractServer)
-    server.core.master = Threads.@spawn begin
+    server.core.master = @async begin
         try
             _eventloop(server)
         catch e
             if !isa(e, InterruptException)
-                _log_error("Server event loop error component=eventloop", e, catch_backtrace())
+                @log_error "Server event loop error component=eventloop" e catch_backtrace()
             end
         finally
             server.core.running[] = false

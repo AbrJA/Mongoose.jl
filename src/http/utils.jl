@@ -94,8 +94,10 @@ Missing keys default to empty string, zero, `false`, or `nothing` as appropriate
                 elseif ftype === Bool
                     :(lowercase(val) in ("true", "1", "yes"))
                 elseif ftype isa Union && Nothing <: ftype
-                    # Handle Union{T, Nothing} — return nothing if empty
-                    inner = Base.typesplit(ftype, Nothing)
+                    # Handle Union{T, Nothing} — return nothing if empty.
+                    # Extract the non-Nothing type without relying on the
+                    # undocumented Base.typesplit internal.
+                    inner = only(t for t in Base.uniontypes(ftype) if t !== Nothing)
                     if inner === String
                         :(isempty(val) ? nothing : val)
                     else
@@ -140,8 +142,12 @@ function Base.get(headers::Vector{Pair{String,String}}, key::String, default)
     return default
 end
 
-# Returns true when `s` contains no uppercase ASCII letters (A-Z).
-@inline function _islowerascii(s::String)::Bool
+"""
+    _islowerascii(s) → Bool
+
+Return `true` when `s` contains no uppercase ASCII letters (A–Z).
+"""
+@inline function _islowerascii(s::String)
     @inbounds for i in 1:ncodeunits(s)
         b = codeunit(s, i)
         (UInt8('A') <= b <= UInt8('Z')) && return false

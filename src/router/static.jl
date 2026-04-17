@@ -17,7 +17,6 @@ abstract type StaticRouter <: AbstractRouter end
 """
 function _dispatchstatic end
 
-# Interface fallback — @router generates the real methods
 _dispatchstatic(app::T, ::AbstractRequest) where {T<:StaticRouter} =
     error("$(T) must implement _dispatchstatic via the @router macro")
 
@@ -73,18 +72,15 @@ function _parseroute(path::String)
     segments = RouteSegment[]
     parts = split(path, '/', keepempty=false)
     for (i, part) in enumerate(parts)
-        if startswith(part, "{") && endswith(part, "}")
-            inner = part[2:end-1]
-            if occursin("::", inner)
-                name, typestr = split(inner, "::", limit=2)
+        if startswith(part, ":")
+            # :name  or  :name::Type  — mirrors dynamic router syntax
+            spec = part[2:end]
+            if occursin("::", spec)
+                name, typestr = split(spec, "::", limit=2)
                 push!(segments, RouteSegment(true, String(name), Symbol(typestr)))
             else
-                push!(segments, RouteSegment(true, String(inner), SubString{String}))
+                push!(segments, RouteSegment(true, String(spec), SubString{String}))
             end
-        elseif startswith(part, ":")
-            # Support :name syntax but convert to SubString for performance
-            name = part[2:end]
-            push!(segments, RouteSegment(true, String(name), SubString{String}))
         elseif startswith(part, "*")
             i < length(parts) && error("RouteError: wildcard segment *$(part[2:end]) must be the last segment in route \"$path\"")
             name = part[2:end]
@@ -235,6 +231,80 @@ function _generatedispatch(node::StaticNode, seg_sym::Symbol, idx_sym::Symbol, p
     return Expr(:block, exprs...)
 end
 
+# Generate a method-specific path matcher body (no handler execution).
+# The generated function returns true when the path matches a route for that method.
+function _generatematchbody(node::StaticNode, seg_sym::Symbol, idx_sym::Symbol, path_sym::Symbol)
+    exprs = []
+
+    # 1. Exact path match reached at a handler node
+    if node.handler !== nothing
+        push!(exprs, quote
+            if length($(seg_sym)) == 0
+                return true
+            end
+        end)
+    end
+
+    # 2. Static children
+    if !isempty(node.static_children)
+        static_blocks = []
+        for (val, child) in node.static_children
+            next_seg = gensym("seg")
+            next_idx = gensym("idx")
+            child_expr = _generatematchbody(child, next_seg, next_idx, path_sym)
+
+            push!(static_blocks, quote
+                if $(seg_sym) == $val
+                    $(next_seg), $(next_idx) = _staticnextseg($(path_sym), $(idx_sym))
+                    $(child_expr)
+                end
+            end)
+        end
+        push!(exprs, Expr(:block, static_blocks...))
+    end
+
+    # 3. Variable child
+    if node.variable_child !== nothing
+        seg, child = node.variable_child
+        next_seg = gensym("seg")
+        next_idx = gensym("idx")
+        child_expr = _generatematchbody(child, next_seg, next_idx, path_sym)
+
+        parse_guard = if seg.type == SubString{String} || seg.type == String || seg.type == :String
+            :(true)
+        else
+            quote
+                try
+                    Base.parse($(seg.type), String($(seg_sym)))
+                    true
+                catch
+                    false
+                end
+            end
+        end
+
+        push!(exprs, quote
+            if length($(seg_sym)) != 0
+                if $(parse_guard)
+                    $(next_seg), $(next_idx) = _staticnextseg($(path_sym), $(idx_sym))
+                    $(child_expr)
+                end
+            end
+        end)
+    end
+
+    # 4. Wildcard child
+    if node.wildcard_child !== nothing
+        push!(exprs, quote
+            if length($(seg_sym)) != 0
+                return true
+            end
+        end)
+    end
+
+    return Expr(:block, exprs...)
+end
+
 function _extractroutes(block)
     http_routes = []
     ws_routes = []
@@ -273,11 +343,12 @@ end
 
 Generate a static router for `AppType`.
 Routes are defined as: `METHOD("/path", handler)`
-Example:
+
+Typed parameters use `:name::Type` syntax (mirrors the dynamic router):
 ```julia
 @router MyApp begin
-    get("/", (req) -> Response(200, "OK"))
-    get("/users/{id::Int}", (req, id) -> Response(200, "User \$id"))
+    get("/",               (req) -> Response(200, "OK"))
+    get("/users/:id::Int", (req, id) -> Response(200, "User \$id"))
 end
 ```
 """
@@ -291,6 +362,31 @@ macro router(app_type::Symbol, block)
     req_sym = gensym("req")
 
     dispatch_body = _generatedispatch(root, :_, :_, path_sym, req_sym, Symbol[], true)
+
+    # Build per-method path matcher functions so static dispatch can emit 405 when
+    # a path exists but the requested HTTP method is not allowed.
+    method_syms = unique(Symbol[r[1] for r in http_routes])
+    method_matchers = Tuple{Symbol,Symbol}[]
+    matcher_defs = Expr[]
+    for method_sym in method_syms
+        method_node = get(root.static_children, String(method_sym), nothing)
+        method_node === nothing && continue
+
+        match_fn = Symbol("_match_", app_type, "_", method_sym)
+        push!(method_matchers, (method_sym, match_fn))
+
+        seg = gensym("seg")
+        idx = gensym("idx")
+        match_body = _generatematchbody(method_node, seg, idx, path_sym)
+
+        push!(matcher_defs, quote
+            @inline function $(match_fn)($(path_sym)::AbstractString)::Bool
+                $(seg), $(idx) = _staticnextseg($(path_sym), 1)
+                $(match_body)
+                return false
+            end
+        end)
+    end
 
     async_handler_sym = Symbol("_async_", app_type, "_c_handler")
     sync_handler_sym = Symbol("_sync_", app_type, "_c_handler")
@@ -307,7 +403,7 @@ macro router(app_type::Symbol, block)
             try
                 Mongoose._dispatchev(server, ev, conn, ev_data)
             catch e
-                Mongoose._log_error("Event handler error component=eventloop", e, Base.catch_backtrace())
+                Mongoose._log_error_impl("router/static.jl", 0, "Event handler error component=eventloop", e)
             end
             return nothing
         end
@@ -323,7 +419,7 @@ macro router(app_type::Symbol, block)
             try
                 Mongoose._dispatchev(server, ev, conn, ev_data)
             catch e
-                Mongoose._log_error("Event handler error component=eventloop", e, Base.catch_backtrace())
+                Mongoose._log_error_impl("router/static.jl", 0, "Event handler error component=eventloop", e)
             end
             return nothing
         end
@@ -351,15 +447,31 @@ macro router(app_type::Symbol, block)
                 resp.status != 404 && return Mongoose.Response(resp.status, resp.headers, "")
             end
 
+            # Method mismatch on an existing path => 405 Method Not Allowed.
+            allow = String[]
+            $(Expr(:block, [quote
+                if $(req_sym).method !== $(QuoteNode(method_sym)) && $(match_fn)($(path_sym))
+                    push!(allow, uppercase(String($(QuoteNode(method_sym)))))
+                end
+            end for (method_sym, match_fn) in method_matchers]...))
+
+            if !isempty(allow)
+                return Mongoose.Response(Plain, "405 Method Not Allowed";
+                    status=405,
+                    headers=["Allow" => join(allow, ", ")])
+            end
+
             return Mongoose.Response(Plain, "404 Not Found"; status=404)
         end
 
+        $(Expr(:block, matcher_defs...))
+
         # --- Static WebSocket Dispatch ---
-        function Mongoose._wsupgrade(::$(esc(app_type)), uri::String)::Union{Mongoose.WsEndpoint,Nothing}
+        function Mongoose._wsupgrade(::$(esc(app_type)), uri::String)
             $(Expr(:block, [
                 quote
                     if uri == $path
-                        return Mongoose.WsEndpoint(; $([Expr(:kw, k, esc(v)) for (k, v) in kwargs]...))
+                        return Mongoose.StaticWsEndpoint(; $([Expr(:kw, k, esc(v)) for (k, v) in kwargs]...))
                     end
                 end for (path, kwargs) in ws_routes
             ]...))

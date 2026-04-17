@@ -21,11 +21,13 @@ function Server(router::AbstractRouter=Router();
                     max_body::Integer=MAX_BODY,
                     drain_timeout::Integer=DRAIN_TIMEOUT,
                     ws_idle_timeout::Integer=0,
-                    errors::Dict{Int,Response}=Dict{Int,Response}(),
-                    styled::Bool=isa(stdout, Base.TTY))
+                    errors::Dict{Int,Response}=Dict{Int,Response}())
+    _validate_core(poll_timeout, max_body, drain_timeout, 0, ws_idle_timeout)
+    _validate_errors(errors)
+
     c_handler = Mongoose._cfnsync(typeof(router))
     core = ServerCore(poll_timeout, router; max_body=max_body, drain_timeout=drain_timeout,
-                      ws_idle_timeout=ws_idle_timeout, errors=errors, c_handler=c_handler, styled=styled)
+                      ws_idle_timeout=ws_idle_timeout, errors=errors, c_handler=c_handler)
     server = Server{typeof(router)}(core)
     finalizer(_teardown!, server)
     return server
@@ -35,15 +37,20 @@ end
     Server(router, config::Config)
 
 Create a `Server` from a [`Config`](@ref) struct.
+
+!!! note
+    `request_timeout` is ignored by `Server` (single-threaded, no task to enforce it).
+    Use `Async` for per-request timeouts.
 """
 function Server(router::AbstractRouter, config::Config)
+    _validate(config)
+    config.request_timeout > 0 && @log_warn "request_timeout=" * string(config.request_timeout) * " ignored by Server (use Async for per-request timeouts)"
     return Server(router;
         poll_timeout          = config.poll_timeout,
         max_body    = config.max_body,
         drain_timeout = config.drain_timeout,
         ws_idle_timeout = config.ws_idle_timeout,
-        errors  = config.errors,
-        styled = config.styled
+        errors  = config.errors
     )
 end
 
@@ -60,7 +67,6 @@ function _eventloop(server::Server)
     while server.core.running[]
         mg_mgr_poll(mgr, timeout)
         isempty(server.core.ws_clients) || mg_mgr_poll(mgr, 0)
-        # Periodic WS idle sweep
         if server.core.ws_idle_timeout > 0 && !isempty(server.core.ws_clients)
             now_t = time()
             if (now_t - last_sweep) >= 5.0  # sweep every 5s

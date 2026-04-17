@@ -9,11 +9,9 @@
     - `http_request_duration_seconds{le}` — histogram (11 finite buckets)
 """
 
-# Standard Prometheus histogram bucket upper bounds (seconds)
 const _HIST_BOUNDS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
 const _N_HIST_BUCKETS = length(_HIST_BOUNDS) + 1  # +1 for the +Inf bucket
 
-# Number of independent shards 
 const _METRICS_SHARDS = 8
 
 const _METRICS_CONTENT_TYPE = "Content-Type: text/plain; version=0.0.4; charset=utf-8\r\n"
@@ -42,12 +40,15 @@ struct PrometheusMetrics <: AbstractMiddleware
 end
 
 @inline function _shard(mw::PrometheusMetrics)
-    idx = (hash(objectid(current_task())) % _METRICS_SHARDS) + 1
-    return mw.shards[idx]
+    return mw.shards[mod1(hash(objectid(current_task())), _METRICS_SHARDS)]
 end
 
-# Find the raw (non-cumulative) histogram bucket index for an elapsed time.
-@inline function _histidx(elapsed_s::Float64)::Int
+"""
+    _histidx(elapsed_s) → Int
+
+Return the raw (non-cumulative) histogram bucket index for a given elapsed time in seconds.
+"""
+@inline function _histidx(elapsed_s::Float64)
     @inbounds for i in 1:length(_HIST_BOUNDS)
         elapsed_s <= _HIST_BOUNDS[i] && return i
     end
@@ -55,7 +56,6 @@ end
 end
 
 function (mw::PrometheusMetrics)(request::AbstractRequest, params::Vector{Any}, next)
-    # Serve /metrics directly — skip handler pipeline
     if request.method === :get && request.uri == mw.path
         return _renderstats(mw)
     end
@@ -84,7 +84,7 @@ function (mw::PrometheusMetrics)(request::AbstractRequest, params::Vector{Any}, 
     return response
 end
 
-function _renderstats(mw::PrometheusMetrics)::Response
+function _renderstats(mw::PrometheusMetrics)
     # --- Aggregate all shards ---
     agg_counts = Dict{String,Int}()
     agg_raw    = zeros(Int, _N_HIST_BUCKETS)
@@ -120,7 +120,6 @@ function _renderstats(mw::PrometheusMetrics)::Response
     # --- Build Prometheus text output ---
     io = IOBuffer(sizehint=512)
 
-    # http_requests_total counter
     println(io, "# HELP http_requests_total Total number of HTTP requests")
     println(io, "# TYPE http_requests_total counter")
     for (label, count) in sort!(collect(agg_counts), by=first)
@@ -139,7 +138,6 @@ function _renderstats(mw::PrometheusMetrics)::Response
     println(io, "# HELP http_request_duration_seconds HTTP request latency in seconds")
     println(io, "# TYPE http_request_duration_seconds histogram")
 
-    # Convert raw (non-cumulative) counts to cumulative for Prometheus format
     cumulative = 0
     for i in 1:length(_HIST_BOUNDS)
         cumulative += @inbounds agg_raw[i]

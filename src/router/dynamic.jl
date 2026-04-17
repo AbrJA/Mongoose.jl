@@ -2,10 +2,6 @@
     HTTP router — trie-based path matching with fixed-route fast path.
 """
 
-# Handler defined in types.jl
-
-# --- MethodMap: fixed-slot dispatch for HTTP methods ---
-
 """
     MethodMap — Fixed-slot storage for HTTP method handlers.
 
@@ -64,8 +60,6 @@ mutable struct TrieNode
     handlers::MethodMap                          # HTTP method → handler
     TrieNode() = new(Pair{String,TrieNode}[], nothing, nothing, String, MethodMap())
 end
-
-# --- Vector-based child lookup (faster than Dict for <10 children) ---
 
 @inline function _findchild(children::Vector{Pair{String,TrieNode}}, key::AbstractString)
     @inbounds for i in 1:length(children)

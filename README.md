@@ -352,6 +352,23 @@ juliac --trim=safe --project . --output-exe myapp app.jl
 
 ---
 
+## Logging 📋
+
+By default, Mongoose.jl routes `@log_info`, `@log_warn`, and `@log_error` macros to **Julia's native `@info`, `@warn`, `@error`** — integrating seamlessly with ConsoleLogger, TeeLogger, and log filtering.
+
+**For `juliac --trim=safe` binaries**, set `LOG_TRIMMABLE=true` to force concrete `print()`-based logging instead (required because macros are not available during trim-safe compilation):
+
+```bash
+# Native logging (default, works in JIT and AOT binary)
+julia --project app.jl
+
+# For trim-safe binaries, use concrete logging
+LOG_TRIMMABLE=true juliac --trim=safe --project . --output-exe binary app.jl
+./binary                              # macros automatically route to print()
+```
+
+---
+
 ## Full Example 🏗️
 
 A complete app with REST API, WebSocket, middleware stack, and custom errors:
@@ -400,6 +417,20 @@ fail!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500)
 # blocking=true: start! handles Ctrl+C automatically and shuts down gracefully
 start!(server, port=8080)
 ```
+
+---
+
+## Deployment 🌐
+
+Mongoose.jl serves plain HTTP. For HTTPS in production, terminate TLS at a reverse proxy in front of your Mongoose.jl process.
+
+| Proxy | Notes |
+|---|---|
+| Caddy | Use automatic certificate management and proxy to `127.0.0.1:8080`. |
+| nginx | Terminate TLS at the edge and `proxy_pass` to `http://127.0.0.1:8080`. |
+| Envoy | Terminate TLS at the listener and route to the Mongoose.jl upstream cluster. |
+
+This deployment model keeps certificate rotation, HTTP/2 negotiation, and edge policy out of application code.
 
 ---
 

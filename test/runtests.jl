@@ -17,7 +17,13 @@ end
 end
 
 @router TypedApp begin
-    get("/item/{id::Int}", (req, id) -> Response(200, "", "id=$id type=$(typeof(id))"))
+    get("/item/:id::Int", (req, id) -> Response(200, "", "id=$id type=$(typeof(id))"))
+end
+
+@router PrecedenceApp begin
+    get("/match/exact", req -> Response(200, "", "exact"))
+    get("/match/:id::Int", (req, id) -> Response(200, "", "typed:$id"))
+    get("/*rest", (req, rest) -> Response(404, "", "wild:$rest"))
 end
 
 @testset "Mongoose.jl" begin
@@ -699,7 +705,7 @@ end
         route!(server, "POST", "/a", (req) -> Response(200, "", "from post"))
         start!(server; port=8115, blocking=false)
         wait_for_server("http://localhost:8115/")
-        
+
         try
             resp = HTTP.get("http://localhost:8115/a")
             @test resp.status == 200
@@ -871,7 +877,7 @@ end
         server = Server(router)
         start!(server; port=8119, blocking=false)
         wait_for_server("http://localhost:8119/")
-        
+
         try
             resp = HTTP.get("http://localhost:8119/ping")
             @test resp.status == 200
@@ -950,7 +956,7 @@ end
         server = Server(router)
         start!(server; port=8122, blocking=false)
         wait_for_server("http://localhost:8122/")
-        
+
         try
             start!(server; port=8123, blocking=false)  # different port — should be ignored
             # original port still works, 8123 never opened
@@ -1679,7 +1685,7 @@ end
         s_async   = Async(router, cfg_async)
         start!(s_async; port=8211, blocking=false)
         wait_for_server("http://localhost:8211/")
-        
+
         try
             resp = HTTP.get("http://localhost:8211/ping")
             @test resp.status == 200
@@ -1872,7 +1878,7 @@ end
     # @router static router: 404, 405, and invalid typed param
     # ==========================================================================
 
-    @testset "@router: unknown route returns 404" begin
+    @testset "@router: unknown route returns 404 and method mismatch returns 405" begin
         server = Server(Routes)
         start!(server; port=8218, blocking=false)
         wait_for_server("http://localhost:8218/")
@@ -1881,15 +1887,15 @@ end
             resp = HTTP.get("http://localhost:8218/nonexistent"; status_exception=false)
             @test resp.status == 404
 
-            # Static router falls through to 404 for any unmatched method/path combination
+            # Static router returns 405 when path exists but method is not allowed
             resp = HTTP.post("http://localhost:8218/hello"; status_exception=false)
-            @test resp.status == 404
+            @test resp.status == 405
         finally
             shutdown!(server)
         end
     end
 
-    @testset "@router: typed param {id::Int} non-matching value → 404" begin
+    @testset "@router: typed param :id::Int → typed dispatch and 404 on mismatch" begin
         server = Server(TypedApp)
         start!(server; port=8219, blocking=false)
         wait_for_server("http://localhost:8219/")
@@ -2301,5 +2307,139 @@ end
         finally
             shutdown!(server)
         end
+    end
+
+    # ==========================================================================
+    # WS idle timeout behavioral test
+    # ==========================================================================
+
+    @testset "WebSocket idle timeout closes stale connection" begin
+        router = Router()
+        close_count = Threads.Atomic{Int}(0)
+        route!(router, :get, "/", req -> Response(Plain, "ok"))
+        ws!(router, "/idle",
+            on_message = (msg::Message) -> Message("echo"),
+            on_open    = (req::Request) -> nothing,
+            on_close   = () -> Threads.atomic_add!(close_count, 1)
+        )
+
+        # ws_idle_timeout=1 means connections idle >1s are eligible for close.
+        # The event loop sweeps every 5s, so the close arrives within ~6s.
+        server = Server(router; ws_idle_timeout=1)
+        start!(server; port=8234, blocking=false)
+        wait_for_server("http://localhost:8234/")
+
+        try
+            client_observed_close = Ref(false)
+            unexpected_client_error = Ref{Any}(nothing)
+            client_task = @async begin
+                try
+                    HTTP.WebSockets.open("ws://localhost:8234/idle") do ws
+                        # Don't send anything — block until server closes the idle socket.
+                        try
+                            HTTP.WebSockets.receive(ws)
+                        catch
+                            client_observed_close[] = true
+                        end
+                    end
+                catch e
+                    unexpected_client_error[] = e
+                end
+            end
+
+            # Wait up to 10s for idle sweep + close propagation.
+            deadline = time() + 10.0
+            while close_count[] == 0 && time() < deadline
+                sleep(0.2)
+            end
+            @test close_count[] >= 1
+            @test client_observed_close[] == true
+            @test unexpected_client_error[] === nothing
+            wait(client_task)
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Routing precedence: static router and dynamic router
+    # ==========================================================================
+
+    @testset "@router precedence: exact/typed before catch-all" begin
+        server = Server(PrecedenceApp)
+        start!(server; port=8235, blocking=false)
+        wait_for_server("http://localhost:8235/")
+
+        try
+            resp = HTTP.get("http://localhost:8235/match/exact")
+            @test resp.status == 200
+            @test String(resp.body) == "exact"
+
+            resp = HTTP.get("http://localhost:8235/match/42")
+            @test resp.status == 200
+            @test String(resp.body) == "typed:42"
+
+            resp = HTTP.get("http://localhost:8235/match/abc"; status_exception=false)
+            @test resp.status == 404
+
+            resp = HTTP.get("http://localhost:8235/match/abc/def"; status_exception=false)
+            @test resp.status == 404
+        finally
+            shutdown!(server)
+        end
+    end
+
+    @testset "Router precedence: exact/typed before catch-all" begin
+        router = Router()
+        route!(router, :get, "/match/exact", req -> Response(Plain, "exact"))
+        route!(router, :get, "/match/:id::Int", (req, id) -> Response(Plain, "typed:$id"))
+        route!(router, :get, "*", req -> Response(404, "", "wild:" * req.uri))
+
+        server = Async(router; nworkers=1)
+        start!(server; port=8236, blocking=false)
+        wait_for_server("http://localhost:8236/")
+
+        try
+            resp = HTTP.get("http://localhost:8236/match/exact")
+            @test resp.status == 200
+            @test String(resp.body) == "exact"
+
+            resp = HTTP.get("http://localhost:8236/match/7")
+            @test resp.status == 200
+            @test String(resp.body) == "typed:7"
+
+            resp = HTTP.get("http://localhost:8236/match/slug"; status_exception=false)
+            @test resp.status == 404
+            @test String(resp.body) == "wild:/match/slug"
+
+            resp = HTTP.get("http://localhost:8236/match/slug/deep"; status_exception=false)
+            @test resp.status == 404
+            @test String(resp.body) == "wild:/match/slug/deep"
+        finally
+            shutdown!(server)
+        end
+    end
+
+    # ==========================================================================
+    # Config validation
+    # ==========================================================================
+
+    @testset "Config validation rejects invalid values" begin
+        @test_throws Mongoose.ServerError Async(Router(), Config(nworkers=0))
+        @test_throws Mongoose.ServerError Async(Router(), Config(nqueue=0))
+        @test_throws Mongoose.ServerError Async(Router(), Config(max_body=0))
+        @test_throws Mongoose.ServerError Async(Router(), Config(drain_timeout=-1))
+        @test_throws Mongoose.ServerError Server(Router(), Config(nworkers=0))
+
+        # Keyword constructor paths should fail fast too.
+        @test_throws Mongoose.ServerError Async(Router(); nworkers=0)
+        @test_throws Mongoose.ServerError Async(Router(); nqueue=0)
+        @test_throws Mongoose.ServerError Async(Router(); request_timeout=-1)
+        @test_throws Mongoose.ServerError Server(Router(); max_body=0)
+        @test_throws Mongoose.ServerError Server(Router(); drain_timeout=-1)
+
+        bad_errors = Dict(42 => Response(Plain, "bad"))
+        @test_throws Mongoose.ServerError Async(Router(); errors=bad_errors)
+        @test_throws Mongoose.ServerError Server(Router(); errors=bad_errors)
     end
 end

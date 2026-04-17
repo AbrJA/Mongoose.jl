@@ -2,8 +2,6 @@
     HTTP handler — translates Mongoose C events into high-level Request/Response.
 """
 
-# --- HTTP status text lookup ---
-
 """
     _statustext(code) → String
 
@@ -38,14 +36,10 @@ Return the standard HTTP reason phrase for a status code.
     return ""
 end
 
-# Pre-built responses for the three codes that _errresponse must handle without allocation.
-# Body text is derived from _statustext — single source of truth.
 const _DEFAULT_500 = Response(Plain, "500 $(_statustext(500))"; status=500)
 const _DEFAULT_413 = Response(Plain, "413 $(_statustext(413))"; status=413)
 const _DEFAULT_503 = Response(Plain, "503 $(_statustext(503))"; status=503)
 const _DEFAULT_504 = Response(Plain, "504 $(_statustext(504))"; status=504)
-
-# --- Static file serving (C-level, event-loop thread only) ---
 
 """
     _servestatic!(server, conn, ev_data) → Bool
@@ -62,11 +56,9 @@ during the C callback and `mg_http_serve_dir` writes directly to `conn`.
 
     _matchrouteexact(server.core.router, method, uri) !== nothing && return false
 
-    # Try each registered static directory in order. The first one matches wins.
     for (dir, prefix) in server.core.mounts
         _staticexists(dir, prefix, uri) || continue
-
-        # Build the root_dir string Mongoose expects. "default,/prefix=dir"
+        # Mongoose expects "root_dir" as "dir" or "dir,/prefix=dir"
         root_dir = prefix == "/" ? dir : "$dir,$prefix=$dir"
         opts = Ref(MgHttpServeOpts(Base.unsafe_convert(Cstring, root_dir)))
         GC.@preserve root_dir begin
@@ -107,21 +99,17 @@ Return `true` if `uri` maps to a real file (or pre-compressed `.gz` variant) und
     isfile(candidate) && return true
     isfile(candidate * ".gz") && return true
 
-    # Directory index fallback (empty path or trailing slash)
     index = joinpath(isempty(rel) ? root : candidate, "index.html")
     isfile(index) && return true
 
     return false
 end
 
-# --- Server: direct dispatch on event-loop thread ---
-
 function _onevent!(server::Server, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     message = MgHttpMessage(ev_data)
     method = _method(message)
     uri    = _uri(message)
 
-    # WebSocket upgrade check (skip entirely when no WS routes are registered)
     if _haswsroutes(server.core.router)
         endpoint = _wsep(server.core.router, uri)
         if endpoint !== nothing
@@ -142,7 +130,7 @@ function _onevent!(server::Server, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev
     res = try
         _invokehttp(server, req)
     catch e
-        _log_error("Handler error component=http uri=$(req.uri)", e, catch_backtrace())
+        @log_error "Handler error component=http uri=" * req.uri e catch_backtrace()
         _handleerror(server, req, e)
     end
     rid = _resolveid(message, server)
@@ -150,14 +138,11 @@ function _onevent!(server::Server, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev
     return
 end
 
-# --- Async: queue to worker channels ---
-
 function _onevent!(server::Async, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_data::Ptr{Cvoid})
     message = MgHttpMessage(ev_data)
     method = _method(message)
     uri    = _uri(message)
 
-    # WebSocket upgrade check (skip entirely when no WS routes are registered)
     if _haswsroutes(server.core.router)
         endpoint = _wsep(server.core.router, uri)
         if endpoint !== nothing
@@ -166,7 +151,6 @@ function _onevent!(server::Async, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_
         end
     end
 
-    # Body size limit check
     if message.body.len > server.core.max_body
         _sendhttp!(conn, _errresponse(server, 413))
         return
@@ -195,8 +179,6 @@ function _onevent!(server::Async, ::Val{MG_EV_HTTP_MSG}, conn::MgConnection, ev_
     return
 end
 
-# --- Dispatch pipeline (used by both sync handler and async workers) ---
-
 """
     _nextreqid!(server) → UInt64
 
@@ -212,7 +194,7 @@ or an empty string if it contains HTTP header-injection characters (`\r`, `\n`)
 or exceeds 128 bytes. This prevents response-splitting attacks when echoing
 an untrusted client-supplied ID into a response header.
 """
-@inline function _sanitizeid(s::String)::String
+@inline function _sanitizeid(s::String)
     length(s) > 128 && return ""
     @inbounds for i in 1:ncodeunits(s)
         b = codeunit(s, i)
@@ -229,7 +211,7 @@ If the incoming request carries a valid `X-Request-Id` header it is forwarded
 verbatim (enabling end-to-end distributed-trace correlation). Otherwise a new
 monotonic ID is generated from the server's atomic counter.
 """
-@inline function _requestid(req::AbstractRequest, server::AbstractServer)::String
+@inline function _requestid(req::AbstractRequest, server::AbstractServer)
     h = get(req.headers, "x-request-id", nothing)
     if h !== nothing
         safe = _sanitizeid(h)
@@ -241,11 +223,10 @@ end
 """
     _resolveid(message, server) → String
 
-Fast-path request ID extraction that reads directly from the raw C `MgHttpMessage`
-headers, avoiding the cost of scanning the already-parsed `Vector{Pair}`.
+Fast-path request ID extraction from raw C `MgHttpMessage` headers,
+avoiding the cost of scanning the already-parsed `Vector{Pair}`.
 """
-@inline function _resolveid(message::MgHttpMessage, server::AbstractServer)::String
-    # Scan raw C headers for "x-request-id" (12 chars, case-insensitive)
+@inline function _resolveid(message::MgHttpMessage, server::AbstractServer)
     for h in message.headers
         h.name.buf == C_NULL && break
         h.name.len == 0 && break
@@ -259,9 +240,13 @@ headers, avoiding the cost of scanning the already-parsed `Vector{Pair}`.
     return _uint64tostr(Threads.atomic_add!(server.core.id_seq, UInt64(1)) + UInt64(1))
 end
 
-# Case-insensitive check for "x-request-id" (12 bytes) directly on C memory
-@inline function _isxrequestid(ptr::Ptr{UInt8})::Bool
-    # Expected: x-request-id (any case)
+"""
+    _isxrequestid(ptr) → Bool
+
+Case-insensitive match for the 12-byte header name `"x-request-id"` directly
+on a C pointer, without allocating a Julia string.
+"""
+@inline function _isxrequestid(ptr::Ptr{UInt8})
     _tolower(unsafe_load(ptr, 1))  == UInt8('x') || return false
     unsafe_load(ptr, 2)            == UInt8('-') || return false
     _tolower(unsafe_load(ptr, 3))  == UInt8('r') || return false
@@ -277,8 +262,13 @@ end
     return true
 end
 
-# Fast UInt64→String without going through `string()` (avoids Julia runtime formatting)
-@inline function _uint64tostr(n::UInt64)::String
+"""
+    _uint64tostr(n) → String
+
+Convert a `UInt64` to its decimal string representation without going through
+`string()`. Avoids Julia runtime formatting overhead on the hot request-ID path.
+"""
+@inline function _uint64tostr(n::UInt64)
     n == 0 && return "0"
     buf = Vector{UInt8}(undef, 20)
     i = 20
@@ -348,7 +338,6 @@ end
         if handler !== nothing
             return handler(req, matched.params...)
         end
-        # Auto HEAD: use GET handler, return headers only
         if req.method === :head
             get_h = matched.handlers.get
             if get_h !== nothing
@@ -364,8 +353,6 @@ end
 @inline function _dispatchhttp(router::StaticRouter, req)
     return _dispatchstatic(router, req)
 end
-
-# --- Response serialization ---
 
 """
     _sendhttp!(conn, response)
@@ -424,11 +411,10 @@ const _TIMED_INFLIGHT = Threads.Atomic{Int}(0)
 const _MAX_TIMED = max(Threads.nthreads() * 2, 8)
 
 function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout::Integer)
-    # Fast-reject if too many timed handlers are already running
     current = Threads.atomic_add!(_TIMED_INFLIGHT, 1)
     if current >= _MAX_TIMED
         Threads.atomic_sub!(_TIMED_INFLIGHT, 1)
-        _log_warn("Too many concurrent timed requests component=http uri=$(req.uri)")
+        @log_warn "Too many concurrent timed requests component=http uri=" * req.uri
         return _errresponse(server, 503)
     end
 
@@ -438,7 +424,7 @@ function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout:
             res = try
                 _invokehttp(server, req)
             catch e
-                _log_error("Handler error component=http uri=$(req.uri)", e, catch_backtrace())
+                @log_error "Handler error component=http uri=" * req.uri e catch_backtrace()
                 _handleerror(server, req, e)
             end
             try put!(ch, res) catch end
@@ -451,7 +437,7 @@ function _invoketimedhttp(server::AbstractServer, req::AbstractRequest, timeout:
     end
     if result === :timed_out
         close(ch)
-        _log_warn("Request timed out component=http uri=$(req.uri) timeout_ms=$timeout")
+        @log_warn "Request timed out component=http uri=" * req.uri * " timeout_ms=" * string(timeout)
         return _errresponse(server, 504)
     end
     return take!(ch)

@@ -48,7 +48,7 @@ Called from C callbacks where `fn_data` stores the token.
 Returns `nothing` if the server has already been unregistered (shutting down).
 Uses explicit lock/unlock (no `do` closure) to avoid allocation on the hot path.
 """
-function _lookupserver(oid::UInt)::Union{AbstractServer,Nothing}
+function _lookupserver(oid::UInt)
     lock(REGISTRY_LOCK)
     try
         return get(REGISTRY, oid, nothing)

@@ -2,10 +2,6 @@
     WebSocket route registration and static dispatch stubs.
 """
 
-# Endpoint is defined in ws/types.jl
-
-# --- Registration ---
-
 """
     ws!(router, path; on_message, on_open=nothing, on_close=nothing)
 

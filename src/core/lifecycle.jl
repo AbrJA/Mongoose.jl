@@ -2,10 +2,6 @@
     Server lifecycle management — start, shutdown, graceful drain.
 """
 
-# ---------------------------------------------------------------------------
-# Base.show — human-readable display for Router and server types
-# ---------------------------------------------------------------------------
-
 function Base.show(io::IO, r::Router)
     n_fixed   = length(r.fixed)
     n_dynamic = _countnodes(r.node)
@@ -16,8 +12,12 @@ function Base.show(io::IO, r::Router)
     print(io, ")")
 end
 
-# Count the number of nodes that carry at least one handler in the trie.
-function _countnodes(node::TrieNode)::Int
+"""
+    _countnodes(node) → Int
+
+Count the number of trie nodes that carry at least one handler.
+"""
+function _countnodes(node::TrieNode)
     count = _hashandlers(node.handlers) ? 1 : 0
     for (_, child) in node.children
         count += _countnodes(child)
@@ -39,10 +39,6 @@ function Base.show(io::IO, s::Async)
           ", workers=", s.nworkers,
           ", router=", s.core.router, ")")
 end
-
-# ---------------------------------------------------------------------------
-# Lifecycle
-# ---------------------------------------------------------------------------
 
 """
     start!(server; host, port, blocking)
@@ -84,57 +80,8 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
     return
 end
 
-# Emit a single structured startup log with everything an operator needs.
-# A single entry point for both types
-function _logstart(server::AbstractServer, url::String)
-    type = nameof(typeof(server))
-    routes = _routecount(server.core.router)
-    threads = Threads.nthreads()
-    middlewares = length(server.core.middlewares)
-    mounts = length(server.core.mounts)
-    workers = server isa Async ? server.nworkers : 0
-    if server.core.styled
-        buf = IOBuffer()
-        write(buf, "\n\e[1;36m🚀 Mongoose started\e[0m\n")
-        write(buf, "\e[90m  URL:     \e[0m\e[4;34m")
-        write(buf, url)
-        write(buf, "\e[0m\n\e[90m  API:     \e[0m\e[32m")
-        print(buf, routes)
-        write(buf, " routes • ")
-        print(buf, middlewares)
-        write(buf, " middleware • ")
-        print(buf, mounts)
-        write(buf, " mounts\e[0m\n\e[90m  Type:    \e[0m")
-        print(buf, type)
-        write(buf, "\n\e[90m  System:  \e[0m\e[32m")
-        print(buf, workers)
-        write(buf, " workers • ")
-        print(buf, threads)
-        write(buf, " threads\e[0m\n\n")
-        _print(String(take!(buf)))
-    else
-        _log_info("Mongoose started component=server type=$type url=$url routes=$routes middleware=$middlewares mounts=$mounts workers=$workers threads=$threads")
-    end
-end
-
-function _logstop(server::AbstractServer)
-    if server.core.styled
-        _print("\e[1;31m🛑 Mongoose shutting down...\e[0m\n")
-    else
-        _log_info("Mongoose shutting down... component=server")
-    end
-end
-
-function _logstopped(server::AbstractServer)
-    if server.core.styled
-        _print("\e[1;32m✅ Mongoose stopped.\e[0m\n")
-    else
-        _log_info("Mongoose stopped. component=server")
-    end
-end
-
 # Total registered handler-bearing nodes across fixed + dynamic trie.
-_routecount(r::Router) = length(r.fixed) + _countnodes(r.node)
+_routecount(r::Router) = string(length(r.fixed) + _countnodes(r.node))
 _routecount(::StaticRouter) = "static"  # routes compiled at build time via @router
 
 """
@@ -165,16 +112,39 @@ end
     _drain(server)
 
 Wait for in-flight requests to drain, up to `drain_timeout`.
-For Async, polls the response channels until they're empty or timeout expires.
+For Async, polls the event loop to flush replies back to clients
+while waiting for workers to finish processing.
 """
 function _drain(server::AbstractServer)
     timeout_s = server.core.drain_timeout / 1000.0
     deadline = time() + timeout_s
     while time() < deadline
         _haspending(server) || break
+        # Keep the event loop turning so replies reach clients
+        _drainpoll(server)
         sleep(0.01)
     end
     return
+end
+
+_drainpoll(::AbstractServer) = nothing
+
+function _drainpoll(server::Async)
+    mg_mgr_poll(server.core.manager.ptr, server.core.poll_timeout)
+    # Flush any replies that workers produced during drain
+    while isopen(server.replies) && isready(server.replies)
+        res = try take!(server.replies) catch; break end
+        conn = get(server.connections, res.id, nothing)
+        if conn !== nothing
+            if res.payload isa Response
+                _sendhttp!(conn, res.payload)
+                delete!(server.connections, res.id)
+            else
+                try _sendws!(conn, res.payload) catch end
+            end
+        end
+    end
+    mg_mgr_poll(server.core.manager.ptr, 0)
 end
 
 _haspending(::AbstractServer) = false

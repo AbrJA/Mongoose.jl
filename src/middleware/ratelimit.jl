@@ -20,9 +20,7 @@ struct RateLimit <: AbstractMiddleware
 end
 
 @inline function _shard(mw::RateLimit, key::String)
-    h = hash(key)
-    idx = (h % length(mw.shards)) + 1
-    return mw.shards[idx]
+    return mw.shards[mod1(hash(key), length(mw.shards))]
 end
 
 function (mw::RateLimit)(request::AbstractRequest, params::Vector{Any}, next)
