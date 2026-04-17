@@ -4,16 +4,10 @@ using Mongoose
 # Comprehensive juliac --trim=safe example.
 #
 # Exercises: @router (all HTTP methods, typed/wildcard params),
-#            mount!, fail!, context!, query(), Response formats,
+#            mount!, fail!, context!, Response formats,
 #            custom headers, binary body, WebSocket lifecycle,
 #            upgrade rejection, HEAD auto-handler.
 # ────────────────────────────────────────────────────
-
-# --- Query struct for typed parsing ---
-struct SearchQuery
-    q::String
-    page::Int
-end
 
 # --- In-memory user store (trim-safe compatible, concrete types only) ---
 mutable struct User
@@ -53,16 +47,7 @@ end
     return String(view(body, start_i:i-1))
 end
 
-@inline function _query_get_string(query::AbstractString, key::String, default::String)::String
-    q = String(query)
-    isempty(q) && return default
-    prefix = key * "="
-    for pair in split(q, '&')
-        startswith(pair, prefix) || continue
-        return String(view(pair, ncodeunits(prefix)+1:ncodeunits(pair)))
-    end
-    return default
-end
+@inline _query_get_string(query::Dict{String,String}, key::String, default::String)::String = get(query, key, default)
 
 @inline function _user_json(u::User)::String
     return "{\"id\":" * string(u.id) *
@@ -184,9 +169,10 @@ function delete_item(req, id)
 end
 
 function search(req)
-    # Query string parsing into a typed struct
-    params = Mongoose.query(SearchQuery, req)::SearchQuery
-    Response(Json, "{\"q\":\"" * params.q * "\",\"page\":" * string(params.page) * "}")
+    # Query string parsing from the request's query dict
+    q_val    = get(req.query, "q", "")
+    page_val = something(tryparse(Int, get(req.query, "page", "1")), 1)
+    Response(Json, "{\"q\":\"" * q_val * "\",\"page\":" * string(page_val) * "}")
 end
 
 function with_context(req)

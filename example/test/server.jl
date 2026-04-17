@@ -5,7 +5,7 @@ Demonstrates every framework feature:
   - CRUD REST with typed URL params (:id::Int, :name::String)
   - PATCH for partial updates
   - Wildcard * route (custom 404)
-  - Typed query struct deserialization (Mongoose.query)
+  - Typed query parameters via req.query (Dict{String,String})
   - request context! for middleware→handler data passing
   - Binary responses (generated PNG, CSV download, protected files)
   - WebSocket with on_open / on_message / on_close
@@ -51,20 +51,6 @@ struct UserFilter
     role::String
     limit::Union{Int,Nothing}
     active::Union{Bool,Nothing}   # ?active=true|false — Bool query field
-end
-
-struct ImageParams
-    r::Union{Int,Nothing}   # default 128
-    g::Union{Int,Nothing}   # default 64
-    b::Union{Int,Nothing}   # default 200
-end
-
-struct DebugSlowParams
-    ms::Union{Int,Nothing}   # sleep duration; >3000 triggers 504
-end
-
-struct DebugFormatParams
-    type::String   # html | xml | css | js | binary | plain (default)
 end
 
 # 8×8 solid-colour PNG, no external dependencies.
@@ -161,8 +147,12 @@ function handle_ping(req::Request)
 end
 
 function handle_list_users(req::Request)
-    # Demonstrates Mongoose.query — typed query-string deserialization
-    f = Mongoose.query(UserFilter, req)
+    # Access query parameters directly from req.query (Dict{String,String})
+    role_s   = get(req.query, "role", "")
+    limit_v  = tryparse(Int, get(req.query, "limit", ""))
+    active_s = get(req.query, "active", "")
+    active_v = isempty(active_s) ? nothing : (active_s == "true" || active_s == "1")
+    f = UserFilter(role_s, limit_v, active_v)
 
     users = lock(LOCK) do
         collect(values(USERS))
@@ -236,10 +226,12 @@ function handle_not_found(req::Request)
 end
 
 function handle_image(req::Request)
-    p   = Mongoose.query(ImageParams, req)
-    r   = UInt8(clamp(something(p.r, 128), 0, 255))
-    g   = UInt8(clamp(something(p.g,  64), 0, 255))
-    b   = UInt8(clamp(something(p.b, 200), 0, 255))
+    p_r = clamp(something(tryparse(Int, get(req.query, "r", "")), 128), 0, 255)
+    p_g = clamp(something(tryparse(Int, get(req.query, "g", "")),  64), 0, 255)
+    p_b = clamp(something(tryparse(Int, get(req.query, "b", "")), 200), 0, 255)
+    r   = UInt8(p_r)
+    g   = UInt8(p_g)
+    b   = UInt8(p_b)
     png = _make_png(r, g, b)
     Response(200, "Content-Type: image/png\r\nCache-Control: no-cache\r\n", png)
 end
@@ -288,7 +280,8 @@ function handle_protected_file(req::Request, name::String)
     mime = get(PROTECTED_MIME, ext, "application/octet-stream")
     data = read(path)
 
-    force_dl = occursin("download=true", req.query) || occursin("download=1", req.query)
+    q_download = get(req.query, "download", "")
+    force_dl = (q_download == "true") || (q_download == "1")
     disp = force_dl ? "attachment" :
            startswith(mime, "image/") || mime == "application/pdf" ? "inline" : "attachment"
 
@@ -343,8 +336,8 @@ end
 # ms=600  → triggers the logger(threshold=500) line in stderr.
 # ms=4000 → exceeds request_timeout=3000 and returns the custom 504 response.
 function handle_debug_slow(req::Request)
-    p  = Mongoose.query(DebugSlowParams, req)
-    ms = clamp(something(p.ms, 100), 0, 10_000)
+    ms_v = something(tryparse(Int, get(req.query, "ms", "")), 100)
+    ms = clamp(ms_v, 0, 10_000)
     sleep(ms / 1000)
     Response(Json, Dict("slept_ms" => ms))
 end
@@ -352,8 +345,7 @@ end
 # Returns a response using each Mongoose format type.
 # ?type=html|xml|css|js|binary|plain  (default: plain)
 function handle_debug_formats(req::Request)
-    p = Mongoose.query(DebugFormatParams, req)
-    t = lowercase(p.type)
+    t = lowercase(get(req.query, "type", ""))
     t == "html"   && return Response(Html,   "<h1>Hello from <code>Html</code></h1>")
     t == "xml"    && return Response(Xml,    """<?xml version=\"1.0\"?><message>Hello from Xml</message>""")
     t == "css"    && return Response(Css,    "body { font-family: monospace; color: navy; }")

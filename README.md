@@ -97,7 +97,7 @@ route!(router, :get, "/posts/:slug",          (req, slug) -> ...)  # slug::Strin
 
 ### Query String 🔍
 
-Define a struct and parse the whole query string at once:
+Access query parameters via `req.query`, which is a `Dict{String,String}`:
 
 ```julia
 struct SearchParams
@@ -107,12 +107,12 @@ struct SearchParams
 end
 
 route!(router, :get, "/search", req -> begin
-    p = Mongoose.query(SearchParams, req)  # parses ?q=julia&page=2
-    Response(Plain, "Searching: $(p.q), page $(p.page)")
+    q     = get(req.query, "q", "")
+    page  = something(tryparse(Int, get(req.query, "page", "1")), 1)
+    limit = tryparse(Int, get(req.query, "limit", ""))
+    Response(Plain, "Searching: $q, page $page")
 end)
 ```
-
-Missing fields default to `""`, `0`, `false`, or `nothing` depending on their type.
 
 ### Request Helpers 🛠️
 
@@ -120,8 +120,7 @@ Missing fields default to `""`, `0`, `false`, or `nothing` depending on their ty
 |---|---|---|
 | `req.body` | `String` | Raw request body |
 | `get(req.headers, "authorization", nothing)` | `String \| nothing` | Case-insensitive header lookup |
-| `req.query` | `String` | Raw query string (e.g. `"q=test&page=2"`) |
-| `Mongoose.query(T, req)` | `T` | Parse query string into struct `T` |
+| `req.query` | `Dict{String,String}` | Parsed query map (e.g. `Dict("q" => "test", "page" => "2")`) |
 | `context!(req)` | `Dict{Symbol,Any}` | Lazily-allocated context dict (set by middleware) |
 
 ---
@@ -356,7 +355,7 @@ juliac --trim=safe --project . --output-exe myapp app.jl
 
 By default, Mongoose.jl routes `@log_info`, `@log_warn`, and `@log_error` macros to **Julia's native `@info`, `@warn`, `@error`** — integrating seamlessly with ConsoleLogger, TeeLogger, and log filtering.
 
-**For `juliac --trim=safe` binaries**, set `LOG_TRIMMABLE=true` to force concrete `print()`-based logging instead (required because macros are not available during trim-safe compilation):
+**For `juliac --trim=safe` binaries**, set `LOG_TRIMMABLE=true` to force concrete `print()`-based logging instead (recommended because Base/CoreLogging dispatch can be trimmed or unreliable in `--trim=safe` builds):
 
 ```bash
 # Native logging (default, works in JIT and AOT binary)
@@ -364,7 +363,7 @@ julia --project app.jl
 
 # For trim-safe binaries, use concrete logging
 LOG_TRIMMABLE=true juliac --trim=safe --project . --output-exe binary app.jl
-./binary                              # macros automatically route to print()
+./binary                              # @log_* routes to concrete print() logging
 ```
 
 ---

@@ -195,7 +195,7 @@ Handlers receive a `Request`:
 |----------|---------|-------------|
 | `req.body` | `String` | Raw request body |
 | `get(req.headers, "name", nothing)` | `String` or `nothing` | Case-insensitive header lookup |
-| `req.query` | `String` | Full query string |
+| `req.query` | `Dict{String,String}` | Parsed query key/value map |
 | `context!(req)` | `Dict{Symbol,Any}` | Lazily-allocated context dict for middleware data |
 
 ### Response
@@ -230,22 +230,15 @@ The format type determines the `Content-Type` header:
 | `Js`     | `application/javascript; charset=utf-8` |
 | `Binary` | `application/octet-stream` |
 
-### Query String Utilities
+### Query String
+
+`req.query` is a `Dict{String,String}` of the parsed query parameters. Access values with `get`:
 
 ```julia
-# Parse query string into a typed struct (not exported — call as Mongoose.query)
-struct SearchQuery
-    q::String
-    page::Int
-end
-
-# From a raw string:
-s = Mongoose.query(SearchQuery, "q=julia&page=1")  # SearchQuery("julia", 1)
-
-# From a request:
 route!(router, :get, "/search", req -> begin
-    s = Mongoose.query(SearchQuery, req)
-    Response(Plain, "Searching: $(s.q) page $(s.page)")
+    q    = get(req.query, "q", "")
+    page = something(tryparse(Int, get(req.query, "page", "1")), 1)
+    Response(Plain, "Searching: $q page $page")
 end)
 ```
 

@@ -77,46 +77,6 @@ function _query2dict(query)
 end
 
 """
-    _dict2struct(::Type{T}, dict::Dict{String,String}) where T
-
-Deserialize a dictionary of strings into a struct of type `T`.
-Handles `String`, `Bool`, `Union{T, Nothing}` (optional), and numeric types.
-Missing keys default to empty string, zero, `false`, or `nothing` as appropriate.
-"""
-@generated function _dict2struct(::Type{T}, dict::Dict{String,String}) where T
-    fnames = fieldnames(T)
-    ftypes = fieldtypes(T)
-    exprs = [:(
-        let val = get(dict, $(string(fname)), "")
-            $(
-                if ftype === String
-                    :(val)
-                elseif ftype === Bool
-                    :(lowercase(val) in ("true", "1", "yes"))
-                elseif ftype isa Union && Nothing <: ftype
-                    # Handle Union{T, Nothing} — return nothing if empty.
-                    # Extract the non-Nothing type without relying on the
-                    # undocumented Base.typesplit internal.
-                    inner = only(t for t in Base.uniontypes(ftype) if t !== Nothing)
-                    if inner === String
-                        :(isempty(val) ? nothing : val)
-                    else
-                        :(isempty(val) ? nothing : parse($inner, val))
-                    end
-                else
-                    :(isempty(val) ? zero($ftype) : parse($ftype, val))
-                end
-            )
-        end
-    ) for (fname, ftype) in zip(fnames, ftypes)]
-
-    return :(T($(exprs...)))
-end
-
-query(::Type{T}, req::AbstractRequest) where T = query(T, req.query)
-query(::Type{T}, str::String) where T = _dict2struct(T, _query2dict(str))
-
-"""
     _formatheaders(headers::Vector{Pair{String,String}}) → String
 
 Serialize headers into the `"Key: Value\\r\\n"` format

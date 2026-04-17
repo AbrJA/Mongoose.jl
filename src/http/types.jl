@@ -11,7 +11,7 @@
 mutable struct Request <: AbstractRequest
     const method::Symbol
     const uri::String
-    const query::String
+    const query::Dict{String,String}
     const headers::Vector{Pair{String,String}}
     const body::String
     context::Union{Nothing,Dict{Symbol,Any}}
@@ -106,12 +106,12 @@ end
 Response(body; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) = Response(Plain, body; status=status, headers=headers)
 
 function Request(message::MgHttpMessage)
-    return Request(_method(message), _uri(message), _query(message), _headers(message), _body(message), nothing)
+    return Request(_method(message), _uri(message), _query2dict(_query(message)), _headers(message), _body(message), nothing)
 end
 
 # Fast constructor reusing pre-extracted method and uri (avoids re-extracting from C struct)
 function Request(message::MgHttpMessage, method::Symbol, uri::String)
-    return Request(method, uri, _query(message), _headers(message), _body(message), nothing)
+    return Request(method, uri, _query2dict(_query(message)), _headers(message), _body(message), nothing)
 end
 
 """

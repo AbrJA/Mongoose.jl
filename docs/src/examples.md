@@ -45,22 +45,18 @@ start!(server, port=8080, blocking=false)
 
 ## Query Parameters
 
-Use `Mongoose.query(T, req)` to parse the query string into a typed struct in one call.
+`req.query` is a `Dict{String,String}` of the parsed query parameters. Use `get` to read values with defaults:
 
 ```julia
 using Mongoose
 
-struct SearchQuery
-    q::String
-    page::Int
-end
-
 router = Router()
 
 route!(router, :get, "/search", req -> begin
-    s = Mongoose.query(SearchQuery, req)  # parses ?q=julia&page=2
-    isempty(s.q) && return Response(Plain, "Missing ?q= parameter"; status=400)
-    Response(Json, """{"query": "$(s.q)", "page": $(s.page)}""")
+    q    = get(req.query, "q", "")
+    page = something(tryparse(Int, get(req.query, "page", "1")), 1)
+    isempty(q) && return Response(Plain, "Missing ?q= parameter"; status=400)
+    Response(Json, "{\"query\": \"$q\", \"page\": $page}")
 end)
 
 server = Async(router)
@@ -100,24 +96,20 @@ server = Async(router)
 start!(server, port=8080, blocking=false)
 ```
 
-## Parse Query into a Struct
+## Parse Query Parameters
 
-Use `query(T, req)` to deserialize a query string into a typed struct. Supports `String`, numeric types, `Bool`, and `Union{T, Nothing}` for optional fields.
+For structured access, read each key from `req.query` with `get` and parse types manually:
 
 ```julia
 using Mongoose
 
-struct SearchQuery
-    q::String
-    page::Int
-    limit::Union{Int, Nothing}
-end
-
 router = Router()
 
 route!(router, :get, "/search", req -> begin
-    search = Mongoose.query(SearchQuery, req)
-    Response(Plain, "Searching '$(search.q)' page $(search.page)")
+    q     = get(req.query, "q", "")
+    page  = something(tryparse(Int,  get(req.query, "page",  "1")), 1)
+    limit = tryparse(Int, get(req.query, "limit", ""))
+    Response(Plain, "Searching '$q' page $page")
 end)
 
 server = Async(router)
@@ -621,14 +613,9 @@ function register_user_routes!(router)
     end)
 end
 
-# --- Product service ---
-struct ProductQuery
-    limit::Union{Int, Nothing}
-end
-
 function register_product_routes!(router)
     route!(router, :get, "/api/v1/products", req -> begin
-        limit = Mongoose.query(ProductQuery, req).limit
+        limit = tryparse(Int, get(req.query, "limit", ""))
         n = something(limit, 10)
         items = [Dict("id" => i, "name" => "Product $i", "price" => i * 9.99) for i in 1:n]
         Response(Json, items)
@@ -873,10 +860,6 @@ using Mongoose, JSON
 
 Mongoose.encode(::Type{Json}, body) = JSON.json(body)
 
-struct SearchParams
-    q::String
-end
-
 router = Router()
 
 # --- JSON API ---
@@ -885,9 +868,9 @@ route!(router, :get, "/api/v1/config", req -> begin
 end)
 
 route!(router, :get, "/api/v1/search", req -> begin
-    s = Mongoose.query(SearchParams, req)
-    isempty(s.q) && return Response(Json, """{"error":"Missing query"}"""; status=400)
-    Response(Json, Dict("query" => s.q, "results" => []))
+    q = get(req.query, "q", "")
+    isempty(q) && return Response(Json, """{"error":"Missing query"}"""; status=400)
+    Response(Json, Dict("query" => q, "results" => []))
 end)
 
 server = Async(router; nworkers=4)
