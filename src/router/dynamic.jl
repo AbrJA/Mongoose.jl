@@ -158,6 +158,18 @@ _matchrouteexact(::StaticRouter, ::Symbol, ::AbstractString) = nothing
     return nothing
 end
 
+"""
+    route!(router, method, path, handler) -> router
+
+Register an HTTP route on `router` for `method` and `path`.
+
+`path` supports:
+- Static segments, e.g. `/health`
+- Typed params, e.g. `/users/:id::Int`
+- Untyped params (String), e.g. `/posts/:slug`
+
+Returns the same router to allow chaining.
+"""
 function route!(router::Router, method::Symbol, path::AbstractString, @nospecialize(handler::Function))
     if method ∉ VALID_METHODS
         throw(RouteError("Invalid HTTP method: $(String(method))"))

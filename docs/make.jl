@@ -3,6 +3,7 @@ using Mongoose
 
 makedocs(
     modules = [Mongoose],
+    checkdocs = :exports,
     format = Documenter.HTML(
         prettyurls = get(ENV, "CI", "false") == "true",
         canonical = "https://AbrJA.github.io/Mongoose.jl",
