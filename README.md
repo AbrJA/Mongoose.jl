@@ -100,12 +100,6 @@ route!(router, :get, "/posts/:slug",          (req, slug) -> ...)  # slug::Strin
 Access query parameters via `req.query`, which is a `Dict{String,String}`:
 
 ```julia
-struct SearchParams
-    q::String
-    page::Int
-    limit::Union{Int, Nothing}
-end
-
 route!(router, :get, "/search", req -> begin
     q     = get(req.query, "q", "")
     page  = something(tryparse(Int, get(req.query, "page", "1")), 1)
