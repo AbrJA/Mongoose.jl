@@ -34,6 +34,7 @@ ws!
 ```@docs
 Request
 Response
+context!
 ```
 
 ## Utilities
