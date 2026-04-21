@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Examples · Mongoose.jl</title><meta name="title" content="Examples · Mongoose.jl"/><meta property="og:title" content="Examples · Mongoose.jl"/><meta property="twitter:title" content="Examples · Mongoose.jl"/><meta name="description" content="Documentation for Mongoose.jl."/><meta property="og:description" content="Documentation for Mongoose.jl."/><meta property="twitter:description" content="Documentation for Mongoose.jl."/><meta property="og:url" content="https://AbrJA.github.io/Mongoose.jl/examples/"/><meta property="twitter:url" content="https://AbrJA.github.io/Mongoose.jl/examples/"/><link rel="canonical" href="https://AbrJA.github.io/Mongoose.jl/examples/"/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">Mongoose.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../">Introduction</a></li><li class="is-active"><a class="tocitem" href>Examples</a><ul class="internal"><li><a class="tocitem" href="#Hello-World"><span>Hello World</span></a></li><li><a class="tocitem" href="#REST-API-with-Path-Parameters"><span>REST API with Path Parameters</span></a></li><li><a class="tocitem" href="#Query-Parameters"><span>Query Parameters</span></a></li><li><a class="tocitem" href="#JSON-Request-and-Response"><span>JSON Request and Response</span></a></li><li><a class="tocitem" href="#Parse-Query-Parameters"><span>Parse Query Parameters</span></a></li><li><a class="tocitem" href="#WebSocket-Echo-Server"><span>WebSocket Echo Server</span></a></li><li><a class="tocitem" href="#WebSocket-Upgrade-Rejection"><span>WebSocket Upgrade Rejection</span></a></li><li><a class="tocitem" href="#Middleware-Stack"><span>Middleware Stack</span></a></li><li><a class="tocitem" href="#API-Key-Authentication"><span>API Key Authentication</span></a></li><li><a class="tocitem" href="#Logger-with-Threshold"><span>Logger with Threshold</span></a></li><li><a class="tocitem" href="#Serving-Static-Files"><span>Serving Static Files</span></a></li><li><a class="tocitem" href="#Request-Context"><span>Request Context</span></a></li><li><a class="tocitem" href="#Async-Server-with-Multiple-Workers"><span>Async Server with Multiple Workers</span></a></li><li><a class="tocitem" href="#Static-Router-(AOT-Compilation)"><span>Static Router (AOT Compilation)</span></a></li><li><a class="tocitem" href="#Full-Application-Example"><span>Full Application Example</span></a></li><li><a class="tocitem" href="#Custom-Error-Responses"><span>Custom Error Responses</span></a></li><li><a class="tocitem" href="#Path-Scoped-Middleware"><span>Path-Scoped Middleware</span></a></li><li><a class="tocitem" href="#Structured-JSON-Logging"><span>Structured JSON Logging</span></a></li><li><a class="tocitem" href="#Prometheus-Metrics"><span>Prometheus Metrics</span></a></li><li><a class="tocitem" href="#Binary-Responses"><span>Binary Responses</span></a></li><li><a class="tocitem" href="#Production-Deployment"><span>Production Deployment</span></a></li></ul></li><li><a class="tocitem" href="../api/">API</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Examples</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Examples</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/AbrJA/Mongoose.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/AbrJA/Mongoose.jl/blob/main/docs/src/examples.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Examples"><a class="docs-heading-anchor" href="#Examples">Examples</a><a id="Examples-1"></a><a class="docs-heading-anchor-permalink" href="#Examples" title="Permalink"></a></h1><h2 id="Hello-World"><a class="docs-heading-anchor" href="#Hello-World">Hello World</a><a id="Hello-World-1"></a><a class="docs-heading-anchor-permalink" href="#Hello-World" title="Permalink"></a></h2><p>The simplest possible Mongoose.jl server:</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+route!(router, :get, &quot;/&quot;, req -&gt; Response(Plain, &quot;Hello, World!&quot;))
+
+server = Server(router)
+start!(server, port=8080)</code></pre><h2 id="REST-API-with-Path-Parameters"><a class="docs-heading-anchor" href="#REST-API-with-Path-Parameters">REST API with Path Parameters</a><a id="REST-API-with-Path-Parameters-1"></a><a class="docs-heading-anchor-permalink" href="#REST-API-with-Path-Parameters" title="Permalink"></a></h2><p>Dynamic path segments are captured with <code>:name</code> syntax. Add type annotations for automatic parsing:</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+
+# String parameter (default)
+route!(router, :get, &quot;/greet/:name&quot;, (req, name) -&gt; begin
+    Response(Plain, &quot;Hello, $(name)!&quot;)
+end)
+
+# Typed integer parameter — invalid value (e.g. /users/abc) returns 404
+route!(router, :get, &quot;/users/:id::Int&quot;, (req, id) -&gt; begin
+    Response(Json, &quot;&quot;&quot;{&quot;id&quot;: $id, &quot;type&quot;: &quot;$(typeof(id))&quot;}&quot;&quot;&quot;)  
+end)
+
+# Float parameter
+route!(router, :get, &quot;/price/:amount::Float64&quot;, (req, amount) -&gt; begin
+    tax = amount * 0.16
+    Response(Json, &quot;&quot;&quot;{&quot;amount&quot;: $amount, &quot;tax&quot;: $tax}&quot;&quot;&quot;)
+end)
+
+server = Async(router)
+start!(server, port=8080, blocking=false)</code></pre><h2 id="Query-Parameters"><a class="docs-heading-anchor" href="#Query-Parameters">Query Parameters</a><a id="Query-Parameters-1"></a><a class="docs-heading-anchor-permalink" href="#Query-Parameters" title="Permalink"></a></h2><p><code>req.query</code> is a <code>Dict{String,String}</code> of the parsed query parameters. Use <code>get</code> to read values with defaults:</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+
+route!(router, :get, &quot;/search&quot;, req -&gt; begin
+    q    = get(req.query, &quot;q&quot;, &quot;&quot;)
+    page = something(tryparse(Int, get(req.query, &quot;page&quot;, &quot;1&quot;)), 1)
+    isempty(q) &amp;&amp; return Response(Plain, &quot;Missing ?q= parameter&quot;; status=400)
+    Response(Json, &quot;{\&quot;query\&quot;: \&quot;$q\&quot;, \&quot;page\&quot;: $page}&quot;)
+end)
+
+server = Async(router)
+start!(server, port=8080, blocking=false)</code></pre><h2 id="JSON-Request-and-Response"><a class="docs-heading-anchor" href="#JSON-Request-and-Response">JSON Request and Response</a><a id="JSON-Request-and-Response-1"></a><a class="docs-heading-anchor-permalink" href="#JSON-Request-and-Response" title="Permalink"></a></h2><p>JSON support requires <code>JSON.jl</code>. Extend <code>encode</code> once at the top of your app to enable <code>Response(Json, ...)</code> with automatic Content-Type.</p><pre><code class="language-julia hljs">using Mongoose, JSON
+
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
+
+struct UserProfile
+    username::String
+    age::Int
+    active::Bool
+end
+
+router = Router()
+
+# Return a JSON response
+route!(router, :get, &quot;/user/info&quot;, req -&gt; begin
+    Response(Json, Dict(&quot;username&quot; =&gt; &quot;Alice&quot;, &quot;active&quot; =&gt; true))
+end)
+
+# Parse JSON from request body
+route!(router, :post, &quot;/user/create&quot;, req -&gt; begin
+    data = JSON.parse(req.body)
+    name = get(data, &quot;username&quot;, &quot;Guest&quot;)
+    Response(Json, Dict(&quot;message&quot; =&gt; &quot;Hello, $name&quot;); status=201)
+end)
+
+server = Async(router)
+start!(server, port=8080, blocking=false)</code></pre><h2 id="Parse-Query-Parameters"><a class="docs-heading-anchor" href="#Parse-Query-Parameters">Parse Query Parameters</a><a id="Parse-Query-Parameters-1"></a><a class="docs-heading-anchor-permalink" href="#Parse-Query-Parameters" title="Permalink"></a></h2><p>For structured access, read each key from <code>req.query</code> with <code>get</code> and parse types manually:</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+
+route!(router, :get, &quot;/search&quot;, req -&gt; begin
+    q     = get(req.query, &quot;q&quot;, &quot;&quot;)
+    page  = something(tryparse(Int,  get(req.query, &quot;page&quot;,  &quot;1&quot;)), 1)
+    limit = tryparse(Int, get(req.query, &quot;limit&quot;, &quot;&quot;))
+    Response(Plain, &quot;Searching &#39;$q&#39; page $page&quot;)
+end)
+
+server = Async(router)
+start!(server, port=8080, blocking=false)</code></pre><h2 id="WebSocket-Echo-Server"><a class="docs-heading-anchor" href="#WebSocket-Echo-Server">WebSocket Echo Server</a><a id="WebSocket-Echo-Server-1"></a><a class="docs-heading-anchor-permalink" href="#WebSocket-Echo-Server" title="Permalink"></a></h2><p>Register WebSocket endpoints with <code>ws!</code>. The <code>on_message</code> handler receives a <code>Message</code> whose <code>.data</code> field is either <code>String</code> (text frame) or <code>Vector{UInt8}</code> (binary frame).</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+
+ws!(router, &quot;/echo&quot;,
+    on_message = (msg::Message) -&gt; begin
+        if msg.data isa String
+            return Message(&quot;Echo: $(msg.data)&quot;)
+        else
+            return Message(msg.data)  # Echo binary data back
+        end
+    end,
+    on_open  = (req::Request) -&gt; println(&quot;Client connected from &quot;, req.uri),
+    on_close = () -&gt; println(&quot;Client disconnected&quot;)
+)
+
+server = Async(router)
+start!(server, port=8080, blocking=false)</code></pre><h2 id="WebSocket-Upgrade-Rejection"><a class="docs-heading-anchor" href="#WebSocket-Upgrade-Rejection">WebSocket Upgrade Rejection</a><a id="WebSocket-Upgrade-Rejection-1"></a><a class="docs-heading-anchor-permalink" href="#WebSocket-Upgrade-Rejection" title="Permalink"></a></h2><p>Return <code>false</code> from <code>on_open</code> to reject the upgrade. The client receives <code>403 Forbidden</code> and no WebSocket connection is established.</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+
+ws!(router, &quot;/secure&quot;,
+    on_message = (msg::Message) -&gt; Message(&quot;Hello, authenticated user!&quot;),
+    on_open    = (req::Request) -&gt; begin
+        token = get(req.headers, &quot;authorization&quot;, nothing)
+        # Reject if no token or wrong token
+        if token === nothing || token != &quot;Bearer secret&quot;
+            return false  # → client gets 403 Forbidden
+        end
+        @info &quot;WS authenticated&quot; uri=req.uri
+    end,
+    on_close   = () -&gt; @info &quot;WS disconnected&quot;
+)
+
+server = Async(router)
+start!(server, port=8080, blocking=false)</code></pre><h2 id="Middleware-Stack"><a class="docs-heading-anchor" href="#Middleware-Stack">Middleware Stack</a><a id="Middleware-Stack-1"></a><a class="docs-heading-anchor-permalink" href="#Middleware-Stack" title="Permalink"></a></h2><p>Middleware executes in registration order. Each middleware can inspect the request, short-circuit with a response, or pass through to the next handler.</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+route!(router, :get, &quot;/api/data&quot;, req -&gt; begin
+    Response(Json, &quot;&quot;&quot;{&quot;status&quot;: &quot;ok&quot;}&quot;&quot;&quot;)
+end)
+
+server = Async(router)
+
+# 1. Log all requests (method, URI, status, duration in ms)
+plug!(server, logger())
+
+# 2. CORS headers + OPTIONS preflight handling
+plug!(server, cors(origins=&quot;https://example.com&quot;))
+
+# 3. Rate limiting: 100 requests per 60 seconds per client IP
+plug!(server, ratelimit(max_requests=100, window_seconds=60))
+
+# 4. Bearer token authentication
+plug!(server, bearer(token -&gt; token == &quot;my-secret-token&quot;))
+
+start!(server, port=8080, blocking=false)</code></pre><h2 id="API-Key-Authentication"><a class="docs-heading-anchor" href="#API-Key-Authentication">API Key Authentication</a><a id="API-Key-Authentication-1"></a><a class="docs-heading-anchor-permalink" href="#API-Key-Authentication" title="Permalink"></a></h2><p>Protect endpoints with an API key header check:</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+route!(router, :get, &quot;/internal&quot;, req -&gt; Response(Plain, &quot;Internal data&quot;))
+
+server = Async(router)
+plug!(server, apikey(header_name=&quot;X-API-Key&quot;, keys=Set([&quot;key-abc&quot;, &quot;key-xyz&quot;])))
+
+start!(server, port=8080, blocking=false)</code></pre><h2 id="Logger-with-Threshold"><a class="docs-heading-anchor" href="#Logger-with-Threshold">Logger with Threshold</a><a id="Logger-with-Threshold-1"></a><a class="docs-heading-anchor-permalink" href="#Logger-with-Threshold" title="Permalink"></a></h2><p>Only log requests that exceed a duration threshold — useful for identifying slow endpoints:</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+route!(router, :get, &quot;/fast&quot;, req -&gt; Response(Plain, &quot;fast&quot;))
+route!(router, :get, &quot;/slow&quot;, req -&gt; begin
+    sleep(0.1)
+    Response(Plain, &quot;slow&quot;)
+end)
+
+server = Async(router)
+
+# Only log requests taking longer than 50ms
+plug!(server, logger(threshold=50))
+
+start!(server, port=8080, blocking=false)</code></pre><h2 id="Serving-Static-Files"><a class="docs-heading-anchor" href="#Serving-Static-Files">Serving Static Files</a><a id="Serving-Static-Files-1"></a><a class="docs-heading-anchor-permalink" href="#Serving-Static-Files" title="Permalink"></a></h2><p>Serve a directory of HTML, CSS, JS, and other assets using the C-level file server (supports Range, ETag, Last-Modified, and gzip):</p><pre><code class="language-julia hljs">using Mongoose
+
+server = Async(Router())
+
+# Serve files from &quot;public/&quot; directory
+# GET /style.css  →  public/style.css
+# GET /            →  public/index.html
+mount!(server, &quot;public&quot;)
+
+start!(server, port=8080, blocking=false)</code></pre><h2 id="Request-Context"><a class="docs-heading-anchor" href="#Request-Context">Request Context</a><a id="Request-Context-1"></a><a class="docs-heading-anchor-permalink" href="#Request-Context" title="Permalink"></a></h2><p>Middleware can attach data to the request context via <code>context!</code>, which handlers can access:</p><pre><code class="language-julia hljs">using Mongoose
+
+struct UserLookup &lt;: Mongoose.AbstractMiddleware
+    db::Dict{String, String}
+end
+
+function (mw::UserLookup)(request, params, next)
+    token = get(request.headers, &quot;authorization&quot;, nothing)
+    if token !== nothing
+        user = get(mw.db, replace(token, &quot;Bearer &quot; =&gt; &quot;&quot;), nothing)
+        if user !== nothing
+            context!(request)[:user] = user
+        end
+    end
+    return next()
+end
+
+router = Router()
+route!(router, :get, &quot;/me&quot;, req -&gt; begin
+    user = get(context!(req), :user, &quot;anonymous&quot;)
+    Response(Plain, &quot;Hello, $user!&quot;)
+end)
+
+server = Async(router)
+plug!(server, UserLookup(Dict(&quot;token-123&quot; =&gt; &quot;Alice&quot;, &quot;token-456&quot; =&gt; &quot;Bob&quot;)))
+
+start!(server, port=8080, blocking=false)</code></pre><h2 id="Async-Server-with-Multiple-Workers"><a class="docs-heading-anchor" href="#Async-Server-with-Multiple-Workers">Async Server with Multiple Workers</a><a id="Async-Server-with-Multiple-Workers-1"></a><a class="docs-heading-anchor-permalink" href="#Async-Server-with-Multiple-Workers" title="Permalink"></a></h2><p>For higher throughput, start Julia with multiple threads and configure the worker count:</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+
+route!(router, :get, &quot;/compute&quot;, req -&gt; begin
+    result = sum(rand(1_000_000))
+    Response(Plain, &quot;Computed: $result&quot;)
+end)
+
+# 8 worker tasks processing requests concurrently
+server = Async(router; nworkers=8)
+start!(server, port=8080, blocking=false)</code></pre><p>Start Julia with threads: <code>julia -t 8</code></p><h2 id="Static-Router-(AOT-Compilation)"><a class="docs-heading-anchor" href="#Static-Router-(AOT-Compilation)">Static Router (AOT Compilation)</a><a id="Static-Router-(AOT-Compilation)-1"></a><a class="docs-heading-anchor-permalink" href="#Static-Router-(AOT-Compilation)" title="Permalink"></a></h2><p>For ahead-of-time compiled binaries with <code>juliac --trim=safe</code>, use the <code>@router</code> macro instead of <code>Router()</code>:</p><pre><code class="language-julia hljs">using Mongoose
+
+@router MyApi begin
+    get(&quot;/&quot;, req -&gt; Response(Plain, &quot;Hello from AOT!&quot;))
+    get(&quot;/users/:id::Int&quot;, (req, id) -&gt; Response(Plain, &quot;User $id&quot;))
+    post(&quot;/echo&quot;, req -&gt; Response(Plain, req.body))
+    ws(&quot;/chat&quot;, on_message = msg -&gt; Message(&quot;Echo: $(msg.data)&quot;))
+end
+
+server = Server(MyApi())
+start!(server, port=8080)</code></pre><p>This generates zero-allocation dispatch at compile time — no <code>Dict</code> lookups, no dynamic dispatch.</p><h2 id="Full-Application-Example"><a class="docs-heading-anchor" href="#Full-Application-Example">Full Application Example</a><a id="Full-Application-Example-1"></a><a class="docs-heading-anchor-permalink" href="#Full-Application-Example" title="Permalink"></a></h2><p>A complete example combining multiple features:</p><pre><code class="language-julia hljs">using Mongoose, JSON
+
+struct CreateUser
+    name::String
+    email::String
+end
+
+router = Router()
+
+# Health check
+route!(router, :get, &quot;/health&quot;, req -&gt; Response(Plain, &quot;ok&quot;))
+
+# JSON API
+route!(router, :get, &quot;/api/users/:id::Int&quot;, (req, id) -&gt; begin
+    Response(Json, Dict(&quot;id&quot; =&gt; id, &quot;name&quot; =&gt; &quot;User $id&quot;))
+end)
+
+route!(router, :post, &quot;/api/users&quot;, req -&gt; begin
+    data = JSON.parse(req.body)
+    name = get(data, &quot;name&quot;, &quot;&quot;)
+    Response(Json, Dict(&quot;created&quot; =&gt; name); status=201)
+end)
+
+# WebSocket with idle timeout
+ws!(router, &quot;/ws/notifications&quot;,
+    on_message = (msg::Message) -&gt; Message(&quot;&quot;&quot;{&quot;ack&quot;: true}&quot;&quot;&quot;),
+    on_open    = (req::Request) -&gt; @info &quot;WS client connected&quot;
+)
+
+# Server with full middleware stack
+# ws_idle_timeout: close WS connections that are idle for more than 60 seconds
+server = Async(router; nworkers=4, ws_idle_timeout=60)
+plug!(server, logger(threshold=100))
+plug!(server, cors(origins=&quot;https://myapp.com&quot;))
+plug!(server, ratelimit(max_requests=200, window_seconds=60))
+mount!(server, &quot;public&quot;)
+
+start!(server, port=8080, blocking=false)</code></pre><h2 id="Custom-Error-Responses"><a class="docs-heading-anchor" href="#Custom-Error-Responses">Custom Error Responses</a><a id="Custom-Error-Responses-1"></a><a class="docs-heading-anchor-permalink" href="#Custom-Error-Responses" title="Permalink"></a></h2><p>Register pre-built <code>Response</code> objects for specific HTTP status codes:</p><pre><code class="language-julia hljs">using Mongoose, JSON
+
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
+
+router = Router()
+
+route!(router, :get, &quot;/fail&quot;, req -&gt; error(&quot;Something broke&quot;))
+route!(router, :get, &quot;/ok&quot;, req -&gt; Response(200, &quot;All good&quot;))
+
+# Custom 404: use a wildcard route
+route!(router, :get, &quot;*&quot;, req -&gt; Response(Html, &quot;&lt;h1&gt;Not Found&lt;/h1&gt;&quot;; status=404))
+
+server = Async(router; request_timeout=5000)
+
+fail!(server, 500, Response(Json, Dict(&quot;error&quot; =&gt; &quot;Internal error&quot;); status=500))
+fail!(server, 413, Response(Json, &quot;&quot;&quot;{&quot;error&quot;:&quot;Body too large&quot;}&quot;&quot;&quot;; status=413))
+fail!(server, 503, Response(Json, &quot;&quot;&quot;{&quot;error&quot;:&quot;Service temporarily unavailable&quot;}&quot;&quot;&quot;; status=503))
+fail!(server, 504, Response(Json, &quot;&quot;&quot;{&quot;error&quot;:&quot;Request timed out&quot;}&quot;&quot;&quot;; status=504))
+
+start!(server, port=8080, blocking=false)</code></pre><h2 id="Path-Scoped-Middleware"><a class="docs-heading-anchor" href="#Path-Scoped-Middleware">Path-Scoped Middleware</a><a id="Path-Scoped-Middleware-1"></a><a class="docs-heading-anchor-permalink" href="#Path-Scoped-Middleware" title="Permalink"></a></h2><p>Apply middleware only to specific URL prefixes:</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+
+route!(router, :get, &quot;/&quot;, req -&gt; Response(200, &quot;Welcome&quot;))
+route!(router, :get, &quot;/api/users&quot;, req -&gt; Response(200, &quot;User list&quot;))
+route!(router, :get, &quot;/admin/dashboard&quot;, req -&gt; Response(200, &quot;Dashboard&quot;))
+
+server = Async(router)
+
+# Auth only for /api and /admin routes
+plug!(server, bearer(t -&gt; t == &quot;secret&quot;); paths=[&quot;/api&quot;, &quot;/admin&quot;])
+
+# Rate limit only expensive API endpoints
+plug!(server, ratelimit(max_requests=10, window_seconds=60); paths=[&quot;/api&quot;])
+
+# Logger for everything
+plug!(server, logger(structured=true))
+
+start!(server, port=8080, blocking=false)</code></pre><h2 id="Structured-JSON-Logging"><a class="docs-heading-anchor" href="#Structured-JSON-Logging">Structured JSON Logging</a><a id="Structured-JSON-Logging-1"></a><a class="docs-heading-anchor-permalink" href="#Structured-JSON-Logging" title="Permalink"></a></h2><p>Emit structured JSON log lines for machine-parsable logging:</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+route!(router, :get, &quot;/&quot;, req -&gt; Response(200, &quot;ok&quot;))
+
+server = Async(router)
+plug!(server, logger(structured=true, output=open(&quot;access.log&quot;, &quot;a&quot;)))
+
+start!(server, port=8080, blocking=false)</code></pre><p>Each log line is a JSON object:</p><pre><code class="language-json hljs">{&quot;method&quot;:&quot;GET&quot;,&quot;uri&quot;:&quot;/&quot;,&quot;status&quot;:200,&quot;duration&quot;:0.42,&quot;ts&quot;:&quot;2025-01-15T10:30:00&quot;}</code></pre><h2 id="Prometheus-Metrics"><a class="docs-heading-anchor" href="#Prometheus-Metrics">Prometheus Metrics</a><a id="Prometheus-Metrics-1"></a><a class="docs-heading-anchor-permalink" href="#Prometheus-Metrics" title="Permalink"></a></h2><p>Expose Prometheus-compatible metrics with the <code>metrics()</code> middleware. It automatically tracks request counts and latency histograms, and serves them at <code>GET /metrics</code>:</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+route!(router, :get, &quot;/api/data&quot;, req -&gt; Response(Json, &quot;&quot;&quot;{&quot;ok&quot;:true}&quot;&quot;&quot;))
+
+server = Async(router; nworkers=4)
+plug!(server, health())
+plug!(server, metrics())          # serves GET /metrics
+
+start!(server; host=&quot;0.0.0.0&quot;, port=8080)</code></pre><p>Sample output at <code>GET /metrics</code>:</p><pre><code class="nohighlight hljs"># HELP http_requests_total Total number of HTTP requests
+# TYPE http_requests_total counter
+http_requests_total{method=&quot;GET&quot;,status=&quot;200&quot;} 42
+
+# HELP http_request_duration_seconds HTTP request latency in seconds
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{le=&quot;0.005&quot;} 38
+http_request_duration_seconds_bucket{le=&quot;0.01&quot;} 41
+...
+http_request_duration_seconds_bucket{le=&quot;+Inf&quot;} 42
+http_request_duration_seconds_sum 0.127
+http_request_duration_seconds_count 42</code></pre><p>Prometheus <code>scrape_configs</code>:</p><pre><code class="language-yaml hljs">scrape_configs:
+  - job_name: myapp
+    static_configs:
+      - targets: [&#39;localhost:8080&#39;]
+    metrics_path: /metrics</code></pre><h2 id="Binary-Responses"><a class="docs-heading-anchor" href="#Binary-Responses">Binary Responses</a><a id="Binary-Responses-1"></a><a class="docs-heading-anchor-permalink" href="#Binary-Responses" title="Permalink"></a></h2><p>Use the <code>Binary</code> format for raw byte responses:</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+
+route!(router, :get, &quot;/image&quot;, req -&gt; begin
+    data = read(&quot;logo.png&quot;)
+    Response(Binary, data; status=200)
+end)
+
+server = Async(router)
+start!(server, port=8080, blocking=false)</code></pre><h2 id="Production-Deployment"><a class="docs-heading-anchor" href="#Production-Deployment">Production Deployment</a><a id="Production-Deployment-1"></a><a class="docs-heading-anchor-permalink" href="#Production-Deployment" title="Permalink"></a></h2><h3 id="Environment-Driven-Configuration"><a class="docs-heading-anchor" href="#Environment-Driven-Configuration">Environment-Driven Configuration</a><a id="Environment-Driven-Configuration-1"></a><a class="docs-heading-anchor-permalink" href="#Environment-Driven-Configuration" title="Permalink"></a></h3><p>Read server settings from environment variables with sensible defaults:</p><pre><code class="language-julia hljs">using Mongoose, JSON
+
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
+
+# --- Configuration from environment ---
+const HOST    = get(ENV, &quot;HOST&quot;, &quot;0.0.0.0&quot;)
+const PORT    = parse(Int, get(ENV, &quot;PORT&quot;, &quot;8080&quot;))
+const WORKERS = parse(Int, get(ENV, &quot;WORKERS&quot;, string(Threads.nthreads())))
+const MAX_BODY  = parse(Int, get(ENV, &quot;MAX_BODY&quot;, &quot;5242880&quot;))  # 5 MB
+const REQ_TIMEOUT = parse(Int, get(ENV, &quot;request_timeout&quot;, &quot;30000&quot;))  # 30s
+const LOG_LEVEL = get(ENV, &quot;LOG_LEVEL&quot;, &quot;info&quot;)
+
+router = Router()
+
+route!(router, :get, &quot;/api/status&quot;, req -&gt; Response(Json, Dict(
+    &quot;status&quot; =&gt; &quot;ok&quot;,
+    &quot;workers&quot; =&gt; WORKERS,
+    &quot;julia_version&quot; =&gt; string(VERSION)
+)))
+
+server = Async(router;
+    nworkers=WORKERS,
+    max_body=MAX_BODY,
+    request_timeout=REQ_TIMEOUT,
+    ws_idle_timeout=60,
+    drain_timeout=10_000
+)
+
+# Middleware stack
+plug!(server, health())
+plug!(server, logger(structured=(LOG_LEVEL == &quot;debug&quot;)))
+plug!(server, cors())
+
+start!(server; host=HOST, port=PORT)</code></pre><p>Launch with: <code>HOST=0.0.0.0 PORT=3000 WORKERS=8 julia -t 8 --project server.jl</code></p><h3 id="Graceful-Shutdown-with-Signal-Handling"><a class="docs-heading-anchor" href="#Graceful-Shutdown-with-Signal-Handling">Graceful Shutdown with Signal Handling</a><a id="Graceful-Shutdown-with-Signal-Handling-1"></a><a class="docs-heading-anchor-permalink" href="#Graceful-Shutdown-with-Signal-Handling" title="Permalink"></a></h3><p>Handle shutdown signals for clean container stops:</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+route!(router, :get, &quot;/&quot;, req -&gt; Response(200, &quot;Running&quot;))
+
+server = Async(router; nworkers=4, drain_timeout=10_000)
+plug!(server, health())
+
+start!(server; host=&quot;0.0.0.0&quot;, port=8080, blocking=false)
+
+# Block main thread and handle signals
+try
+    @info &quot;Server ready. Press Ctrl+C to stop.&quot;
+    while server.core.running[]
+        sleep(1)
+    end
+catch e
+    if e isa InterruptException
+        @info &quot;Received shutdown signal&quot;
+    else
+        @error &quot;Unexpected error&quot; exception=(e, catch_backtrace())
+    end
+finally
+    shutdown!(server)
+end</code></pre><h3 id="Multi-Service-API-with-Route-Groups"><a class="docs-heading-anchor" href="#Multi-Service-API-with-Route-Groups">Multi-Service API with Route Groups</a><a id="Multi-Service-API-with-Route-Groups-1"></a><a class="docs-heading-anchor-permalink" href="#Multi-Service-API-with-Route-Groups" title="Permalink"></a></h3><p>Organize a larger API using separate routers merged into one server:</p><pre><code class="language-julia hljs">using Mongoose, JSON
+
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
+
+# --- User service ---
+function register_user_routes!(router)
+    route!(router, :get, &quot;/api/v1/users&quot;, req -&gt; begin
+        Response(Json, [Dict(&quot;id&quot; =&gt; 1, &quot;name&quot; =&gt; &quot;Alice&quot;), Dict(&quot;id&quot; =&gt; 2, &quot;name&quot; =&gt; &quot;Bob&quot;)])
+    end)
+
+    route!(router, :get, &quot;/api/v1/users/:id::Int&quot;, (req, id) -&gt; begin
+        Response(Json, Dict(&quot;id&quot; =&gt; id, &quot;name&quot; =&gt; &quot;User $id&quot;))
+    end)
+
+    route!(router, :post, &quot;/api/v1/users&quot;, req -&gt; begin
+        data = JSON.parse(req.body)
+        Response(Json, Dict(&quot;id&quot; =&gt; 3, &quot;name&quot; =&gt; get(data, &quot;name&quot;, &quot;&quot;)); status=201)
+    end)
+
+    route!(router, :delete, &quot;/api/v1/users/:id::Int&quot;, (req, id) -&gt; begin
+        Response(204, &quot;&quot;, &quot;&quot;)
+    end)
+end
+
+function register_product_routes!(router)
+    route!(router, :get, &quot;/api/v1/products&quot;, req -&gt; begin
+        limit = tryparse(Int, get(req.query, &quot;limit&quot;, &quot;&quot;))
+        n = something(limit, 10)
+        items = [Dict(&quot;id&quot; =&gt; i, &quot;name&quot; =&gt; &quot;Product $i&quot;, &quot;price&quot; =&gt; i * 9.99) for i in 1:n]
+        Response(Json, items)
+    end)
+
+    route!(router, :get, &quot;/api/v1/products/:id::Int&quot;, (req, id) -&gt; begin
+        Response(Json, Dict(&quot;id&quot; =&gt; id, &quot;name&quot; =&gt; &quot;Product $id&quot;, &quot;price&quot; =&gt; id * 9.99))
+    end)
+end
+
+# --- Assemble ---
+router = Router()
+register_user_routes!(router)
+register_product_routes!(router)
+
+# Catch-all 404
+route!(router, :get, &quot;*&quot;, req -&gt; Response(Json, Dict(&quot;error&quot; =&gt; &quot;Not found&quot;); status=404))
+
+server = Async(router; nworkers=4, request_timeout=15_000)
+
+# Public: health + CORS on everything
+plug!(server, health())
+plug!(server, cors())
+plug!(server, logger(structured=true))
+
+# Auth only on API routes
+plug!(server, bearer(t -&gt; t == ENV[&quot;API_TOKEN&quot;]); paths=[&quot;/api&quot;])
+
+# Rate limit per-client
+plug!(server, ratelimit(max_requests=200, window_seconds=60); paths=[&quot;/api&quot;])
+
+start!(server; host=&quot;0.0.0.0&quot;, port=8080)</code></pre><h3 id="Request-Context-for-Auth-Pipelines"><a class="docs-heading-anchor" href="#Request-Context-for-Auth-Pipelines">Request Context for Auth Pipelines</a><a id="Request-Context-for-Auth-Pipelines-1"></a><a class="docs-heading-anchor-permalink" href="#Request-Context-for-Auth-Pipelines" title="Permalink"></a></h3><p>Use middleware to inject authenticated user data into the request context:</p><pre><code class="language-julia hljs">using Mongoose, JSON
+
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
+
+# --- Auth middleware that populates context ---
+struct JWTAuth &lt;: Mongoose.AbstractMiddleware
+    secret::String
+end
+
+function (mw::JWTAuth)(request, params, next)
+    token = get(request.headers, &quot;authorization&quot;, nothing)
+    token === nothing &amp;&amp; return Response(Json, &quot;&quot;&quot;{&quot;error&quot;:&quot;Missing token&quot;}&quot;&quot;&quot;; status=401)
+
+    # Strip &quot;Bearer &quot; prefix
+    if length(token) &gt; 7 &amp;&amp; lowercase(token[1:7]) == &quot;bearer &quot;
+        token = token[8:end]
+    else
+        return Response(Json, &quot;&quot;&quot;{&quot;error&quot;:&quot;Invalid scheme&quot;}&quot;&quot;&quot;; status=401)
+    end
+
+    # In production, decode and verify a real JWT here
+    # For this example, we simulate user lookup
+    ctx = context!(request)
+    ctx[:user_id] = 42
+    ctx[:role] = &quot;admin&quot;
+    ctx[:token] = token
+
+    return next()
+end
+
+# --- Role-based access control middleware ---
+struct RequireRole &lt;: Mongoose.AbstractMiddleware
+    roles::Set{String}
+end
+
+function (mw::RequireRole)(request, params, next)
+    ctx = context!(request)
+    role = get(ctx, :role, &quot;&quot;)
+    if role ∉ mw.roles
+        return Response(Json, &quot;&quot;&quot;{&quot;error&quot;:&quot;Insufficient permissions&quot;}&quot;&quot;&quot;; status=403)
+    end
+    return next()
+end
+
+router = Router()
+
+route!(router, :get, &quot;/api/profile&quot;, req -&gt; begin
+    ctx = context!(req)
+    Response(Json, Dict(&quot;user_id&quot; =&gt; ctx[:user_id], &quot;role&quot; =&gt; ctx[:role]))
+end)
+
+route!(router, :delete, &quot;/api/admin/users/:id::Int&quot;, (req, id) -&gt; begin
+    Response(Json, Dict(&quot;deleted&quot; =&gt; id))
+end)
+
+server = Async(router; nworkers=4)
+
+# Apply auth to all /api routes
+plug!(server, JWTAuth(&quot;my-secret&quot;); paths=[&quot;/api&quot;])
+
+# Require admin role for /api/admin routes
+plug!(server, RequireRole(Set([&quot;admin&quot;])); paths=[&quot;/api/admin&quot;])
+
+start!(server; port=8080, blocking=false)</code></pre><h3 id="Kubernetes-Ready-Health-Checks"><a class="docs-heading-anchor" href="#Kubernetes-Ready-Health-Checks">Kubernetes-Ready Health Checks</a><a id="Kubernetes-Ready-Health-Checks-1"></a><a class="docs-heading-anchor-permalink" href="#Kubernetes-Ready-Health-Checks" title="Permalink"></a></h3><p>Configure health checks that integrate with your infrastructure:</p><pre><code class="language-julia hljs">using Mongoose
+
+# Simulate external dependency checks
+const DB_CONNECTED = Ref(true)
+const CACHE_READY = Ref(true)
+
+router = Router()
+route!(router, :get, &quot;/api/data&quot;, req -&gt; Response(Json, &quot;&quot;&quot;{&quot;ok&quot;:true}&quot;&quot;&quot;))
+
+server = Async(router; nworkers=4)
+
+plug!(server, health(
+    # Health check: all dependencies must be working
+    health_check = () -&gt; DB_CONNECTED[] &amp;&amp; CACHE_READY[],
+
+    # Readiness: is the service ready to accept traffic?
+    # Return false during startup or when draining
+    ready_check = () -&gt; DB_CONNECTED[],
+
+    # Liveness: is the process responsive?
+    # Only return false if the process is deadlocked
+    live_check = () -&gt; true
+))
+
+plug!(server, logger(structured=true))
+
+start!(server; host=&quot;0.0.0.0&quot;, port=8080)</code></pre><p>Kubernetes probes configuration:</p><pre><code class="language-yaml hljs">livenessProbe:
+  httpGet:
+    path: /livez
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8080
+  initialDelaySeconds: 3
+  periodSeconds: 5</code></pre><h3 id="File-Upload-with-Size-Validation"><a class="docs-heading-anchor" href="#File-Upload-with-Size-Validation">File Upload with Size Validation</a><a id="File-Upload-with-Size-Validation-1"></a><a class="docs-heading-anchor-permalink" href="#File-Upload-with-Size-Validation" title="Permalink"></a></h3><p>Handle file uploads with proper size limits and content type checking:</p><pre><code class="language-julia hljs">using Mongoose, JSON
+
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
+
+router = Router()
+
+route!(router, :post, &quot;/api/upload&quot;, req -&gt; begin
+    ct = get(req.headers, &quot;content-type&quot;, &quot;&quot;)
+
+    if !startswith(ct, &quot;application/json&quot;)
+        return Response(Json, &quot;&quot;&quot;{&quot;error&quot;:&quot;Unsupported media type&quot;}&quot;&quot;&quot;; status=415)
+    end
+
+    data = JSON.parse(req.body)
+    filename = get(data, &quot;filename&quot;, &quot;&quot;)
+    isempty(filename) &amp;&amp; return Response(Json, &quot;&quot;&quot;{&quot;error&quot;:&quot;Missing filename&quot;}&quot;&quot;&quot;; status=400)
+
+    Response(Json, Dict(
+        &quot;status&quot; =&gt; &quot;uploaded&quot;,
+        &quot;filename&quot; =&gt; filename,
+        &quot;size&quot; =&gt; length(req.body)
+    ); status=201)
+end)
+
+# 10MB body limit for upload endpoint
+server = Async(router; nworkers=4, max_body=10_485_760)
+
+plug!(server, logger())
+plug!(server, ratelimit(max_requests=30, window_seconds=60); paths=[&quot;/api/upload&quot;])
+
+start!(server; port=8080, blocking=false)</code></pre><h3 id="WebSocket-Chat-Room"><a class="docs-heading-anchor" href="#WebSocket-Chat-Room">WebSocket Chat Room</a><a id="WebSocket-Chat-Room-1"></a><a class="docs-heading-anchor-permalink" href="#WebSocket-Chat-Room" title="Permalink"></a></h3><p>A multi-client chat server using WebSocket:</p><pre><code class="language-julia hljs">using Mongoose
+
+router = Router()
+
+route!(router, :get, &quot;/&quot;, req -&gt; Response(Html, &quot;&quot;&quot;
+    &lt;html&gt;&lt;body&gt;
+    &lt;h1&gt;Chat&lt;/h1&gt;
+    &lt;div id=&quot;messages&quot;&gt;&lt;/div&gt;
+    &lt;input id=&quot;msg&quot; type=&quot;text&quot; /&gt;&lt;button onclick=&quot;send()&quot;&gt;Send&lt;/button&gt;
+    &lt;script&gt;
+      const ws = new WebSocket(&#39;ws://&#39; + location.host + &#39;/ws/chat&#39;);
+      ws.onmessage = e =&gt; {
+        const d = document.getElementById(&#39;messages&#39;);
+        d.innerHTML += &#39;&lt;p&gt;&#39; + e.data + &#39;&lt;/p&gt;&#39;;
+      };
+      function send() {
+        const input = document.getElementById(&#39;msg&#39;);
+        ws.send(input.value);
+        input.value = &#39;&#39;;
+      }
+    &lt;/script&gt;
+    &lt;/body&gt;&lt;/html&gt;
+&quot;&quot;&quot;))
+
+ws!(router, &quot;/ws/chat&quot;,
+    on_message = (msg::Message) -&gt; begin
+        # Echo back the message (in production, broadcast to all clients)
+        Message(&quot;User: $(msg.data)&quot;)
+    end,
+    on_open = (req::Request) -&gt; @info &quot;Client connected&quot;,
+    on_close = () -&gt; @info &quot;Client disconnected&quot;
+)
+
+server = Async(router; workers=2)
+start!(server; host=&quot;0.0.0.0&quot;, port=8080)</code></pre><h3 id="Static-API-Hybrid-Application"><a class="docs-heading-anchor" href="#Static-API-Hybrid-Application">Static + API Hybrid Application</a><a id="Static-API-Hybrid-Application-1"></a><a class="docs-heading-anchor-permalink" href="#Static-API-Hybrid-Application" title="Permalink"></a></h3><p>Serve a frontend SPA alongside a JSON API:</p><pre><code class="language-julia hljs">using Mongoose, JSON
+
+Mongoose.encode(::Type{Json}, body) = JSON.json(body)
+
+router = Router()
+
+# --- JSON API ---
+route!(router, :get, &quot;/api/v1/config&quot;, req -&gt; begin
+    Response(Json, Dict(&quot;version&quot; =&gt; &quot;1.0.0&quot;, &quot;features&quot; =&gt; [&quot;auth&quot;, &quot;search&quot;]))
+end)
+
+route!(router, :get, &quot;/api/v1/search&quot;, req -&gt; begin
+    q = get(req.query, &quot;q&quot;, &quot;&quot;)
+    isempty(q) &amp;&amp; return Response(Json, &quot;&quot;&quot;{&quot;error&quot;:&quot;Missing query&quot;}&quot;&quot;&quot;; status=400)
+    Response(Json, Dict(&quot;query&quot; =&gt; q, &quot;results&quot; =&gt; []))
+end)
+
+server = Async(router; nworkers=4)
+
+# Middleware: API-only auth
+plug!(server, apikey(keys=Set([ENV[&quot;API_KEY&quot;]])); paths=[&quot;/api&quot;])
+
+# CORS for API
+plug!(server, cors(origins=&quot;https://myapp.com&quot;); paths=[&quot;/api&quot;])
+
+# Structured logging
+plug!(server, logger(structured=true))
+
+# Serve frontend from public/ directory
+# Routes take priority, so /api/* is handled by Julia
+# Everything else falls through to static files
+mount!(server, &quot;public&quot;)
+
+start!(server; host=&quot;0.0.0.0&quot;, port=8080)</code></pre><h3 id="Compiled-Binary-with-@router-(AOT)"><a class="docs-heading-anchor" href="#Compiled-Binary-with-@router-(AOT)">Compiled Binary with @router (AOT)</a><a id="Compiled-Binary-with-@router-(AOT)-1"></a><a class="docs-heading-anchor-permalink" href="#Compiled-Binary-with-@router-(AOT)" title="Permalink"></a></h3><p>Build a fully self-contained binary using <code>juliac --trim=safe</code>:</p><pre><code class="language-julia hljs"># app.jl — compile with: juliac --trim=safe --output-exe myserver app.jl
+using Mongoose
+
+@router MyAPI begin
+    get(&quot;/&quot;, req -&gt; Response(Json, &quot;&quot;&quot;{&quot;status&quot;:&quot;ok&quot;}&quot;&quot;&quot;))
+    get(&quot;/users/:id::Int&quot;, (req, id) -&gt; Response(Json, &quot;&quot;&quot;{&quot;id&quot;:$id}&quot;&quot;&quot;))
+    post(&quot;/echo&quot;, req -&gt; Response(req.body))
+    ws(&quot;/ws&quot;, on_message = msg -&gt; Message(&quot;Echo: $(msg.data)&quot;))
+end
+
+function main()
+    server = Server(MyAPI())
+    start!(server; host=&quot;0.0.0.0&quot;, port=8080)
+end
+
+main()</code></pre><p>The <code>@router</code> macro generates a compile-time prefix trie with zero dynamic dispatch, making it compatible with Julia&#39;s AOT compilation. The resulting binary starts in milliseconds with no JIT warmup.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Introduction</a><a class="docs-footer-nextpage" href="../api/">API »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Tuesday 21 April 2026 15:51">Tuesday 21 April 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
