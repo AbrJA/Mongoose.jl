@@ -102,7 +102,7 @@ Access query parameters via `req.query`, which is a `Dict{String,String}`:
 ```julia
 route!(router, :get, "/search", req -> begin
     q     = get(req.query, "q", "")
-    page  = something(tryparse(Int, get(req.query, "page", "1")), 1)
+    page  = tryparse(Int, get(req.query, "page", "1"))
     limit = tryparse(Int, get(req.query, "limit", ""))
     Response(Plain, "Searching: $q, page $page")
 end)
