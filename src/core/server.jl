@@ -30,6 +30,25 @@ function free!(manager::Manager)
 end
 
 """
+    TLSConfig
+
+TLS options used by `start!` to enable HTTPS.
+
+`cert`, `key`, and `ca` accept either:
+- A filesystem path to a PEM/DER file, or
+- A PEM/DER string loaded in memory.
+
+At minimum, set `cert` and `key` for HTTPS server mode.
+"""
+Base.@kwdef struct TLSConfig
+    cert::String = ""
+    key::String = ""
+    ca::String = ""
+    name::String = ""
+    skip_verification::Bool = false
+end
+
+"""
     ServerCore{R} — Shared state. R <: AbstractRouter
 """
 mutable struct ServerCore{R <: AbstractRouter}
@@ -37,6 +56,7 @@ mutable struct ServerCore{R <: AbstractRouter}
     master::Union{Nothing, Task}
     manager::Manager
     c_handler::Ptr{Cvoid}
+    tls::Union{Nothing,TLSConfig}
     ws_clients::Dict{Int, WsConn}
     id_seq::Threads.Atomic{UInt64}
 
@@ -64,6 +84,7 @@ mutable struct ServerCore{R <: AbstractRouter}
             nothing,
             Manager(empty=true),
             c_handler,
+            nothing,
             Dict{Int, WsConn}(),
             Threads.Atomic{UInt64}(0),
             router,
@@ -118,13 +139,13 @@ config = Config(
 """
 Base.@kwdef struct Config
     poll_timeout::Int            = 1
-    max_body::Int      = MAX_BODY
-    drain_timeout::Int   = DRAIN_TIMEOUT
-    request_timeout::Int = 0
-    ws_idle_timeout::Int = 0
-    nworkers::Int           = 4
-    nqueue::Int             = 1024
-    errors::Dict{Int,Response} = Dict{Int,Response}()
+    max_body::Int                = MAX_BODY
+    drain_timeout::Int           = DRAIN_TIMEOUT
+    request_timeout::Int         = 0
+    ws_idle_timeout::Int         = 0
+    nworkers::Int                = 4
+    nqueue::Int                  = 1024
+    errors::Dict{Int,Response}   = Dict{Int,Response}()
 end
 
 """
@@ -193,7 +214,8 @@ function _teardown!(server::AbstractServer)
 end
 
 function _bind!(server::AbstractServer, host::AbstractString, port::Integer)
-    url = "http://$host:$port"
+    scheme = server.core.tls === nothing ? "http" : "https"
+    url = "$scheme://$host:$port"
     fn_data = Ptr{Cvoid}(objectid(server))  # stable identity token, not heap address
     is_listen = mg_http_listen(server.core.manager.ptr, url, server.core.c_handler, fn_data)
     is_listen == C_NULL && throw(BindError("Failed to start server on $url. Port may be in use."))

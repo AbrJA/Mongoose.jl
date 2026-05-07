@@ -41,6 +41,7 @@ context!
 
 ```@docs
 Config
+TLSConfig
 ```
 
 ## WebSocket Types

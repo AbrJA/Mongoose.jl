@@ -24,6 +24,7 @@
 |---|---|
 | **Performance** | Sub-100ms TTFR via precompilation. Zero-allocation static router. C-level static file serving with Range, ETag, gzip. |
 | **Architecture** | Sync (`Server`) and async (`Async`) modes. Multi-worker pool with backpressure. Per-request timeouts with thread starvation protection. |
+| **HTTPS/TLS** | Native TLS support (Mongoose 7.21 API) via `TLSConfig` and `start!(...; tls=...)` for HTTPS listeners. |
 | **Routing** | Trie-based O(1) matching. Typed path parameters (`:id::Int`). Wildcards (`*path`). Automatic HEAD from GET handlers. |
 | **WebSocket** | Same port as HTTP. Frame size limits. Idle timeout. Upgrade rejection. Ping/pong (RFC 6455). |
 | **Middleware** | CORS, rate limiting, bearer/API key auth, structured logging, Prometheus metrics, health checks. Path-scoped via `paths=`. |
@@ -154,6 +155,32 @@ config = Config(
 )
 
 server = Async(router, config)   # or Server(router, config)
+```
+
+### HTTPS / TLS
+
+Enable HTTPS by passing `TLSConfig` to `start!`:
+
+```julia
+using Mongoose
+
+router = Router()
+route!(router, :get, "/secure", req -> Response(Plain, "hello over tls"))
+
+server = Server(router)
+start!(server;
+        host = "0.0.0.0",
+        port = 8443,
+        tls = TLSConfig(
+                cert = "certs/server.crt",   # path or PEM string
+                key  = "certs/server.key",   # path or PEM string
+                # Optional:
+                # ca = "certs/ca.crt",       # for mTLS client cert verification - Not working
+                # name = "localhost",        # hostname verification name
+                # skip_verification = false,
+        ),
+        blocking = false,
+)
 ```
 
 ### Custom Error Responses 🧯
@@ -415,15 +442,7 @@ start!(server, port=8080)
 
 ## Deployment 🌐
 
-Mongoose.jl serves plain HTTP. For HTTPS in production, terminate TLS at a reverse proxy in front of your Mongoose.jl process.
-
-| Proxy | Notes |
-|---|---|
-| Caddy | Use automatic certificate management and proxy to `127.0.0.1:8080`. |
-| nginx | Terminate TLS at the edge and `proxy_pass` to `http://127.0.0.1:8080`. |
-| Envoy | Terminate TLS at the listener and route to the Mongoose.jl upstream cluster. |
-
-This deployment model keeps certificate rotation, HTTP/2 negotiation, and edge policy out of application code.
+Mongoose.jl supports native HTTPS via `TLSConfig`. For production, you may either use built-in TLS directly or terminate TLS at a reverse proxy.
 
 ---
 
