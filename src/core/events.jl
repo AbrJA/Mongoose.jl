@@ -6,7 +6,7 @@ Return `true` for Mongoose events the framework handles. Called before
 (e.g. during MG_EV_OPEN on Windows with multiple threads).
 """
 @inline _ishandled(ev::Cint) = (ev == MG_EV_HTTP_MSG || ev == MG_EV_WS_OPEN ||
-    ev == MG_EV_WS_MSG || ev == MG_EV_WS_CTL || ev == MG_EV_CLOSE)
+    ev == MG_EV_WS_MSG || ev == MG_EV_WS_CTL || ev == MG_EV_CLOSE || ev == MG_EV_ACCEPT)
 
 """
     _callbackev(conn, ev, ev_data) → Cvoid
@@ -25,7 +25,6 @@ function _callbackev(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
 
     fn_data = mg_conn_get_fn_data(conn)
     fn_data == C_NULL && return nothing
-
     server = _lookupserver(UInt(fn_data))
     server === nothing && return nothing
     try
@@ -44,7 +43,9 @@ Route a Mongoose event integer to the appropriate `_onevent!` specialization.
 Only events handled by the framework are forwarded; all others are silently ignored.
 """
 @inline function _dispatchev(@nospecialize(server), ev::Cint, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid})
-    if ev == MG_EV_HTTP_MSG
+    if ev == MG_EV_ACCEPT
+        _onevent!(server, Val(MG_EV_ACCEPT), conn, ev_data)
+    elseif ev == MG_EV_HTTP_MSG
         _onevent!(server, Val(MG_EV_HTTP_MSG), conn, ev_data)
     elseif ev == MG_EV_WS_OPEN
         _onevent!(server, Val(MG_EV_WS_OPEN), conn, ev_data)

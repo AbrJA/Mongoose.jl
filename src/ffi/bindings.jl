@@ -111,3 +111,14 @@ function mg_send(conn::MgConnection, buf::Vector{UInt8})
         ccall((:mg_send, libmongoose), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}, Csize_t), conn, pointer(buf), sizeof(buf))
     end
 end
+
+"""
+    mg_tls_init(conn, opts) — Initialize TLS on a connection.
+
+Call on `MG_EV_ACCEPT` for HTTPS servers and `MG_EV_CONNECT` for TLS clients.
+"""
+function mg_tls_init(conn::MgConnection, opts::Ref{MgTlsOpts})
+    ccall((:mg_tls_init, libmongoose), Cvoid,
+          (Ptr{Cvoid}, Ptr{MgTlsOpts}),
+          conn, opts)
+end

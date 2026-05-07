@@ -45,18 +45,36 @@ end
 
     # Wait until the server is actually accepting connections.
     # A fixed sleep is unreliable on Windows where task scheduling is non-deterministic.
-    function wait_for_server(url; timeout=10.0, interval=0.05)
+    function wait_for_server(url; timeout=10.0, interval=0.05, kwargs...)
         deadline = time() + timeout
         while time() < deadline
             try
                 # status_exception=false: any HTTP response (even 404) means server is up
-                HTTP.get(url; readtimeout=1, connect_timeout=1, status_exception=false)
+                HTTP.get(url; readtimeout=1, connect_timeout=1, status_exception=false, kwargs...)
                 return  # server is reachable
             catch
                 sleep(interval)
             end
         end
         error("Server at $url did not become ready within $(timeout)s")
+    end
+
+    function make_test_certificates(dir::String)
+        openssl = Sys.which("openssl")
+        openssl === nothing && return nothing
+
+        cert = joinpath(dir, "server.crt")
+        key = joinpath(dir, "server.key")
+        cmd_key = `$(openssl) ecparam -name prime256v1 -genkey -noout -out $(key)`
+        cmd_cert = `$(openssl) req -new -x509 -sha256 -key $(key) -nodes -days 1 -subj /CN=localhost -out $(cert)`
+
+        try
+            run(pipeline(cmd_key, stdout=devnull, stderr=devnull))
+            run(pipeline(cmd_cert, stdout=devnull, stderr=devnull))
+            return (cert, key)
+        catch
+            return nothing
+        end
     end
 
     # --- Test 1: Server ---
@@ -113,6 +131,51 @@ end
         finally
             shutdown!(server)
         end
+    end
+
+    # --- Test: HTTPS/TLS ---
+    @testset "HTTPS TLS" begin
+        mktempdir() do dir
+            creds = make_test_certificates(dir)
+            creds === nothing && (@test_skip false; return)
+            cert, key = creds
+
+            router = Router()
+            route!(router, :get, "/secure", req -> Response(Plain, "tls-ok"))
+
+            s1 = Server(router)
+            start!(s1; port=8132, blocking=false, tls=TLSConfig(cert=cert, key=key))
+            wait_for_server("https://localhost:8132/"; require_ssl_verification=false)
+
+            try
+                resp = HTTP.get("https://localhost:8132/secure"; require_ssl_verification=false)
+                @test resp.status == 200
+                @test String(resp.body) == "tls-ok"
+            finally
+                shutdown!(s1)
+            end
+
+            s2 = Async(router; nworkers=1)
+            start!(s2; port=8133, blocking=false, tls=TLSConfig(cert=cert, key=key))
+            wait_for_server("https://localhost:8133/"; require_ssl_verification=false)
+
+            try
+                resp = HTTP.get("https://localhost:8133/secure"; require_ssl_verification=false)
+                @test resp.status == 200
+                @test String(resp.body) == "tls-ok"
+            finally
+                shutdown!(s2)
+            end
+        end
+    end
+
+    # --- Test: TLS config validation ---
+    @testset "TLS Validation" begin
+        router = Router()
+        route!(router, :get, "/", req -> Response(200, "", "ok"))
+        server = Server(router)
+        @test_throws ServerError start!(server; port=8134, blocking=false, tls=TLSConfig(cert="only-cert"))
+        @test !server.core.running[]
     end
 
     # --- Test 3: Typed Route Parameters ---

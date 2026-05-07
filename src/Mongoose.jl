@@ -11,7 +11,8 @@ export Server, Async, Router, Request, Response,
     cors, ratelimit, bearer, apikey, logger, health, metrics,
     RouteError, ServerError, BindError,
     @router,
-    Config
+    Config,
+    TLSConfig
 
 # 1. FFI Layer (Constants, Structs, Bindings)
 include("ffi/constants.jl")

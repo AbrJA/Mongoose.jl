@@ -41,7 +41,7 @@ function Base.show(io::IO, s::Async)
 end
 
 """
-    start!(server; host, port, blocking)
+    start!(server; host, port, blocking, tls)
 
 Start the Mongoose HTTP server. Initializes the manager, binds an HTTP listener,
 starts worker threads (for Async), and begins the event loop.
@@ -53,13 +53,16 @@ graceful shutdown automatically — no wrapper code needed in the caller.
 - `host::AbstractString`: IP address to bind to (default: `"127.0.0.1"`).
 - `port::Integer`: Port number to listen on (default: `8080`).
 - `blocking::Bool`: If `true`, blocks until the server is stopped (default: `true`).
+- `tls::Union{Nothing,TLSConfig}`: Enable HTTPS when set. Requires `cert` and `key`.
 """
-function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::Integer=8080, blocking::Bool=true)
+function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::Integer=8080,
+                blocking::Bool=true, tls::Union{Nothing,TLSConfig}=nothing)
     if Threads.atomic_xchg!(server.core.running, true)
         return
     end
 
     try
+        server.core.tls = _normalizetls(tls)
         _register!(server)
         _init!(server)
         url = _bind!(server, host, port)
@@ -77,6 +80,56 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
         # InterruptException (Ctrl+C) is the normal shutdown signal — don't propagate it
         e isa InterruptException || rethrow(e)
     end
+    return
+end
+
+@inline _mgstr(s::String) = isempty(s) ? MgStr(C_NULL, 0) : MgStr(pointer(s), Csize_t(ncodeunits(s)))
+
+@inline _loadtlsmaterial(value::String) = isfile(value) ? read(value, String) : value
+
+function _normalizetls(tls::Union{Nothing,TLSConfig})
+    tls === nothing && return nothing
+
+    cert = _loadtlsmaterial(tls.cert)
+    key = _loadtlsmaterial(tls.key)
+
+    isempty(cert) && throw(ServerError("TLS cert is required when tls is enabled"))
+    isempty(key) && throw(ServerError("TLS key is required when tls is enabled"))
+
+    ca = isempty(tls.ca) ? "" : _loadtlsmaterial(tls.ca)
+    return TLSConfig(
+        cert = cert,
+        key = key,
+        ca = ca,
+        name = tls.name,
+        skip_verification = tls.skip_verification,
+    )
+end
+
+function _inittls!(conn::MgConnection, tls::TLSConfig)
+    cert = tls.cert
+    key = tls.key
+    ca = tls.ca
+    name = tls.name
+
+    opts = Ref(MgTlsOpts(
+        _mgstr(ca),
+        _mgstr(cert),
+        _mgstr(key),
+        _mgstr(name),
+        tls.skip_verification ? Cint(1) : Cint(0),
+    ))
+
+    GC.@preserve cert key ca name begin
+        mg_tls_init(conn, opts)
+    end
+    return
+end
+
+function _onevent!(server::AbstractServer, ::Val{MG_EV_ACCEPT}, conn::MgConnection, ::Ptr{Cvoid})
+    tls = server.core.tls
+    tls === nothing && return
+    _inittls!(conn, tls)
     return
 end
 

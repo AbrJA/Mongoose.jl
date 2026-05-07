@@ -76,6 +76,19 @@ struct MgHttpServeOpts
 end
 
 """
+    MgTlsOpts — Mirrors the C `struct mg_tls_opts` (Mongoose 7.21).
+
+All credential fields are in-memory PEM/DER blobs represented as `MgStr`.
+"""
+struct MgTlsOpts
+    ca::MgStr
+    cert::MgStr
+    key::MgStr
+    name::MgStr
+    skip_verification::Cint
+end
+
+"""
     MgHttpServeOpts(root_dir) — Construct opts with only root_dir set (all other fields NULL).
 """
 function MgHttpServeOpts(root_dir::Cstring)
