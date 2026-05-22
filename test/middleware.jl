@@ -328,7 +328,6 @@ end
     plug!(server, cors(origins="https://app.example.com"))
     plug!(server, bearer(token -> token == "tok123"))
     start!(server; port=8207, blocking=false)
-    start!(server; port=8207, blocking=false)
     wait_for_server("http://localhost:8207/")
 
     try
