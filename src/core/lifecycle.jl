@@ -97,8 +97,9 @@ end
 @inline _loadtlsmaterial(value::Vector{UInt8}; field::AbstractString="TLS material") = value
 
 function _loadtlsmaterial(value::String; field::AbstractString="TLS material")
-    if isfile(value)
-        return read(value)
+    path = expanduser(value)
+    if isfile(path)
+        return read(path)
     end
     if _ispathlike(value)
         throw(ServerError("$field file not found: $value"))

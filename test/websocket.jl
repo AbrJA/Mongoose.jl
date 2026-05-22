@@ -2,16 +2,10 @@
     router = Router()
     ws!(router, "/chat", on_message=function (msg::Message)
             if msg.data isa String
-                println("Server received text: ", msg.data)
                 return Message("Echo: " * msg.data)
             else
-                println("Server received binary of length: ", length(msg.data))
                 return Message(msg.data)
             end
-        end, on_open=function (req::Request)
-            println("Server opened WS connection! Headers: ", req.headers)
-        end, on_close=function ()
-            println("Server closed WS connection!")
         end)
 
     server = Async(router, nworkers=1)

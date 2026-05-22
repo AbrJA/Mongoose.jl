@@ -24,7 +24,7 @@
 |---|---|
 | **Performance** | Sub-100ms TTFR via precompilation. Zero-allocation static router. C-level static file serving with Range, ETag, gzip. |
 | **Architecture** | Sync (`Server`) and async (`Async`) modes. Multi-worker pool with backpressure. Per-request timeouts with thread starvation protection. |
-| **HTTPS/TLS** | Native TLS support (Mongoose 7.21 API) via `TLSConfig` and `start!(...; tls=...)` for HTTPS listeners. |
+| **HTTPS/TLS** | Native TLS support via `TLSConfig` and `start!(...; tls=...)` for HTTPS listeners (requires `Mongoose_jll` `v7.21.0+`, which provides `mg_tls_init`/`mg_tls_opts`). |
 | **Routing** | Trie-based O(1) matching. Typed path parameters (`:id::Int`). Wildcards (`*path`). Automatic HEAD from GET handlers. |
 | **WebSocket** | Same port as HTTP. Frame size limits. Idle timeout. Upgrade rejection. Ping/pong (RFC 6455). |
 | **Middleware** | CORS, rate limiting, bearer/API key auth, structured logging, Prometheus metrics, health checks. Path-scoped via `paths=`. |
