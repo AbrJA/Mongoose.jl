@@ -30,6 +30,21 @@
         finally
             shutdown!(s2)
         end
+
+        cert_bytes = read(cert)
+        key_bytes = read(key)
+
+        s3 = Server(router)
+        start!(s3; port=8135, blocking=false, tls=TLSConfig(cert=cert_bytes, key=key_bytes))
+        wait_for_server("https://localhost:8135/"; require_ssl_verification=false)
+
+        try
+            resp = HTTP.get("https://localhost:8135/secure"; require_ssl_verification=false)
+            @test resp.status == 200
+            @test String(resp.body) == "tls-ok"
+        finally
+            shutdown!(s3)
+        end
     end
 end
 
@@ -38,5 +53,7 @@ end
     route!(router, :get, "/", req -> Response(200, "", "ok"))
     server = Server(router)
     @test_throws ServerError start!(server; port=8134, blocking=false, tls=TLSConfig(cert="only-cert"))
+    @test_throws ServerError start!(server; port=8136, blocking=false,
+                                    tls=TLSConfig(cert="certs/missing.crt", key="certs/missing.key"))
     @test !server.core.running[]
 end

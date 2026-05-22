@@ -35,15 +35,16 @@ end
 TLS options used by `start!` to enable HTTPS.
 
 `cert`, `key`, and `ca` accept either:
-- A filesystem path to a PEM/DER file, or
-- A PEM/DER string loaded in memory.
+- A filesystem path to a PEM/DER file,
+- A PEM string loaded in memory, or
+- Raw PEM/DER bytes loaded in memory (`Vector{UInt8}`).
 
 At minimum, set `cert` and `key` for HTTPS server mode.
 """
 Base.@kwdef struct TLSConfig
-    cert::String = ""
-    key::String = ""
-    ca::String = ""
+    cert::Union{String,Vector{UInt8}} = ""
+    key::Union{String,Vector{UInt8}} = ""
+    ca::Union{String,Vector{UInt8}} = ""
     name::String = ""
     skip_verification::Bool = false
 end

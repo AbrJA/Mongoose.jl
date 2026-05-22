@@ -84,19 +84,41 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
 end
 
 @inline _mgstr(s::String) = isempty(s) ? MgStr(C_NULL, 0) : MgStr(pointer(s), Csize_t(ncodeunits(s)))
+@inline _mgstr(bytes::Vector{UInt8}) = isempty(bytes) ? MgStr(C_NULL, 0) : MgStr(pointer(bytes), Csize_t(length(bytes)))
 
-@inline _loadtlsmaterial(value::String) = isfile(value) ? read(value, String) : value
+@inline _ispemmaterial(value::String) = occursin("-----BEGIN ", value) && occursin("-----END ", value)
+
+@inline function _ispathlike(value::String)
+    isempty(value) && return false
+    return occursin('/', value) || occursin('\\', value) || startswith(value, ".") ||
+           startswith(value, "~") || occursin(r"\.[A-Za-z0-9]{1,8}$", value)
+end
+
+@inline _loadtlsmaterial(value::Vector{UInt8}; field::AbstractString="TLS material") = value
+
+function _loadtlsmaterial(value::String; field::AbstractString="TLS material")
+    if isfile(value)
+        return read(value)
+    end
+    if _ispathlike(value)
+        throw(ServerError("$field file not found: $value"))
+    end
+    if _ispemmaterial(value)
+        return value
+    end
+    throw(ServerError("$field must be a PEM string, an existing file path, or Vector{UInt8} bytes"))
+end
 
 function _normalizetls(tls::Union{Nothing,TLSConfig})
     tls === nothing && return nothing
 
-    cert = _loadtlsmaterial(tls.cert)
-    key = _loadtlsmaterial(tls.key)
+    isempty(tls.cert) && throw(ServerError("TLS cert is required when tls is enabled"))
+    isempty(tls.key) && throw(ServerError("TLS key is required when tls is enabled"))
 
-    isempty(cert) && throw(ServerError("TLS cert is required when tls is enabled"))
-    isempty(key) && throw(ServerError("TLS key is required when tls is enabled"))
+    cert = _loadtlsmaterial(tls.cert; field="TLS cert")
+    key = _loadtlsmaterial(tls.key; field="TLS key")
+    ca = isempty(tls.ca) ? "" : _loadtlsmaterial(tls.ca; field="TLS ca")
 
-    ca = isempty(tls.ca) ? "" : _loadtlsmaterial(tls.ca)
     return TLSConfig(
         cert = cert,
         key = key,

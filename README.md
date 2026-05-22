@@ -178,12 +178,12 @@ start!(server;
         host = "0.0.0.0",
         port = 8443,
         tls = TLSConfig(
-                cert = "certs/server.crt",   # path or PEM string
-                key  = "certs/server.key",   # path or PEM string
-                # Optional:
-                # ca = "certs/ca.crt",       # for mTLS client cert verification - Not working
-                # name = "localhost",        # hostname verification name
-                # skip_verification = false,
+            cert = "certs/server.crt",   # path, PEM string, or Vector{UInt8} bytes
+            key  = "certs/server.key",   # path, PEM string, or Vector{UInt8} bytes
+            # Optional:
+            # ca = "certs/ca.crt",       # CA chain/trust bundle for TLS verification
+            # name = "localhost",        # hostname verification name
+            # skip_verification = false,
         ),
         blocking = false,
 )
