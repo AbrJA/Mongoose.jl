@@ -14,6 +14,24 @@ server = Server(router)
 start!(server, port=8080)
 ```
 
+## HTTPS Server (TLS)
+
+Use `TLSConfig` in `start!` to accept HTTPS requests:
+
+```julia
+using Mongoose
+
+router = Router()
+route!(router, :get, "/secure", req -> Response(Plain, "secure ok"))
+
+server = Server(router)
+start!(server;
+        port = 8443,
+        tls = TLSConfig(cert = "certs/server.crt", key  = "certs/server.key"),
+        blocking = false,
+)
+```
+
 ## REST API with Path Parameters
 
 Dynamic path segments are captured with `:name` syntax. Add type annotations for automatic parsing:
@@ -30,7 +48,7 @@ end)
 
 # Typed integer parameter — invalid value (e.g. /users/abc) returns 404
 route!(router, :get, "/users/:id::Int", (req, id) -> begin
-    Response(Json, """{"id": $id, "type": "$(typeof(id))"}""")  
+    Response(Json, """{"id": $id, "type": "$(typeof(id))"}""")
 end)
 
 # Float parameter
