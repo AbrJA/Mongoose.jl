@@ -13,15 +13,7 @@ struct MgStr
     len::Csize_t
 end
 
-"""
-    _tostring(str::MgStr) → String
 
-Allocating conversion from C string to owned Julia String.
-"""
-@inline function _tostring(str::MgStr)
-    (str.buf == C_NULL || str.len == 0) && return ""
-    return unsafe_string(str.buf, str.len)
-end
 
 """
     MgHttpHeader — Mirrors the C `struct mg_http_header`.

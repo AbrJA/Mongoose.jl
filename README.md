@@ -120,9 +120,18 @@ end)
 | Expression | Returns | Description |
 |---|---|---|
 | `req.body` | `String` | Raw request body |
-| `get(req.headers, "authorization", nothing)` | `String \| nothing` | Case-insensitive header lookup |
+| `get(req.headers, "authorization", nothing)` | `String \| nothing` | Case-insensitive header lookup on the `Headers` type |
 | `req.query` | `Dict{String,String}` | Parsed query map (e.g. `Dict("q" => "test", "page" => "2")`) |
 | `context!(req)` | `Dict{Symbol,Any}` | Lazily-allocated context dict (set by middleware) |
+
+`req.headers` is a `Headers` value — a lightweight, owned wrapper around the parsed header pairs that provides case-insensitive `get`/`haskey` without requiring any third-party type piracy:
+
+```julia
+# Case-insensitive — all equivalent
+get(req.headers, "Authorization", nothing)
+get(req.headers, "authorization", nothing)
+haskey(req.headers, "Content-Type")
+```
 
 ---
 
@@ -145,6 +154,10 @@ server = Async(router;
 
 # AOT / simple scripts
 server = Server(router)
+
+# Property forwarding — access core fields directly on the server
+server.router        # same as server.core.router
+server.middlewares   # same as server.core.middlewares
 ```
 
 ### Config ⚙️
@@ -214,6 +227,10 @@ Response(Html, "<p>ok</p>")                 # text/html, status 200
 Response(Json, body; status=201)            # custom status
 Response(Html, body; status=404)            # custom status
 Response(Json, body; headers=["X-Custom" => "value"])  # extra headers
+
+# Ergonomic constructor (no format type, status + body + keyword headers)
+Response(200, "OK"; headers=["X-Custom" => "value"])
+Response(201, """{"id": 1}"""; headers=["Content-Type" => "application/json"])
 ```
 
 The format type sets the `Content-Type` header automatically:
@@ -250,7 +267,7 @@ plug!(server, ratelimit(max_requests=200, window_seconds=60))
 plug!(server, bearer(token -> token == "my-secret"); paths=["/api"])
 
 # API key auth
-plug!(server, apikey(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
+plug!(server, apikey(; header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
 
 # Serve static files from the "public/" directory (C-level, with Range/ETag/gzip)
 mount!(server, "public")
@@ -278,7 +295,7 @@ Subtype `AbstractMiddleware` and implement the call operator:
 ```julia
 struct RequestTimer <: Mongoose.AbstractMiddleware end
 
-function (::RequestTimer)(req::Request, params, next)
+function (::RequestTimer)(req::Request, next::Function)
     t = time()
     res = next()
     elapsed = round((time() - t) * 1000, digits=1)
@@ -442,6 +459,108 @@ fail!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500)
 
 # blocking=true: start! handles Ctrl+C automatically and shuts down gracefully
 start!(server, port=8080)
+```
+
+---
+
+## Security Headers 🔐
+
+The `security()` middleware adds common defensive HTTP response headers in one call:
+
+```julia
+plug!(server, security(
+    hsts_max_age  = 31_536_000,          # 1 year HSTS (HTTPS only)
+    frame_options = "DENY",              # X-Frame-Options
+    csp           = "default-src 'self'",# Content-Security-Policy
+))
+```
+
+Default headers set: `Strict-Transport-Security`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'self'`, `Referrer-Policy: strict-origin-when-cross-origin`.
+
+---
+
+## Cookies 🍪
+
+Parse cookies from a request or set them on a response:
+
+```julia
+using Mongoose
+
+# Read cookies from request
+route!(router, :get, "/profile", req -> begin
+    cookies = parse_cookies(req)        # Dict{String,String}
+    session = get(cookies, "session", nothing)
+    session === nothing && return Response(Plain, "Not logged in"; status=401)
+    Response(Plain, "Hello user!")
+end)
+
+# Set a cookie on a response
+route!(router, :post, "/login", req -> begin
+    c = Cookie("session", "abc123";
+        httponly = true,
+        secure   = true,
+        max_age  = 3600,
+        samesite = :strict,
+    )
+    Response(Plain, "Logged in"; headers=["Set-Cookie" => serialize_cookie(c)])
+end)
+```
+
+---
+
+## Server-Sent Events (SSE) 📡
+
+Push real-time events to clients with `sse_response` and `event!`:
+
+```julia
+using Mongoose
+
+route!(router, :get, "/events", req ->
+    sse_response() do writer
+        sse = SSEWriter(writer)
+        for i in 1:5
+            event!(sse; data="Tick $i", event="update", id=string(i))
+            sleep(1)
+        end
+    end
+)
+```
+
+`sse_response` returns a `StreamResponse` with `Content-Type: text/event-stream`. The `event!` call formats and flushes each event line-by-line per RFC.
+
+---
+
+## Route Groups 🗂️
+
+Use `group` to register a set of routes under a shared URL prefix:
+
+```julia
+api = group("/api/v1")
+
+route!(api, :get,  "/users",     req -> ...)
+route!(api, :post, "/users",     req -> ...)
+route!(api, :get,  "/users/:id", (req, id) -> ...)
+
+# Apply the group to the router
+register_group!(router, api)
+```
+
+---
+
+## Dependency Injection 💉
+
+`ServiceRegistry` provides a lightweight, named-service container for sharing resources (DB connections, config) across handlers and middleware:
+
+```julia
+using Mongoose
+
+registry = ServiceRegistry()
+register!(registry, :db, connect_to_database())   # store once
+
+route!(router, :get, "/users", req -> begin
+    db = service(registry, :db)                   # retrieve by name
+    Response(Json, db_fetch_users(db))
+end)
 ```
 
 ---

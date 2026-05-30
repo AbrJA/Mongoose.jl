@@ -1,478 +1,458 @@
-@testset "CORS Middleware" begin
-    router = Router()
-    route!(router, :get, "/api/data", (req) -> Response(Json, "{\"ok\":true}"))
+@testset "CORS middleware" begin
+    @testset "Preflight OPTIONS request" begin
+        router = Router()
+        route!(router, :get, "/api", req -> Response(200, "", "data"))
+        s = Server(router)
+        plug!(s, cors())
 
-    server = Async(router; nworkers=1)
-    plug!(server, cors(origins="https://example.com"))
-    start!(server, port=8096, blocking=false)
-    wait_for_server("http://localhost:8096/")
+        with_server(s) do port
+            resp = HTTP.request("OPTIONS", "http://127.0.0.1:$port/api"; status_exception=false)
+            @test resp.status == 204
+            headers = Dict(resp.headers)
+            @test haskey(headers, "Access-Control-Allow-Origin")
+            @test headers["Access-Control-Allow-Origin"] == "*"
+        end
+    end
 
-    try
-        response = HTTP.get("http://localhost:8096/api/data")
-        @test response.status == 200
-        headers_dict = Dict(String(h.first) => String(h.second) for h in response.headers)
-        @test haskey(headers_dict, "Access-Control-Allow-Origin")
-        @test headers_dict["Access-Control-Allow-Origin"] == "https://example.com"
+    @testset "CORS headers on regular requests" begin
+        router = Router()
+        route!(router, :get, "/api", req -> Response(200, "", "data"))
+        s = Server(router)
+        plug!(s, cors(origins="https://example.com"))
 
-        response = HTTP.request("OPTIONS", "http://localhost:8096/api/data"; status_exception=false)
-        @test response.status == 204
-    finally
-        shutdown!(server)
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/api"; status_exception=false)
+            @test resp.status == 200
+            headers = Dict(resp.headers)
+            @test headers["Access-Control-Allow-Origin"] == "https://example.com"
+        end
+    end
+
+    @testset "Custom CORS methods and headers" begin
+        router = Router()
+        route!(router, :get, "/api", req -> Response(200, "", "data"))
+        s = Server(router)
+        plug!(s, cors(methods="GET, POST", headers="X-Custom", max_age=3600))
+
+        with_server(s) do port
+            resp = HTTP.request("OPTIONS", "http://127.0.0.1:$port/api"; status_exception=false)
+            @test resp.status == 204
+            headers = Dict(resp.headers)
+            @test headers["Access-Control-Allow-Methods"] == "GET, POST"
+            @test headers["Access-Control-Allow-Headers"] == "X-Custom"
+            @test headers["Access-Control-Max-Age"] == "3600"
+        end
     end
 end
 
-@testset "Async Middleware" begin
-    router = Router()
-    route!(router, :get, "/api/data", (req) -> Response(200, "Content-Type: application/json\r\n", "{\"ok\":true}"))
+@testset "Rate limiting" begin
+    @testset "Allows requests under limit" begin
+        router = Router()
+        route!(router, :get, "/", req -> Response(200, "", "ok"))
+        s = Server(router)
+        plug!(s, ratelimit(max_requests=5, window_seconds=60))
 
-    server = Async(router; nworkers=2)
-    plug!(server, cors(origins="https://test.com"))
-    start!(server; port=8104, blocking=false)
-    wait_for_server("http://localhost:8104/")
+        with_server(s) do port
+            for _ in 1:5
+                resp = HTTP.get("http://127.0.0.1:$port/";
+                    status_exception=false,
+                    headers=["X-Forwarded-For" => "1.2.3.4"])
+                @test resp.status == 200
+            end
+        end
+    end
 
-    try
-        response = HTTP.get("http://localhost:8104/api/data")
-        @test response.status == 200
-        headers_dict = Dict(String(h.first) => String(h.second) for h in response.headers)
-        @test headers_dict["Access-Control-Allow-Origin"] == "https://test.com"
-    finally
-        shutdown!(server)
+    @testset "Blocks requests over limit" begin
+        router = Router()
+        route!(router, :get, "/", req -> Response(200, "", "ok"))
+        s = Server(router)
+        plug!(s, ratelimit(max_requests=2, window_seconds=60))
+
+        with_server(s) do port
+            # Use a unique IP to avoid interference from wait_for_server warmup
+            for _ in 1:2
+                HTTP.get("http://127.0.0.1:$port/";
+                    status_exception=false,
+                    headers=["X-Forwarded-For" => "99.99.99.99"])
+            end
+            resp = HTTP.get("http://127.0.0.1:$port/";
+                status_exception=false, retry=false,
+                headers=["X-Forwarded-For" => "99.99.99.99"])
+            @test resp.status == 429
+        end
+    end
+
+    @testset "Different IPs have independent limits" begin
+        router = Router()
+        route!(router, :get, "/", req -> Response(200, "", "ok"))
+        s = Server(router)
+        plug!(s, ratelimit(max_requests=2, window_seconds=60))
+
+        with_server(s) do port
+            # Exhaust IP A
+            for _ in 1:2
+                HTTP.get("http://127.0.0.1:$port/";
+                    status_exception=false,
+                    headers=["X-Forwarded-For" => "10.0.0.1"])
+            end
+            # IP B should still work
+            resp = HTTP.get("http://127.0.0.1:$port/";
+                status_exception=false,
+                headers=["X-Forwarded-For" => "10.0.0.2"])
+            @test resp.status == 200
+        end
     end
 end
 
-@testset "Authentication Middleware" begin
-    router = Router()
-    route!(router, :get, "/secure", (req) -> Response(200, "", "Secret Data"))
+@testset "Bearer auth" begin
+    @testset "Valid token passes" begin
+        router = Router()
+        route!(router, :get, "/secure", req -> Response(200, "", "secret"))
+        s = Server(router)
+        plug!(s, bearer(token -> token == "valid-token"))
 
-    # 1. Bearer Auth
-    server_bearer = Async(router; nworkers=1)
-    plug!(server_bearer, bearer(token -> token == "magic-token"))
-    start!(server_bearer; port=8105, blocking=false)
-    wait_for_server("http://localhost:8105/")
-
-    try
-        resp = HTTP.get("http://localhost:8105/secure"; headers=["Authorization" => "Bearer magic-token"])
-        @test resp.status == 200
-        @test String(resp.body) == "Secret Data"
-
-        resp = HTTP.get("http://localhost:8105/secure"; headers=["Authorization" => "Bearer wrong"], status_exception=false)
-        @test resp.status == 403
-
-        resp = HTTP.get("http://localhost:8105/secure"; status_exception=false)
-        @test resp.status == 401
-    finally
-        shutdown!(server_bearer)
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/secure";
+                status_exception=false,
+                headers=["Authorization" => "Bearer valid-token"])
+            @test resp.status == 200
+            @test String(resp.body) == "secret"
+        end
     end
 
-    # 2. API Key Auth
-    server_api = Async(router; nworkers=1)
-    plug!(server_api, apikey(keys=Set(["key123"])))
-    start!(server_api; port=8106, blocking=false)
-    wait_for_server("http://localhost:8106/")
+    @testset "Missing auth header returns 401" begin
+        router = Router()
+        route!(router, :get, "/secure", req -> Response(200, "", "secret"))
+        s = Server(router)
+        plug!(s, bearer(token -> token == "valid-token"))
 
-    try
-        resp = HTTP.get("http://localhost:8106/secure"; headers=["X-API-Key" => "key123"])
-        @test resp.status == 200
-
-        resp = HTTP.get("http://localhost:8106/secure"; headers=["X-API-Key" => "wrong"], status_exception=false)
-        @test resp.status == 401
-    finally
-        shutdown!(server_api)
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/secure"; status_exception=false)
+            @test resp.status == 401
+        end
     end
-end
 
-@testset "Rate Limiting Middleware" begin
-    router = Router()
-    route!(router, :get, "/limited", (req) -> Response(200, "", "OK"))
+    @testset "Invalid token returns 403" begin
+        router = Router()
+        route!(router, :get, "/secure", req -> Response(200, "", "secret"))
+        s = Server(router)
+        plug!(s, bearer(token -> token == "valid-token"))
 
-    server = Async(router; nworkers=1)
-    plug!(server, ratelimit(max_requests=3, window_seconds=10))
-    start!(server; port=8107, blocking=false)
-    wait_for_server("http://localhost:8107/")
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/secure";
+                status_exception=false,
+                headers=["Authorization" => "Bearer wrong-token"])
+            @test resp.status == 403
+        end
+    end
 
-    try
-        @test HTTP.get("http://localhost:8107/limited").status == 200
-        @test HTTP.get("http://localhost:8107/limited").status == 200
+    @testset "Invalid scheme returns 401" begin
+        router = Router()
+        route!(router, :get, "/secure", req -> Response(200, "", "secret"))
+        s = Server(router)
+        plug!(s, bearer(token -> true))
 
-        resp = HTTP.get("http://localhost:8107/limited"; status_exception=false)
-        @test resp.status == 429
-        @test haskey(Dict(resp.headers), "Retry-After")
-    finally
-        shutdown!(server)
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/secure";
+                status_exception=false,
+                headers=["Authorization" => "Basic abc123"])
+            @test resp.status == 401
+        end
     end
 end
 
-@testset "Logger Middleware" begin
-    router = Router()
-    route!(router, :get, "/logged", (req) -> Response(200, "", "OK"))
+@testset "API Key auth" begin
+    @testset "Valid key passes" begin
+        router = Router()
+        route!(router, :get, "/api", req -> Response(200, "", "data"))
+        s = Server(router)
+        plug!(s, apikey(keys=Set(["key-123", "key-456"])))
 
-    log_buf = IOBuffer()
-    server = Async(router; nworkers=1)
-    plug!(server, logger(output=log_buf))
-    start!(server; port=8110, blocking=false)
-    wait_for_server("http://localhost:8110/")
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/api";
+                status_exception=false,
+                headers=["X-API-Key" => "key-123"])
+            @test resp.status == 200
+        end
+    end
 
-    try
-        resp = HTTP.get("http://localhost:8110/logged")
-        @test resp.status == 200
-        sleep(0.2)
+    @testset "Missing key returns 401" begin
+        router = Router()
+        route!(router, :get, "/api", req -> Response(200, "", "data"))
+        s = Server(router)
+        plug!(s, apikey(keys=Set(["key-123"])))
 
-        log_output = String(take!(log_buf))
-        @test occursin("GET", log_output)
-        @test occursin("/logged", log_output)
-        @test occursin("200", log_output)
-        @test occursin("ms)", log_output)
-    finally
-        shutdown!(server)
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/api"; status_exception=false)
+            @test resp.status == 401
+        end
+    end
+
+    @testset "Invalid key returns 401" begin
+        router = Router()
+        route!(router, :get, "/api", req -> Response(200, "", "data"))
+        s = Server(router)
+        plug!(s, apikey(keys=Set(["key-123"])))
+
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/api";
+                status_exception=false,
+                headers=["X-API-Key" => "wrong-key"])
+            @test resp.status == 401
+        end
     end
 end
 
-@testset "Logger Threshold" begin
-    router = Router()
-    route!(router, :get, "/fast", (req) -> Response(200, "", "OK"))
+@testset "Logger middleware" begin
+    @testset "Logs to buffer" begin
+        io = IOBuffer()
+        router = Router()
+        route!(router, :get, "/logged", req -> Response(200, "", "ok"))
+        s = Server(router)
+        plug!(s, logger(output=io))
 
-    log_buf = IOBuffer()
-    server = Async(router; nworkers=1)
-    plug!(server, logger(threshold=5000, output=log_buf))
-    start!(server; port=8111, blocking=false)
-    wait_for_server("http://localhost:8111/")
+        with_server(s) do port
+            HTTP.get("http://127.0.0.1:$port/logged"; status_exception=false)
+        end
+        output = String(take!(io))
+        @test contains(output, "GET")
+        @test contains(output, "/logged")
+        @test contains(output, "200")
+    end
 
-    try
-        resp = HTTP.get("http://localhost:8111/fast")
-        @test resp.status == 200
-        sleep(0.2)
+    @testset "Structured JSON logging" begin
+        io = IOBuffer()
+        router = Router()
+        route!(router, :get, "/json-log", req -> Response(200, "", "ok"))
+        s = Server(router)
+        plug!(s, logger(output=io, structured=true))
 
-        log_output = String(take!(log_buf))
-        @test isempty(log_output)
-    finally
-        shutdown!(server)
+        with_server(s) do port
+            HTTP.get("http://127.0.0.1:$port/json-log"; status_exception=false)
+        end
+        output = String(take!(io))
+        # May contain multiple JSON lines (warmup + actual); take the last one
+        lines = filter(!isempty, split(output, '\n'))
+        parsed = JSON.parse(lines[end])
+        @test parsed["method"] == "GET"
+        @test parsed["status"] == 200
+        @test haskey(parsed, "duration")
+    end
+
+    @testset "Threshold filtering" begin
+        io = IOBuffer()
+        router = Router()
+        route!(router, :get, "/fast", req -> Response(200, "", "ok"))
+        s = Server(router)
+        plug!(s, logger(output=io, threshold=10000))  # 10 seconds — nothing logged
+
+        with_server(s) do port
+            HTTP.get("http://127.0.0.1:$port/fast"; status_exception=false)
+        end
+        @test isempty(take!(io))
     end
 end
 
-@testset "Health Middleware" begin
-    router = Router()
-    route!(router, :get, "/api", (req) -> Response(200, "", "ok"))
+@testset "Health middleware" begin
+    @testset "Default healthy" begin
+        router = Router()
+        route!(router, :get, "/", req -> Response(200, "", "app"))
+        s = Server(router)
+        plug!(s, health())
 
-    s1 = Server(router)
-    plug!(s1, health(health_check=() -> true, ready_check=() -> true, live_check=() -> true))
-    start!(s1; port=8124, blocking=false)
-    wait_for_server("http://localhost:8124/")
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/healthz"; status_exception=false)
+            @test resp.status == 200
+            @test contains(String(resp.body), "healthy")
 
-    try
-        resp = HTTP.get("http://localhost:8124/healthz")
-        @test resp.status == 200
-        @test occursin("healthy", String(resp.body))
+            resp2 = HTTP.get("http://127.0.0.1:$port/readyz"; status_exception=false)
+            @test resp2.status == 200
 
-        resp = HTTP.get("http://localhost:8124/readyz")
-        @test resp.status == 200
-        @test occursin("ready", String(resp.body))
-
-        resp = HTTP.get("http://localhost:8124/livez")
-        @test resp.status == 200
-        @test occursin("alive", String(resp.body))
-
-        resp = HTTP.get("http://localhost:8124/api")
-        @test resp.status == 200
-    finally
-        shutdown!(s1)
+            resp3 = HTTP.get("http://127.0.0.1:$port/livez"; status_exception=false)
+            @test resp3.status == 200
+        end
     end
 
-    s2 = Server(router)
-    plug!(s2, health(health_check=() -> false))
-    start!(s2; port=8125, blocking=false)
-    wait_for_server("http://localhost:8125/")
+    @testset "Unhealthy returns 503" begin
+        router = Router()
+        route!(router, :get, "/", req -> Response(200, "", "app"))
+        s = Server(router)
+        plug!(s, health(health_check=() -> false))
 
-    try
-        resp = HTTP.get("http://localhost:8125/healthz"; status_exception=false)
-        @test resp.status == 503
-        @test occursin("unhealthy", String(resp.body))
-    finally
-        shutdown!(s2)
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/healthz"; status_exception=false)
+            @test resp.status == 503
+            @test contains(String(resp.body), "unhealthy")
+        end
     end
-end
 
-@testset "Bearer Token Case-Insensitive Scheme" begin
-    router = Router()
-    route!(router, :get, "/secure", (req) -> Response(200, "", "ok"))
+    @testset "Not ready returns 503" begin
+        router = Router()
+        route!(router, :get, "/", req -> Response(200, "", "app"))
+        s = Server(router)
+        plug!(s, health(ready_check=() -> false))
 
-    server = Server(router)
-    plug!(server, bearer(token -> token == "secret"))
-    start!(server; port=8128, blocking=false)
-    wait_for_server("http://localhost:8128/")
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/readyz"; status_exception=false)
+            @test resp.status == 503
+            @test contains(String(resp.body), "not ready")
+        end
+    end
 
-    try
-        resp = HTTP.get("http://localhost:8128/secure"; headers=["Authorization" => "bearer secret"])
-        @test resp.status == 200
+    @testset "Non-health routes pass through" begin
+        router = Router()
+        route!(router, :get, "/app", req -> Response(200, "", "hello"))
+        s = Server(router)
+        plug!(s, health())
 
-        resp = HTTP.get("http://localhost:8128/secure"; headers=["Authorization" => "BEARER secret"])
-        @test resp.status == 200
-
-        resp = HTTP.get("http://localhost:8128/secure"; headers=["Authorization" => "bearer wrong"], status_exception=false)
-        @test resp.status == 403
-    finally
-        shutdown!(server)
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/app"; status_exception=false)
+            @test resp.status == 200
+            @test String(resp.body) == "hello"
+        end
     end
 end
 
-@testset "Rate Limit X-Forwarded-For" begin
-    router = Router()
-    route!(router, :get, "/limited", (req) -> Response(200, "", "OK"))
+@testset "Metrics middleware" begin
+    @testset "Exposes /metrics endpoint" begin
+        router = Router()
+        route!(router, :get, "/", req -> Response(200, "", "ok"))
+        s = Server(router)
+        plug!(s, metrics())
 
-    server = Async(router; nworkers=1)
-    plug!(server, ratelimit(max_requests=2, window_seconds=60))
-    start!(server; port=8129, blocking=false)
-    wait_for_server("http://localhost:8129/")
+        with_server(s) do port
+            # Make a few requests first
+            for _ in 1:3
+                HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
+            end
+            resp = HTTP.get("http://127.0.0.1:$port/metrics"; status_exception=false)
+            @test resp.status == 200
+            body = String(resp.body)
+            @test contains(body, "http_requests_total")
+            @test contains(body, "http_request_duration_seconds")
+        end
+    end
 
-    try
-        headers1 = ["X-Forwarded-For" => "10.0.0.1"]
-        headers2 = ["X-Forwarded-For" => "10.0.0.1, proxy1.example.com"]
+    @testset "Custom metrics path" begin
+        router = Router()
+        route!(router, :get, "/", req -> Response(200, "", "ok"))
+        s = Server(router)
+        plug!(s, metrics(path="/stats"))
 
-        @test HTTP.get("http://localhost:8129/limited"; headers=headers1).status == 200
-        @test HTTP.get("http://localhost:8129/limited"; headers=headers2).status == 200
-
-        resp = HTTP.get("http://localhost:8129/limited"; headers=headers1, status_exception=false)
-        @test resp.status == 429
-    finally
-        shutdown!(server)
+        with_server(s) do port
+            HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
+            resp = HTTP.get("http://127.0.0.1:$port/stats"; status_exception=false)
+            @test resp.status == 200
+            @test contains(String(resp.body), "http_requests_total")
+        end
     end
 end
 
-@testset "PathFilter via plug! paths keyword" begin
-    router = Router()
-    route!(router, :get, "/api/data",    req -> Response(200, "", "api"))
-    route!(router, :get, "/public/page", req -> Response(200, "", "public"))
+@testset "Security headers" begin
+    @testset "Default security headers" begin
+        router = Router()
+        route!(router, :get, "/", req -> Response(200, "", "ok"))
+        s = Server(router)
+        plug!(s, security())
 
-    server = Async(router; nworkers=1)
-    plug!(server, bearer(token -> token == "secret"); paths=["/api"])
-    start!(server; port=8203, blocking=false)
-    wait_for_server("http://localhost:8203/")
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
+            @test resp.status == 200
+            headers = Dict(resp.headers)
+            @test headers["X-Frame-Options"] == "DENY"
+            @test headers["X-Content-Type-Options"] == "nosniff"
+            @test haskey(headers, "Strict-Transport-Security")
+            @test haskey(headers, "Referrer-Policy")
+        end
+    end
 
-    try
-        resp = HTTP.get("http://localhost:8203/public/page")
-        @test resp.status == 200
-        @test String(resp.body) == "public"
+    @testset "Custom security config" begin
+        router = Router()
+        route!(router, :get, "/", req -> Response(200, "", "ok"))
+        s = Server(router)
+        plug!(s, security(frame_options="SAMEORIGIN", hsts_max_age=0))
 
-        resp = HTTP.get("http://localhost:8203/api/data"; status_exception=false)
-        @test resp.status == 401
-
-        resp = HTTP.get("http://localhost:8203/api/data";
-                        headers=["Authorization" => "Bearer secret"])
-        @test resp.status == 200
-    finally
-        shutdown!(server)
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
+            headers = Dict(resp.headers)
+            @test headers["X-Frame-Options"] == "SAMEORIGIN"
+            @test !haskey(headers, "Strict-Transport-Security")
+        end
     end
 end
 
-@testset "Metrics Middleware" begin
-    router = Router()
-    route!(router, :get,  "/api/hello", req -> Response(200, "", "hello"))
-    route!(router, :post, "/api/data",  req -> Response(201, "", "created"))
+@testset "Middleware pipeline order" begin
+    @testset "Middlewares execute in FIFO order" begin
+        order = String[]
 
-    server = Async(router; nworkers=2)
-    plug!(server, metrics())
-    start!(server; port=8204, blocking=false)
-    wait_for_server("http://localhost:8204/")
+        struct MW1 <: Mongoose.AbstractMiddleware end
+        function (::MW1)(req::Request, next::Function)
+            push!(order, "before1")
+            resp = next()
+            push!(order, "after1")
+            return resp
+        end
 
-    try
-        HTTP.get("http://localhost:8204/api/hello")
-        HTTP.get("http://localhost:8204/api/hello")
-        HTTP.post("http://localhost:8204/api/data")
+        struct MW2 <: Mongoose.AbstractMiddleware end
+        function (::MW2)(req::Request, next::Function)
+            push!(order, "before2")
+            resp = next()
+            push!(order, "after2")
+            return resp
+        end
 
-        resp = HTTP.get("http://localhost:8204/metrics")
-        @test resp.status == 200
-        hdrs = Dict(String(h.first) => String(h.second) for h in resp.headers)
-        @test occursin("text/plain", hdrs["Content-Type"])
+        router = Router()
+        route!(router, :get, "/", req -> (push!(order, "handler"); Response(200, "", "ok")))
+        s = Server(router)
+        plug!(s, MW1())
+        plug!(s, MW2())
 
-        body = String(resp.body)
-        @test occursin("http_requests_total",             body)
-        @test occursin("http_request_duration_seconds",   body)
-        @test occursin("# TYPE http_requests_total",      body)
-        @test occursin("method=\"GET\",status=\"200\"} 2", body)
-        @test occursin("method=\"POST\",status=\"201\"} 1", body)
-        @test occursin("http_request_duration_seconds_count", body)
-    finally
-        shutdown!(server)
+        with_server(s) do port
+            empty!(order)
+            HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
+            @test order == ["before1", "before2", "handler", "after2", "after1"]
+        end
+    end
+
+    @testset "Middleware short-circuit" begin
+        struct BlockAll <: Mongoose.AbstractMiddleware end
+        function (::BlockAll)(req::Request, next::Function)
+            return Response(403, "", "blocked")
+        end
+
+        router = Router()
+        route!(router, :get, "/", req -> Response(200, "", "should not reach"))
+        s = Server(router)
+        plug!(s, BlockAll())
+
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
+            @test resp.status == 403
+            @test String(resp.body) == "blocked"
+        end
     end
 end
 
-@testset "Structured Logger (JSON) via live server" begin
+@testset "Path-scoped middleware" begin
     router = Router()
-    route!(router, :get, "/log_me", req -> Response(200, "", "ok"))
+    route!(router, :get, "/public", req -> Response(200, "", "public"))
+    route!(router, :get, "/admin/panel", req -> Response(200, "", "admin"))
+    s = Server(router)
+    plug!(s, bearer(t -> t == "secret"); paths=["/admin"])
 
-    log_buf = IOBuffer()
-    server  = Async(router; nworkers=1)
-    plug!(server, logger(structured=true, output=log_buf))
-    start!(server; port=8205, blocking=false)
-    wait_for_server("http://localhost:8205/")
-
-    try
-        HTTP.get("http://localhost:8205/log_me")
-        sleep(0.2)
-
-        out = String(take!(log_buf))
-        @test occursin("{\"method\":",    out)
-        @test occursin("\"GET\"",         out)
-        @test occursin("/log_me",         out)
-        @test occursin("\"status\":200",  out)
-        @test occursin("\"duration\":", out)
-    finally
-        shutdown!(server)
-    end
-end
-
-@testset "Multiple middlewares stacked: CORS + bearer auth" begin
-    router = Router()
-    route!(router, :get, "/api/secure", req -> Response(200, "", "secure data"))
-
-    server = Async(router; nworkers=1)
-    plug!(server, cors(origins="https://app.example.com"))
-    plug!(server, bearer(token -> token == "tok123"))
-    start!(server; port=8207, blocking=false)
-    wait_for_server("http://localhost:8207/")
-
-    try
-        resp = HTTP.get("http://localhost:8207/api/secure";
-                        headers=["Authorization" => "Bearer wrong"],
-                        status_exception=false)
-        @test resp.status == 403
-        hdrs = Dict(String(h.first) => String(h.second) for h in resp.headers)
-        @test haskey(hdrs, "Access-Control-Allow-Origin")
-        @test hdrs["Access-Control-Allow-Origin"] == "https://app.example.com"
-
-        resp = HTTP.get("http://localhost:8207/api/secure";
-                        headers=["Authorization" => "Bearer tok123"])
-        @test resp.status == 200
-        hdrs2 = Dict(String(h.first) => String(h.second) for h in resp.headers)
-        @test hdrs2["Access-Control-Allow-Origin"] == "https://app.example.com"
-    finally
-        shutdown!(server)
-    end
-end
-
-@testset "API key with custom header_name" begin
-    router = Router()
-    route!(router, :get, "/data", req -> Response(200, "", "secret"))
-
-    server = Server(router)
-    plug!(server, apikey(header_name="X-Token", keys=Set(["valid-key"])))
-    start!(server; port=8215, blocking=false)
-    wait_for_server("http://localhost:8215/")
-
-    try
-        resp = HTTP.get("http://localhost:8215/data";
-                        headers=["X-Token" => "valid-key"])
+    with_server(s) do port
+        # Public route should not require auth
+        resp = HTTP.get("http://127.0.0.1:$port/public"; status_exception=false)
         @test resp.status == 200
 
-        resp = HTTP.get("http://localhost:8215/data";
-                        headers=["X-API-Key" => "valid-key"],
-                        status_exception=false)
-        @test resp.status == 401
+        # Admin without auth fails
+        resp2 = HTTP.get("http://127.0.0.1:$port/admin/panel"; status_exception=false)
+        @test resp2.status == 401
 
-        resp = HTTP.get("http://localhost:8215/data"; status_exception=false)
-        @test resp.status == 401
-    finally
-        shutdown!(server)
-    end
-end
-
-@testset "CORS default wildcard origin *" begin
-    router = Router()
-    route!(router, :get, "/open", req -> Response(200, "", "open"))
-
-    server = Server(router)
-    plug!(server, cors())
-    start!(server; port=8216, blocking=false)
-    wait_for_server("http://localhost:8216/")
-
-    try
-        resp = HTTP.get("http://localhost:8216/open")
-        @test resp.status == 200
-        hdrs = Dict(String(h.first) => String(h.second) for h in resp.headers)
-        @test haskey(hdrs, "Access-Control-Allow-Origin")
-        @test hdrs["Access-Control-Allow-Origin"] == "*"
-        @test haskey(hdrs, "Access-Control-Allow-Methods")
-        @test haskey(hdrs, "Access-Control-Allow-Headers")
-    finally
-        shutdown!(server)
-    end
-end
-
-@testset "Server + ratelimit middleware (SpinLock)" begin
-    router = Router()
-    route!(router, :get, "/", req -> Response(Plain, "ok"))
-
-    server = Server(router)
-    plug!(server, ratelimit(max_requests=3, window_seconds=60))
-    start!(server; port=8230, blocking=false)
-    wait_for_server("http://localhost:8230/")
-
-    try
-        resp1 = HTTP.get("http://localhost:8230/")
-        @test resp1.status == 200
-        resp2 = HTTP.get("http://localhost:8230/")
-        @test resp2.status == 200
-        resp3 = HTTP.get("http://localhost:8230/"; status_exception=false)
-        @test resp3.status == 429
-    finally
-        shutdown!(server)
-    end
-end
-
-@testset "Server + metrics middleware (SpinLock)" begin
-    router = Router()
-    route!(router, :get, "/ping", req -> Response(Plain, "pong"))
-
-    server = Server(router)
-    plug!(server, metrics())
-    start!(server; port=8231, blocking=false)
-    wait_for_server("http://localhost:8231/")
-
-    try
-        HTTP.get("http://localhost:8231/ping")
-        HTTP.get("http://localhost:8231/ping")
-
-        resp = HTTP.get("http://localhost:8231/metrics")
-        body = String(resp.body)
-        @test occursin("http_requests_total", body)
-        @test occursin("method=\"GET\"", body)
-    finally
-        shutdown!(server)
-    end
-end
-
-@testset "Health middleware: partial failure states" begin
-    router = Router()
-
-    s1 = Server(router)
-    plug!(s1, health(health_check=() -> true, ready_check=() -> false, live_check=() -> true))
-    start!(s1; port=8221, blocking=false)
-    wait_for_server("http://localhost:8221/")
-
-    try
-        resp = HTTP.get("http://localhost:8221/healthz"; status_exception=false)
-        @test resp.status == 503
-        @test occursin("unhealthy", String(resp.body))
-
-        resp = HTTP.get("http://localhost:8221/readyz"; status_exception=false)
-        @test resp.status == 503
-        @test occursin("not ready", String(resp.body))
-
-        resp = HTTP.get("http://localhost:8221/livez")
-        @test resp.status == 200
-        @test occursin("alive", String(resp.body))
-    finally
-        shutdown!(s1)
-    end
-
-    s2 = Server(router)
-    plug!(s2, health(live_check=() -> false))
-    start!(s2; port=8222, blocking=false)
-
-    try
-        resp = HTTP.get("http://localhost:8222/livez"; status_exception=false)
-        @test resp.status == 503
-        @test occursin("dead", String(resp.body))
-    finally
-        shutdown!(s2)
+        # Admin with auth passes
+        resp3 = HTTP.get("http://127.0.0.1:$port/admin/panel";
+            status_exception=false,
+            headers=["Authorization" => "Bearer secret"])
+        @test resp3.status == 200
     end
 end

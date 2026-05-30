@@ -34,7 +34,12 @@ ws!
 ```@docs
 Request
 Response
+StreamResponse
+Headers
 context!
+Cookie
+serialize_cookie
+parse_cookies
 ```
 
 ## Utilities
@@ -42,12 +47,26 @@ context!
 ```@docs
 Config
 TLSConfig
+ServiceRegistry
+register!
+service
+RouteGroup
+group
+register_group!
 ```
 
 ## WebSocket Types
 
 ```@docs
 Message
+```
+
+## SSE (Server-Sent Events)
+
+```@docs
+SSEWriter
+event!
+sse_response
 ```
 
 ## Middleware
@@ -60,6 +79,7 @@ apikey
 logger
 health
 metrics
+security
 ```
 
 ## Errors

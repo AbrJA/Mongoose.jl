@@ -55,7 +55,7 @@ Return the raw (non-cumulative) histogram bucket index for a given elapsed time 
     return _N_HIST_BUCKETS
 end
 
-function (mw::PrometheusMetrics)(request::AbstractRequest, params::Vector{Any}, next)
+function (mw::PrometheusMetrics)(request::Request, next::Function)
     if request.method === :get && request.uri == mw.path
         return _renderstats(mw)
     end

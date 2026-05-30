@@ -1,0 +1,44 @@
+name: Performance
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly Sunday at 06:00 UTC
+    - cron: '0 6 * * 0'
+
+jobs:
+  load-and-soak:
+    name: Load + Soak (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12'
+          arch: x64
+
+      - name: Ensure juliac is available
+        run: |
+          command -v juliac
+          juliac --version
+
+      - name: Install oha
+        run: |
+          curl -sSL https://github.com/hatoo/oha/releases/latest/download/oha-linux-amd64 -o /usr/local/bin/oha
+          chmod +x /usr/local/bin/oha
+          oha --version
+
+      - name: Compile binary and run load benchmark
+        run: julia --project=. perf/load/http_load.jl
+        env:
+          BENCH_P99_MS: '200'
+          BENCH_ERR_PCT: '1.0'
+          BENCH_CONNECTIONS: '5'
+          BENCH_DURATION: '5s'
+
+      - name: Run WebSocket soak test
+        run: julia --project=. perf/soak/ws_idle.jl
+        env:
+          SOAK_CONNECTIONS: '20'
+          SOAK_TIMEOUT: '45'

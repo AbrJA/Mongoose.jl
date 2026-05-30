@@ -52,7 +52,7 @@ struct Logger <: AbstractMiddleware
     structured::Bool
 end
 
-function (mw::Logger)(request::AbstractRequest, params::Vector{Any}, next)
+function (mw::Logger)(request::Request, next::Function)
     t0 = time_ns()
     response = next()
     elapsed_ns = time_ns() - t0

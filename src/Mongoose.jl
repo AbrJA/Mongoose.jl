@@ -3,79 +3,125 @@ module Mongoose
 using Mongoose_jll
 using PrecompileTools
 
-export Server, Async, Router, Request, Response,
+export Server, Async, Router, Request, Response, StreamResponse, Headers,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, plug!, mount!, fail!,
-    context!,
+    context!, Cookie, serialize_cookie, parse_cookies,
     ws!, Message,
-    cors, ratelimit, bearer, apikey, logger, health, metrics,
+    cors, ratelimit, bearer, apikey, logger, health, metrics, security,
     RouteError, ServerError, BindError,
     @router,
-    Config,
-    TLSConfig
+    Config, TLSConfig,
+    ServiceRegistry, register!, service,
+    group, RouteGroup, register_group!,
+    SSEWriter, event!, sse_response
 
-# 1. FFI Layer (Constants, Structs, Bindings)
+# ══════════════════════════════════════════════════════════════════════════════
+# 1. FFI Layer (C constants, structs, bindings)
+# ══════════════════════════════════════════════════════════════════════════════
 include("ffi/constants.jl")
 include("ffi/structs.jl")
 include("ffi/bindings.jl")
 
-# 2. Base Types and Errors
-include("core/types.jl")
-include("core/errors.jl")
-include("core/log.jl")
-include("http/types.jl")
-include("ws/types.jl")
+# ══════════════════════════════════════════════════════════════════════════════
+# 2. Utilities (no internal dependencies)
+# ══════════════════════════════════════════════════════════════════════════════
+include("util/errors.jl")
+include("util/strings.jl")
+include("util/log.jl")
 
-# 3. Router Implementations
-include("router/static.jl")
-include("router/dynamic.jl")
-include("ws/router.jl")
+# ══════════════════════════════════════════════════════════════════════════════
+# 3. Protocol Layer (transport-agnostic types)
+# ══════════════════════════════════════════════════════════════════════════════
+include("protocol/base.jl")          # AbstractRequest, AbstractServer
+include("protocol/formats.jl")       # Content format types
+include("protocol/status.jl")        # status_reason()
+include("protocol/request.jl")       # Request struct
+include("protocol/response.jl")      # Response, StreamResponse, Cookie
+include("protocol/ws_types.jl")      # WsConn, Message, Intent, WsEndpoint, Tagged, Call, Reply
+include("protocol/context.jl")       # ServiceRegistry
 
-# 4. Core Server Logic
-include("core/server.jl")
-include("core/registry.jl")
-include("core/middleware.jl")
-include("core/events.jl")
-include("core/lifecycle.jl")
+# ══════════════════════════════════════════════════════════════════════════════
+# 4. Middleware Protocol
+# ══════════════════════════════════════════════════════════════════════════════
+include("middleware/pipeline.jl")     # AbstractMiddleware, execute_pipeline, plug!
 
-# 5. Protocol Handlers
-include("http/handler.jl")
-include("http/utils.jl")
-include("ws/handler.jl")
+# ══════════════════════════════════════════════════════════════════════════════
+# 5. Router Layer
+# ══════════════════════════════════════════════════════════════════════════════
+include("router/interface.jl")        # AbstractRouter, StaticRouter protocols
+include("router/static.jl")           # @router macro + static dispatch
+include("router/trie.jl")             # Dynamic Router (trie-based)
+include("router/groups.jl")           # Route groups with scoped middleware
 
-# 6. Server Implementations
-include("servers/sync.jl")
-include("servers/async.jl")
+# ══════════════════════════════════════════════════════════════════════════════
+# 6. Transport Layer (Mongoose C library adapter)
+# ══════════════════════════════════════════════════════════════════════════════
+include("transport/mongoose/adapter.jl")      # FFI → Request conversion
+include("transport/mongoose/connection.jl")    # send_http_response!, send_ws_frame!, StreamWriter
 
-# 7. Middleware
+# ══════════════════════════════════════════════════════════════════════════════
+# 7. Server Layer
+# ══════════════════════════════════════════════════════════════════════════════
+include("server/core.jl")             # Manager, TLSConfig, ServerCore, Server, Async types
+include("server/registry.jl")         # Global server registry (GC-safe callback recovery)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 8. Transport Handlers (need Server/Async types)
+# ══════════════════════════════════════════════════════════════════════════════
+include("transport/mongoose/ws_handler.jl")    # WS event handlers (upgrade, message, close)
+include("transport/mongoose/events.jl")        # C callback dispatch
+include("transport/mongoose/http_handler.jl")  # HTTP request processing hot path
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 9. Server Lifecycle
+# ══════════════════════════════════════════════════════════════════════════════
+include("server/lifecycle.jl")        # start!, shutdown!, TLS, bind, drain
+include("server/sync.jl")             # Server event loop
+include("server/async.jl")            # Async worker pool
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 8. Middleware Implementations
+# ══════════════════════════════════════════════════════════════════════════════
 include("middleware/cors.jl")
 include("middleware/ratelimit.jl")
 include("middleware/auth.jl")
 include("middleware/logger.jl")
 include("middleware/health.jl")
 include("middleware/metrics.jl")
+include("middleware/security.jl")
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 9. Streaming (SSE)
+# ══════════════════════════════════════════════════════════════════════════════
+include("streaming/sse.jl")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Module initialization
+# ══════════════════════════════════════════════════════════════════════════════
 function __init__()
-    _init_tty()
-    _init_log_backend!()
+    init_tty!()
+    init_log_backend!()
 end
 
-# 8. Precompilation
+# ══════════════════════════════════════════════════════════════════════════════
+# 10. Precompilation
+# ══════════════════════════════════════════════════════════════════════════════
 @setup_workload begin
     @compile_workload begin
         # --- Router setup ---
         router = Router()
-        route!(router, :get,    "/",              req -> Response(200, "", ""))
+        route!(router, :get,    "/",               req -> Response(200, "", ""))
         route!(router, :get,    "/users/:id::Int", (req, id) -> Response(200, "", ""))
         route!(router, :post,   "/data",           req -> Response(200, "", ""))
         route!(router, :delete, "/data/:id::Int",  (req, id) -> Response(200, "", ""))
 
-        _matchroute(router, :get,  "/")
-        _matchroute(router, :get,  "/users/1")
-        _matchroute(router, :post, "/data")
-        _matchroute(router, :get,  "/nonexistent")
+        dispatch_route(router, :get,  "/")
+        dispatch_route(router, :get,  "/users/1")
+        dispatch_route(router, :post, "/data")
+        dispatch_route(router, :get,  "/nonexistent")
 
-        # --- Response constructors (all common forms) ---
+        # --- Response constructors ---
         Response(Plain, "ok")
         Response(Json, "{}")
         Response(Html, "<p>ok</p>")
@@ -83,14 +129,14 @@ end
         Response(404, "", "")
         Response(500, "", "")
         Response(204, "", "")
-        Response(200, "", UInt8[])     # binary body path
+        Response(200, "", UInt8[])
 
-        # --- Status text ---
-        _statustext(200); _statustext(201); _statustext(202); _statustext(204)
-        _statustext(206); _statustext(301); _statustext(302); _statustext(304)
-        _statustext(400); _statustext(401); _statustext(403); _statustext(404)
-        _statustext(405); _statustext(408); _statustext(413); _statustext(429)
-        _statustext(500); _statustext(503); _statustext(504)
+        # --- Status reason ---
+        status_reason(200); status_reason(201); status_reason(204)
+        status_reason(301); status_reason(302); status_reason(304)
+        status_reason(400); status_reason(401); status_reason(403); status_reason(404)
+        status_reason(405); status_reason(413); status_reason(429)
+        status_reason(500); status_reason(503); status_reason(504)
 
         # --- Request + context ---
         req = Request(:get, "/", Dict{String,String}(), Pair{String,String}[], "", nothing)
@@ -100,14 +146,10 @@ end
             "{}", nothing)
         context!(req)
 
-        # --- _sendhttp! (string and binary) ---
-        # These compile the serialization path without a real socket
-        _statustext(200)
-        _appendreqid("", "42")
-        _appendreqid(_contentheader(Json), "abc-123")
-        _sanitizeid("abc-123")
-        _sanitizeid("bad\r\nvalue")
-        _uint64tostr(UInt64(12345))
+        # --- String utilities ---
+        sanitize_header_value("abc-123")
+        sanitize_header_value("bad\r\nvalue")
+        uint_to_string(UInt64(12345))
 
         # --- Middleware construction ---
         mw_cors     = cors()
@@ -121,53 +163,51 @@ end
         mw_health   = health()
         mw_metrics  = metrics()
 
-        # --- Middleware call operators (hot path in _pipeline) ---
+        # --- Middleware call operators ---
         noop = () -> Response(200, "", "ok")
-        mw_cors(req, Any[], noop)
-        mw_cors(req_with_headers, Any[], noop)
-        mw_logger(req, Any[], noop)
-        mw_logger2(req, Any[], noop)
-        mw_rl(req_with_headers, Any[], noop)
-        mw_bearer(req_with_headers, Any[], noop)
-        mw_apikey(req_with_headers, Any[], noop)
-        mw_health(req, Any[], noop)
-        mw_health(Request(:get, "/healthz", Dict{String,String}(), Pair{String,String}[], "", nothing), Any[], noop)
-        mw_health(Request(:get, "/readyz",  Dict{String,String}(), Pair{String,String}[], "", nothing), Any[], noop)
-        mw_health(Request(:get, "/livez",   Dict{String,String}(), Pair{String,String}[], "", nothing), Any[], noop)
-        mw_metrics(req, Any[], noop)
+        mw_cors(req, noop)
+        mw_cors(req_with_headers, noop)
+        mw_logger(req, noop)
+        mw_logger2(req, noop)
+        mw_rl(req_with_headers, noop)
+        mw_bearer(req_with_headers, noop)
+        mw_apikey(req_with_headers, noop)
+        mw_health(req, noop)
+        mw_health(Request(:get, "/healthz", Dict{String,String}(), Pair{String,String}[], "", nothing), noop)
+        mw_health(Request(:get, "/readyz",  Dict{String,String}(), Pair{String,String}[], "", nothing), noop)
+        mw_health(Request(:get, "/livez",   Dict{String,String}(), Pair{String,String}[], "", nothing), noop)
+        mw_metrics(req, noop)
 
-        # --- PathFilter (path-scoped middleware) ---
+        # --- PathFilter ---
         pf = PathFilter(mw_cors, ["/api"])
-        pf(req, Any[], noop)
-        pf(Request(:get, "/api/users", Dict{String,String}(), Pair{String,String}[], "", nothing), Any[], noop)
+        pf(Request(:get, "/api/users", Dict{String,String}(), Pair{String,String}[], "", nothing), noop)
 
-        # --- Full _pipeline with multiple middleware ---
-        _pipeline(AbstractMiddleware[mw_cors, mw_logger], req, Any[],
-                  (r, args...) -> _dispatchhttp(router, r))
+        # --- Full pipeline ---
+        execute_pipeline(AbstractMiddleware[mw_cors, mw_logger], req,
+                         (r) -> dispatch_to_handler(router, r))
 
-        # --- _invokehttp (the actual request dispatch hot path) ---
+        # --- invoke_http ---
         server_sync  = Server(router)
         server_async = Async(router; nworkers=1)
         plug!(server_sync,  cors())
         plug!(server_async, cors())
 
-        _invokehttp(server_sync,  req)
-        _invokehttp(server_async, req)
-        _invokehttp(server_sync,  req_with_headers)
+        invoke_http(server_sync,  req)
+        invoke_http(server_async, req)
+        invoke_http(server_sync,  req_with_headers)
 
         # --- Error responses ---
-        _errresponse(server_sync, 500)
-        _errresponse(server_sync, 413)
-        _errresponse(server_sync, 503)
-        _errresponse(server_sync, 504)
-        _handleerror(server_sync, req, ErrorException(""))
+        error_response(server_sync, 500)
+        error_response(server_sync, 413)
+        error_response(server_sync, 503)
+        error_response(server_sync, 504)
 
-        # --- Event dispatch chain (prevents JIT inside C callback frames) ---
-        _ishandled(MG_EV_HTTP_MSG)
-        _ishandled(MG_EV_POLL)
+        # --- Event dispatch ---
+        is_handled_event(MG_EV_HTTP_MSG)
+        is_handled_event(MG_EV_POLL)
         for ev in (MG_EV_HTTP_MSG, MG_EV_WS_MSG, MG_EV_WS_CTL, MG_EV_CLOSE, MG_EV_WS_OPEN)
-            try _dispatchev(server_sync,  ev, MgConnection(C_NULL), C_NULL) catch end
-            try _dispatchev(server_async, ev, MgConnection(C_NULL), C_NULL) catch end
+            try dispatch_event(server_sync,  ev, MgConnection(C_NULL), C_NULL) catch end
+            try dispatch_event(server_async, ev, MgConnection(C_NULL), C_NULL) catch end
         end
 
         # --- Config ---
@@ -176,9 +216,8 @@ end
         Config(nworkers=8, request_timeout=5000, drain_timeout=10_000, ws_idle_timeout=60)
     end
 
-    # Precompile the C callback entry point at module level (outside @compile_workload
-    # because it cannot be called safely without a real Mongoose connection pointer)
-    precompile(_callbackev, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+    # Precompile C callback entry point
+    precompile(c_event_callback, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
 end
 
 end # module Mongoose

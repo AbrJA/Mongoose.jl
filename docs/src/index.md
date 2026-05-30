@@ -336,7 +336,7 @@ Returns `401` with `WWW-Authenticate: Bearer` if missing or invalid scheme, `403
 **API key:**
 
 ```julia
-plug!(server, apikey(header_name="X-API-Key", keys=Set(["key1", "key2"])))
+plug!(server, apikey(; header_name="X-API-Key", keys=Set(["key1", "key2"])))
 ```
 
 Returns `401` if the header is missing or the key is not in the allowed set.

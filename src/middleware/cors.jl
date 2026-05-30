@@ -7,7 +7,7 @@ struct Cors <: AbstractMiddleware
     headers::String
 end
 
-function (mw::Cors)(request::AbstractRequest, params::Vector{Any}, next)
+function (mw::Cors)(request::Request, next::Function)
     if request.method === :options
         return Response(204, mw.headers, "")
     end

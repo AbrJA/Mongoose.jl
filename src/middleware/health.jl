@@ -45,7 +45,7 @@ function health(;
     return Health(health_check, ready_check, live_check)
 end
 
-function (mw::Health)(request::AbstractRequest, params::Vector{Any}, next)
+function (mw::Health)(request::Request, next::Function)
     uri = request.uri
 
     if uri == "/healthz"

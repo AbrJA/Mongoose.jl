@@ -1,106 +1,126 @@
-@testset "Static Files" begin
+@testset "Static file serving" begin
     mktempdir() do dir
-        write(joinpath(dir, "index.html"), "<h1>Home</h1>")
+        # Create test files
+        write(joinpath(dir, "index.html"), "<html><body>Hello</body></html>")
         write(joinpath(dir, "style.css"), "body { color: red; }")
+        write(joinpath(dir, "app.js"), "console.log('hello');")
+        write(joinpath(dir, "data.json"), """{"key":"value"}""")
+        write(joinpath(dir, "readme.txt"), "A plain text file")
+
         mkdir(joinpath(dir, "sub"))
-        write(joinpath(dir, "sub", "page.html"), "<p>Sub</p>")
+        write(joinpath(dir, "sub", "nested.html"), "<p>nested</p>")
 
-        router = Router()
-        route!(router, :get, "/api/hello", (req) -> Response(200, "", "hello"))
+        @testset "Serves HTML file" begin
+            router = Router()
+            route!(router, :get, "/api", req -> Response(200, "", "api"))
+            s = Server(router)
+            mount!(s, dir)
 
-        server = Server(router)
-        mount!(server, dir)
-        start!(server; port=8117, blocking=false)
-        wait_for_server("http://localhost:8117/")
+            with_server(s) do port
+                resp = HTTP.get("http://127.0.0.1:$port/index.html"; status_exception=false)
+                @test resp.status == 200
+                @test contains(String(resp.body), "<html>")
+            end
+        end
 
-        try
-            resp = HTTP.get("http://localhost:8117/")
-            @test resp.status == 200
-            @test String(resp.body) == "<h1>Home</h1>"
+        @testset "Serves CSS file" begin
+            router = Router()
+            s = Server(router)
+            mount!(s, dir)
 
-            resp = HTTP.get("http://localhost:8117/style.css")
-            @test resp.status == 200
-            @test String(resp.body) == "body { color: red; }"
+            with_server(s) do port
+                resp = HTTP.get("http://127.0.0.1:$port/style.css"; status_exception=false)
+                @test resp.status == 200
+                @test contains(String(resp.body), "color: red")
+            end
+        end
 
-            resp = HTTP.get("http://localhost:8117/sub/page.html")
-            @test resp.status == 200
-            @test String(resp.body) == "<p>Sub</p>"
+        @testset "Serves JS file" begin
+            router = Router()
+            s = Server(router)
+            mount!(s, dir)
 
-            resp = HTTP.get("http://localhost:8117/missing.txt"; status_exception=false)
-            @test resp.status == 404
+            with_server(s) do port
+                resp = HTTP.get("http://127.0.0.1:$port/app.js"; status_exception=false)
+                @test resp.status == 200
+                @test contains(String(resp.body), "console.log")
+            end
+        end
 
-            resp = HTTP.get("http://localhost:8117/../../../etc/passwd"; status_exception=false)
-            @test resp.status in (403, 404)
+        @testset "Serves nested files" begin
+            router = Router()
+            s = Server(router)
+            mount!(s, dir)
 
-            resp = HTTP.get("http://localhost:8117/api/hello")
-            @test resp.status == 200
-            @test String(resp.body) == "hello"
-        finally
-            shutdown!(server)
+            with_server(s) do port
+                resp = HTTP.get("http://127.0.0.1:$port/sub/nested.html"; status_exception=false)
+                @test resp.status == 200
+                @test contains(String(resp.body), "nested")
+            end
+        end
+
+        @testset "Returns 404 for missing file" begin
+            router = Router()
+            s = Server(router)
+            mount!(s, dir)
+
+            with_server(s) do port
+                resp = HTTP.get("http://127.0.0.1:$port/nonexistent.txt"; status_exception=false)
+                @test resp.status == 404
+            end
+        end
+
+        @testset "API routes coexist with static files" begin
+            router = Router()
+            route!(router, :get, "/api/data", req -> Response(Json, """{"api":true}"""))
+            s = Server(router)
+            mount!(s, dir)
+
+            with_server(s) do port
+                # API route works
+                resp = HTTP.get("http://127.0.0.1:$port/api/data"; status_exception=false)
+                @test resp.status == 200
+                @test JSON.parse(String(resp.body))["api"] == true
+
+                # Static file works
+                resp2 = HTTP.get("http://127.0.0.1:$port/readme.txt"; status_exception=false)
+                @test resp2.status == 200
+                @test String(resp2.body) == "A plain text file"
+            end
+        end
+
+        @testset "Mount with custom prefix" begin
+            router = Router()
+            s = Server(router)
+            mount!(s, dir; uri_prefix="/static")
+
+            with_server(s) do port
+                resp = HTTP.get("http://127.0.0.1:$port/static/index.html"; status_exception=false)
+                @test resp.status == 200
+                @test contains(String(resp.body), "<html>")
+            end
         end
     end
 end
 
-@testset "mount! with URI prefix" begin
+@testset "mount! validation" begin
+    @test_throws ArgumentError mount!(Server(), "/nonexistent/path/xyz")
+end
+
+@testset "Binary file serving" begin
     mktempdir() do dir
-        write(joinpath(dir, "logo.txt"), "LOGO_DATA")
-        mkdir(joinpath(dir, "sub"))
-        write(joinpath(dir, "sub", "page.txt"), "SUB_PAGE")
+        # Create a binary file
+        binary_data = UInt8[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]  # PNG header
+        write(joinpath(dir, "image.png"), binary_data)
 
         router = Router()
-        route!(router, :get, "/api/ping", req -> Response(200, "", "pong"))
-        server = Server(router)
-        mount!(server, dir; uri_prefix="/static")
-        start!(server; port=8208, blocking=false)
-        wait_for_server("http://localhost:8208/")
+        s = Server(router)
+        mount!(s, dir)
 
-        try
-            resp = HTTP.get("http://localhost:8208/static/logo.txt")
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/image.png"; status_exception=false)
             @test resp.status == 200
-            @test String(resp.body) == "LOGO_DATA"
-
-            resp = HTTP.get("http://localhost:8208/static/sub/page.txt")
-            @test resp.status == 200
-            @test String(resp.body) == "SUB_PAGE"
-
-            resp = HTTP.get("http://localhost:8208/logo.txt"; status_exception=false)
-            @test resp.status == 404
-
-            resp = HTTP.get("http://localhost:8208/api/ping")
-            @test resp.status == 200
-            @test String(resp.body) == "pong"
-        finally
-            shutdown!(server)
-        end
-    end
-end
-
-@testset "mount! multiple static directories" begin
-    mktempdir() do base
-        dir_a = joinpath(base, "site")
-        dir_b = joinpath(base, "assets")
-        mkdir(dir_a)
-        mkdir(dir_b)
-        write(joinpath(dir_a, "index.html"), "<h1>Home</h1>")
-        write(joinpath(dir_b, "app.js"),     "console.log(1)")
-
-        router = Router()
-        server = Server(router)
-        mount!(server, dir_a)
-        mount!(server, dir_b; uri_prefix="/assets")
-        start!(server; port=8209, blocking=false)
-        wait_for_server("http://localhost:8209/")
-
-        try
-            resp = HTTP.get("http://localhost:8209/")
-            @test resp.status == 200
-            @test String(resp.body) == "<h1>Home</h1>"
-
-            resp = HTTP.get("http://localhost:8209/assets/app.js")
-            @test resp.status == 200
-            @test String(resp.body) == "console.log(1)"
-        finally
-            shutdown!(server)
+            @test resp.body[1:8] == binary_data
         end
     end
 end

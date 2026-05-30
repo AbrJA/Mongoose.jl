@@ -225,7 +225,7 @@ router = Router()
 route!(router, :get, "/internal", req -> Response(Plain, "Internal data"))
 
 server = Async(router)
-plug!(server, apikey(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
+plug!(server, apikey(; header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
 
 start!(server, port=8080, blocking=false)
 ```
@@ -281,7 +281,7 @@ struct UserLookup <: Mongoose.AbstractMiddleware
     db::Dict{String, String}
 end
 
-function (mw::UserLookup)(request, params, next)
+function (mw::UserLookup)(request, next)
     token = get(request.headers, "authorization", nothing)
     if token !== nothing
         user = get(mw.db, replace(token, "Bearer " => ""), nothing)
@@ -498,6 +498,125 @@ http_request_duration_seconds_sum 0.127
 http_request_duration_seconds_count 42
 ```
 
+## Security Headers
+
+Apply a hardened set of response headers in one call:
+
+```julia
+using Mongoose
+
+server = Async(Router())
+
+plug!(server, security(
+    hsts_max_age  = 31_536_000,           # Strict-Transport-Security (omit for HTTP)
+    frame_options = "DENY",              # X-Frame-Options
+    csp           = "default-src 'self'",# Content-Security-Policy
+))
+
+start!(server, port=8080, blocking=false)
+```
+
+Default headers: `Strict-Transport-Security`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy`, `Referrer-Policy`.
+
+## Cookies
+
+Parse request cookies or attach `Set-Cookie` headers to responses:
+
+```julia
+using Mongoose
+
+router = Router()
+
+# Parse cookies from the incoming request
+route!(router, :get, "/profile", req -> begin
+    cookies = parse_cookies(req)          # Dict{String,String}
+    session = get(cookies, "session", nothing)
+    session === nothing && return Response(Plain, "Not logged in"; status=401)
+    Response(Plain, "Hello, authenticated user!")
+end)
+
+# Set a cookie on the response
+route!(router, :post, "/login", req -> begin
+    c = Cookie("session", "abc123";
+        httponly = true,
+        secure   = true,
+        max_age  = 3600,
+        samesite = :strict,
+    )
+    Response(Plain, "Logged in"; headers=["Set-Cookie" => serialize_cookie(c)])
+end)
+
+server = Async(router)
+start!(server, port=8080, blocking=false)
+```
+
+## Server-Sent Events (SSE)
+
+Push real-time events to clients without WebSockets:
+
+```julia
+using Mongoose
+
+router = Router()
+
+route!(router, :get, "/events", req ->
+    sse_response() do writer
+        sse = SSEWriter(writer)
+        for i in 1:10
+            event!(sse; data="Count: $i", event="tick", id=string(i))
+            sleep(1)
+        end
+    end
+)
+
+server = Async(router)
+start!(server, port=8080, blocking=false)
+```
+
+The `sse_response` wrapper sets `Content-Type: text/event-stream` and handles chunked flushing automatically. `event!` formats each event per RFC 6455 SSE spec with `id:`, `event:`, and `data:` fields.
+
+## Route Groups
+
+Organise related routes under a shared URL prefix with `group`:
+
+```julia
+using Mongoose
+
+router = Router()
+
+api = group("/api/v1")
+route!(api, :get,  "/users",     req -> Response(Json, """{"users":[]}"""))
+route!(api, :post, "/users",     req -> Response(Json, """{"created":true}"""; status=201))
+route!(api, :get,  "/users/:id::Int", (req, id) -> Response(Json, """{"id":$id}"""))
+
+Mongoose.register_group!(router, api)
+
+server = Async(router)
+start!(server, port=8080, blocking=false)
+```
+
+## Dependency Injection with ServiceRegistry
+
+Share database connections, config, or any resource across handlers:
+
+```julia
+using Mongoose
+
+# Set up the registry at startup
+registry = ServiceRegistry()
+register!(registry, :config, Dict("max_items" => 100, "env" => "prod"))
+
+router = Router()
+
+route!(router, :get, "/config", req -> begin
+    cfg = service(registry, :config)    # retrieve by name
+    Response(Json, """{"env":"$(cfg["env"])"}""")
+end)
+
+server = Async(router)
+start!(server, port=8080, blocking=false)
+```
+
 Prometheus `scrape_configs`:
 ```yaml
 scrape_configs:
@@ -682,7 +801,7 @@ struct JWTAuth <: Mongoose.AbstractMiddleware
     secret::String
 end
 
-function (mw::JWTAuth)(request, params, next)
+function (mw::JWTAuth)(request, next)
     token = get(request.headers, "authorization", nothing)
     token === nothing && return Response(Json, """{"error":"Missing token"}"""; status=401)
 
@@ -708,7 +827,7 @@ struct RequireRole <: Mongoose.AbstractMiddleware
     roles::Set{String}
 end
 
-function (mw::RequireRole)(request, params, next)
+function (mw::RequireRole)(request, next)
     ctx = context!(request)
     role = get(ctx, :role, "")
     if role ∉ mw.roles

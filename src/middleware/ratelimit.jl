@@ -23,7 +23,7 @@ end
     return mw.shards[mod1(hash(key), length(mw.shards))]
 end
 
-function (mw::RateLimit)(request::AbstractRequest, params::Vector{Any}, next)
+function (mw::RateLimit)(request::Request, next::Function)
     client_id = let h = get(request.headers, "x-forwarded-for", nothing)
         if h !== nothing
             ci = findfirst(',', h)

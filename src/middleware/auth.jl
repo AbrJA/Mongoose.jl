@@ -10,7 +10,7 @@ struct Bearer <: AbstractMiddleware
     validator::Function
 end
 
-function (mw::Bearer)(request::AbstractRequest, params::Vector{Any}, next)
+function (mw::Bearer)(request::Request, next::Function)
     auth_header = get(request.headers, "authorization", nothing)
 
     if auth_header === nothing
@@ -36,12 +36,12 @@ end
 Case-insensitive, zero-allocation check that `s` starts with `"bearer "`.
 """
 @inline function _isbearer(s::AbstractString)
-    _tolower(codeunit(s, 1)) == UInt8('b') || return false
-    _tolower(codeunit(s, 2)) == UInt8('e') || return false
-    _tolower(codeunit(s, 3)) == UInt8('a') || return false
-    _tolower(codeunit(s, 4)) == UInt8('r') || return false
-    _tolower(codeunit(s, 5)) == UInt8('e') || return false
-    _tolower(codeunit(s, 6)) == UInt8('r') || return false
+    to_lower(codeunit(s, 1)) == UInt8('b') || return false
+    to_lower(codeunit(s, 2)) == UInt8('e') || return false
+    to_lower(codeunit(s, 3)) == UInt8('a') || return false
+    to_lower(codeunit(s, 4)) == UInt8('r') || return false
+    to_lower(codeunit(s, 5)) == UInt8('e') || return false
+    to_lower(codeunit(s, 6)) == UInt8('r') || return false
     codeunit(s, 7) == UInt8(' ') || return false
     return true
 end
@@ -68,7 +68,7 @@ struct ApiKey <: AbstractMiddleware
     keys::Set{String}
 end
 
-function (mw::ApiKey)(request::AbstractRequest, params::Vector{Any}, next)
+function (mw::ApiKey)(request::Request, next::Function)
     apikey = get(request.headers, mw.header_name, nothing)
 
     if apikey === nothing || apikey ∉ mw.keys
