@@ -1,7 +1,5 @@
 """
     HTTP event handler — the hot path from C event → Request → Response → send.
-
-    Key design: shared `preprocess_http` eliminates duplication between Server/Async.
 """
 
 # --- Default error responses (module-level singletons) ---
@@ -16,9 +14,17 @@ const DEFAULT_504 = Response(Plain, "504 Gateway Timeout"; status=504)
 
 Look up custom error response, falling back to module defaults.
 """
-@inline function error_response(server::AbstractServer, status::Int)::Response
-    custom = get(server.core.errors, status, nothing)
-    custom !== nothing && return custom
+@inline function error_response(server::AbstractServer, req::Union{Request,Nothing}, status::Int)::Response
+    custom = get(server.errors, status, nothing)
+    if custom !== nothing
+        custom isa Response && return custom
+        custom isa Function && req !== nothing && return try
+            result = custom(req)
+            result isa Response ? result : Response(Plain, "$status $(status_reason(status))"; status=status)
+        catch
+            Response(Plain, "$status $(status_reason(status))"; status=status)
+        end
+    end
     status == 500 && return DEFAULT_500
     status == 413 && return DEFAULT_413
     status == 503 && return DEFAULT_503
@@ -26,27 +32,19 @@ Look up custom error response, falling back to module defaults.
     return Response(Plain, "$status $(status_reason(status))"; status=status)
 end
 
+@inline error_response(server::AbstractServer, status::Int) = error_response(server, nothing, status)
+
 # --- Request ID resolution ---
 
-"""
-    resolve_request_id(req, server) → String
-
-Forward incoming X-Request-Id if valid, otherwise generate monotonic ID.
-"""
 @inline function resolve_request_id(req::Request, server::AbstractServer)::String
     h = get(req.headers, "x-request-id", nothing)
     if h !== nothing
         safe = sanitize_header_value(h)
         !isempty(safe) && return safe
     end
-    return uint_to_string(Threads.atomic_add!(server.core.id_seq, UInt64(1)) + UInt64(1))
+    return uint_to_string(Threads.atomic_add!(server.id_seq, UInt64(1)) + UInt64(1))
 end
 
-"""
-    resolve_request_id_fast(msg, server) → String
-
-Fast-path: scan raw C headers for X-Request-Id without parsing all headers.
-"""
 @inline function resolve_request_id_fast(msg::MgHttpMessage, server::AbstractServer)::String
     for h in msg.headers
         h.name.buf == C_NULL && break
@@ -58,7 +56,7 @@ Fast-path: scan raw C headers for X-Request-Id without parsing all headers.
             !isempty(safe) && return safe
         end
     end
-    return uint_to_string(Threads.atomic_add!(server.core.id_seq, UInt64(1)) + UInt64(1))
+    return uint_to_string(Threads.atomic_add!(server.id_seq, UInt64(1)) + UInt64(1))
 end
 
 @inline function _is_x_request_id(ptr::Ptr{UInt8})::Bool
@@ -77,23 +75,16 @@ end
     return true
 end
 
-# --- Shared preprocessing (eliminates Server/Async duplication) ---
+# --- Shared preprocessing ---
 
-"""
-    preprocess_http(server, conn, ev_data) → Union{Nothing, Request}
-
-Shared preprocessing for HTTP messages. Returns:
-- `nothing` if the request was already handled (WS upgrade, static serve, rejection)
-- `Request` if it needs to be dispatched to a handler
-"""
 function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})::Union{Nothing,Request}
     msg = MgHttpMessage(ev_data)
     method = parse_method(msg.method)
     uri = to_string(msg.uri)
 
     # 1. WebSocket upgrade check
-    if has_ws_routes(server.core.router)
-        endpoint = ws_endpoint(server.core.router, uri)
+    if has_ws_routes(server.router)
+        endpoint = ws_endpoint(server.router, uri)
         if endpoint !== nothing
             ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
             return nothing
@@ -101,7 +92,7 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
     end
 
     # 2. Body size enforcement
-    if msg.body.len > server.core.max_body
+    if msg.body.len > server.max_body
         send_http_response!(conn, error_response(server, 413))
         return nothing
     end
@@ -115,68 +106,60 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
     return adapt_request(msg, method, uri)
 end
 
-# --- Server (sync) HTTP handler ---
+# --- Unified HTTP handler (sync and async branching on app.workers) ---
 
-function on_http_message(server::Server, conn::MgConnection, ev_data::Ptr{Cvoid})
+function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
     req = preprocess_http(server, conn, ev_data)
     req === nothing && return
 
-    res = try
-        invoke_http(server, req)
-    catch e
-        @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
-        error_response(server, 500)
-    end
-    rid = resolve_request_id(req, server)
-    if res isa StreamResponse
-        send_stream_response!(conn, res)
+    if server.workers == 0
+        # Sync path: handle inline
+        res = try
+            invoke_http(server, req)
+        catch e
+            @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
+            error_response(server, req, 500)
+        end
+        rid = resolve_request_id(req, server)
+        if res isa StreamResponse
+            send_stream_response!(conn, res)
+        else
+            send_http_response!(conn, res::Response, rid)
+        end
     else
-        send_http_response!(conn, res::Response, rid)
-    end
-end
+        # Async path: enqueue to worker pool
+        id = Int(Threads.atomic_add!(server.id_seq, UInt64(1)) + UInt64(1))
+        server.connections[id] = conn
 
-# --- Async HTTP handler ---
-
-function on_http_message(server::Async, conn::MgConnection, ev_data::Ptr{Cvoid})
-    req = preprocess_http(server, conn, ev_data)
-    req === nothing && return
-
-    # Enqueue to worker pool
-    id = Int(Threads.atomic_add!(server.core.id_seq, UInt64(1)) + UInt64(1))
-    server.connections[id] = conn
-
-    tagged = Tagged{Union{Request,Intent}}(id, req)
-    if !try_enqueue!(server.calls, tagged, server.nqueue)
-        delete!(server.connections, id)
-        send_http_response!(conn, error_response(server, 503))
+        tagged = Tagged{Union{Request,Intent}}(id, req)
+        if !try_enqueue!(server.calls, tagged, server.queuesize)
+            delete!(server.connections, id)
+            send_http_response!(conn, error_response(server, 503))
+        end
     end
 end
 
 # --- HTTP dispatch pipeline ---
 
-"""
-    invoke_http(server, request) → Union{Response, StreamResponse}
-
-Execute the middleware pipeline and route dispatch.
-Service injection is handled here (single point of responsibility).
-"""
 function invoke_http(server::AbstractServer, req::Request)::Union{Response,StreamResponse}
-    # Attach services to request context if configured
-    if server.core.services !== nothing
-        ctx = context!(req)
-        ctx[:_services] = server.core.services
+    # Attach app to request context for service injection
+    if !isempty(server.services)
+        ctx = ctx!(req)
+        ctx[:_app] = server
     end
 
-    if isempty(server.core.middlewares)
-        return dispatch_to_handler(server.core.router, req)
+    result = if isempty(server.middlewares)
+        dispatch_to_handler(server.router, req)
+    else
+        final = (r) -> dispatch_to_handler(server.router, r)
+        execute_pipeline(server.middlewares, req, final)
     end
-    final = (r) -> dispatch_to_handler(server.core.router, r)
-    return execute_pipeline(server.core.middlewares, req, final)
-end
 
-# Trim-safe specialization: StaticRouter bypasses middleware
-@inline function invoke_http(server::Server{<:StaticRouter}, req::Request)::Union{Response,StreamResponse}
-    return dispatch_static(server.core.router, req)
+    # Apply custom error handlers for 4xx/5xx responses
+    if result isa Response && haskey(server.errors, result.status)
+        return error_response(server, req, result.status)
+    end
+    return result
 end
 
 """
@@ -199,7 +182,7 @@ function dispatch_to_handler(router::Router, req::Request)::Union{Response,Strea
             if get_h !== nothing
                 resp = get_h(req, matched.params...)
                 resp isa Response && return Response(resp.status, resp.headers, "")
-                resp isa StreamResponse && return resp   # HEAD of streaming: pass through
+                resp isa StreamResponse && return resp
             end
         end
         return Response(Plain, "405 Method Not Allowed"; status=405)
@@ -207,25 +190,14 @@ function dispatch_to_handler(router::Router, req::Request)::Union{Response,Strea
     return Response(Plain, "404 Not Found"; status=404)
 end
 
-@inline function dispatch_to_handler(router::StaticRouter, req::Request)::Union{Response,StreamResponse}
-    return dispatch_static(router, req)
-end
-
 # --- Static File Serving ---
 
-"""
-    serve_static!(server, conn, ev_data, method, uri) → Bool
-
-Try to serve a static file. Returns true if handled.
-"""
 @inline function serve_static!(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid},
                                method::Symbol, uri::String)::Bool
-    isempty(server.core.mounts) && return false
+    isempty(server.mounts) && return false
+    match_route_exact(server.router, method, uri) !== nothing && return false
 
-    # Don't serve static if a route explicitly handles this path
-    match_route_exact(server.core.router, method, uri) !== nothing && return false
-
-    for (dir, prefix) in server.core.mounts
+    for (dir, prefix) in server.mounts
         static_file_exists(dir, prefix, uri) || continue
         root_dir = prefix == "/" ? dir : "$dir,$prefix=$dir"
         opts = Ref(MgHttpServeOpts(Base.unsafe_convert(Cstring, root_dir)))
@@ -237,13 +209,7 @@ Try to serve a static file. Returns true if handled.
     return false
 end
 
-"""
-    static_file_exists(root, prefix, uri) → Bool
-
-Check if URI maps to a real file under root. Path-traversal safe.
-"""
 @inline function static_file_exists(root::String, prefix::String, uri::String)::Bool
-    # Strip prefix
     if prefix == "/"
         rel = uri
     elseif startswith(uri, prefix * "/") || uri == prefix
@@ -252,14 +218,11 @@ Check if URI maps to a real file under root. Path-traversal safe.
         return false
     end
 
-    # Strip query string
     qi = findfirst('?', rel)
     qi !== nothing && (rel = rel[1:prevind(rel, qi)])
     rel = lstrip(rel, '/')
 
     candidate = normpath(joinpath(root, rel))
-
-    # Path traversal guard
     (candidate == root || startswith(candidate, root * Base.Filesystem.path_separator)) || return false
 
     isfile(candidate) && return true
@@ -268,35 +231,70 @@ Check if URI maps to a real file under root. Path-traversal safe.
     return false
 end
 
-# --- Server convenience functions ---
+# --- Routing convenience on server/app ---
 
 function route!(server::AbstractServer, method::Symbol, path::AbstractString, @nospecialize(handler::Function))
-    route!(server.core.router, method, path, handler)
+    route!(server.router, method, path, handler)
     return server
 end
 
 function route!(server::AbstractServer, method::AbstractString, path::AbstractString, @nospecialize(handler::Function))
-    route!(server.core.router, Symbol(lowercase(method)), path, handler)
+    route!(server.router, Symbol(lowercase(method)), path, handler)
     return server
 end
 
 function ws!(server::AbstractServer, path::AbstractString; kwargs...)
-    ws!(server.core.router, path; kwargs...)
+    ws!(server.router, path; kwargs...)
     return server
 end
 
-"""
-    mount!(server, directory; uri_prefix="/")
+# Method-specific helpers for server/app (extend Base where applicable to avoid ambiguity)
+Base.get!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :get, path, h); server)
+post!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :post, path, h); server)
+Base.put!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :put, path, h); server)
+patch!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :patch, path, h); server)
+Base.delete!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :delete, path, h); server)
+options!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :options, path, h); server)
+head!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :head, path, h); server)
 
-Serve static files from `directory` via Mongoose C library (Range, ETag, gzip).
+# Do-block convenience
+Base.get!(f::Function, server::AbstractServer, path::AbstractString) = Base.get!(server, path, f)
+post!(f::Function, server::AbstractServer, path::AbstractString) = post!(server, path, f)
+Base.put!(f::Function, server::AbstractServer, path::AbstractString) = Base.put!(server, path, f)
+patch!(f::Function, server::AbstractServer, path::AbstractString) = patch!(server, path, f)
+Base.delete!(f::Function, server::AbstractServer, path::AbstractString) = Base.delete!(server, path, f)
+options!(f::Function, server::AbstractServer, path::AbstractString) = options!(server, path, f)
+head!(f::Function, server::AbstractServer, path::AbstractString) = head!(server, path, f)
+
 """
-function mount!(server::AbstractServer, directory::AbstractString; uri_prefix::AbstractString="/")
+    serve!(server, directory; uri_prefix="/")
+
+Serve static files from `directory`.
+"""
+function serve!(server::AbstractServer, directory::AbstractString; uri_prefix::AbstractString="/")
     dir = rstrip(abspath(directory), '/')
-    isdir(dir) || throw(ArgumentError("mount!: directory does not exist: $dir"))
+    isdir(dir) || throw(ArgumentError("serve!: directory does not exist: $dir"))
     prefix = "/" * lstrip(rstrip(uri_prefix, '/'), '/')
-    push!(server.core.mounts, (dir, prefix))
+    push!(server.mounts, (dir, prefix))
     return server
 end
+
+"""
+    serve!(server, uri_prefix, directory)
+
+Positional 3-arg form: serve static files from `directory` under `uri_prefix`.
+"""
+function serve!(server::AbstractServer, uri_prefix::AbstractString, directory::AbstractString)
+    dir = rstrip(abspath(directory), '/')
+    isdir(dir) || throw(ArgumentError("serve!: directory does not exist: $dir"))
+    prefix = "/" * lstrip(rstrip(uri_prefix, '/'), '/')
+    push!(server.mounts, (dir, prefix))
+    return server
+end
+
+# Backward-compat alias: mount! for static files (old API)
+@inline mount_static!(server::AbstractServer, directory::AbstractString; kwargs...) =
+    serve!(server, directory; kwargs...)
 
 """
     fail!(server, status, response)

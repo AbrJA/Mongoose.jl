@@ -2,7 +2,6 @@
     Middleware protocol — composable request/response pipeline.
 
     Mongoose.jl uses the "onion" model: middleware wraps around the handler.
-    The new protocol supports both simple before/after hooks and full control flow.
 
     # Implementing Middleware
 
@@ -14,7 +13,7 @@
     function (mw::MyMiddleware)(req::Request, next::Function)
         # before logic
         response = next()  # call downstream
-        # after logic (can transform response)
+        # after logic
         return response
     end
     ```
@@ -30,10 +29,6 @@ abstract type AbstractMiddleware end
 
 # --- Default invoke via before/after hooks ---
 
-"""
-    Default call operator: routes through before() → next() → after().
-    Override for full control flow (timing, error handling, etc.).
-"""
 function (mw::AbstractMiddleware)(req::Request, next::Function)
     result = before(mw, req)
     result !== nothing && return result
@@ -41,27 +36,11 @@ function (mw::AbstractMiddleware)(req::Request, next::Function)
     return after(mw, req, response)
 end
 
-"""
-    before(mw, req) → Union{Nothing, Response}
-
-Pre-request hook. Return a `Response` to short-circuit the pipeline,
-or `nothing` to continue to the next middleware.
-"""
 before(::AbstractMiddleware, ::Request) = nothing
-
-"""
-    after(mw, req, response) → response
-
-Post-request hook. Can transform or replace the response.
-Default: pass-through.
-"""
 after(::AbstractMiddleware, ::Request, response) = response
 
-# --- Middleware Pipeline Execution ---
+# --- PathFilter: restricts middleware to specific URI prefixes ---
 
-"""
-    PathFilter — Restricts a middleware to specific URI path prefixes.
-"""
 struct PathFilter <: AbstractMiddleware
     inner::AbstractMiddleware
     prefixes::Vector{String}
@@ -75,11 +54,10 @@ function (mw::PathFilter)(req::Request, next::Function)
     return next()
 end
 
+# --- Pipeline execution ---
+
 """
     execute_pipeline(middlewares, request, handler) → Response
-
-Execute the middleware pipeline with the given final handler.
-Uses iterative construction instead of recursive closures to reduce GC pressure.
 """
 @inline function execute_pipeline(middlewares::Vector{AbstractMiddleware}, req::Request,
                                   handler::Function)
@@ -87,16 +65,40 @@ Uses iterative construction instead of recursive closures to reduce GC pressure.
     return _build_chain(middlewares, req, handler, 1)
 end
 
-# Recursive chain builder — each step creates one closure for `next`
 @inline function _build_chain(middlewares::Vector{AbstractMiddleware}, req::Request,
                               handler::Function, idx::Int)
-    if idx > length(middlewares)
-        return handler(req)
-    end
+    idx > length(middlewares) && return handler(req)
     mw = middlewares[idx]
     next = () -> _build_chain(middlewares, req, handler, idx + 1)
     return mw(req, next)
 end
+
+# --- use! (add middleware to server/app) ---
+# Defined here as the generic protocol; concrete overloads are in server/core.jl
+
+"""
+    use!(app_or_router, middleware; paths=[])
+
+Add middleware to an app or router. When `paths` is non-empty, the middleware
+only applies to requests whose URI starts with one of the given prefixes.
+
+# Example
+```julia
+use!(app, cors())
+use!(app, bearer(validate_token); paths=["/api"])
+use!(app, logger())
+```
+"""
+function use!(server::AbstractServer, mw::AbstractMiddleware;
+              paths::Vector{String}=String[])
+    wrapped = isempty(paths) ? mw : PathFilter(mw, paths)
+    push!(server.middlewares, wrapped)
+    return server
+end
+
+# Backward-compat alias
+@inline plug!(server::AbstractServer, mw::AbstractMiddleware; kwargs...) =
+    use!(server, mw; kwargs...)
 
 # --- Middleware registration ---
 

@@ -7,15 +7,6 @@ using Mongoose
 Mongoose.encode(::Type{Json}, body::AbstractDict) = JSON.json(body)
 Mongoose.encode(::Type{Json}, body::AbstractVector) = JSON.json(body)
 
-# --- @router macro (must be at top level) ---
-
-@router TestRoutes begin
-    get("/hello", (req) -> Response(200, "", "Hello Static"))
-    get("/user/:id::Int", (req, id) -> Response(200, "", "User $id"))
-    get("/file/*path", (req, path) -> Response(200, "", "File: $path"))
-    ws("/chat", on_message=(msg) -> Message("Echo: $(msg.data)"))
-end
-
 @testset "Mongoose.jl" begin
     include("helpers.jl")
 

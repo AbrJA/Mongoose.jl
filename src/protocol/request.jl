@@ -78,15 +78,45 @@ function Request(method::Symbol, uri::String,
 end
 
 """
-    context!(req) → Dict{Symbol,Any}
+    ctx!(req) → Dict{Symbol,Any}
 
-Return the request context, creating it on first access.
-Thread-safe via atomic compare-and-swap semantics (single writer per request).
+Return the request's per-request context dict, creating it lazily on first access.
+
+# Example
+```julia
+get!(app, "/") do req
+    ctx = ctx!(req)
+    ctx[:user_id] = 42
+    json(Dict("ok" => true))
+end
+```
 """
-@inline function context!(req::Request)
+@inline function ctx!(req::Request)
     req.context === nothing && (req.context = Dict{Symbol,Any}())
     return req.context::Dict{Symbol,Any}
 end
+
+# Backward-compat alias (deprecated)
+@inline context!(req::Request) = ctx!(req)
+
+"""
+    form(req) → Dict{String,String}
+
+Parse an `application/x-www-form-urlencoded` request body.
+"""
+function form(req::Request)::Dict{String,String}
+    ct = get(req.headers, "content-type", "")
+    startswith(ct, "application/x-www-form-urlencoded") ||
+        throw(ArgumentError("form() requires Content-Type: application/x-www-form-urlencoded, got \"$ct\""))
+    return parse_query(req.body)
+end
+
+"""
+    header(req, name) → Union{String,Nothing}
+
+Look up a request header by name (case-insensitive).
+"""
+@inline header(req::Request, name::AbstractString) = get(req.headers, lowercase(String(name)), nothing)
 
 @inline function is_lowercase_ascii(s::String)::Bool
     @inbounds for i in 1:ncodeunits(s)

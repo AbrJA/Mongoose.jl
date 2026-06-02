@@ -131,10 +131,10 @@ end
 # ── Lifecycle banners ────────────────────────────────────────────────────────
 
 function log_server_start(server, url::String)
-    s_routes  = string(route_count(server.core.router))
-    s_mw      = string(length(server.core.middlewares))
-    s_mounts  = string(length(server.core.mounts))
-    s_workers = server isa Async ? string(server.nworkers) : "0"
+    s_routes  = string(route_count(server.router))
+    s_mw      = string(length(server.middlewares))
+    s_mounts  = string(length(server.mounts))
+    s_workers = server.workers > 0 ? string(server.workers) : "0"
     s_threads = string(Threads.nthreads())
     io = Core.stdout
     print(io, "\n")

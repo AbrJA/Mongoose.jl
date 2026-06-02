@@ -10,10 +10,11 @@ Send a buffered HTTP response. Routes through `mg_http_reply` for string bodies
 or raw `mg_send` for binary bodies.
 """
 function send_http_response!(conn::MgConnection, res::Response)
+    headers_str = format_headers(res.headers)
     if res.body isa Vector{UInt8}
-        _send_binary_response!(conn, res)
+        _send_binary_response!(conn, res.status, headers_str, res.body)
     else
-        mg_http_reply(conn, res.status, res.headers, res.body)
+        mg_http_reply(conn, res.status, headers_str, res.body)
     end
 end
 
@@ -23,11 +24,11 @@ end
 Send response with X-Request-Id header injected.
 """
 function send_http_response!(conn::MgConnection, res::Response, rid::String)
-    headers = string(res.headers, "X-Request-Id: ", rid, "\r\n")
+    headers_str = string(format_headers(res.headers), "X-Request-Id: ", rid, "\r\n")
     if res.body isa Vector{UInt8}
-        _send_binary_response!(conn, res.status, headers, res.body)
+        _send_binary_response!(conn, res.status, headers_str, res.body)
     else
-        mg_http_reply(conn, res.status, headers, res.body)
+        mg_http_reply(conn, res.status, headers_str, res.body)
     end
 end
 
@@ -43,7 +44,7 @@ send_ws_frame!(conn::MgConnection, msg::Message) = send_ws_frame!(conn, msg.data
 # --- Internal binary response assembly ---
 
 function _send_binary_response!(conn::MgConnection, res::Response)
-    _send_binary_response!(conn, res.status, res.headers, res.body::Vector{UInt8})
+    _send_binary_response!(conn, res.status, format_headers(res.headers), res.body::Vector{UInt8})
 end
 
 function _send_binary_response!(conn::MgConnection, status::Int, headers::String, body::Vector{UInt8})

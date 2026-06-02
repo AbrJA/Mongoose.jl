@@ -1,9 +1,8 @@
 @testset "WebSocket basic" begin
     @testset "Echo message" begin
-        router = Router()
-        route!(router, :get, "/", req -> Response(200, "", "ok"))
-        ws!(router, "/ws/echo"; on_message=msg -> Message("Echo: $(msg.data)"))
-        s = Async(router; nworkers=2)
+        s = App(workers=2)
+        get!(s, "/") do req; text("ok") end
+        ws!(s, "/ws/echo"; on_message=msg -> Message("Echo: $(msg.data)"))
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/echo") do ws
@@ -15,10 +14,9 @@
     end
 
     @testset "Multiple messages" begin
-        router = Router()
-        route!(router, :get, "/", req -> Response(200, "", "ok"))
-        ws!(router, "/ws/multi"; on_message=msg -> Message("Got: $(msg.data)"))
-        s = Async(router; nworkers=2)
+        s = App(workers=2)
+        get!(s, "/") do req; text("ok") end
+        ws!(s, "/ws/multi"; on_message=msg -> Message("Got: $(msg.data)"))
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/multi") do ws
@@ -35,12 +33,11 @@ end
 @testset "WebSocket lifecycle callbacks" begin
     @testset "on_open callback" begin
         opened = Ref(false)
-        router = Router()
-        route!(router, :get, "/", req -> Response(200, "", "ok"))
-        ws!(router, "/ws/open";
+        s = App(workers=2)
+        get!(s, "/") do req; text("ok") end
+        ws!(s, "/ws/open";
             on_message=msg -> Message("ok"),
             on_open=(req) -> (opened[] = true))
-        s = Async(router; nworkers=2)
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/open") do ws
@@ -54,12 +51,11 @@ end
 
     @testset "on_close callback" begin
         closed = Ref(false)
-        router = Router()
-        route!(router, :get, "/", req -> Response(200, "", "ok"))
-        ws!(router, "/ws/close";
+        s = App(workers=2)
+        get!(s, "/") do req; text("ok") end
+        ws!(s, "/ws/close";
             on_message=msg -> Message("ok"),
             on_close=() -> (closed[] = true))
-        s = Async(router; nworkers=2)
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/close") do ws
@@ -72,41 +68,26 @@ end
     end
 end
 
-@testset "WebSocket with static router" begin
-    @testset "@router WebSocket echo" begin
-        s = Async(TestRoutes; nworkers=2)
-        with_server(s) do port
-            HTTP.WebSockets.open("ws://127.0.0.1:$port/chat") do ws
-                HTTP.WebSockets.send(ws, "hello")
-                msg = HTTP.WebSockets.receive(ws)
-                @test String(msg) == "Echo: hello"
-            end
-        end
-    end
-end
-
 @testset "WebSocket special characters" begin
     @testset "Unicode messages" begin
-        router = Router()
-        route!(router, :get, "/", req -> Response(200, "", "ok"))
-        ws!(router, "/ws/unicode"; on_message=msg -> Message(msg.data))
-        s = Async(router; nworkers=2)
+        s = App(workers=2)
+        get!(s, "/") do req; text("ok") end
+        ws!(s, "/ws/unicode"; on_message=msg -> Message(msg.data))
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/unicode") do ws
-                text = "日本語テスト 🎉"
-                HTTP.WebSockets.send(ws, text)
+                txt = "日本語テスト 🎉"
+                HTTP.WebSockets.send(ws, txt)
                 resp = HTTP.WebSockets.receive(ws)
-                @test String(resp) == text
+                @test String(resp) == txt
             end
         end
     end
 
     @testset "Empty message" begin
-        router = Router()
-        route!(router, :get, "/", req -> Response(200, "", "ok"))
-        ws!(router, "/ws/empty"; on_message=msg -> Message("len=$(length(msg.data))"))
-        s = Async(router; nworkers=2)
+        s = App(workers=2)
+        get!(s, "/") do req; text("ok") end
+        ws!(s, "/ws/empty"; on_message=msg -> Message("len=$(length(msg.data))"))
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/empty") do ws
@@ -119,10 +100,9 @@ end
 end
 
 @testset "WebSocket concurrent connections" begin
-    router = Router()
-    route!(router, :get, "/", req -> Response(200, "", "ok"))
-    ws!(router, "/ws/concurrent"; on_message=msg -> Message("Reply: $(msg.data)"))
-    s = Async(router; nworkers=4)
+    s = App(workers=4)
+    get!(s, "/") do req; text("ok") end
+    ws!(s, "/ws/concurrent"; on_message=msg -> Message("Reply: $(msg.data)"))
 
     with_server(s) do port
         tasks = [@async begin

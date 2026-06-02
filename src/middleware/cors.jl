@@ -4,7 +4,7 @@
 """
 
 struct Cors <: AbstractMiddleware
-    headers::String
+    headers::Vector{Pair{String,String}}
 end
 
 function (mw::Cors)(request::Request, next::Function)
@@ -14,7 +14,7 @@ function (mw::Cors)(request::Request, next::Function)
 
     response = next()
     if response isa Response
-        merged = isempty(response.headers) ? mw.headers : mw.headers * response.headers
+        merged = [mw.headers; response.headers]
         return Response(response.status, merged, response.body)
     end
     return response
@@ -33,7 +33,7 @@ Create a CORS middleware.
 
 # Example
 ```julia
-plug!(server, cors(origins="https://myapp.com"))
+use!(app, cors(origins="https://myapp.com"))
 ```
 """
 function cors(;
@@ -42,11 +42,11 @@ function cors(;
     headers::String="Content-Type, Authorization",
     max_age::Int=86400
 )
-    cors_headers = string(
-        "Access-Control-Allow-Origin: ", origins, "\r\n",
-        "Access-Control-Allow-Methods: ", methods, "\r\n",
-        "Access-Control-Allow-Headers: ", headers, "\r\n",
-        "Access-Control-Max-Age: ", max_age, "\r\n"
-    )
+    cors_headers = Pair{String,String}[
+        "Access-Control-Allow-Origin"  => origins,
+        "Access-Control-Allow-Methods" => methods,
+        "Access-Control-Allow-Headers" => headers,
+        "Access-Control-Max-Age"       => string(max_age),
+    ]
     return Cors(cors_headers)
 end

@@ -78,6 +78,23 @@ function ws!(g::RouteGroup, path::String; kwargs...)
     return g
 end
 
+# Method helpers for RouteGroup (extend Base where applicable)
+Base.get!(g::RouteGroup, path::AbstractString, @nospecialize(h::Function)) = (push!(g.routes, (:get, path, h)); g)
+post!(g::RouteGroup, path::AbstractString, @nospecialize(h::Function)) = (push!(g.routes, (:post, path, h)); g)
+Base.put!(g::RouteGroup, path::AbstractString, @nospecialize(h::Function)) = (push!(g.routes, (:put, path, h)); g)
+patch!(g::RouteGroup, path::AbstractString, @nospecialize(h::Function)) = (push!(g.routes, (:patch, path, h)); g)
+Base.delete!(g::RouteGroup, path::AbstractString, @nospecialize(h::Function)) = (push!(g.routes, (:delete, path, h)); g)
+options!(g::RouteGroup, path::AbstractString, @nospecialize(h::Function)) = (push!(g.routes, (:options, path, h)); g)
+head!(g::RouteGroup, path::AbstractString, @nospecialize(h::Function)) = (push!(g.routes, (:head, path, h)); g)
+
+Base.get!(f::Function, g::RouteGroup, path::AbstractString) = Base.get!(g, path, f)
+post!(f::Function, g::RouteGroup, path::AbstractString) = post!(g, path, f)
+Base.put!(f::Function, g::RouteGroup, path::AbstractString) = Base.put!(g, path, f)
+patch!(f::Function, g::RouteGroup, path::AbstractString) = patch!(g, path, f)
+Base.delete!(f::Function, g::RouteGroup, path::AbstractString) = Base.delete!(g, path, f)
+options!(f::Function, g::RouteGroup, path::AbstractString) = options!(g, path, f)
+head!(f::Function, g::RouteGroup, path::AbstractString) = head!(g, path, f)
+
 """
     group!(parent, prefix; middleware=[]) do g ... end
 
@@ -100,6 +117,26 @@ Middleware from groups is composed with any server-level middleware at dispatch 
 """
 function register_group!(router, g::RouteGroup, parent_prefix::String="",
                          parent_middleware::Vector{AbstractMiddleware}=AbstractMiddleware[])
+    mount!(router, g, parent_prefix, parent_middleware)
+end
+
+"""
+    mount!(router_or_app, group)
+
+Mount a `RouteGroup` into a router or app, registering all its routes with
+the group's prefix and middleware applied.
+
+# Example
+```julia
+api = group("/api/v1") do g
+    get!(g, "/users", list_users)
+    post!(g, "/users", create_user)
+end
+mount!(app, api)
+```
+"""
+function mount!(router, g::RouteGroup, parent_prefix::String="",
+                parent_middleware::Vector{AbstractMiddleware}=AbstractMiddleware[])
     full_prefix = parent_prefix * g.prefix
     combined_mw = vcat(parent_middleware, g.middleware)
 
@@ -108,7 +145,6 @@ function register_group!(router, g::RouteGroup, parent_prefix::String="",
         if isempty(combined_mw)
             route!(router, method, full_path, handler)
         else
-            # Wrap handler with group middleware
             wrapped = _wrap_with_middleware(handler, combined_mw)
             route!(router, method, full_path, wrapped)
         end
@@ -120,7 +156,7 @@ function register_group!(router, g::RouteGroup, parent_prefix::String="",
     end
 
     for child in g.children
-        register_group!(router, child, full_prefix, combined_mw)
+        mount!(router, child, full_prefix, combined_mw)
     end
 end
 

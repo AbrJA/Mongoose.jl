@@ -3,18 +3,19 @@ module Mongoose
 using Mongoose_jll
 using PrecompileTools
 
-export Server, Async, Router, Request, Response, StreamResponse, Headers,
+export App, Router, Request, Response, StreamResponse,
     Plain, Html, Json, Css, Js, Xml, Binary,
-    start!, shutdown!, route!, plug!, mount!, fail!,
-    context!, Cookie, serialize_cookie, parse_cookies,
+    start!, shutdown!, route!, use!, serve!, onerror!, onstart!, onstop!,
+    ctx!, Cookie, Headers, bake, cookies, form, header,
     ws!, Message,
     cors, ratelimit, bearer, apikey, logger, health, metrics, security,
     RouteError, ServerError, BindError,
-    @router,
-    Config, TLSConfig,
-    ServiceRegistry, register!, service,
-    group, RouteGroup, register_group!,
-    SSEWriter, event!, sse_response
+    TLSConfig,
+    provide!, inject, background!,
+    group, RouteGroup, mount!,
+    SSEWriter, emit, sse,
+    json, html, text, redirect,
+    post!, patch!, options!, head!
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. FFI Layer (C constants, structs, bindings)
@@ -38,19 +39,18 @@ include("protocol/formats.jl")       # Content format types
 include("protocol/status.jl")        # status_reason()
 include("protocol/request.jl")       # Request struct
 include("protocol/response.jl")      # Response, StreamResponse, Cookie
-include("protocol/ws_types.jl")      # WsConn, Message, Intent, WsEndpoint, Tagged, Call, Reply
-include("protocol/context.jl")       # ServiceRegistry
+include("protocol/ws_types.jl")      # WsConn, Message, Intent, WsEndpoint, Tagged
+include("protocol/context.jl")       # ctx!
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 4. Middleware Protocol
 # ══════════════════════════════════════════════════════════════════════════════
-include("middleware/pipeline.jl")     # AbstractMiddleware, execute_pipeline, plug!
+include("middleware/pipeline.jl")     # AbstractMiddleware, execute_pipeline, use!
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 5. Router Layer
 # ══════════════════════════════════════════════════════════════════════════════
-include("router/interface.jl")        # AbstractRouter, StaticRouter protocols
-include("router/static.jl")           # @router macro + static dispatch
+include("router/interface.jl")        # AbstractRouter protocols
 include("router/trie.jl")             # Dynamic Router (trie-based)
 include("router/groups.jl")           # Route groups with scoped middleware
 
@@ -63,7 +63,7 @@ include("transport/mongoose/connection.jl")    # send_http_response!, send_ws_fr
 # ══════════════════════════════════════════════════════════════════════════════
 # 7. Server Layer
 # ══════════════════════════════════════════════════════════════════════════════
-include("server/core.jl")             # Manager, TLSConfig, ServerCore, Server, Async types
+include("server/core.jl")             # App, Manager, TLSConfig
 include("server/registry.jl")         # Global server registry (GC-safe callback recovery)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -111,40 +111,37 @@ end
     @compile_workload begin
         # --- Router setup ---
         router = Router()
-        route!(router, :get,    "/",               req -> Response(200, "", ""))
-        route!(router, :get,    "/users/:id::Int", (req, id) -> Response(200, "", ""))
-        route!(router, :post,   "/data",           req -> Response(200, "", ""))
-        route!(router, :delete, "/data/:id::Int",  (req, id) -> Response(200, "", ""))
+        route!(router, :get,    "/",               req -> Response(200, Pair{String,String}[], ""))
+        route!(router, :get,    "/users/:id::Int", (req, id) -> Response(200, Pair{String,String}[], ""))
+        route!(router, :post,   "/data",           req -> Response(200, Pair{String,String}[], ""))
 
         dispatch_route(router, :get,  "/")
         dispatch_route(router, :get,  "/users/1")
         dispatch_route(router, :post, "/data")
         dispatch_route(router, :get,  "/nonexistent")
 
-        # --- Response constructors ---
+        # --- Response constructors & helpers ---
         Response(Plain, "ok")
         Response(Json, "{}")
         Response(Html, "<p>ok</p>")
-        Response(Plain, "ok"; status=200)
-        Response(404, "", "")
-        Response(500, "", "")
-        Response(204, "", "")
-        Response(200, "", UInt8[])
+        Response(404, Pair{String,String}[], "")
+        Response(500, Pair{String,String}[], "")
+        json("{\"ok\":true}")
+        html("<b>ok</b>")
+        text("hello")
+        redirect("/")
 
         # --- Status reason ---
-        status_reason(200); status_reason(201); status_reason(204)
-        status_reason(301); status_reason(302); status_reason(304)
-        status_reason(400); status_reason(401); status_reason(403); status_reason(404)
-        status_reason(405); status_reason(413); status_reason(429)
-        status_reason(500); status_reason(503); status_reason(504)
+        status_reason(200); status_reason(404); status_reason(500)
 
         # --- Request + context ---
         req = Request(:get, "/", Dict{String,String}(), Pair{String,String}[], "", nothing)
-        req_with_headers = Request(:get, "/users/1", Dict("a" => "1", "b" => "2"),
-            ["content-type" => "application/json", "authorization" => "Bearer tok",
-             "x-request-id" => "abc-123", "x-forwarded-for" => "10.0.0.1"],
-            "{}", nothing)
-        context!(req)
+        ctx!(req)
+        header(req, "content-type")
+        form_req = Request(:post, "/", Dict{String,String}(),
+            ["content-type" => "application/x-www-form-urlencoded"],
+            "a=1&b=hello", nothing)
+        form(form_req)
 
         # --- String utilities ---
         sanitize_header_value("abc-123")
@@ -152,68 +149,20 @@ end
         uint_to_string(UInt64(12345))
 
         # --- Middleware construction ---
-        mw_cors     = cors()
-        mw_cors2    = cors(origins="https://example.com", methods="GET,POST")
-        mw_logger   = logger(threshold=100)
-        mw_logger2  = logger(threshold=100, structured=true)
-        mw_rl       = ratelimit()
-        mw_rl2      = ratelimit(max_requests=10, window_seconds=30)
-        mw_bearer   = bearer(t -> true)
-        mw_apikey   = apikey(keys=Set(["k"]))
-        mw_health   = health()
-        mw_metrics  = metrics()
+        cors(); cors(origins="https://example.com")
+        logger(); ratelimit(); bearer(t -> true)
+        apikey(keys=Set(["k"])); health(); metrics()
 
-        # --- Middleware call operators ---
-        noop = () -> Response(200, "", "ok")
-        mw_cors(req, noop)
-        mw_cors(req_with_headers, noop)
-        mw_logger(req, noop)
-        mw_logger2(req, noop)
-        mw_rl(req_with_headers, noop)
-        mw_bearer(req_with_headers, noop)
-        mw_apikey(req_with_headers, noop)
-        mw_health(req, noop)
-        mw_health(Request(:get, "/healthz", Dict{String,String}(), Pair{String,String}[], "", nothing), noop)
-        mw_health(Request(:get, "/readyz",  Dict{String,String}(), Pair{String,String}[], "", nothing), noop)
-        mw_health(Request(:get, "/livez",   Dict{String,String}(), Pair{String,String}[], "", nothing), noop)
-        mw_metrics(req, noop)
-
-        # --- PathFilter ---
-        pf = PathFilter(mw_cors, ["/api"])
-        pf(Request(:get, "/api/users", Dict{String,String}(), Pair{String,String}[], "", nothing), noop)
-
-        # --- Full pipeline ---
-        execute_pipeline(AbstractMiddleware[mw_cors, mw_logger], req,
-                         (r) -> dispatch_to_handler(router, r))
-
-        # --- invoke_http ---
-        server_sync  = Server(router)
-        server_async = Async(router; nworkers=1)
-        plug!(server_sync,  cors())
-        plug!(server_async, cors())
-
-        invoke_http(server_sync,  req)
-        invoke_http(server_async, req)
-        invoke_http(server_sync,  req_with_headers)
-
-        # --- Error responses ---
-        error_response(server_sync, 500)
-        error_response(server_sync, 413)
-        error_response(server_sync, 503)
-        error_response(server_sync, 504)
+        # --- App construction ---
+        app = App()
+        use!(app, cors())
+        get!(app, "/") do r; json(Dict("ok" => true)) end
+        post!(app, "/data") do r; text("ok") end
+        error_response(app, req, 500)
 
         # --- Event dispatch ---
         is_handled_event(MG_EV_HTTP_MSG)
         is_handled_event(MG_EV_POLL)
-        for ev in (MG_EV_HTTP_MSG, MG_EV_WS_MSG, MG_EV_WS_CTL, MG_EV_CLOSE, MG_EV_WS_OPEN)
-            try dispatch_event(server_sync,  ev, MgConnection(C_NULL), C_NULL) catch end
-            try dispatch_event(server_async, ev, MgConnection(C_NULL), C_NULL) catch end
-        end
-
-        # --- Config ---
-        Config()
-        Config(nworkers=2, max_body=1024)
-        Config(nworkers=8, request_timeout=5000, drain_timeout=10_000, ws_idle_timeout=60)
     end
 
     # Precompile C callback entry point

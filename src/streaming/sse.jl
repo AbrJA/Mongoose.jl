@@ -11,11 +11,9 @@
     Used within a `StreamResponse` producer:
     ```julia
     function sse_handler(req)
-        StreamResponse(200; content_type="text/event-stream",
-                       headers=["Cache-Control" => "no-cache", "Connection" => "keep-alive"]) do writer
-            sse = SSEWriter(writer)
+        sse(req) do writer
             for i in 1:10
-                event!(sse; data="tick \$i", event="heartbeat", id=string(i))
+                emit(writer; data="tick \$i", event="heartbeat", id=string(i))
                 sleep(1.0)
             end
         end
@@ -27,15 +25,15 @@ struct SSEWriter
 end
 
 """
-    event!(sse; data, event="", id="", retry=nothing)
+    emit(sse; data, event="", id="", retry=nothing)
 
-Send a single SSE event. Fields:
+Send a single SSE event to the client. Fields:
 - `data::String` — event payload (required). Multi-line data is handled correctly.
 - `event::String` — event type/name (optional).
 - `id::String` — event ID for reconnection (optional).
 - `retry::Union{Nothing,Int}` — reconnection interval in ms (optional).
 """
-function event!(sse::SSEWriter; data::String, event::String="", id::String="", retry::Union{Nothing,Int}=nothing)
+function emit(sse::SSEWriter; data::String, event::String="", id::String="", retry::Union{Nothing,Int}=nothing)
     io = IOBuffer(sizehint=64 + ncodeunits(data))
     !isempty(id) && (print(io, "id: ", id, "\n"))
     !isempty(event) && (print(io, "event: ", event, "\n"))
@@ -47,23 +45,35 @@ function event!(sse::SSEWriter; data::String, event::String="", id::String="", r
     write(sse.writer, String(take!(io)))
 end
 
+# Backward-compat alias
+@inline event!(sse::SSEWriter; kwargs...) = emit(sse; kwargs...)
+
 """
-    sse_response(producer; headers=[]) → StreamResponse
+    sse([req,] producer; headers=[]) → StreamResponse
 
 Convenience constructor for SSE responses with correct headers.
 
 ```julia
 function stream_events(req)
-    sse_response() do writer
-        sse = SSEWriter(writer)
-        event!(sse; data="hello", event="greeting")
+    sse(req) do writer
+        emit(writer; data="hello", event="greeting")
     end
 end
 ```
 """
-function sse_response(producer::Function;
-                      headers::Vector{Pair{String,String}}=["Cache-Control" => "no-cache",
-                                                            "Connection" => "keep-alive",
-                                                            "X-Accel-Buffering" => "no"])
-    return StreamResponse(producer, 200; content_type="text/event-stream", headers=headers)
+function sse(producer::Function;
+             headers::Vector{Pair{String,String}}=Pair{String,String}[
+                 "Cache-Control"    => "no-cache",
+                 "Connection"       => "keep-alive",
+                 "X-Accel-Buffering" => "no",
+             ])
+    wrapped = (stream_writer) -> producer(SSEWriter(stream_writer))
+    return StreamResponse(wrapped, 200; content_type="text/event-stream", headers=headers)
 end
+
+# Accept req as first arg (ignored, kept for symmetry with other helpers)
+sse(::Request, producer::Function; kwargs...) = sse(producer; kwargs...)
+sse(producer::Function, ::Request; kwargs...) = sse(producer; kwargs...)
+
+# Backward-compat alias
+@inline sse_response(producer::Function; kwargs...) = sse(producer; kwargs...)

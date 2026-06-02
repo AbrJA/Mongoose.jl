@@ -1,131 +1,57 @@
 """
-    Async{R} — Multi-threaded server with worker pool.
+    Async worker pool for App (workers>0).
 
     Architecture:
-    - Event loop (single thread): accepts connections, dispatches to workers
-    - Worker pool (N threads): process requests, send replies via Channel
+    - Event loop branches on app.workers in sync.jl
+    - Worker pool (N threads): process requests, send replies via reply channel
     - Supervisor: respawns dead workers every 2 seconds
 """
 
-Async(::Type{T}; kwargs...) where {T<:StaticRouter} = Async(T(); kwargs...)
-Async(::Type{T}, config::Config) where {T<:StaticRouter} = Async(T(), config)
-
-function Async(router::AbstractRouter=Router();
-               nworkers::Integer=4,
-               nqueue::Integer=1024,
-               poll_timeout::Integer=0,
-               max_body::Integer=MAX_BODY,
-               drain_timeout::Integer=DRAIN_TIMEOUT,
-               request_timeout::Integer=0,
-               ws_max_frame::Integer=MAX_BODY,
-               ws_idle_timeout::Integer=0,
-               errors::Dict{Int,Response}=Dict{Int,Response}(),
-               services::Union{Nothing,ServiceRegistry}=nothing)
-    nworkers > 0 || throw(ServerError("nworkers must be > 0"))
-    nqueue > 0 || throw(ServerError("nqueue must be > 0"))
-
-    c_handler = cfunc_async(typeof(router))
-    core = ServerCore(router; poll_timeout=poll_timeout, max_body=max_body,
-                      drain_timeout=drain_timeout, request_timeout=request_timeout,
-                      ws_max_frame=ws_max_frame, ws_idle_timeout=ws_idle_timeout,
-                      errors=errors, services=services, c_handler=c_handler)
-    server = Async{typeof(router)}(
-        core, Task[],
-        Channel{Call}(nqueue), Channel{Reply}(nqueue),
-        Dict{Int,MgConnection}(), Int(nworkers), Int(nqueue),
-        Threads.Atomic{Int}(0)
-    )
-    finalizer(teardown!, server)
-    return server
+function init_server!(app::App)
+    app.manager = Manager()
+    app.calls = Channel{Tagged{Union{Request,Intent}}}(app.queuesize)
+    app.replies = Channel{Tagged{Union{Response,StreamResponse,Message}}}(app.queuesize)
+    empty!(app.connections)
+    empty!(app.ws_clients)
 end
 
-function Async(router::AbstractRouter, config::Config;
-               services::Union{Nothing,ServiceRegistry}=nothing)
-    validate_config!(config)
-    return Async(router; nworkers=config.nworkers, nqueue=config.nqueue,
-                 poll_timeout=config.poll_timeout, max_body=config.max_body,
-                 drain_timeout=config.drain_timeout, request_timeout=config.request_timeout,
-                 ws_max_frame=config.ws_max_frame, ws_idle_timeout=config.ws_idle_timeout,
-                 errors=config.errors, services=services)
-end
-
-function init_server!(server::Async)
-    server.core.manager = Manager()
-    server.calls = Channel{Call}(server.nqueue)
-    server.replies = Channel{Reply}(server.nqueue)
-    empty!(server.connections)
-    empty!(server.core.ws_clients)
-end
-
-function spawn_workers!(server::Async)
-    empty!(server.workers)
-    for _ in 1:server.nworkers
-        push!(server.workers, Threads.@spawn worker_loop(server))
+function spawn_workers!(app::App)
+    empty!(app.worker_tasks)
+    for _ in 1:app.workers
+        push!(app.worker_tasks, Threads.@spawn worker_loop(app))
     end
 end
 
-function stop_workers!(server::Async)
-    close(server.calls)
-    for t in server.workers
+function stop_workers!(app::App)
+    close(app.calls)
+    for t in app.worker_tasks
         try wait(t) catch end
     end
-    close(server.replies)
-    empty!(server.workers)
+    close(app.replies)
+    empty!(app.worker_tasks)
 end
 
-has_pending(s::Async) = isready(s.calls) || isready(s.replies) || s.inflight[] > 0
+has_pending(app::App) = isready(app.calls) || isready(app.replies) || app.inflight[] > 0
 
-function drain_poll!(server::Async)
-    mg_mgr_poll(server.core.manager.ptr, 10)
-    dispatch_replies!(server)
-end
-
-# --- Event Loop ---
-
-function event_loop(server::Async)
-    last_sweep = time()
-    last_health = time()
-    while server.core.running[]
-        mg_mgr_poll(server.core.manager.ptr, server.core.poll_timeout)
-
-        # Dispatch replies from workers → connections
-        did_ws = dispatch_replies!(server)
-        did_ws && mg_mgr_poll(server.core.manager.ptr, 1)
-
-        now = time()
-
-        # Supervisor check every 2s
-        if (now - last_health) >= 2.0
-            supervise_workers!(server)
-            last_health = now
-        end
-
-        # WS idle sweep every 5s
-        if server.core.ws_idle_timeout > 0 && !isempty(server.core.ws_clients)
-            if (now - last_sweep) >= 5.0
-                ws_idle_sweep!(server)
-                last_sweep = now
-            end
-        end
-        yield()
-    end
+function drain_poll!(app::App)
+    mg_mgr_poll(app.manager.ptr, 10)
+    dispatch_replies!(app)
 end
 
 # --- Reply Dispatch ---
 
-function dispatch_replies!(server::Async)::Bool
+function dispatch_replies!(app::App)::Bool
     did_ws = false
-    while isopen(server.replies) && isready(server.replies)
-        reply = try take!(server.replies) catch e; e isa InvalidStateException && break; rethrow(e) end
-        conn = get(server.connections, reply.id, nothing)
+    while isopen(app.replies) && isready(app.replies)
+        reply = try take!(app.replies) catch e; e isa InvalidStateException && break; rethrow(e) end
+        conn = get(app.connections, reply.id, nothing)
         conn === nothing && continue
         if reply.payload isa Response
             send_http_response!(conn, reply.payload)
-            delete!(server.connections, reply.id)
+            delete!(app.connections, reply.id)
         elseif reply.payload isa StreamResponse
-            # Streaming: write chunked body directly on the event-loop thread
             try send_stream_response!(conn, reply.payload) catch e; @log_error "Stream error" e catch_backtrace() end
-            delete!(server.connections, reply.id)
+            delete!(app.connections, reply.id)
         else  # Message (WebSocket)
             try
                 send_ws_frame!(conn, reply.payload)
@@ -140,40 +66,40 @@ end
 
 # --- Worker Loop ---
 
-function worker_loop(server::Async)
-    timeout = server.core.request_timeout
+function worker_loop(app::App)
+    timeout = app.request_timeout
     try
-        for tagged_req in server.calls
-            Threads.atomic_add!(server.inflight, 1)
+        for tagged_req in app.calls
+            Threads.atomic_add!(app.inflight, 1)
             try
                 if tagged_req.payload isa Request
-                    rid = resolve_request_id(tagged_req.payload, server)
+                    rid = resolve_request_id(tagged_req.payload, app)
                     res = try
                         if timeout > 0
-                            invoke_timed_http(server, tagged_req.payload, timeout)
+                            invoke_timed_http(app, tagged_req.payload, timeout)
                         else
-                            invoke_http(server, tagged_req.payload)
+                            invoke_http(app, tagged_req.payload)
                         end
                     catch e
                         @log_error "Handler error uri=$(tagged_req.payload.uri)" e catch_backtrace()
-                        error_response(server, 500)
+                        error_response(app, tagged_req.payload, 500)
                     end
-                    # For StreamResponse: send as-is via the replies channel (dispatch_replies! handles it)
-                    # For Response: inject X-Request-Id header
                     tagged_res = if res isa StreamResponse
                         Tagged{Union{Response,StreamResponse,Message}}(tagged_req.id, res)
                     else
-                        resp_with_id = Response(res.status, string(res.headers, "X-Request-Id: ", rid, "\r\n"), res.body)
+                        resp_with_id = Response(res.status,
+                            [res.headers; ["X-Request-Id" => rid]],
+                            res.body)
                         Tagged{Union{Response,StreamResponse,Message}}(tagged_req.id, resp_with_id)
                     end
-                    try isopen(server.replies) && put!(server.replies, tagged_res) catch end
+                    try isopen(app.replies) && put!(app.replies, tagged_res) catch end
                 else  # Intent (WebSocket)
                     ws_tagged = Tagged{Intent}(tagged_req.id, tagged_req.payload::Intent)
-                    res = invoke_ws(server, ws_tagged)
-                    try res !== nothing && isopen(server.replies) && put!(server.replies, res) catch end
+                    res = invoke_ws(app, ws_tagged)
+                    try res !== nothing && isopen(app.replies) && put!(app.replies, res) catch end
                 end
             finally
-                Threads.atomic_sub!(server.inflight, 1)
+                Threads.atomic_sub!(app.inflight, 1)
             end
         end
     catch e
@@ -183,23 +109,18 @@ end
 
 # --- Supervisor ---
 
-function supervise_workers!(server::Async)
-    for i in eachindex(server.workers)
-        t = server.workers[i]
+function supervise_workers!(app::App)
+    for i in eachindex(app.worker_tasks)
+        t = app.worker_tasks[i]
         if istaskdone(t)
             istaskfailed(t) && @log_warn "Worker $i died, respawning"
-            server.workers[i] = Threads.@spawn worker_loop(server)
+            app.worker_tasks[i] = Threads.@spawn worker_loop(app)
         end
     end
 end
 
 # --- Non-blocking enqueue ---
 
-"""
-    try_enqueue!(channel, value, capacity) → Bool
-
-Non-blocking put. Returns false if channel is full or closed (prevents event loop stall).
-"""
 @inline function try_enqueue!(ch::Channel, val, capacity::Int)::Bool
     isopen(ch) || return false
     Base.n_avail(ch) >= capacity && return false
@@ -224,29 +145,16 @@ function invoke_timed_http(server::AbstractServer, req::Request, timeout::Intege
         @log_warn "Timed request limit reached uri=$(req.uri)"
         return error_response(server, 503)
     end
-
-    ch = Channel{Union{Response,StreamResponse}}(1)
-    Threads.@spawn begin
-        try
-            res = try
-                invoke_http(server, req)
-            catch e
-                @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
-                error_response(server, 500)
-            end
-            try put!(ch, res) catch end
-        finally
-            Threads.atomic_sub!(_TIMED_INFLIGHT, 1)
+    t = Threads.@spawn invoke_http(server, req)
+    try
+        r = timedwait(() -> istaskdone(t), timeout / 1000.0; pollint=0.002)
+        if r === :ok
+            return fetch(t)
+        else
+            @log_warn "Request timeout uri=$(req.uri)"
+            return error_response(server, 504)
         end
+    finally
+        Threads.atomic_sub!(_TIMED_INFLIGHT, 1)
     end
-
-    result = timedwait(timeout / 1000.0) do
-        isready(ch)
-    end
-    if result === :timed_out
-        close(ch)
-        @log_warn "Request timed out uri=$(req.uri) timeout_ms=$timeout"
-        return error_response(server, 504)
-    end
-    return take!(ch)
 end

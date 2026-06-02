@@ -14,7 +14,9 @@ const _N_HIST_BUCKETS = length(_HIST_BOUNDS) + 1  # +1 for the +Inf bucket
 
 const _METRICS_SHARDS = 8
 
-const _METRICS_CONTENT_TYPE = "Content-Type: text/plain; version=0.0.4; charset=utf-8\r\n"
+const _METRICS_CONTENT_TYPE = Pair{String,String}[
+    "Content-Type" => "text/plain; version=0.0.4; charset=utf-8"
+]
 
 mutable struct _MetricsShard
     lock::Threads.SpinLock

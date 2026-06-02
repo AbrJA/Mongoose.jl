@@ -25,26 +25,46 @@ mime(::Type{Xml})    = "application/xml; charset=utf-8"
 mime(::Type{Binary}) = "application/octet-stream"
 mime(::Type{T}) where {T<:AbstractFormat} = error("MIME type not defined for format $T. Implement `Mongoose.mime(::Type{$T})`.")
 
-# --- Pre-computed Content-Type header strings (hot path) ---
+# --- Pre-computed Content-Type header pairs (structured, zero-alloc on hot path) ---
 
-const _CONTENT_HEADERS = Dict{DataType,String}(
-    Plain  => "Content-Type: text/plain; charset=utf-8\r\n",
-    Html   => "Content-Type: text/html; charset=utf-8\r\n",
-    Css    => "Content-Type: text/css; charset=utf-8\r\n",
-    Js     => "Content-Type: application/javascript; charset=utf-8\r\n",
-    Json   => "Content-Type: application/json; charset=utf-8\r\n",
-    Xml    => "Content-Type: application/xml; charset=utf-8\r\n",
-    Binary => "Content-Type: application/octet-stream\r\n",
+const _CONTENT_PAIRS = Dict{DataType,Pair{String,String}}(
+    Plain  => "Content-Type" => "text/plain; charset=utf-8",
+    Html   => "Content-Type" => "text/html; charset=utf-8",
+    Css    => "Content-Type" => "text/css; charset=utf-8",
+    Js     => "Content-Type" => "application/javascript; charset=utf-8",
+    Json   => "Content-Type" => "application/json; charset=utf-8",
+    Xml    => "Content-Type" => "application/xml; charset=utf-8",
+    Binary => "Content-Type" => "application/octet-stream",
 )
 
-@inline function content_type_header(::Type{T})::String where {T<:AbstractFormat}
-    return get(_CONTENT_HEADERS, T) do
-        string("Content-Type: ", mime(T), "\r\n")
+@inline function content_type_pair(::Type{T})::Pair{String,String} where {T<:AbstractFormat}
+    return get(_CONTENT_PAIRS, T) do
+        "Content-Type" => mime(T)
     end
 end
 
 # --- Body encoding (extensible via dispatch) ---
 
+"""
+    encode(Format, body) → String / Vector{UInt8}
+
+Convert `body` to the wire representation for `Format`.
+Extend for custom formats:
+```julia
+Moose.encode(::Type{Json}, body::AbstractDict) = JSON.json(body)
+```
+"""
 encode(::Type{T}, body) where {T<:AbstractFormat} = error("encode not implemented for $T with body::$(typeof(body)). Implement `Mongoose.encode(::Type{$T}, body)`.")
 encode(::Type{T}, body::String) where {T<:AbstractFormat} = body
 encode(::Type{Binary}, body::Vector{UInt8}) = body
+
+"""
+    decode(Format, body::String) → Any
+
+Parse a request body from its wire representation.
+Extend for custom formats:
+```julia
+Moose.decode(::Type{Json}, body::String) = JSON.parse(body)
+```
+"""
+decode(::Type{T}, body::String) where {T<:AbstractFormat} = error("decode not implemented for $T. Implement `Mongoose.decode(::Type{$T}, body::String)`.")

@@ -24,7 +24,7 @@ struct Intent
     uri::String
 end
 
-# --- WebSocket endpoint types ---
+# --- WebSocket endpoint ---
 
 abstract type AbstractWsEndpoint end
 
@@ -38,22 +38,9 @@ function WsEndpoint(; on_message::Function, on_open::Union{Function,Nothing}=not
     return WsEndpoint(on_message, on_open, on_close)
 end
 
-struct StaticWsEndpoint{M,O,C} <: AbstractWsEndpoint
-    on_message::M
-    on_open::O
-    on_close::C
-end
-
-function StaticWsEndpoint(; on_message, on_open=nothing, on_close=nothing)
-    return StaticWsEndpoint{typeof(on_message),typeof(on_open),typeof(on_close)}(on_message, on_open, on_close)
-end
-
-# --- Tagged payload wrapper ---
+# --- Internal tagged message wrapper (used by async worker pool) ---
 
 struct Tagged{T}
     id::Int
     payload::T
 end
-
-const Call = Tagged{Union{Request,Intent}}
-const Reply = Tagged{Union{Response,StreamResponse,Message}}

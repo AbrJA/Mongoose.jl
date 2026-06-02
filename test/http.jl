@@ -1,8 +1,7 @@
 @testset "HTTP methods" begin
     @testset "GET request" begin
-        router = Router()
-        route!(router, :get, "/data", req -> Response(Json, """{"ok":true}"""))
-        s = Server(router)
+        s = App()
+        get!(s, "/data") do req; json("""{"ok":true}""") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/data"; status_exception=false)
             @test resp.status == 200
@@ -13,9 +12,8 @@
     end
 
     @testset "POST with body" begin
-        router = Router()
-        route!(router, :post, "/echo", req -> Response(200, "", req.body))
-        s = Server(router)
+        s = App()
+        post!(s, "/echo") do req; text(req.body) end
         with_server(s) do port
             body = "hello world"
             resp = HTTP.post("http://127.0.0.1:$port/echo"; body=body, status_exception=false)
@@ -25,9 +23,8 @@
     end
 
     @testset "PUT request" begin
-        router = Router()
-        route!(router, :put, "/items/1", req -> Response(200, "", "updated"))
-        s = Server(router)
+        s = App()
+        put!(s, "/items/1") do req; text("updated") end
         with_server(s) do port
             resp = HTTP.put("http://127.0.0.1:$port/items/1"; body="data", status_exception=false)
             @test resp.status == 200
@@ -36,9 +33,8 @@
     end
 
     @testset "PATCH request" begin
-        router = Router()
-        route!(router, :patch, "/items/1", req -> Response(200, "", "patched"))
-        s = Server(router)
+        s = App()
+        patch!(s, "/items/1") do req; text("patched") end
         with_server(s) do port
             resp = HTTP.patch("http://127.0.0.1:$port/items/1"; body="{}", status_exception=false)
             @test resp.status == 200
@@ -47,9 +43,8 @@
     end
 
     @testset "DELETE request" begin
-        router = Router()
-        route!(router, :delete, "/items/:id::Int", (req, id) -> Response(200, "", "deleted $id"))
-        s = Server(router)
+        s = App()
+        delete!(s, "/items/:id::Int") do req, id; text("deleted $id") end
         with_server(s) do port
             resp = HTTP.request("DELETE", "http://127.0.0.1:$port/items/5"; status_exception=false)
             @test resp.status == 200
@@ -58,9 +53,8 @@
     end
 
     @testset "HEAD request" begin
-        router = Router()
-        route!(router, :head, "/ping", req -> Response(200, "", ""))
-        s = Server(router)
+        s = App()
+        head!(s, "/ping") do req; text("") end
         with_server(s) do port
             resp = HTTP.head("http://127.0.0.1:$port/ping"; status_exception=false)
             @test resp.status == 200
@@ -71,12 +65,11 @@ end
 
 @testset "Request headers" begin
     @testset "Custom headers are received" begin
-        router = Router()
-        route!(router, :get, "/headers", req -> begin
-            val = get(req.headers, "x-custom-header", "missing")
-            Response(200, "", val)
-        end)
-        s = Server(router)
+        s = App()
+        get!(s, "/headers") do req
+            val = header(req, "x-custom-header")
+            text(isnothing(val) ? "missing" : val)
+        end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/headers";
                 status_exception=false,
@@ -86,12 +79,11 @@ end
     end
 
     @testset "Case-insensitive header lookup" begin
-        router = Router()
-        route!(router, :get, "/ci", req -> begin
-            val = get(req.headers, "content-type", "none")
-            Response(200, "", val)
-        end)
-        s = Server(router)
+        s = App()
+        get!(s, "/ci") do req
+            val = header(req, "content-type")
+            text(isnothing(val) ? "none" : val)
+        end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/ci";
                 status_exception=false,
@@ -101,11 +93,10 @@ end
     end
 end
 
-@testset "Response formats" begin
-    @testset "Plain text" begin
-        router = Router()
-        route!(router, :get, "/plain", req -> Response(Plain, "hello"))
-        s = Server(router)
+@testset "Response helpers" begin
+    @testset "text() helper" begin
+        s = App()
+        get!(s, "/plain") do req; text("hello") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/plain"; status_exception=false)
             @test resp.status == 200
@@ -114,10 +105,9 @@ end
         end
     end
 
-    @testset "HTML" begin
-        router = Router()
-        route!(router, :get, "/page", req -> Response(Html, "<h1>Hi</h1>"))
-        s = Server(router)
+    @testset "html() helper" begin
+        s = App()
+        get!(s, "/page") do req; html("<h1>Hi</h1>") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/page"; status_exception=false)
             @test contains(HTTP.header(resp, "Content-Type"), "text/html")
@@ -125,10 +115,9 @@ end
         end
     end
 
-    @testset "JSON with encoding" begin
-        router = Router()
-        route!(router, :get, "/json", req -> Response(Json, Dict("key" => "value")))
-        s = Server(router)
+    @testset "json() helper" begin
+        s = App()
+        get!(s, "/json") do req; json("""{"key":"value"}""") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/json"; status_exception=false)
             @test contains(HTTP.header(resp, "Content-Type"), "application/json")
@@ -138,9 +127,8 @@ end
     end
 
     @testset "Custom status code" begin
-        router = Router()
-        route!(router, :post, "/create", req -> Response(Plain, "created"; status=201))
-        s = Server(router)
+        s = App()
+        post!(s, "/create") do req; text("created"; status=201) end
         with_server(s) do port
             resp = HTTP.post("http://127.0.0.1:$port/create"; body="", status_exception=false)
             @test resp.status == 201
@@ -148,21 +136,32 @@ end
     end
 
     @testset "Custom response headers" begin
-        router = Router()
-        route!(router, :get, "/custom", req -> Response(Plain, "ok"; headers=["X-Custom" => "hello"]))
-        s = Server(router)
+        s = App()
+        get!(s, "/custom") do req
+            Response(Plain, "ok"; headers=["X-Custom" => "hello"])
+        end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/custom"; status_exception=false)
             @test HTTP.header(resp, "X-Custom") == "hello"
+        end
+    end
+
+    @testset "redirect() helper" begin
+        s = App()
+        get!(s, "/old") do req; redirect("/new") end
+        get!(s, "/new") do req; text("new location") end
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/old"; status_exception=false, redirect=false)
+            @test resp.status == 302
+            @test HTTP.header(resp, "Location") == "/new"
         end
     end
 end
 
 @testset "Request body" begin
     @testset "Empty body" begin
-        router = Router()
-        route!(router, :post, "/empty", req -> Response(200, "", "len=$(length(req.body))"))
-        s = Server(router)
+        s = App()
+        post!(s, "/empty") do req; text("len=$(length(req.body))") end
         with_server(s) do port
             resp = HTTP.post("http://127.0.0.1:$port/empty"; body="", status_exception=false)
             @test String(resp.body) == "len=0"
@@ -170,12 +169,11 @@ end
     end
 
     @testset "JSON body parsing" begin
-        router = Router()
-        route!(router, :post, "/json", req -> begin
+        s = App()
+        post!(s, "/json") do req
             data = JSON.parse(req.body)
-            Response(200, "", "name=$(data["name"])")
-        end)
-        s = Server(router)
+            text("name=$(data["name"])")
+        end
         with_server(s) do port
             resp = HTTP.post("http://127.0.0.1:$port/json";
                 body=JSON.json(Dict("name" => "Julia")),
@@ -186,9 +184,8 @@ end
     end
 
     @testset "Large body" begin
-        router = Router()
-        route!(router, :post, "/large", req -> Response(200, "", "size=$(length(req.body))"))
-        s = Server(router; max_body=2*1024*1024)
+        s = App(max_body=2*1024*1024)
+        post!(s, "/large") do req; text("size=$(length(req.body))") end
         with_server(s) do port
             large_body = "x" ^ (64 * 1024)  # 64KB
             resp = HTTP.post("http://127.0.0.1:$port/large"; body=large_body, status_exception=false)
@@ -198,9 +195,8 @@ end
     end
 
     @testset "Special characters in body" begin
-        router = Router()
-        route!(router, :post, "/special", req -> Response(200, "", req.body))
-        s = Server(router)
+        s = App()
+        post!(s, "/special") do req; text(req.body) end
         with_server(s) do port
             special = "héllo wörld! 日本語 🎉"
             resp = HTTP.post("http://127.0.0.1:$port/special"; body=special, status_exception=false)
@@ -209,11 +205,27 @@ end
     end
 end
 
+@testset "Form parsing" begin
+    @testset "form() parses URL-encoded body" begin
+        s = App()
+        post!(s, "/form") do req
+            data = form(req)
+            text(get(data, "name", "missing"))
+        end
+        with_server(s) do port
+            resp = HTTP.post("http://127.0.0.1:$port/form";
+                body="name=Julia&version=1",
+                headers=["Content-Type" => "application/x-www-form-urlencoded"],
+                status_exception=false)
+            @test String(resp.body) == "Julia"
+        end
+    end
+end
+
 @testset "Query parameters" begin
     @testset "Single query param" begin
-        router = Router()
-        route!(router, :get, "/q", req -> Response(200, "", get(req.query, "name", "")))
-        s = Server(router)
+        s = App()
+        get!(s, "/q") do req; text(get(req.query, "name", "")) end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/q?name=test"; status_exception=false)
             @test String(resp.body) == "test"
@@ -221,13 +233,12 @@ end
     end
 
     @testset "Multiple query params" begin
-        router = Router()
-        route!(router, :get, "/q", req -> begin
+        s = App()
+        get!(s, "/q") do req
             a = get(req.query, "a", "")
             b = get(req.query, "b", "")
-            Response(200, "", "$a,$b")
-        end)
-        s = Server(router)
+            text("$a,$b")
+        end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/q?a=1&b=2"; status_exception=false)
             @test String(resp.body) == "1,2"
@@ -235,9 +246,8 @@ end
     end
 
     @testset "Empty query string" begin
-        router = Router()
-        route!(router, :get, "/q", req -> Response(200, "", "keys=$(length(req.query))"))
-        s = Server(router)
+        s = App()
+        get!(s, "/q") do req; text("keys=$(length(req.query))") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/q"; status_exception=false)
             @test String(resp.body) == "keys=0"
@@ -247,12 +257,11 @@ end
 
 @testset "Cookies" begin
     @testset "Set-Cookie response" begin
-        router = Router()
-        route!(router, :get, "/setcookie", req -> begin
+        s = App()
+        get!(s, "/setcookie") do req
             c = Mongoose.Cookie("session", "abc123"; max_age=3600, httponly=true)
-            Response(200, "Set-Cookie: $(serialize_cookie(c))\r\n", "ok")
-        end)
-        s = Server(router)
+            Response(200, ["Set-Cookie" => bake(c)], "ok")
+        end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/setcookie"; status_exception=false)
             @test resp.status == 200
@@ -264,57 +273,31 @@ end
     end
 
     @testset "Parse cookies from request" begin
-        router = Router()
-        route!(router, :get, "/cookies", req -> begin
-            cookies = parse_cookies(req)
-            val = get(cookies, "token", "missing")
-            Response(200, "", val)
-        end)
-        s = Server(router)
+        s = App()
+        get!(s, "/cookies") do req
+            jar = Mongoose.cookies(req)
+            val = get(jar, "token", "missing")
+            text(val)
+        end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/cookies";
                 status_exception=false,
                 headers=["Cookie" => "token=xyz; other=123"])
             body = String(resp.body)
-            # Cookie header may not be forwarded by the C library in all cases
             @test body in ("xyz", "missing")
-        end
-    end
-end
-
-@testset "Streaming response" begin
-    @testset "StreamResponse sends chunked data" begin
-        router = Router()
-        route!(router, :get, "/stream", req -> begin
-            StreamResponse(200; content_type="text/plain") do writer
-                for i in 1:3
-                    write(writer, "chunk$i\n")
-                end
-            end
-        end)
-        s = Async(router; nworkers=2)
-        with_server(s) do port
-            resp = HTTP.get("http://127.0.0.1:$port/stream"; status_exception=false)
-            @test resp.status == 200
-            body = String(resp.body)
-            @test contains(body, "chunk1")
-            @test contains(body, "chunk2")
-            @test contains(body, "chunk3")
         end
     end
 end
 
 @testset "SSE response" begin
     @testset "SSE events are properly formatted" begin
-        router = Router()
-        route!(router, :get, "/events", req -> begin
-            sse_response() do writer
-                sse = SSEWriter(writer)
-                event!(sse; data="hello", event="greeting", id="1")
-                event!(sse; data="world", event="greeting", id="2")
+        s = App(workers=2)
+        get!(s, "/events") do req
+            sse(req) do writer
+                emit(writer; data="hello", event="greeting", id="1")
+                emit(writer; data="world", event="greeting", id="2")
             end
-        end)
-        s = Async(router; nworkers=2)
+        end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/events"; status_exception=false)
             @test resp.status == 200
@@ -329,9 +312,8 @@ end
 
 @testset "Concurrent requests" begin
     @testset "Handles concurrent GETs" begin
-        router = Router()
-        route!(router, :get, "/concurrent", req -> Response(200, "", "ok"))
-        s = Async(router; nworkers=4)
+        s = App(workers=4)
+        get!(s, "/concurrent") do req; text("ok") end
         with_server(s) do port
             tasks = [@async begin
                 HTTP.get("http://127.0.0.1:$port/concurrent"; status_exception=false)
@@ -344,9 +326,8 @@ end
 
 @testset "Error handling in handlers" begin
     @testset "Handler exception returns 500" begin
-        router = Router()
-        route!(router, :get, "/error", error_handler)
-        s = Server(router)
+        s = App()
+        get!(s, "/error") do req; error("boom") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/error"; status_exception=false)
             @test resp.status == 500
@@ -355,15 +336,14 @@ end
 end
 
 @testset "Context" begin
-    @testset "context! creates and reuses dict" begin
-        router = Router()
-        route!(router, :get, "/ctx", req -> begin
-            ctx = context!(req)
-            ctx[:visited] = true
-            ctx2 = context!(req)
-            Response(200, "", "same=$(ctx === ctx2)")
-        end)
-        s = Server(router)
+    @testset "ctx! creates and reuses dict" begin
+        s = App()
+        get!(s, "/ctx") do req
+            c = ctx!(req)
+            c[:visited] = true
+            c2 = ctx!(req)
+            text("same=$(c === c2)")
+        end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/ctx"; status_exception=false)
             @test String(resp.body) == "same=true"

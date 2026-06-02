@@ -11,9 +11,8 @@
         tls = TLSConfig(cert=cert, key=key)
 
         @testset "HTTPS basic request" begin
-            router = Router()
-            route!(router, :get, "/secure", req -> Response(200, "", "secure!"))
-            s = Server(router)
+            s = App()
+            get!(s, "/secure") do req; text("secure!") end
             port = fresh_port()
             start!(s; host="127.0.0.1", port=port, blocking=false, tls=tls)
 
@@ -51,9 +50,8 @@
         end
 
         @testset "HTTPS POST with body" begin
-            router = Router()
-            route!(router, :post, "/data", req -> Response(200, "", "got: $(req.body)"))
-            s = Server(router)
+            s = App()
+            post!(s, "/data") do req; text("got: $(req.body)") end
             port = fresh_port()
             start!(s; host="127.0.0.1", port=port, blocking=false, tls=tls)
 

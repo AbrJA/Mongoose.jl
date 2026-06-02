@@ -1,19 +1,7 @@
-"""
-    Static router — compile-time route dispatch via @router macro.
-    Generates a monolithic Prefix Trie AST dispatch function for juliac --trim=safe AOT compilation.
-    Zero runtime dispatch, zero allocation.
-"""
+# Static router removed — use Router() (dynamic trie-based) for all routing.
+# The @router macro has been removed. For AOT use cases, the dynamic Router
+# is sufficient with --trim=safe after precompilation.
 
-# By default, static routers have no WS routes. @router can override.
-# (has_ws_routes default is in router/interface.jl)
-
-"""
-    _dispatchstatic(app, request) → Response
-"""
-function dispatch_static end
-
-dispatch_static(app::T, ::Request) where {T<:StaticRouter} =
-    error("$(T) must implement dispatch_static via the @router macro")
 
 # --- Path matching helpers (used by generated code) ---
 

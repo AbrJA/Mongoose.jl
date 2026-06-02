@@ -8,8 +8,8 @@ end
 @testset "Route registration" begin
     @testset "Fixed routes" begin
         r = Router()
-        route!(r, :get, "/", req -> Response(200, "", "root"))
-        route!(r, :post, "/data", req -> Response(200, "", "posted"))
+        route!(r, :get, "/", req -> text("root"))
+        route!(r, :post, "/data", req -> text("posted"))
         @test haskey(r.fixed, "/")
         @test haskey(r.fixed, "/data")
     end
@@ -17,7 +17,7 @@ end
     @testset "All HTTP methods" begin
         r = Router()
         for method in [:get, :post, :put, :patch, :delete, :options, :head]
-            route!(r, method, "/test", req -> Response(200, "", ""))
+            route!(r, method, "/test", req -> text(""))
         end
         @test r.fixed["/test"].handlers.get !== nothing
         @test r.fixed["/test"].handlers.post !== nothing
@@ -30,36 +30,51 @@ end
 
     @testset "String method names" begin
         r = Router()
-        route!(r, "GET", "/str", req -> Response(200, "", ""))
+        route!(r, "GET", "/str", req -> text(""))
         @test haskey(r.fixed, "/str")
     end
 
     @testset "Invalid method" begin
         r = Router()
-        @test_throws RouteError route!(r, :invalid, "/bad", req -> Response(200, "", ""))
+        @test_throws RouteError route!(r, :invalid, "/bad", req -> text(""))
     end
 
     @testset "Parametric routes" begin
         r = Router()
-        route!(r, :get, "/users/:id::Int", (req, id) -> Response(200, "", "user $id"))
-        route!(r, :get, "/posts/:slug", (req, slug) -> Response(200, "", "post $slug"))
-        # These go into trie, not fixed
+        route!(r, :get, "/users/:id::Int", (req, id) -> text("user $id"))
+        route!(r, :get, "/posts/:slug", (req, slug) -> text("post $slug"))
         @test !haskey(r.fixed, "/users/:id::Int")
     end
 
     @testset "Wildcard routes" begin
         r = Router()
-        route!(r, :get, "/*path", (req, path) -> Response(200, "", path))
+        route!(r, :get, "/*path", (req, path) -> text(path))
         @test !haskey(r.fixed, "/*path")
+    end
+end
+
+@testset "Method helpers on App" begin
+    app = App()
+    get!(app, "/g") do req; text("get") end
+    post!(app, "/p") do req; text("post") end
+    put!(app, "/u") do req; text("put") end
+    patch!(app, "/pa") do req; text("patch") end
+    delete!(app, "/d") do req; text("delete") end
+
+    with_server(app) do port
+        @test HTTP.get("http://127.0.0.1:$port/g"; status_exception=false).status == 200
+        @test HTTP.post("http://127.0.0.1:$port/p", []; status_exception=false).status == 200
+        @test HTTP.request("PUT", "http://127.0.0.1:$port/u"; status_exception=false).status == 200
+        @test HTTP.request("PATCH", "http://127.0.0.1:$port/pa"; status_exception=false).status == 200
+        @test HTTP.request("DELETE", "http://127.0.0.1:$port/d"; status_exception=false).status == 200
     end
 end
 
 @testset "Route dispatch (integration)" begin
     @testset "Fixed route dispatch" begin
-        router = Router()
-        route!(router, :get, "/hello", req -> Response(200, "", "world"))
-        s = Server(router)
-        with_server(s) do port
+        app = App()
+        get!(app, "/hello") do req; text("world") end
+        with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/hello"; status_exception=false)
             @test resp.status == 200
             @test String(resp.body) == "world"
@@ -67,10 +82,9 @@ end
     end
 
     @testset "Parametric Int dispatch" begin
-        router = Router()
-        route!(router, :get, "/users/:id::Int", (req, id) -> Response(200, "", "User $id type=$(typeof(id))"))
-        s = Server(router)
-        with_server(s) do port
+        app = App()
+        get!(app, "/users/:id::Int") do req, id; text("User $id type=$(typeof(id))") end
+        with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/users/42"; status_exception=false)
             @test resp.status == 200
             @test String(resp.body) == "User 42 type=Int64"
@@ -78,10 +92,9 @@ end
     end
 
     @testset "Parametric String dispatch" begin
-        router = Router()
-        route!(router, :get, "/posts/:slug", (req, slug) -> Response(200, "", "Post: $slug"))
-        s = Server(router)
-        with_server(s) do port
+        app = App()
+        get!(app, "/posts/:slug") do req, slug; text("Post: $slug") end
+        with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/posts/hello-world"; status_exception=false)
             @test resp.status == 200
             @test String(resp.body) == "Post: hello-world"
@@ -89,10 +102,9 @@ end
     end
 
     @testset "Wildcard catch-all" begin
-        router = Router()
-        route!(router, :get, "/files/*path", (req, path) -> Response(200, "", "Path: $path"))
-        s = Server(router)
-        with_server(s) do port
+        app = App()
+        get!(app, "/files/*path") do req, path; text("Path: $path") end
+        with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/files/docs/readme.md"; status_exception=false)
             @test resp.status == 200
             @test contains(String(resp.body), "docs/readme.md")
@@ -100,30 +112,27 @@ end
     end
 
     @testset "404 on unregistered route" begin
-        router = Router()
-        route!(router, :get, "/exists", req -> Response(200, "", "ok"))
-        s = Server(router)
-        with_server(s) do port
+        app = App()
+        get!(app, "/exists") do req; text("ok") end
+        with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/nope"; status_exception=false)
             @test resp.status == 404
         end
     end
 
     @testset "405 method not allowed" begin
-        router = Router()
-        route!(router, :get, "/only-get", req -> Response(200, "", "ok"))
-        s = Server(router)
-        with_server(s) do port
+        app = App()
+        get!(app, "/only-get") do req; text("ok") end
+        with_server(app) do port
             resp = HTTP.request("POST", "http://127.0.0.1:$port/only-get"; status_exception=false)
             @test resp.status == 405
         end
     end
 
     @testset "Multiple params" begin
-        router = Router()
-        route!(router, :get, "/org/:org/repo/:repo", (req, org, repo) -> Response(200, "", "$org/$repo"))
-        s = Server(router)
-        with_server(s) do port
+        app = App()
+        get!(app, "/org/:org/repo/:repo") do req, org, repo; text("$org/$repo") end
+        with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/org/julia/repo/mongoose"; status_exception=false)
             @test resp.status == 200
             @test String(resp.body) == "julia/mongoose"
@@ -131,10 +140,9 @@ end
     end
 
     @testset "Invalid Int param returns 404" begin
-        router = Router()
-        route!(router, :get, "/items/:id::Int", (req, id) -> Response(200, "", "ok"))
-        s = Server(router)
-        with_server(s) do port
+        app = App()
+        get!(app, "/items/:id::Int") do req, id; text("ok") end
+        with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/items/abc"; status_exception=false)
             @test resp.status == 404
         end
@@ -142,16 +150,14 @@ end
 end
 
 @testset "Route groups" begin
-    @testset "Basic group" begin
-        router = Router()
-        api = group("/api/v1") do g
-            route!(g, :get, "/users", req -> Response(200, "", "users list"))
-            route!(g, :get, "/items", req -> Response(200, "", "items list"))
-        end
-        Mongoose.register_group!(router, api)
+    @testset "Basic group via mount!" begin
+        app = App()
+        grp = group("/api/v1")
+        get!(grp, "/users") do req; text("users list") end
+        get!(grp, "/items") do req; text("items list") end
+        mount!(app, grp)
 
-        s = Server(router)
-        with_server(s) do port
+        with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/api/v1/users"; status_exception=false)
             @test resp.status == 200
             @test String(resp.body) == "users list"
@@ -163,43 +169,13 @@ end
     end
 end
 
-@testset "@router macro" begin
-    @testset "Static route" begin
-        s = Server(TestRoutes)
-        with_server(s) do port
-            resp = HTTP.get("http://127.0.0.1:$port/hello"; status_exception=false)
-            @test resp.status == 200
-            @test String(resp.body) == "Hello Static"
-        end
-    end
-
-    @testset "Static parametric route" begin
-        s = Server(TestRoutes)
-        with_server(s) do port
-            resp = HTTP.get("http://127.0.0.1:$port/user/99"; status_exception=false)
-            @test resp.status == 200
-            @test String(resp.body) == "User 99"
-        end
-    end
-
-    @testset "Static wildcard route" begin
-        s = Server(TestRoutes)
-        with_server(s) do port
-            resp = HTTP.get("http://127.0.0.1:$port/file/some/deep/path.txt"; status_exception=false)
-            @test resp.status == 200
-            @test contains(String(resp.body), "some/deep/path.txt")
-        end
-    end
-end
-
 @testset "Query string handling" begin
-    router = Router()
-    route!(router, :get, "/search", req -> begin
+    app = App()
+    get!(app, "/search") do req
         q = get(req.query, "q", "")
-        Response(200, "", "query=$q")
-    end)
-    s = Server(router)
-    with_server(s) do port
+        text("query=$q")
+    end
+    with_server(app) do port
         resp = HTTP.get("http://127.0.0.1:$port/search?q=hello"; status_exception=false)
         @test resp.status == 200
         @test String(resp.body) == "query=hello"

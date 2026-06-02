@@ -1,22 +1,15 @@
 # Pure unit tests — no network I/O, no servers started.
 
 @testset "Response constructors" begin
-    @testset "Raw constructor" begin
-        r = Response(200, "", "hello")
+    @testset "2-arg constructor (status + body)" begin
+        r = Response(200, "hello")
         @test r.status == 200
-        @test r.headers == ""
         @test r.body == "hello"
-    end
-
-    @testset "Raw with headers" begin
-        r = Response(201, "Content-Type: text/plain\r\n", "created")
-        @test r.status == 201
-        @test contains(r.headers, "Content-Type")
     end
 
     @testset "Binary body" begin
         data = UInt8[1, 2, 3, 4]
-        r = Response(200, "", data)
+        r = Response(200, Pair{String,String}[], data)
         @test r.body == data
     end
 
@@ -24,22 +17,22 @@
         r = Response(Plain, "text")
         @test r.status == 200
         @test r.body == "text"
-        @test contains(r.headers, "text/plain")
+        @test any(p -> contains(p.second, "text/plain"), r.headers)
 
         r2 = Response(Html, "<p>hi</p>")
-        @test contains(r2.headers, "text/html")
+        @test any(p -> contains(p.second, "text/html"), r2.headers)
 
         r3 = Response(Json, """{"a":1}""")
-        @test contains(r3.headers, "application/json")
+        @test any(p -> contains(p.second, "application/json"), r3.headers)
 
         r4 = Response(Css, "body{}")
-        @test contains(r4.headers, "text/css")
+        @test any(p -> contains(p.second, "text/css"), r4.headers)
 
         r5 = Response(Js, "var x=1;")
-        @test contains(r5.headers, "javascript")
+        @test any(p -> contains(p.second, "javascript"), r5.headers)
 
         r6 = Response(Xml, "<root/>")
-        @test contains(r6.headers, "application/xml")
+        @test any(p -> contains(p.second, "application/xml"), r6.headers)
     end
 
     @testset "Format with custom status" begin
@@ -49,14 +42,23 @@
 
     @testset "Format with custom headers" begin
         r = Response(Plain, "ok"; headers=["X-Custom" => "val"])
-        @test contains(r.headers, "X-Custom: val")
+        @test any(p -> p.first == "X-Custom" && p.second == "val", r.headers)
     end
 
     @testset "Shorthand string constructor" begin
         r = Response("hello")
         @test r.status == 200
         @test r.body == "hello"
-        @test contains(r.headers, "text/plain")
+        @test any(p -> contains(p.second, "text/plain"), r.headers)
+    end
+
+    @testset "Response helpers" begin
+        @test text("hi").status == 200
+        @test html("<p>").status == 200
+        @test json("{\"a\":1}").status == 200
+        @test redirect("/path").status == 302
+        @test redirect("/path"; status=301).status == 301
+        @test HTTP.header(HTTP.Response(200, redirect("/new").headers, UInt8[]), "Location") == "/new"
     end
 end
 
@@ -126,21 +128,21 @@ end
 end
 
 @testset "Context" begin
-    @testset "context! creates dict lazily" begin
+    @testset "ctx! creates dict lazily" begin
         req = Request(:get, "/", "/", Dict{String,String}(), Headers(), "")
         @test req.context === nothing
-        ctx = context!(req)
-        @test ctx isa Dict{Symbol,Any}
+        c = ctx!(req)
+        @test c isa Dict{Symbol,Any}
         @test req.context !== nothing
     end
 
-    @testset "context! returns same dict" begin
+    @testset "ctx! returns same dict" begin
         req = Request(:get, "/", "/", Dict{String,String}(), Headers(), "")
-        ctx1 = context!(req)
-        ctx1[:key] = "value"
-        ctx2 = context!(req)
-        @test ctx1 === ctx2
-        @test ctx2[:key] == "value"
+        c1 = ctx!(req)
+        c1[:key] = "value"
+        c2 = ctx!(req)
+        @test c1 === c2
+        @test c2[:key] == "value"
     end
 end
 
@@ -170,9 +172,9 @@ end
         @test_throws ErrorException Mongoose.Cookie("x", "y"; samesite=:invalid)
     end
 
-    @testset "serialize_cookie" begin
+    @testset "bake/serialize" begin
         c = Mongoose.Cookie("id", "123"; max_age=600, secure=true, httponly=true, samesite=:strict)
-        s = serialize_cookie(c)
+        s = bake(c)
         @test contains(s, "id=123")
         @test contains(s, "Max-Age=600")
         @test contains(s, "Secure")
@@ -181,78 +183,42 @@ end
         @test contains(s, "Path=/")
     end
 
-    @testset "serialize_cookie session (no max_age)" begin
+    @testset "bake session cookie (no max_age)" begin
         c = Mongoose.Cookie("temp", "val")
-        s = serialize_cookie(c)
+        s = bake(c)
         @test contains(s, "temp=val")
         @test !contains(s, "Max-Age")
     end
 end
 
-@testset "parse_cookies" begin
+@testset "cookies(req)" begin
     @testset "Parse single cookie" begin
         req = Request(:get, "/", "/", Dict{String,String}(),
             Headers(["cookie" => "name=value"]), "")
-        cookies = parse_cookies(req)
-        @test cookies["name"] == "value"
+        jar = Mongoose.cookies(req)
+        @test jar["name"] == "value"
     end
 
     @testset "Parse multiple cookies" begin
         req = Request(:get, "/", "/", Dict{String,String}(),
             Headers(["cookie" => "a=1; b=2; c=3"]), "")
-        cookies = parse_cookies(req)
-        @test cookies["a"] == "1"
-        @test cookies["b"] == "2"
-        @test cookies["c"] == "3"
+        jar = Mongoose.cookies(req)
+        @test jar["a"] == "1"
+        @test jar["b"] == "2"
+        @test jar["c"] == "3"
     end
 
     @testset "No cookie header" begin
         req = Request(:get, "/", "/", Dict{String,String}(), Headers(), "")
-        cookies = parse_cookies(req)
-        @test isempty(cookies)
+        jar = Mongoose.cookies(req)
+        @test isempty(jar)
     end
 
     @testset "Empty cookie value" begin
         req = Request(:get, "/", "/", Dict{String,String}(),
             Headers(["cookie" => "key="]), "")
-        cookies = parse_cookies(req)
-        @test cookies["key"] == ""
-    end
-end
-
-@testset "ServiceRegistry" begin
-    @testset "Register and retrieve factory" begin
-        reg = ServiceRegistry()
-        register!(reg, :db, () -> "postgres://localhost")
-        @test service(reg, :db) == "postgres://localhost"
-    end
-
-    @testset "Factory called once (lazy singleton)" begin
-        count = Ref(0)
-        reg = ServiceRegistry()
-        register!(reg, :counter, () -> (count[] += 1; count[]))
-        @test service(reg, :counter) == 1
-        @test service(reg, :counter) == 1  # Same value, factory not called again
-        @test count[] == 1
-    end
-
-    @testset "Register direct instance" begin
-        reg = ServiceRegistry()
-        register!(reg, :config, Dict("env" => "test"))
-        @test service(reg, :config)["env"] == "test"
-    end
-
-    @testset "Missing service throws" begin
-        reg = ServiceRegistry()
-        @test_throws ErrorException service(reg, :nonexistent)
-    end
-
-    @testset "Multiple services" begin
-        reg = ServiceRegistry()
-        register!(reg, :a, () -> "service_a")
-        register!(reg, :b, () -> "service_b")
-        @test service(reg, :a) == "service_a"
-        @test service(reg, :b) == "service_b"
+        jar = Mongoose.cookies(req)
+        @test jar["key"] == ""
     end
 end
 
@@ -293,9 +259,10 @@ end
         @test Mongoose.mime(Binary) == "application/octet-stream"
     end
 
-    @testset "Content-Type headers" begin
-        @test contains(Mongoose.content_type_header(Plain), "text/plain")
-        @test contains(Mongoose.content_type_header(Json), "application/json")
+    @testset "content_type_pair" begin
+        p = Mongoose.content_type_pair(Plain)
+        @test p isa Pair{String,String}
+        @test contains(p.second, "text/plain")
     end
 
     @testset "encode passthrough for strings" begin
@@ -306,24 +273,6 @@ end
     @testset "encode for Json with dict (via extension)" begin
         result = Mongoose.encode(Json, Dict("x" => 1))
         @test JSON.parse(result)["x"] == 1
-    end
-end
-
-@testset "Config" begin
-    @testset "Default config" begin
-        c = Config()
-        @test c.poll_timeout == 1
-        @test c.nworkers == 4
-        @test c.nqueue == 1024
-        @test c.request_timeout == 0
-        @test c.ws_idle_timeout == 0
-    end
-
-    @testset "Custom config" begin
-        c = Config(nworkers=8, nqueue=2048, max_body=4096)
-        @test c.nworkers == 8
-        @test c.nqueue == 2048
-        @test c.max_body == 4096
     end
 end
 
@@ -341,7 +290,7 @@ end
 
 @testset "StreamResponse constructors" begin
     @testset "Basic StreamResponse" begin
-        sr = StreamResponse(w -> nothing, 200; content_type="text/plain")
+        sr = StreamResponse(w -> nothing, 200, "text/plain")
         @test sr.status == 200
         @test sr.content_type == "text/plain"
     end
@@ -363,8 +312,8 @@ end
 @testset "RouteGroup construction" begin
     @testset "Basic group" begin
         g = group("/api/v1") do g
-            route!(g, :get, "/users", req -> Response(200, "", ""))
-            route!(g, :post, "/users", req -> Response(201, "", ""))
+            route!(g, :get, "/users", req -> text(""))
+            route!(g, :post, "/users", req -> text(""))
         end
         @test g.prefix == "/api/v1"
         @test length(g.routes) == 2
@@ -375,7 +324,7 @@ end
     @testset "Group with middleware" begin
         mw = cors()
         g = group("/admin"; middleware=[mw]) do g
-            route!(g, :get, "/panel", req -> Response(200, "", ""))
+            route!(g, :get, "/panel", req -> text(""))
         end
         @test length(g.middleware) == 1
     end
@@ -389,8 +338,8 @@ end
 
 @testset "Router display" begin
     r = Router()
-    route!(r, :get, "/a", req -> Response(200, "", ""))
-    route!(r, :get, "/b", req -> Response(200, "", ""))
+    route!(r, :get, "/a", req -> text(""))
+    route!(r, :get, "/b", req -> text(""))
     io = IOBuffer()
     show(io, r)
     s = String(take!(io))

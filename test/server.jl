@@ -1,127 +1,108 @@
-@testset "Server construction" begin
-    @testset "Default Server" begin
-        s = Server()
-        @test s isa Server
-        @test s.core.running[] == false
+@testset "App construction" begin
+    @testset "Default App (sync)" begin
+        app = App()
+        @test app isa App
+        @test app.running[] == false
+        @test app.workers == 0
     end
 
-    @testset "Default Async" begin
-        s = Async()
-        @test s isa Async
-        @test s.core.running[] == false
-        @test s.nworkers == 4
-        @test s.nqueue == 1024
+    @testset "Async App" begin
+        app = App(workers=4)
+        @test app isa App
+        @test app.running[] == false
+        @test app.workers == 4
+        @test app.queuesize == 1024
     end
 
-    @testset "Server with Router" begin
-        router = Router()
-        route!(router, :get, "/test", req -> Response(200, "", "ok"))
-        s = Server(router)
-        @test s isa Server
+    @testset "App with custom options" begin
+        app = App(workers=2, queuesize=512, poll_timeout=2, max_body=2048)
+        @test app.workers == 2
+        @test app.queuesize == 512
+        @test app.poll_timeout == 2
+        @test app.max_body == 2048
     end
 
-    @testset "Async with custom workers" begin
-        s = Async(Router(); nworkers=2, nqueue=512)
-        @test s.nworkers == 2
-        @test s.nqueue == 512
-    end
-
-    @testset "Server with Config" begin
-        config = Config(poll_timeout=2, max_body=2048, nworkers=2, nqueue=256)
-        s = Async(Router(), config)
-        @test s.core.poll_timeout == 2
-        @test s.core.max_body == 2048
-        @test s.nworkers == 2
-    end
-
-    @testset "Invalid config" begin
-        @test_throws ServerError Async(Router(); nworkers=0)
-        @test_throws ServerError Async(Router(); nqueue=0)
-        @test_throws ServerError Server(Router(); max_body=0)
-        @test_throws ServerError Server(Router(); poll_timeout=-1)
+    @testset "App with invalid options" begin
+        @test_throws ServerError App(max_body=0)
+        @test_throws ServerError App(poll_timeout=-1)
     end
 end
 
-@testset "Server start/shutdown" begin
-    @testset "Basic start and stop (Server)" begin
-        router = Router()
-        route!(router, :get, "/", req -> Response(200, "", "ok"))
-        s = Server(router)
-        with_server(s) do port
+@testset "App start/shutdown" begin
+    @testset "Basic start and stop (sync)" begin
+        app = App()
+        get!(app, "/") do req; text("ok") end
+        with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
             @test resp.status == 200
         end
     end
 
-    @testset "Basic start and stop (Async)" begin
-        router = Router()
-        route!(router, :get, "/", req -> Response(200, "", "ok"))
-        s = Async(router; nworkers=2)
-        with_server(s) do port
+    @testset "Basic start and stop (async)" begin
+        app = App(workers=2)
+        get!(app, "/") do req; text("ok") end
+        with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
             @test resp.status == 200
         end
     end
 
     @testset "Double shutdown is safe" begin
-        router = Router()
-        route!(router, :get, "/", req -> Response(200, "", "ok"))
-        s = Server(router)
-        with_server(s) do port
-            # First shutdown happens in with_server finally block
-        end
-        # Second shutdown should be a no-op
-        shutdown!(s)
+        app = App()
+        get!(app, "/") do req; text("ok") end
+        with_server(app) do port end
+        shutdown!(app)  # second call should be no-op
     end
 
-    @testset "Server not running returns early on shutdown" begin
-        s = Server()
-        shutdown!(s)  # Should not throw
+    @testset "Shutdown not-running is safe" begin
+        app = App()
+        shutdown!(app)
     end
 end
 
 @testset "Custom error responses" begin
-    router = Router()
-    route!(router, :get, "/", req -> Response(200, "", "ok"))
-    s = Server(router)
-    fail!(s, 404, Response(404, "", "Custom Not Found"))
+    app = App()
+    get!(app, "/") do req; text("ok") end
+    onerror!(app, 404, Response(404, Pair{String,String}[], "Custom Not Found"))
 
-    with_server(s) do port
+    with_server(app) do port
         resp = HTTP.get("http://127.0.0.1:$port/nonexistent"; status_exception=false)
         @test resp.status == 404
         @test contains(String(resp.body), "Not Found")
     end
 end
 
-@testset "fail! validation" begin
-    s = Server()
-    @test_throws ServerError fail!(s, 99, Response(99, "", "bad"))
-    @test_throws ServerError fail!(s, 600, Response(600, "", "bad"))
+@testset "onerror! validation" begin
+    app = App()
+    @test_throws ServerError onerror!(app, 99, Response(99, Pair{String,String}[], "bad"))
+    @test_throws ServerError onerror!(app, 600, Response(600, Pair{String,String}[], "bad"))
 end
 
-@testset "ServiceRegistry integration" begin
-    registry = ServiceRegistry()
-    register!(registry, :db, () -> "database_connection")
+@testset "provide!/inject integration" begin
+    app = App()
+    provide!(app, :db, () -> "database_connection")
+    get!(app, "/svc") do req
+        db = inject(req, :db)
+        text(db)
+    end
 
-    router = Router()
-    route!(router, :get, "/svc", req -> begin
-        db = service(req, :db)
-        Response(200, "", db)
-    end)
-
-    s = Server(router; services=registry)
-    with_server(s) do port
+    with_server(app) do port
         resp = HTTP.get("http://127.0.0.1:$port/svc"; status_exception=false)
         @test resp.status == 200
         @test String(resp.body) == "database_connection"
     end
 end
 
-@testset "Static router server" begin
-    s = Server(TestRoutes)
-    with_server(s) do port
-        resp = HTTP.get("http://127.0.0.1:$port/hello"; status_exception=false)
-        @test resp.status == 200
-        @test String(resp.body) == "Hello Static"
+@testset "onstart! / onstop! hooks" begin
+    started = Ref(false)
+    stopped = Ref(false)
+    app = App()
+    get!(app, "/") do req; text("ok") end
+    onstart!(app) do; started[] = true end
+    onstop!(app) do; stopped[] = true end
+
+    with_server(app) do port
+        @test started[] == true
     end
+    @test stopped[] == true
 end

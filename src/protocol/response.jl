@@ -5,48 +5,117 @@
 # --- Buffered Response (most common) ---
 
 """
-    Response — Immutable HTTP response with fully-buffered body.
+    Response — Immutable HTTP response with structured headers.
+
+    Headers are stored as a `Vector{Pair{String,String}}` and serialized
+    to wire format only when sent. Middleware can inspect and modify headers
+    before they reach the client.
 """
 struct Response
     status::Int
-    headers::String
+    headers::Vector{Pair{String,String}}
     body::Union{String,Vector{UInt8}}
 
-    Response(status::Int, headers::AbstractString, body::AbstractString) =
-        new(status, String(headers), String(body))
-    Response(status::Int, headers::AbstractString, body::Vector{UInt8}) =
-        new(status, String(headers), body)
+    Response(status::Int, headers::Vector{Pair{String,String}}, body::AbstractString) =
+        new(status, headers, String(body))
+    Response(status::Int, headers::Vector{Pair{String,String}}, body::Vector{UInt8}) =
+        new(status, headers, body)
 end
 
-# --- Ergonomic constructor: status + body with keyword headers ---
+# --- Primary ergonomic constructor: status + body ---
 
 """
-    Response(status, body; headers=[])
+    Response(status, body; headers=[]) → Response
 
-Create a response with structured headers (auto-serialized).
+Create a plain-text response.
 
 # Example
 ```julia
-Response(200, "OK"; headers=["X-Custom" => "value"])
+Response(200, "OK")
+Response(404, "Not Found"; headers=["X-Custom" => "value"])
 ```
 """
 function Response(status::Int, body::Union{String,Vector{UInt8}};
                   headers::Vector{Pair{String,String}}=Pair{String,String}[])
-    hdr = format_headers(headers)
-    return Response(status, hdr, body)
+    return Response(status, headers, body)
 end
 
 # --- Typed format constructors ---
 
-function Response(::Type{T}, body; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) where {T<:AbstractFormat}
+"""
+    Response(Format, body; status=200, headers=[]) → Response
+
+Create a response with automatic Content-Type for the given format.
+
+# Example
+```julia
+Response(Json, Dict("ok" => true))
+Response(Html, "<h1>Hello</h1>"; status=200)
+```
+"""
+function Response(::Type{T}, body; status::Int=200,
+                  headers::Vector{Pair{String,String}}=Pair{String,String}[]) where {T<:AbstractFormat}
     rendered = body isa String ? body : encode(T, body)
-    hdr = isempty(headers) ? content_type_header(T) : content_type_header(T) * format_headers(headers)
-    return Response(status, hdr, rendered)
+    all_headers = isempty(headers) ? Pair{String,String}[content_type_pair(T)] : [content_type_pair(T); headers]
+    return Response(status, all_headers, rendered)
 end
 
 # Plain-text shorthand: Response("hello") or Response("hello"; status=200)
 Response(body::AbstractString; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) =
     Response(Plain, body; status=status, headers=headers)
+
+# --- Response Helpers (FastAPI-style) ---
+
+"""
+    json(data; status=200, headers=[]) → Response
+
+Create a JSON response. Calls `encode(Json, data)` — users must extend this.
+
+# Example
+```julia
+json(Dict("id" => 1, "name" => "Alice"))
+json(Dict("error" => "Not Found"); status=404)
+```
+"""
+function json(data; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[])
+    return Response(Json, data; status=status, headers=headers)
+end
+
+"""
+    json(req) → Any
+
+Parse the request body as JSON. Requires `Mongoose.decode(::Type{Json}, body::String)` to be extended.
+"""
+function json(req::Request)
+    return decode(Json, req.body)
+end
+
+"""
+    html(content; status=200, headers=[]) → Response
+"""
+html(content; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) =
+    Response(Html, content; status=status, headers=headers)
+
+"""
+    text(content; status=200, headers=[]) → Response
+"""
+text(content; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) =
+    Response(Plain, content; status=status, headers=headers)
+
+"""
+    redirect(url; status=302, headers=[]) → Response
+
+Return an HTTP redirect response.
+
+# Example
+```julia
+redirect("/login")
+redirect("https://example.com"; status=301)
+```
+"""
+function redirect(url::AbstractString; status::Int=302, headers::Vector{Pair{String,String}}=Pair{String,String}[])
+    return Response(status, [headers; Pair{String,String}["Location" => String(url)]], "")
+end
 
 # --- Streaming Response ---
 
@@ -112,7 +181,12 @@ function Cookie(name::String, value::String;
     return Cookie(name, value, path, domain, max_age, secure, httponly, samesite)
 end
 
-function serialize_cookie(c::Cookie)::String
+"""
+    bake(cookie) → String
+
+Serialize a `Cookie` to a `Set-Cookie` header value string.
+"""
+function bake(c::Cookie)::String
     io = IOBuffer(sizehint=128)
     print(io, c.name, "=", c.value)
     !isempty(c.path) && print(io, "; Path=", c.path)
@@ -126,13 +200,18 @@ end
 
 # --- Utility: parse cookies from request ---
 
-function parse_cookies(req::Request)::Dict{String,String}
+"""
+    cookies(req) → Dict{String,String}
+
+Parse cookies from the request `Cookie` header.
+"""
+function cookies(req::Request)::Dict{String,String}
     cookie_header = get(req.headers, "cookie", nothing)
     cookie_header === nothing && return Dict{String,String}()
-    return parse_cookie_string(cookie_header)
+    return _parse_cookie_string(cookie_header)
 end
 
-function parse_cookie_string(s::String)::Dict{String,String}
+function _parse_cookie_string(s::String)::Dict{String,String}
     result = Dict{String,String}()
     for pair in eachsplit(s, ';')
         stripped = strip(pair)

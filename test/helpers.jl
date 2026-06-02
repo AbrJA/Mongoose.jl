@@ -47,7 +47,7 @@ end
 
 function echo(request, name)
     body = "Hello $name from Julia!"
-    Response(body)
+    Response(Plain, body)
 end
 
 function error_handler(request, args...)

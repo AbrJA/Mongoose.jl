@@ -10,7 +10,11 @@
 @inline is_handled_event(ev::Cint) = (ev == MG_EV_HTTP_MSG || ev == MG_EV_WS_OPEN ||
     ev == MG_EV_WS_MSG || ev == MG_EV_WS_CTL || ev == MG_EV_CLOSE || ev == MG_EV_ACCEPT)
 
-# --- C callback entry point ---
+# --- Singleton C function pointer ---
+
+const _C_EVENT_CALLBACK = Ref{Ptr{Cvoid}}(C_NULL)
+
+# --- C callback entry point (defined before get_c_callback for @cfunction) ---
 
 """
     c_event_callback(conn, ev, ev_data) → Cvoid
@@ -30,6 +34,19 @@ function c_event_callback(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
         @log_error "Event handler error" e catch_backtrace()
     end
     return nothing
+end
+
+"""
+    get_c_callback() → Ptr{Cvoid}
+
+Return the single @cfunction pointer used by all App instances.
+Initialized lazily on first call.
+"""
+function get_c_callback()::Ptr{Cvoid}
+    if _C_EVENT_CALLBACK[] == C_NULL
+        _C_EVENT_CALLBACK[] = @cfunction(c_event_callback, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+    end
+    return _C_EVENT_CALLBACK[]
 end
 
 # --- Event routing ---
@@ -54,14 +71,9 @@ end
 # --- Default handlers ---
 
 on_accept(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid}) = begin
-    tls = server.core.tls
+    tls = server.tls
     tls !== nothing && init_tls!(conn, tls)
 end
 
 # Fallbacks
 on_ws_open(::AbstractServer, ::MgConnection, ::Ptr{Cvoid}) = nothing
-
-# --- C function pointer generation (JIT fallback) ---
-
-cfunc_async(::Type{<:AbstractRouter}) = @cfunction(c_event_callback, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
-cfunc_sync(::Type{<:AbstractRouter}) = @cfunction(c_event_callback, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))

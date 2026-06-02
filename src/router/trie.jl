@@ -355,6 +355,73 @@ function ws!(router::Router, path::AbstractString;
     return router
 end
 
+# --- Method-specific helpers ---
+# These provide a FastAPI-style DSL: get!(router, "/path", handler)
+# Compatible with App too (overloads added in server/core.jl)
+
+"""
+    get!(router_or_app, path, handler)  /  get!(handler, router_or_app, path)
+
+Register a GET route. Do-block syntax:
+```julia
+get!(app, "/users/:id::Int") do req, id
+    json(Dict("id" => id))
+end
+```
+"""
+function Base.get!(r::Router, path::AbstractString, @nospecialize(handler::Function))
+    route!(r, :get, path, handler); return r
+end
+Base.get!(f::Function, r::Router, path::AbstractString) = Base.get!(r, path, f)
+
+"""
+    post!(router_or_app, path, handler)
+"""
+function post!(r::Router, path::AbstractString, @nospecialize(handler::Function))
+    route!(r, :post, path, handler); return r
+end
+post!(f::Function, r::Router, path::AbstractString) = post!(r, path, f)
+
+"""
+    put!(router_or_app, path, handler)
+"""
+function Base.put!(r::Router, path::AbstractString, @nospecialize(handler::Function))
+    route!(r, :put, path, handler); return r
+end
+Base.put!(f::Function, r::Router, path::AbstractString) = Base.put!(r, path, f)
+
+"""
+    patch!(router_or_app, path, handler)
+"""
+function patch!(r::Router, path::AbstractString, @nospecialize(handler::Function))
+    route!(r, :patch, path, handler); return r
+end
+patch!(f::Function, r::Router, path::AbstractString) = patch!(r, path, f)
+
+"""
+    delete!(router_or_app, path, handler)
+"""
+function Base.delete!(r::Router, path::AbstractString, @nospecialize(handler::Function))
+    route!(r, :delete, path, handler); return r
+end
+Base.delete!(f::Function, r::Router, path::AbstractString) = Base.delete!(r, path, f)
+
+"""
+    options!(router_or_app, path, handler)
+"""
+function options!(r::Router, path::AbstractString, @nospecialize(handler::Function))
+    route!(r, :options, path, handler); return r
+end
+options!(f::Function, r::Router, path::AbstractString) = options!(r, path, f)
+
+"""
+    head!(router_or_app, path, handler)
+"""
+function head!(r::Router, path::AbstractString, @nospecialize(handler::Function))
+    route!(r, :head, path, handler); return r
+end
+head!(f::Function, r::Router, path::AbstractString) = head!(r, path, f)
+
 # --- Display ---
 
 function Base.show(io::IO, r::Router)

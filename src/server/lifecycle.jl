@@ -3,32 +3,52 @@
 """
 
 """
-    start!(server; host, port, blocking, tls)
+    start!(app; host, port, blocking, tls)
 
-Start the HTTP server. Initializes manager, binds listener, spawns workers/loop.
+Start the HTTP server. Initializes manager, binds listener, spawns workers (if async), runs event loop.
 
-When `blocking=true`, InterruptException (Ctrl+C) triggers graceful shutdown.
+When `blocking=true` (default), `InterruptException` (Ctrl+C) triggers graceful shutdown.
+
+# Example
+```julia
+app = App(workers=4)
+get!(app, "/") do req; json(Dict("ok" => true)) end
+start!(app; port=8080)
+```
 """
 function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::Integer=8080,
                 blocking::Bool=true, tls::Union{Nothing,TLSConfig}=nothing)
-    # Prevent double-start
-    Threads.atomic_xchg!(server.core.running, true) && return
+    Threads.atomic_xchg!(server.running, true) && return
 
     try
-        server.core.tls = normalize_tls(tls)
+        server.tls = normalize_tls(tls)
         register_server!(server)
         init_server!(server)
         url = bind_server!(server, host, port)
-        spawn_workers!(server)
+
+        # Run lifecycle start hooks and background tasks
+        for hook in server.hooks_start
+            try hook() catch e; @log_error "onstart! hook error" e catch_backtrace() end
+        end
+
+        if server.workers > 0
+            spawn_workers!(server)
+        end
         log_server_start(server, url)
 
         if blocking
-            event_loop(server)
+            try
+                event_loop(server)
+            catch e
+                e isa InterruptException || rethrow(e)
+            finally
+                shutdown!(server)
+            end
         else
             spawn_event_loop!(server)
         end
     catch e
-        shutdown!(server)
+        server.running[] && shutdown!(server)
         e isa InterruptException || rethrow(e)
     end
 end
@@ -36,18 +56,21 @@ end
 """
     shutdown!(server)
 
-Gracefully stop the server:
-1. Signal event loop to stop
-2. Drain in-flight requests
-3. Stop workers
-4. Stop event loop
-5. Free resources and unregister
+Gracefully stop the server: drain requests, stop workers, free resources.
 """
 function shutdown!(server::AbstractServer)
-    Threads.atomic_xchg!(server.core.running, false) || return
+    Threads.atomic_xchg!(server.running, false) || return
     log_server_stop(server)
+
+    # Run lifecycle stop hooks
+    for hook in server.hooks_stop
+        try hook() catch e; @log_error "onstop! hook error" e catch_backtrace() end
+    end
+
     drain!(server)
-    stop_workers!(server)
+    if server.workers > 0
+        stop_workers!(server)
+    end
     stop_event_loop!(server)
     unregister_server!(server)
     teardown!(server)
@@ -57,35 +80,35 @@ end
 # --- Internal lifecycle helpers ---
 
 function bind_server!(server::AbstractServer, host::AbstractString, port::Integer)
-    scheme = server.core.tls === nothing ? "http" : "https"
+    scheme = server.tls === nothing ? "http" : "https"
     url = "$scheme://$host:$port"
     fn_data = Ptr{Cvoid}(objectid(server))
-    listener = mg_http_listen(server.core.manager.ptr, url, server.core.c_handler, fn_data)
+    listener = mg_http_listen(server.manager.ptr, url, get_c_callback(), fn_data)
     listener == C_NULL && throw(BindError("Failed to bind to $url. Port may be in use."))
     return url
 end
 
 function spawn_event_loop!(server::AbstractServer)
-    server.core.master = @async begin
+    server.master = @async begin
         try
             event_loop(server)
         catch e
             e isa InterruptException || @log_error "Event loop error" e catch_backtrace()
         finally
-            server.core.running[] = false
+            server.running[] = false
         end
     end
 end
 
 function stop_event_loop!(server::AbstractServer)
-    master = server.core.master
+    master = server.master
     master === nothing && return
     try wait(master) catch end
-    server.core.master = nothing
+    server.master = nothing
 end
 
 function drain!(server::AbstractServer)
-    deadline = time() + server.core.drain_timeout / 1000.0
+    deadline = time() + server.drain_timeout / 1000.0
     while time() < deadline
         has_pending(server) || break
         drain_poll!(server)
@@ -93,9 +116,9 @@ function drain!(server::AbstractServer)
     end
 end
 
-# Defaults (overridden by Async)
+# Defaults (overridden for async App)
 has_pending(::AbstractServer) = false
-drain_poll!(::AbstractServer) = yield()
+drain_poll!(server::AbstractServer) = (server.workers > 0 && drain_poll!(server); yield())
 spawn_workers!(::AbstractServer) = nothing
 stop_workers!(::AbstractServer) = nothing
 
@@ -145,16 +168,4 @@ function init_tls!(conn::MgConnection, tls::TLSConfig)
     GC.@preserve cert key ca name begin
         mg_tls_init(conn, opts)
     end
-end
-
-# --- Display ---
-
-function Base.show(io::IO, s::Server)
-    status = s.core.running[] ? "running" : "stopped"
-    print(io, "Server(", status, ", router=", s.core.router, ")")
-end
-
-function Base.show(io::IO, s::Async)
-    status = s.core.running[] ? "running" : "stopped"
-    print(io, "Async(", status, ", workers=", s.nworkers, ", router=", s.core.router, ")")
 end
