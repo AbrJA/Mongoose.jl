@@ -5,7 +5,7 @@
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/data"; status_exception=false)
             @test resp.status == 200
-            @test JSON.parse(String(resp.body))["ok"] == true
+            @test JSON3.read(String(resp.body))["ok"] == true
             ct = HTTP.header(resp, "Content-Type")
             @test contains(ct, "application/json")
         end
@@ -121,7 +121,7 @@ end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/json"; status_exception=false)
             @test contains(HTTP.header(resp, "Content-Type"), "application/json")
-            parsed = JSON.parse(String(resp.body))
+            parsed = JSON3.read(String(resp.body))
             @test parsed["key"] == "value"
         end
     end
@@ -171,12 +171,12 @@ end
     @testset "JSON body parsing" begin
         s = App()
         post!(s, "/json") do req
-            data = JSON.parse(req.body)
+            data = JSON3.read(req.body)
             text("name=$(data["name"])")
         end
         with_server(s) do port
             resp = HTTP.post("http://127.0.0.1:$port/json";
-                body=JSON.json(Dict("name" => "Julia")),
+                body=JSON3.write(Dict("name" => "Julia")),
                 headers=["Content-Type" => "application/json"],
                 status_exception=false)
             @test String(resp.body) == "name=Julia"

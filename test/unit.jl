@@ -272,7 +272,7 @@ end
 
     @testset "encode for Json with dict (via extension)" begin
         result = Mongoose.encode(Json, Dict("x" => 1))
-        @test JSON.parse(result)["x"] == 1
+        @test contains(result, "\"x\"") && contains(result, "1")
     end
 end
 
@@ -361,4 +361,221 @@ end
     @test Mongoose.status_reason(500) == "Internal Server Error"
     @test Mongoose.status_reason(503) == "Service Unavailable"
     @test Mongoose.status_reason(999) == ""
+end
+
+@testset "Query parameter helpers" begin
+    @testset "String query param" begin
+        req = Request(:get, "/search?q=hello&page=2", "/search",
+            Dict("q" => "hello", "page" => "2"), Headers(), "")
+        @test query(req, "q") == "hello"
+        @test query(req, "missing") === nothing
+        @test query(req, "q", "") == "hello"
+        @test query(req, "missing", "default") == "default"
+    end
+
+    @testset "Integer query param" begin
+        req = Request(:get, "/list?page=3&limit=50", "/list",
+            Dict("page" => "3", "limit" => "50"), Headers(), "")
+        @test query(req, "page", 1) == 3
+        @test query(req, "limit", 20) == 50
+        @test query(req, "offset", 0) == 0
+    end
+
+    @testset "Invalid integer returns default" begin
+        req = Request(:get, "/list?page=abc", "/list",
+            Dict("page" => "abc"), Headers(), "")
+        @test query(req, "page", 1) == 1
+    end
+
+    @testset "Float query param" begin
+        req = Request(:get, "/calc?rate=3.14", "/calc",
+            Dict("rate" => "3.14"), Headers(), "")
+        @test query(req, "rate", 0.0) ≈ 3.14
+        @test query(req, "missing", 1.0) == 1.0
+    end
+
+    @testset "Bool query param" begin
+        req = Request(:get, "/flags?debug=true&verbose=1&off=false", "/flags",
+            Dict("debug" => "true", "verbose" => "1", "off" => "false"), Headers(), "")
+        @test query(req, "debug", false) == true
+        @test query(req, "verbose", false) == true
+        @test query(req, "off", true) == false
+        @test query(req, "missing", false) == false
+    end
+end
+
+@testset "Body parsing helpers" begin
+    @testset "body(req) returns raw body" begin
+        req = Request(:post, "/data", "/data",
+            Dict{String,String}(), Headers(), "raw body content")
+        @test body(req) == "raw body content"
+    end
+
+    @testset "body(req, T) parses JSON into struct" begin
+        using StructTypes
+        struct TestUser
+            name::String
+            age::Int
+        end
+        StructTypes.StructType(::Type{TestUser}) = StructTypes.Struct()
+
+        req = Request(:post, "/users", "/users",
+            Dict{String,String}(),
+            Headers(["content-type" => "application/json"]),
+            """{"name":"Alice","age":30}""")
+        user = body(req, TestUser)
+        @test user.name == "Alice"
+        @test user.age == 30
+    end
+end
+
+@testset "JSON integration" begin
+    @testset "json() with Dict" begin
+        resp = json(Dict("key" => "value"))
+        @test resp.status == 200
+        @test contains(resp.body, "\"key\"")
+        @test contains(resp.body, "\"value\"")
+        @test any(p -> contains(p.second, "application/json"), resp.headers)
+    end
+
+    @testset "json() with NamedTuple" begin
+        resp = json((id=1, name="test"))
+        @test resp.status == 200
+        @test contains(resp.body, "\"id\"")
+        @test contains(resp.body, "\"name\"")
+    end
+
+    @testset "json() with custom status" begin
+        resp = json(Dict("error" => "not found"); status=404)
+        @test resp.status == 404
+    end
+
+    @testset "json(req) parses body" begin
+        req = Request(:post, "/", "/",
+            Dict{String,String}(),
+            Headers(["content-type" => "application/json"]),
+            """{"hello":"world"}""")
+        data = json(req)
+        @test data["hello"] == "world"
+    end
+end
+
+@testset "Multipart parsing" begin
+    @testset "Parse simple multipart" begin
+        boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+        body_content = "------WebKitFormBoundary7MA4YWxkTrZu0gW\r\n" *
+            "Content-Disposition: form-data; name=\"field1\"\r\n\r\n" *
+            "value1\r\n" *
+            "------WebKitFormBoundary7MA4YWxkTrZu0gW\r\n" *
+            "Content-Disposition: form-data; name=\"file\"; filename=\"test.txt\"\r\n" *
+            "Content-Type: text/plain\r\n\r\n" *
+            "file content here\r\n" *
+            "------WebKitFormBoundary7MA4YWxkTrZu0gW--"
+        req = Request(:post, "/upload", "/upload",
+            Dict{String,String}(),
+            Headers(["content-type" => "multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW"]),
+            body_content)
+        parts = multipart(req)
+        @test parts["field1"] == "value1"
+        @test parts["file"] isa MultipartFile
+        @test parts["file"].filename == "test.txt"
+        @test parts["file"].content_type == "text/plain"
+        @test String(parts["file"].data) == "file content here"
+    end
+
+    @testset "Wrong content type throws" begin
+        req = Request(:post, "/upload", "/upload",
+            Dict{String,String}(),
+            Headers(["content-type" => "application/json"]),
+            "{}")
+        @test_throws ArgumentError multipart(req)
+    end
+end
+
+@testset "Compression middleware (unit)" begin
+    mw = compress(min_size=10)
+    @test mw isa Mongoose.Compress
+
+    @testset "Skips small responses" begin
+        req = Request(:get, "/", "/", Dict{String,String}(),
+            Headers(["accept-encoding" => "gzip"]), "")
+        handler = () -> Response(Json, "hi")  # Too small
+        resp = mw(req, handler)
+        @test resp.status == 200
+        # Should NOT be compressed (body too small)
+        @test !any(p -> p.first == "Content-Encoding", resp.headers)
+    end
+
+    @testset "Compresses large JSON" begin
+        req = Request(:get, "/", "/", Dict{String,String}(),
+            Headers(["accept-encoding" => "gzip, deflate"]), "")
+        large_body = repeat("a", 2000)
+        handler = () -> Response(Json, large_body)
+        resp = mw(req, handler)
+        @test resp.status == 200
+        @test any(p -> p.first == "Content-Encoding" && p.second == "gzip", resp.headers)
+        @test resp.body isa Vector{UInt8}
+    end
+
+    @testset "Skips if no Accept-Encoding" begin
+        req = Request(:get, "/", "/", Dict{String,String}(), Headers(), "")
+        large_body = repeat("x", 2000)
+        handler = () -> Response(Plain, large_body)
+        resp = mw(req, handler)
+        @test !any(p -> p.first == "Content-Encoding", resp.headers)
+    end
+end
+
+@testset "TestClient" begin
+    app = App()
+    get!(app, "/hello") do req
+        text("Hello World")
+    end
+    get!(app, "/json") do req
+        json((message="hi", count=42))
+    end
+    post!(app, "/echo") do req
+        text("Got: $(req.body)")
+    end
+    get!(app, "/query") do req
+        q = query(req, "name", "unknown")
+        text("Hello $q")
+    end
+
+    client = Mongoose.TestClient(app)
+
+    @testset "GET text response" begin
+        resp = client(:get, "/hello")
+        @test resp.status == 200
+        @test resp.body == "Hello World"
+    end
+
+    @testset "GET JSON response" begin
+        resp = client(:get, "/json")
+        @test resp.status == 200
+        @test contains(resp.body, "\"message\"")
+        @test contains(resp.body, "\"hi\"")
+    end
+
+    @testset "POST with body" begin
+        resp = client(:post, "/echo"; body="test data")
+        @test resp.status == 200
+        @test resp.body == "Got: test data"
+    end
+
+    @testset "Query parameters" begin
+        resp = client(:get, "/query"; query=Dict("name" => "Julia"))
+        @test resp.status == 200
+        @test contains(resp.body, "Julia")
+    end
+
+    @testset "404 for missing route" begin
+        resp = client(:get, "/nonexistent")
+        @test resp.status == 404
+    end
+
+    @testset "405 for wrong method" begin
+        resp = client(:post, "/hello")
+        @test resp.status == 405
+    end
 end

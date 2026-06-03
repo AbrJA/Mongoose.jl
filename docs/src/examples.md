@@ -2,39 +2,29 @@
 
 ## Hello World
 
-The simplest possible Mongoose.jl server:
-
 ```julia
 using Mongoose
 
 router = Router()
-route!(router, :get, "/", req -> Response(Plain, "Hello, World!"))
+route!(router, :get, "/", req -> text("Hello, World!"))
 
-server = Server(router)
-start!(server, port=8080)
+app = App(; router=router)
+start!(app; port=8080)
 ```
 
 ## HTTPS Server (TLS)
 
-Use `TLSConfig` in `start!` to accept HTTPS requests:
-
 ```julia
 using Mongoose
 
 router = Router()
-route!(router, :get, "/secure", req -> Response(Plain, "secure ok"))
+route!(router, :get, "/secure", req -> text("secure ok"))
 
-server = Server(router)
-start!(server;
-        port = 8443,
-        tls = TLSConfig(cert = "certs/server.crt", key  = "certs/server.key"),
-        blocking = false,
-)
+app = App(; router=router, tls=TLSConfig(cert="certs/server.crt", key="certs/server.key"))
+start!(app; port=8443)
 ```
 
-## REST API with Path Parameters
-
-Dynamic path segments are captured with `:name` syntax. Add type annotations for automatic parsing:
+## REST API with Typed Parameters
 
 ```julia
 using Mongoose
@@ -42,28 +32,31 @@ using Mongoose
 router = Router()
 
 # String parameter (default)
-route!(router, :get, "/greet/:name", (req, name) -> begin
-    Response(Plain, "Hello, $(name)!")
-end)
+route!(router, :get, "/greet/:name", (req, name) -> text("Hello, $name!"))
 
-# Typed integer parameter — invalid value (e.g. /users/abc) returns 404
-route!(router, :get, "/users/:id::Int", (req, id) -> begin
-    Response(Json, """{"id": $id, "type": "$(typeof(id))"}""")
-end)
+# Typed integer — /users/abc returns 404 automatically
+route!(router, :get, "/users/:id::Int", (req, id) ->
+    json(Dict("id" => id, "type" => string(typeof(id))))
+)
 
 # Float parameter
 route!(router, :get, "/price/:amount::Float64", (req, amount) -> begin
     tax = amount * 0.16
-    Response(Json, """{"amount": $amount, "tax": $tax}""")
+    json(Dict("amount" => amount, "tax" => tax))
 end)
 
-server = Async(router)
-start!(server, port=8080, blocking=false)
+# Wildcard catch-all
+route!(router, :get, "/files/*path", (req, path) ->
+    text("Requested: $path")
+)
+
+app = App(; router=router, workers=4)
+start!(app; port=8080)
 ```
 
 ## Query Parameters
 
-`req.query` is a `Dict{String,String}` of the parsed query parameters. Use `get` to read values with defaults:
+Use the `query()` helper for type-safe access with automatic parsing:
 
 ```julia
 using Mongoose
@@ -71,488 +64,194 @@ using Mongoose
 router = Router()
 
 route!(router, :get, "/search", req -> begin
-    q    = get(req.query, "q", "")
-    page = something(tryparse(Int, get(req.query, "page", "1")), 1)
-    isempty(q) && return Response(Plain, "Missing ?q= parameter"; status=400)
-    Response(Json, "{\"query\": \"$q\", \"page\": $page}")
+    q     = query(req, "q", "")       # String default
+    page  = query(req, "page", 1)     # Auto-parsed to Int
+    limit = query(req, "limit", 10)   # Auto-parsed to Int
+    active = query(req, "active", true)  # Auto-parsed to Bool
+
+    json(Dict("query" => q, "page" => page, "limit" => limit, "active" => active))
 end)
 
-server = Async(router)
-start!(server, port=8080, blocking=false)
+app = App(; router=router, workers=4)
+start!(app; port=8080)
 ```
 
 ## JSON Request and Response
 
-JSON support requires `JSON.jl`. Extend `encode` once at the top of your app to enable `Response(Json, ...)` with automatic Content-Type.
-
-```julia
-using Mongoose, JSON
-
-Mongoose.encode(::Type{Json}, body) = JSON.json(body)
-
-struct UserProfile
-    username::String
-    age::Int
-    active::Bool
-end
-
-router = Router()
-
-# Return a JSON response
-route!(router, :get, "/user/info", req -> begin
-    Response(Json, Dict("username" => "Alice", "active" => true))
-end)
-
-# Parse JSON from request body
-route!(router, :post, "/user/create", req -> begin
-    data = JSON.parse(req.body)
-    name = get(data, "username", "Guest")
-    Response(Json, Dict("message" => "Hello, $name"); status=201)
-end)
-
-server = Async(router)
-start!(server, port=8080, blocking=false)
-```
-
-## Parse Query Parameters
-
-For structured access, read each key from `req.query` with `get` and parse types manually:
+JSON is built-in via JSON3 — no setup required:
 
 ```julia
 using Mongoose
 
 router = Router()
 
-route!(router, :get, "/search", req -> begin
-    q     = get(req.query, "q", "")
-    page  = something(tryparse(Int,  get(req.query, "page",  "1")), 1)
-    limit = tryparse(Int, get(req.query, "limit", ""))
-    Response(Plain, "Searching '$q' page $page")
-end)
-
-server = Async(router)
-start!(server, port=8080, blocking=false)
-```
-
-## WebSocket Echo Server
-
-Register WebSocket endpoints with `ws!`. The `on_message` handler receives a `Message` whose `.data` field is either `String` (text frame) or `Vector{UInt8}` (binary frame).
-
-```julia
-using Mongoose
-
-router = Router()
-
-ws!(router, "/echo",
-    on_message = (msg::Message) -> begin
-        if msg.data isa String
-            return Message("Echo: $(msg.data)")
-        else
-            return Message(msg.data)  # Echo binary data back
-        end
-    end,
-    on_open  = (req::Request) -> println("Client connected from ", req.uri),
-    on_close = () -> println("Client disconnected")
+# Return JSON responses using json() helper
+route!(router, :get, "/users/:id::Int", (req, id) ->
+    json(Dict("id" => id, "name" => "User $id", "active" => true))
 )
 
-server = Async(router)
-start!(server, port=8080, blocking=false)
-```
-
-## WebSocket Upgrade Rejection
-
-Return `false` from `on_open` to reject the upgrade. The client receives `403 Forbidden` and no WebSocket connection is established.
-
-```julia
-using Mongoose
-
-router = Router()
-
-ws!(router, "/secure",
-    on_message = (msg::Message) -> Message("Hello, authenticated user!"),
-    on_open    = (req::Request) -> begin
-        token = get(req.headers, "authorization", nothing)
-        # Reject if no token or wrong token
-        if token === nothing || token != "Bearer secret"
-            return false  # → client gets 403 Forbidden
-        end
-        @info "WS authenticated" uri=req.uri
-    end,
-    on_close   = () -> @info "WS disconnected"
-)
-
-server = Async(router)
-start!(server, port=8080, blocking=false)
-```
-
-## Middleware Stack
-
-Middleware executes in registration order. Each middleware can inspect the request, short-circuit with a response, or pass through to the next handler.
-
-```julia
-using Mongoose
-
-router = Router()
-route!(router, :get, "/api/data", req -> begin
-    Response(Json, """{"status": "ok"}""")
+# Parse JSON request body with body()
+route!(router, :post, "/users", req -> begin
+    data = body(req)  # returns Dict/Array from JSON
+    json(Dict("created" => data["name"]); status=201)
 end)
 
-server = Async(router)
-
-# 1. Log all requests (method, URI, status, duration in ms)
-plug!(server, logger())
-
-# 2. CORS headers + OPTIONS preflight handling
-plug!(server, cors(origins="https://example.com"))
-
-# 3. Rate limiting: 100 requests per 60 seconds per client IP
-plug!(server, ratelimit(max_requests=100, window_seconds=60))
-
-# 4. Bearer token authentication
-plug!(server, bearer(token -> token == "my-secret-token"))
-
-start!(server, port=8080, blocking=false)
-```
-
-## API Key Authentication
-
-Protect endpoints with an API key header check:
-
-```julia
-using Mongoose
-
-router = Router()
-route!(router, :get, "/internal", req -> Response(Plain, "Internal data"))
-
-server = Async(router)
-plug!(server, apikey(; header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
-
-start!(server, port=8080, blocking=false)
-```
-
-## Logger with Threshold
-
-Only log requests that exceed a duration threshold — useful for identifying slow endpoints:
-
-```julia
-using Mongoose
-
-router = Router()
-route!(router, :get, "/fast", req -> Response(Plain, "fast"))
-route!(router, :get, "/slow", req -> begin
-    sleep(0.1)
-    Response(Plain, "slow")
-end)
-
-server = Async(router)
-
-# Only log requests taking longer than 50ms
-plug!(server, logger(threshold=50))
-
-start!(server, port=8080, blocking=false)
-```
-
-## Serving Static Files
-
-Serve a directory of HTML, CSS, JS, and other assets using the C-level file server
-(supports Range, ETag, Last-Modified, and gzip):
-
-```julia
-using Mongoose
-
-server = Async(Router())
-
-# Serve files from "public/" directory
-# GET /style.css  →  public/style.css
-# GET /            →  public/index.html
-mount!(server, "public")
-
-start!(server, port=8080, blocking=false)
-```
-
-## Request Context
-
-Middleware can attach data to the request context via `context!`, which handlers can access:
-
-```julia
-using Mongoose
-
-struct UserLookup <: Mongoose.AbstractMiddleware
-    db::Dict{String, String}
-end
-
-function (mw::UserLookup)(request, next)
-    token = get(request.headers, "authorization", nothing)
-    if token !== nothing
-        user = get(mw.db, replace(token, "Bearer " => ""), nothing)
-        if user !== nothing
-            context!(request)[:user] = user
-        end
-    end
-    return next()
-end
-
-router = Router()
-route!(router, :get, "/me", req -> begin
-    user = get(context!(req), :user, "anonymous")
-    Response(Plain, "Hello, $user!")
-end)
-
-server = Async(router)
-plug!(server, UserLookup(Dict("token-123" => "Alice", "token-456" => "Bob")))
-
-start!(server, port=8080, blocking=false)
-```
-
-## Async Server with Multiple Workers
-
-For higher throughput, start Julia with multiple threads and configure the worker count:
-
-```julia
-using Mongoose
-
-router = Router()
-
-route!(router, :get, "/compute", req -> begin
-    result = sum(rand(1_000_000))
-    Response(Plain, "Computed: $result")
-end)
-
-# 8 worker tasks processing requests concurrently
-server = Async(router; nworkers=8)
-start!(server, port=8080, blocking=false)
-```
-
-Start Julia with threads: `julia -t 8`
-
-## Static Router (AOT Compilation)
-
-For ahead-of-time compiled binaries with `juliac --trim=safe`, use the `@router` macro instead of `Router()`:
-
-```julia
-using Mongoose
-
-@router MyApi begin
-    get("/", req -> Response(Plain, "Hello from AOT!"))
-    get("/users/:id::Int", (req, id) -> Response(Plain, "User $id"))
-    post("/echo", req -> Response(Plain, req.body))
-    ws("/chat", on_message = msg -> Message("Echo: $(msg.data)"))
-end
-
-server = Server(MyApi())
-start!(server, port=8080)
-```
-
-This generates zero-allocation dispatch at compile time — no `Dict` lookups, no dynamic dispatch.
-
-## Full Application Example
-
-A complete example combining multiple features:
-
-```julia
-using Mongoose, JSON
+# Typed deserialization with StructTypes
+using StructTypes
 
 struct CreateUser
     name::String
     email::String
+    age::Int
+end
+StructTypes.StructType(::Type{CreateUser}) = StructTypes.Struct()
+
+route!(router, :post, "/users/typed", req -> begin
+    user = body(req, CreateUser)  # deserializes into struct
+    json(Dict("name" => user.name, "email" => user.email))
+end)
+
+app = App(; router=router, workers=4)
+start!(app; port=8080)
+```
+
+## Multipart File Upload
+
+```julia
+using Mongoose
+
+router = Router()
+
+route!(router, :post, "/upload", req -> begin
+    files = multipart(req)
+    isempty(files) && return json(Dict("error" => "No files"); status=400)
+
+    results = map(files) do f
+        Dict("filename" => f.filename, "size" => length(f.data), "type" => f.content_type)
+    end
+
+    json(Dict("files" => results, "count" => length(files)); status=201)
+end)
+
+app = App(; router=router, workers=4, max_body=10_000_000)  # 10MB limit
+start!(app; port=8080)
+```
+
+## Middleware Stack
+
+```julia
+using Mongoose
+
+router = Router()
+route!(router, :get, "/", req -> json(Dict("status" => "ok")))
+route!(router, :get, "/api/data", req -> json(Dict("data" => [1,2,3])))
+
+app = App(; router=router, workers=4)
+
+# Middleware runs in registration order
+use!(app, security())                                        # Security headers
+use!(app, health())                                          # /healthz, /readyz, /livez
+use!(app, metrics())                                         # GET /metrics
+use!(app, cors(origins="*"))                                 # CORS headers
+use!(app, compress(min_size=1024))                           # GZip compression
+use!(app, logger())                                          # Access logs
+use!(app, ratelimit(max_requests=100, window_seconds=60))    # Rate limiting
+use!(app, bearer(t -> t == "secret"); paths=["/api"])        # Auth on /api only
+
+start!(app; port=8080)
+```
+
+## Custom Middleware
+
+```julia
+using Mongoose
+
+struct RequestTimer <: Mongoose.AbstractMiddleware end
+
+function (::RequestTimer)(req::Request, next::Function)
+    t = time()
+    res = next()
+    elapsed = round((time() - t) * 1000, digits=1)
+    @info "$(req.method) $(req.uri)" status=res.status ms=elapsed
+    return res
 end
 
 router = Router()
+route!(router, :get, "/", req -> text("hello"))
 
-# Health check
-route!(router, :get, "/health", req -> Response(Plain, "ok"))
+app = App(; router=router, workers=4)
+use!(app, RequestTimer())
+start!(app; port=8080)
+```
 
-# JSON API
-route!(router, :get, "/api/users/:id::Int", (req, id) -> begin
-    Response(Json, Dict("id" => id, "name" => "User $id"))
+## Route Groups
+
+```julia
+using Mongoose
+
+router = Router()
+
+# Public routes
+route!(router, :get, "/", req -> json(Dict("msg" => "welcome")))
+
+# API group with scoped middleware
+api = group("/api/v1", middleware=[
+    ratelimit(max_requests=100, window_seconds=60),
+    apikey(header_name="x-api-key", keys=Set(["my-key"])),
+])
+
+route!(api, :get, "/users", req -> json(Dict("users" => [])))
+route!(api, :post, "/users", req -> begin
+    data = body(req)
+    json(Dict("created" => data["name"]); status=201)
 end)
+route!(api, :get, "/users/:id::Int", (req, id) -> json(Dict("id" => id)))
 
-route!(router, :post, "/api/users", req -> begin
-    data = JSON.parse(req.body)
-    name = get(data, "name", "")
-    Response(Json, Dict("created" => name); status=201)
-end)
+# Nested admin group
+group!(api, "/admin", middleware=[bearer(t -> t == "admin-secret")]) do admin
+    route!(admin, :delete, "/users/:id::Int", (req, id) ->
+        json(Dict("deleted" => id))
+    )
+end
 
-# WebSocket with idle timeout
-ws!(router, "/ws/notifications",
-    on_message = (msg::Message) -> Message("""{"ack": true}"""),
-    on_open    = (req::Request) -> @info "WS client connected"
+mount!(router, api)
+
+app = App(; router=router, workers=4)
+start!(app; port=8080)
+```
+
+## WebSocket
+
+```julia
+using Mongoose
+
+router = Router()
+
+route!(router, :get, "/", req -> html("""
+    <script>
+    const ws = new WebSocket("ws://localhost:8080/ws");
+    ws.onmessage = e => console.log(e.data);
+    ws.onopen = () => ws.send("hello");
+    </script>
+    <p>Check console</p>
+"""))
+
+ws!(router, "/ws";
+    on_open = req -> begin
+        auth = get(req.headers, "authorization", nothing)
+        # Return false to reject with 403
+        @info "WS connected" uri=req.uri
+        true
+    end,
+    on_message = msg -> Message("Echo: $(msg.data)"),
+    on_close = () -> @info "WS disconnected"
 )
 
-# Server with full middleware stack
-# ws_idle_timeout: close WS connections that are idle for more than 60 seconds
-server = Async(router; nworkers=4, ws_idle_timeout=60)
-plug!(server, logger(threshold=100))
-plug!(server, cors(origins="https://myapp.com"))
-plug!(server, ratelimit(max_requests=200, window_seconds=60))
-mount!(server, "public")
-
-start!(server, port=8080, blocking=false)
-```
-
-## Custom Error Responses
-
-Register pre-built `Response` objects for specific HTTP status codes:
-
-```julia
-using Mongoose, JSON
-
-Mongoose.encode(::Type{Json}, body) = JSON.json(body)
-
-router = Router()
-
-route!(router, :get, "/fail", req -> error("Something broke"))
-route!(router, :get, "/ok", req -> Response(200, "All good"))
-
-# Custom 404: use a wildcard route
-route!(router, :get, "*", req -> Response(Html, "<h1>Not Found</h1>"; status=404))
-
-server = Async(router; request_timeout=5000)
-
-fail!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500))
-fail!(server, 413, Response(Json, """{"error":"Body too large"}"""; status=413))
-fail!(server, 503, Response(Json, """{"error":"Service temporarily unavailable"}"""; status=503))
-fail!(server, 504, Response(Json, """{"error":"Request timed out"}"""; status=504))
-
-start!(server, port=8080, blocking=false)
-```
-
-## Path-Scoped Middleware
-
-Apply middleware only to specific URL prefixes:
-
-```julia
-using Mongoose
-
-router = Router()
-
-route!(router, :get, "/", req -> Response(200, "Welcome"))
-route!(router, :get, "/api/users", req -> Response(200, "User list"))
-route!(router, :get, "/admin/dashboard", req -> Response(200, "Dashboard"))
-
-server = Async(router)
-
-# Auth only for /api and /admin routes
-plug!(server, bearer(t -> t == "secret"); paths=["/api", "/admin"])
-
-# Rate limit only expensive API endpoints
-plug!(server, ratelimit(max_requests=10, window_seconds=60); paths=["/api"])
-
-# Logger for everything
-plug!(server, logger(structured=true))
-
-start!(server, port=8080, blocking=false)
-```
-
-## Structured JSON Logging
-
-Emit structured JSON log lines for machine-parsable logging:
-
-```julia
-using Mongoose
-
-router = Router()
-route!(router, :get, "/", req -> Response(200, "ok"))
-
-server = Async(router)
-plug!(server, logger(structured=true, output=open("access.log", "a")))
-
-start!(server, port=8080, blocking=false)
-```
-
-Each log line is a JSON object:
-```json
-{"method":"GET","uri":"/","status":200,"duration":0.42,"ts":"2025-01-15T10:30:00"}
-```
-
-## Prometheus Metrics
-
-Expose Prometheus-compatible metrics with the `metrics()` middleware. It automatically tracks request counts and latency histograms, and serves them at `GET /metrics`:
-
-```julia
-using Mongoose
-
-router = Router()
-route!(router, :get, "/api/data", req -> Response(Json, """{"ok":true}"""))
-
-server = Async(router; nworkers=4)
-plug!(server, health())
-plug!(server, metrics())          # serves GET /metrics
-
-start!(server; host="0.0.0.0", port=8080)
-```
-
-Sample output at `GET /metrics`:
-```
-# HELP http_requests_total Total number of HTTP requests
-# TYPE http_requests_total counter
-http_requests_total{method="GET",status="200"} 42
-
-# HELP http_request_duration_seconds HTTP request latency in seconds
-# TYPE http_request_duration_seconds histogram
-http_request_duration_seconds_bucket{le="0.005"} 38
-http_request_duration_seconds_bucket{le="0.01"} 41
-...
-http_request_duration_seconds_bucket{le="+Inf"} 42
-http_request_duration_seconds_sum 0.127
-http_request_duration_seconds_count 42
-```
-
-## Security Headers
-
-Apply a hardened set of response headers in one call:
-
-```julia
-using Mongoose
-
-server = Async(Router())
-
-plug!(server, security(
-    hsts_max_age  = 31_536_000,           # Strict-Transport-Security (omit for HTTP)
-    frame_options = "DENY",              # X-Frame-Options
-    csp           = "default-src 'self'",# Content-Security-Policy
-))
-
-start!(server, port=8080, blocking=false)
-```
-
-Default headers: `Strict-Transport-Security`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy`, `Referrer-Policy`.
-
-## Cookies
-
-Parse request cookies or attach `Set-Cookie` headers to responses:
-
-```julia
-using Mongoose
-
-router = Router()
-
-# Parse cookies from the incoming request
-route!(router, :get, "/profile", req -> begin
-    cookies = parse_cookies(req)          # Dict{String,String}
-    session = get(cookies, "session", nothing)
-    session === nothing && return Response(Plain, "Not logged in"; status=401)
-    Response(Plain, "Hello, authenticated user!")
-end)
-
-# Set a cookie on the response
-route!(router, :post, "/login", req -> begin
-    c = Cookie("session", "abc123";
-        httponly = true,
-        secure   = true,
-        max_age  = 3600,
-        samesite = :strict,
-    )
-    Response(Plain, "Logged in"; headers=["Set-Cookie" => serialize_cookie(c)])
-end)
-
-server = Async(router)
-start!(server, port=8080, blocking=false)
+app = App(; router=router, workers=4, ws_idle_timeout=60_000)
+start!(app; port=8080)
 ```
 
 ## Server-Sent Events (SSE)
-
-Push real-time events to clients without WebSockets:
 
 ```julia
 using Mongoose
@@ -560,498 +259,241 @@ using Mongoose
 router = Router()
 
 route!(router, :get, "/events", req ->
-    sse_response() do writer
-        sse = SSEWriter(writer)
+    sse(req) do writer
         for i in 1:10
-            event!(sse; data="Count: $i", event="tick", id=string(i))
+            emit(writer; data="Tick $i", event="heartbeat", id=string(i))
             sleep(1)
         end
+        emit(writer; data="done", event="close")
     end
 )
 
-server = Async(router)
-start!(server, port=8080, blocking=false)
-```
-
-The `sse_response` wrapper sets `Content-Type: text/event-stream` and handles chunked flushing automatically. `event!` formats each event per RFC 6455 SSE spec with `id:`, `event:`, and `data:` fields.
-
-## Route Groups
-
-Organise related routes under a shared URL prefix with `group`:
-
-```julia
-using Mongoose
-
-router = Router()
-
-api = group("/api/v1")
-route!(api, :get,  "/users",     req -> Response(Json, """{"users":[]}"""))
-route!(api, :post, "/users",     req -> Response(Json, """{"created":true}"""; status=201))
-route!(api, :get,  "/users/:id::Int", (req, id) -> Response(Json, """{"id":$id}"""))
-
-Mongoose.register_group!(router, api)
-
-server = Async(router)
-start!(server, port=8080, blocking=false)
-```
-
-## Dependency Injection with ServiceRegistry
-
-Share database connections, config, or any resource across handlers:
-
-```julia
-using Mongoose
-
-# Set up the registry at startup
-registry = ServiceRegistry()
-register!(registry, :config, Dict("max_items" => 100, "env" => "prod"))
-
-router = Router()
-
-route!(router, :get, "/config", req -> begin
-    cfg = service(registry, :config)    # retrieve by name
-    Response(Json, """{"env":"$(cfg["env"])"}""")
-end)
-
-server = Async(router)
-start!(server, port=8080, blocking=false)
-```
-
-Prometheus `scrape_configs`:
-```yaml
-scrape_configs:
-  - job_name: myapp
-    static_configs:
-      - targets: ['localhost:8080']
-    metrics_path: /metrics
-```
-
-## Binary Responses
-
-Use the `Binary` format for raw byte responses:
-
-```julia
-using Mongoose
-
-router = Router()
-
-route!(router, :get, "/image", req -> begin
-    data = read("logo.png")
-    Response(Binary, data; status=200)
-end)
-
-server = Async(router)
-start!(server, port=8080, blocking=false)
-```
-
-## Production Deployment
-
-### Environment-Driven Configuration
-
-Read server settings from environment variables with sensible defaults:
-
-```julia
-using Mongoose, JSON
-
-Mongoose.encode(::Type{Json}, body) = JSON.json(body)
-
-# --- Configuration from environment ---
-const HOST    = get(ENV, "HOST", "0.0.0.0")
-const PORT    = parse(Int, get(ENV, "PORT", "8080"))
-const WORKERS = parse(Int, get(ENV, "WORKERS", string(Threads.nthreads())))
-const MAX_BODY  = parse(Int, get(ENV, "MAX_BODY", "5242880"))  # 5 MB
-const REQ_TIMEOUT = parse(Int, get(ENV, "request_timeout", "30000"))  # 30s
-const LOG_LEVEL = get(ENV, "LOG_LEVEL", "info")
-
-router = Router()
-
-route!(router, :get, "/api/status", req -> Response(Json, Dict(
-    "status" => "ok",
-    "workers" => WORKERS,
-    "julia_version" => string(VERSION)
-)))
-
-server = Async(router;
-    nworkers=WORKERS,
-    max_body=MAX_BODY,
-    request_timeout=REQ_TIMEOUT,
-    ws_idle_timeout=60,
-    drain_timeout=10_000
-)
-
-# Middleware stack
-plug!(server, health())
-plug!(server, logger(structured=(LOG_LEVEL == "debug")))
-plug!(server, cors())
-
-start!(server; host=HOST, port=PORT)
-```
-
-Launch with: `HOST=0.0.0.0 PORT=3000 WORKERS=8 julia -t 8 --project server.jl`
-
-### Graceful Shutdown with Signal Handling
-
-Handle shutdown signals for clean container stops:
-
-```julia
-using Mongoose
-
-router = Router()
-route!(router, :get, "/", req -> Response(200, "Running"))
-
-server = Async(router; nworkers=4, drain_timeout=10_000)
-plug!(server, health())
-
-start!(server; host="0.0.0.0", port=8080, blocking=false)
-
-# Block main thread and handle signals
-try
-    @info "Server ready. Press Ctrl+C to stop."
-    while server.core.running[]
-        sleep(1)
-    end
-catch e
-    if e isa InterruptException
-        @info "Received shutdown signal"
-    else
-        @error "Unexpected error" exception=(e, catch_backtrace())
-    end
-finally
-    shutdown!(server)
-end
-```
-
-### Multi-Service API with Route Groups
-
-Organize a larger API using separate routers merged into one server:
-
-```julia
-using Mongoose, JSON
-
-Mongoose.encode(::Type{Json}, body) = JSON.json(body)
-
-# --- User service ---
-function register_user_routes!(router)
-    route!(router, :get, "/api/v1/users", req -> begin
-        Response(Json, [Dict("id" => 1, "name" => "Alice"), Dict("id" => 2, "name" => "Bob")])
-    end)
-
-    route!(router, :get, "/api/v1/users/:id::Int", (req, id) -> begin
-        Response(Json, Dict("id" => id, "name" => "User $id"))
-    end)
-
-    route!(router, :post, "/api/v1/users", req -> begin
-        data = JSON.parse(req.body)
-        Response(Json, Dict("id" => 3, "name" => get(data, "name", "")); status=201)
-    end)
-
-    route!(router, :delete, "/api/v1/users/:id::Int", (req, id) -> begin
-        Response(204, "", "")
-    end)
-end
-
-function register_product_routes!(router)
-    route!(router, :get, "/api/v1/products", req -> begin
-        limit = tryparse(Int, get(req.query, "limit", ""))
-        n = something(limit, 10)
-        items = [Dict("id" => i, "name" => "Product $i", "price" => i * 9.99) for i in 1:n]
-        Response(Json, items)
-    end)
-
-    route!(router, :get, "/api/v1/products/:id::Int", (req, id) -> begin
-        Response(Json, Dict("id" => id, "name" => "Product $id", "price" => id * 9.99))
-    end)
-end
-
-# --- Assemble ---
-router = Router()
-register_user_routes!(router)
-register_product_routes!(router)
-
-# Catch-all 404
-route!(router, :get, "*", req -> Response(Json, Dict("error" => "Not found"); status=404))
-
-server = Async(router; nworkers=4, request_timeout=15_000)
-
-# Public: health + CORS on everything
-plug!(server, health())
-plug!(server, cors())
-plug!(server, logger(structured=true))
-
-# Auth only on API routes
-plug!(server, bearer(t -> t == ENV["API_TOKEN"]); paths=["/api"])
-
-# Rate limit per-client
-plug!(server, ratelimit(max_requests=200, window_seconds=60); paths=["/api"])
-
-start!(server; host="0.0.0.0", port=8080)
-```
-
-### Request Context for Auth Pipelines
-
-Use middleware to inject authenticated user data into the request context:
-
-```julia
-using Mongoose, JSON
-
-Mongoose.encode(::Type{Json}, body) = JSON.json(body)
-
-# --- Auth middleware that populates context ---
-struct JWTAuth <: Mongoose.AbstractMiddleware
-    secret::String
-end
-
-function (mw::JWTAuth)(request, next)
-    token = get(request.headers, "authorization", nothing)
-    token === nothing && return Response(Json, """{"error":"Missing token"}"""; status=401)
-
-    # Strip "Bearer " prefix
-    if length(token) > 7 && lowercase(token[1:7]) == "bearer "
-        token = token[8:end]
-    else
-        return Response(Json, """{"error":"Invalid scheme"}"""; status=401)
-    end
-
-    # In production, decode and verify a real JWT here
-    # For this example, we simulate user lookup
-    ctx = context!(request)
-    ctx[:user_id] = 42
-    ctx[:role] = "admin"
-    ctx[:token] = token
-
-    return next()
-end
-
-# --- Role-based access control middleware ---
-struct RequireRole <: Mongoose.AbstractMiddleware
-    roles::Set{String}
-end
-
-function (mw::RequireRole)(request, next)
-    ctx = context!(request)
-    role = get(ctx, :role, "")
-    if role ∉ mw.roles
-        return Response(Json, """{"error":"Insufficient permissions"}"""; status=403)
-    end
-    return next()
-end
-
-router = Router()
-
-route!(router, :get, "/api/profile", req -> begin
-    ctx = context!(req)
-    Response(Json, Dict("user_id" => ctx[:user_id], "role" => ctx[:role]))
-end)
-
-route!(router, :delete, "/api/admin/users/:id::Int", (req, id) -> begin
-    Response(Json, Dict("deleted" => id))
-end)
-
-server = Async(router; nworkers=4)
-
-# Apply auth to all /api routes
-plug!(server, JWTAuth("my-secret"); paths=["/api"])
-
-# Require admin role for /api/admin routes
-plug!(server, RequireRole(Set(["admin"])); paths=["/api/admin"])
-
-start!(server; port=8080, blocking=false)
-```
-
-### Kubernetes-Ready Health Checks
-
-Configure health checks that integrate with your infrastructure:
-
-```julia
-using Mongoose
-
-# Simulate external dependency checks
-const DB_CONNECTED = Ref(true)
-const CACHE_READY = Ref(true)
-
-router = Router()
-route!(router, :get, "/api/data", req -> Response(Json, """{"ok":true}"""))
-
-server = Async(router; nworkers=4)
-
-plug!(server, health(
-    # Health check: all dependencies must be working
-    health_check = () -> DB_CONNECTED[] && CACHE_READY[],
-
-    # Readiness: is the service ready to accept traffic?
-    # Return false during startup or when draining
-    ready_check = () -> DB_CONNECTED[],
-
-    # Liveness: is the process responsive?
-    # Only return false if the process is deadlocked
-    live_check = () -> true
-))
-
-plug!(server, logger(structured=true))
-
-start!(server; host="0.0.0.0", port=8080)
-```
-
-Kubernetes probes configuration:
-```yaml
-livenessProbe:
-  httpGet:
-    path: /livez
-    port: 8080
-  initialDelaySeconds: 5
-  periodSeconds: 10
-readinessProbe:
-  httpGet:
-    path: /readyz
-    port: 8080
-  initialDelaySeconds: 3
-  periodSeconds: 5
-```
-
-### File Upload with Size Validation
-
-Handle file uploads with proper size limits and content type checking:
-
-```julia
-using Mongoose, JSON
-
-Mongoose.encode(::Type{Json}, body) = JSON.json(body)
-
-router = Router()
-
-route!(router, :post, "/api/upload", req -> begin
-    ct = get(req.headers, "content-type", "")
-
-    if !startswith(ct, "application/json")
-        return Response(Json, """{"error":"Unsupported media type"}"""; status=415)
-    end
-
-    data = JSON.parse(req.body)
-    filename = get(data, "filename", "")
-    isempty(filename) && return Response(Json, """{"error":"Missing filename"}"""; status=400)
-
-    Response(Json, Dict(
-        "status" => "uploaded",
-        "filename" => filename,
-        "size" => length(req.body)
-    ); status=201)
-end)
-
-# 10MB body limit for upload endpoint
-server = Async(router; nworkers=4, max_body=10_485_760)
-
-plug!(server, logger())
-plug!(server, ratelimit(max_requests=30, window_seconds=60); paths=["/api/upload"])
-
-start!(server; port=8080, blocking=false)
-```
-
-### WebSocket Chat Room
-
-A multi-client chat server using WebSocket:
-
-```julia
-using Mongoose
-
-router = Router()
-
-route!(router, :get, "/", req -> Response(Html, """
-    <html><body>
-    <h1>Chat</h1>
-    <div id="messages"></div>
-    <input id="msg" type="text" /><button onclick="send()">Send</button>
+route!(router, :get, "/", req -> html("""
     <script>
-      const ws = new WebSocket('ws://' + location.host + '/ws/chat');
-      ws.onmessage = e => {
-        const d = document.getElementById('messages');
-        d.innerHTML += '<p>' + e.data + '</p>';
-      };
-      function send() {
-        const input = document.getElementById('msg');
-        ws.send(input.value);
-        input.value = '';
-      }
+    const es = new EventSource("/events");
+    es.addEventListener("heartbeat", e => console.log(e.data));
+    es.addEventListener("close", e => { console.log("done"); es.close(); });
     </script>
-    </body></html>
+    <p>Check console for SSE events</p>
 """))
 
-ws!(router, "/ws/chat",
-    on_message = (msg::Message) -> begin
-        # Echo back the message (in production, broadcast to all clients)
-        Message("User: $(msg.data)")
-    end,
-    on_open = (req::Request) -> @info "Client connected",
-    on_close = () -> @info "Client disconnected"
-)
-
-server = Async(router; workers=2)
-start!(server; host="0.0.0.0", port=8080)
+app = App(; router=router, workers=4)
+start!(app; port=8080)
 ```
 
-### Static + API Hybrid Application
-
-Serve a frontend SPA alongside a JSON API:
+## Static File Serving
 
 ```julia
-using Mongoose, JSON
+using Mongoose
 
-Mongoose.encode(::Type{Json}, body) = JSON.json(body)
+router = Router()
+route!(router, :get, "/", req -> redirect("/static/index.html"))
+
+app = App(; router=router, workers=4)
+
+# Serve files from "public/" directory at /static/* prefix
+# Supports Range requests, ETag, and gzip (handled at C level)
+serve!(app, "public"; uri_prefix="/static")
+
+start!(app; port=8080)
+```
+
+## Cookies
+
+```julia
+using Mongoose
 
 router = Router()
 
-# --- JSON API ---
-route!(router, :get, "/api/v1/config", req -> begin
-    Response(Json, Dict("version" => "1.0.0", "features" => ["auth", "search"]))
+route!(router, :post, "/login", req -> begin
+    c = Cookie("session", "abc123";
+        httponly = true,
+        secure   = true,
+        max_age  = 3600,
+        samesite = :strict,
+    )
+    bake(json(Dict("logged_in" => true)), c)
 end)
 
-route!(router, :get, "/api/v1/search", req -> begin
-    q = get(req.query, "q", "")
-    isempty(q) && return Response(Json, """{"error":"Missing query"}"""; status=400)
-    Response(Json, Dict("query" => q, "results" => []))
+route!(router, :get, "/profile", req -> begin
+    jar = cookies(req)
+    session = get(jar, "session", nothing)
+    session === nothing && return json(Dict("error" => "unauthorized"); status=401)
+    json(Dict("session" => session))
 end)
 
-server = Async(router; nworkers=4)
-
-# Middleware: API-only auth
-plug!(server, apikey(keys=Set([ENV["API_KEY"]])); paths=["/api"])
-
-# CORS for API
-plug!(server, cors(origins="https://myapp.com"); paths=["/api"])
-
-# Structured logging
-plug!(server, logger(structured=true))
-
-# Serve frontend from public/ directory
-# Routes take priority, so /api/* is handled by Julia
-# Everything else falls through to static files
-mount!(server, "public")
-
-start!(server; host="0.0.0.0", port=8080)
+app = App(; router=router, workers=4)
+start!(app; port=8080)
 ```
 
-### Compiled Binary with @router (AOT)
-
-Build a fully self-contained binary using `juliac --trim=safe`:
+## Custom Error Responses
 
 ```julia
-# app.jl — compile with: juliac --trim=safe --output-exe myserver app.jl
 using Mongoose
 
-@router MyAPI begin
-    get("/", req -> Response(Json, """{"status":"ok"}"""))
-    get("/users/:id::Int", (req, id) -> Response(Json, """{"id":$id}"""))
-    post("/echo", req -> Response(req.body))
-    ws("/ws", on_message = msg -> Message("Echo: $(msg.data)"))
+router = Router()
+route!(router, :get, "/", req -> json(Dict("ok" => true)))
+
+app = App(; router=router, workers=4)
+
+# Static error responses
+onerror!(app, 500, json(Dict("error" => "Internal Server Error"); status=500))
+onerror!(app, 413, json(Dict("error" => "Payload too large"); status=413))
+
+# Dynamic error handler
+onerror!(app, 404) do req, status
+    json(Dict("error" => "Not found", "path" => req.uri); status=404)
 end
 
-function main()
-    server = Server(MyAPI())
-    start!(server; host="0.0.0.0", port=8080)
-end
-
-main()
+start!(app; port=8080)
 ```
 
-The `@router` macro generates a compile-time prefix trie with zero dynamic dispatch,
-making it compatible with Julia's AOT compilation. The resulting binary starts in
-milliseconds with no JIT warmup.
+## Dependency Injection
+
+```julia
+using Mongoose
+
+# Example: share a database connection
+struct FakeDB
+    users::Dict{Int,String}
+end
+
+router = Router()
+
+route!(router, :get, "/users/:id::Int", (req, id) -> begin
+    db = inject(req, :db)
+    name = get(db.users, id, nothing)
+    name === nothing && return json(Dict("error" => "not found"); status=404)
+    json(Dict("id" => id, "name" => name))
+end)
+
+app = App(; router=router, workers=4)
+provide!(app, :db, FakeDB(Dict(1 => "Alice", 2 => "Bob")))
+
+start!(app; port=8080)
+```
+
+## Background Tasks & Lifecycle Hooks
+
+```julia
+using Mongoose
+
+router = Router()
+route!(router, :get, "/", req -> text("running"))
+
+app = App(; router=router, workers=4)
+
+onstart!(app) do
+    @info "Server started, seeding data..."
+end
+
+onstop!(app) do
+    @info "Graceful shutdown complete"
+end
+
+background!(app) do
+    while true
+        @info "Background tick" time=time()
+        sleep(30)
+    end
+end
+
+start!(app; port=8080)
+```
+
+## GZip Compression
+
+```julia
+using Mongoose
+
+router = Router()
+
+# Large response that benefits from compression
+route!(router, :get, "/data", req -> begin
+    large_data = Dict("items" => [Dict("id" => i, "value" => "x"^100) for i in 1:100])
+    json(large_data)
+end)
+
+app = App(; router=router, workers=4)
+
+# Compress responses larger than 1KB when client accepts gzip
+use!(app, compress(min_size=1024))
+
+start!(app; port=8080)
+```
+
+## Testing with TestClient
+
+```julia
+using Test, Mongoose
+
+# Setup
+router = Router()
+route!(router, :get, "/hello", req -> json(Dict("msg" => "hi")))
+route!(router, :post, "/echo", req -> begin
+    data = body(req)
+    json(data; status=201)
+end)
+
+app = App(; router=router)
+use!(app, cors())
+
+client = TestClient(app)
+
+# Test GET
+resp = client(:get, "/hello")
+@test resp.status == 200
+@test contains(resp.body, "\"msg\"")
+
+# Test POST with JSON body
+resp = client(:post, "/echo";
+    body = """{"name": "Alice"}""",
+    headers = ["Content-Type" => "application/json"],
+)
+@test resp.status == 201
+@test contains(resp.body, "Alice")
+
+# Test with query parameters
+resp = client(:get, "/hello"; query=Dict("foo" => "bar"))
+@test resp.status == 200
+```
+
+## Production Configuration
+
+```julia
+using Mongoose
+
+router = Router()
+# ... define routes ...
+
+app = App(;
+    router          = router,
+    workers         = parse(Int, get(ENV, "WORKERS", "4")),
+    queuesize       = 2048,
+    max_body        = 4_000_000,       # 4MB
+    request_timeout = 30_000,          # 30s
+    drain_timeout   = 10_000,          # 10s graceful shutdown
+    ws_idle_timeout = 120_000,         # 2min WS idle
+)
+
+# Full middleware stack
+use!(app, security())
+use!(app, health(ready_check = () -> true))
+use!(app, metrics())
+use!(app, cors(origins=get(ENV, "CORS_ORIGINS", "*")))
+use!(app, compress(min_size=1024))
+use!(app, logger())
+
+# Error responses
+onerror!(app, 500, json(Dict("error" => "Internal error"); status=500))
+onerror!(app, 413, json(Dict("error" => "Too large"); status=413))
+onerror!(app, 503, json(Dict("error" => "Overloaded"); status=503))
+
+# Services
+provide!(app, :env, get(ENV, "APP_ENV", "production"))
+
+# Static assets
+serve!(app, "public"; uri_prefix="/static")
+
+start!(app; host="0.0.0.0", port=parse(Int, get(ENV, "PORT", "8080")))
+```

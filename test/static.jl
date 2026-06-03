@@ -72,7 +72,7 @@
             with_server(s) do port
                 resp = HTTP.get("http://127.0.0.1:$port/api/data"; status_exception=false)
                 @test resp.status == 200
-                @test JSON.parse(String(resp.body))["api"] == true
+                @test JSON3.read(String(resp.body))["api"] == true
 
                 resp2 = HTTP.get("http://127.0.0.1:$port/readme.txt"; status_exception=false)
                 @test resp2.status == 200

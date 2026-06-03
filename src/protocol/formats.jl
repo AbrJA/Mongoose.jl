@@ -51,12 +51,22 @@ end
 Convert `body` to the wire representation for `Format`.
 Extend for custom formats:
 ```julia
-Moose.encode(::Type{Json}, body::AbstractDict) = JSON.json(body)
+Mongoose.encode(::Type{MyFormat}, body) = serialize(body)
 ```
 """
 encode(::Type{T}, body) where {T<:AbstractFormat} = error("encode not implemented for $T with body::$(typeof(body)). Implement `Mongoose.encode(::Type{$T}, body)`.")
-encode(::Type{T}, body::String) where {T<:AbstractFormat} = body
+encode(::Type{Plain}, body::String) = body
+encode(::Type{Html}, body::String) = body
+encode(::Type{Css}, body::String) = body
+encode(::Type{Js}, body::String) = body
+encode(::Type{Xml}, body::String) = body
 encode(::Type{Binary}, body::Vector{UInt8}) = body
+
+# Built-in JSON encoding via JSON3
+encode(::Type{Json}, body::AbstractDict) = JSON3.write(body)
+encode(::Type{Json}, body::AbstractVector) = JSON3.write(body)
+encode(::Type{Json}, body::NamedTuple) = JSON3.write(body)
+encode(::Type{Json}, body::String) = body  # passthrough for pre-serialized JSON
 
 """
     decode(Format, body::String) → Any
@@ -64,7 +74,9 @@ encode(::Type{Binary}, body::Vector{UInt8}) = body
 Parse a request body from its wire representation.
 Extend for custom formats:
 ```julia
-Moose.decode(::Type{Json}, body::String) = JSON.parse(body)
+Mongoose.decode(::Type{MyFormat}, body::String) = deserialize(body)
 ```
 """
 decode(::Type{T}, body::String) where {T<:AbstractFormat} = error("decode not implemented for $T. Implement `Mongoose.decode(::Type{$T}, body::String)`.")
+decode(::Type{Json}, body::String) = JSON3.read(body)
+decode(::Type{Json}, body::String, ::Type{T}) where {T} = JSON3.read(body, T)

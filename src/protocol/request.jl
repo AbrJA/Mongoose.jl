@@ -96,9 +96,6 @@ end
     return req.context::Dict{Symbol,Any}
 end
 
-# Backward-compat alias (deprecated)
-@inline context!(req::Request) = ctx!(req)
-
 """
     form(req) → Dict{String,String}
 
@@ -124,4 +121,189 @@ Look up a request header by name (case-insensitive).
         (UInt8('A') <= b <= UInt8('Z')) && return false
     end
     return true
+end
+
+# ── Query parameter helpers ──────────────────────────────────────────────────
+
+"""
+    query(req, key) → Union{String, Nothing}
+    query(req, key, default) → String
+    query(req, key, default::T) → T  (auto-parses to type of default)
+
+Type-safe query parameter access with optional default and auto-parsing.
+
+# Examples
+```julia
+q = query(req, "q", "")           # String with default
+page = query(req, "page", 1)      # Auto-parse to Int
+limit = query(req, "limit", 20)   # Auto-parse to Int
+flag = query(req, "debug", false) # Auto-parse to Bool
+```
+"""
+@inline function query(req::Request, key::String)::Union{String,Nothing}
+    return get(req.query, key, nothing)
+end
+
+@inline function query(req::Request, key::String, default::String)::String
+    return get(req.query, key, default)
+end
+
+@inline function query(req::Request, key::String, default::T)::T where {T<:Integer}
+    val = get(req.query, key, nothing)
+    val === nothing && return default
+    parsed = tryparse(T, val)
+    return parsed === nothing ? default : parsed
+end
+
+@inline function query(req::Request, key::String, default::T)::T where {T<:AbstractFloat}
+    val = get(req.query, key, nothing)
+    val === nothing && return default
+    parsed = tryparse(T, val)
+    return parsed === nothing ? default : parsed
+end
+
+@inline function query(req::Request, key::String, default::Bool)::Bool
+    val = get(req.query, key, nothing)
+    val === nothing && return default
+    lv = lowercase(val)
+    return lv == "true" || lv == "1" || lv == "yes"
+end
+
+# ── Body parsing helpers ─────────────────────────────────────────────────────
+
+"""
+    body(req) → String
+
+Return the raw request body.
+"""
+@inline body(req::Request)::String = req.body
+
+"""
+    body(req, ::Type{T}) → T
+
+Parse the request body as JSON into type T using JSON3/StructTypes.
+
+# Example
+```julia
+struct CreateUser
+    name::String
+    email::String
+end
+StructTypes.StructType(::Type{CreateUser}) = StructTypes.Struct()
+
+post!(app, "/users") do req
+    user = body(req, CreateUser)
+    json((id=1, name=user.name))
+end
+```
+"""
+function body(req::Request, ::Type{T}) where {T}
+    return JSON3.read(req.body, T)
+end
+
+# ── Multipart form data parsing ──────────────────────────────────────────────
+
+"""
+    MultipartFile — Represents a file uploaded via multipart/form-data.
+"""
+struct MultipartFile
+    name::String           # Form field name
+    filename::String       # Original filename
+    content_type::String   # MIME type
+    data::Vector{UInt8}    # File content
+end
+
+"""
+    multipart(req) → Dict{String, Union{String, MultipartFile}}
+
+Parse a multipart/form-data request body.
+Returns a Dict where string fields map to their values and file fields map to MultipartFile objects.
+
+# Example
+```julia
+post!(app, "/upload") do req
+    parts = multipart(req)
+    file = parts["avatar"]::MultipartFile
+    text("Received \$(file.filename) (\$(length(file.data)) bytes)")
+end
+```
+"""
+function multipart(req::Request)::Dict{String,Union{String,MultipartFile}}
+    ct = get(req.headers, "content-type", "")
+    startswith(ct, "multipart/form-data") ||
+        throw(ArgumentError("multipart() requires Content-Type: multipart/form-data, got \"$ct\""))
+
+    # Extract boundary
+    boundary = _extract_boundary(ct)
+    isempty(boundary) && throw(ArgumentError("No boundary found in Content-Type header"))
+
+    return _parse_multipart(codeunits(req.body), boundary)
+end
+
+function _extract_boundary(ct::String)::String
+    idx = findfirst("boundary=", ct)
+    idx === nothing && return ""
+    start = last(idx) + 1
+    if start <= length(ct) && ct[start] == '"'
+        # Quoted boundary
+        start += 1
+        end_idx = findnext('"', ct, start)
+        end_idx === nothing && return ""
+        return ct[start:end_idx-1]
+    else
+        end_idx = findnext(c -> c == ';' || c == ' ', ct, start)
+        end_idx === nothing && return ct[start:end]
+        return ct[start:end_idx-1]
+    end
+end
+
+function _parse_multipart(data::AbstractVector{UInt8}, boundary::String)::Dict{String,Union{String,MultipartFile}}
+    result = Dict{String,Union{String,MultipartFile}}()
+    delimiter = Vector{UInt8}("--$boundary")
+    body_str = String(copy(data))
+
+    parts = split(body_str, "--$boundary")
+    for part in parts
+        part = strip(part)
+        (isempty(part) || part == "--") && continue
+
+        # Split headers from body at first double newline
+        header_end = findfirst("\r\n\r\n", part)
+        header_end === nothing && (header_end = findfirst("\n\n", part))
+        header_end === nothing && continue
+
+        headers_str = part[1:first(header_end)-1]
+        body_content = part[last(header_end)+1:end]
+
+        # Remove trailing \r\n from body
+        body_content = rstrip(body_content, ['\r', '\n'])
+
+        # Parse Content-Disposition
+        name = _extract_field(headers_str, "name")
+        isempty(name) && continue
+        filename = _extract_field(headers_str, "filename")
+        content_type = _extract_header_value(headers_str, "Content-Type")
+
+        if isempty(filename)
+            result[name] = String(body_content)
+        else
+            result[name] = MultipartFile(name, filename, content_type, Vector{UInt8}(body_content))
+        end
+    end
+    return result
+end
+
+function _extract_field(headers::AbstractString, field::String)::String
+    pattern = Regex("$(field)=\"([^\"]*)\"")
+    m = match(pattern, headers)
+    return m === nothing ? "" : m.captures[1]
+end
+
+function _extract_header_value(headers::AbstractString, name::String)::String
+    for line in eachsplit(headers, r"\r?\n")
+        if startswith(lowercase(line), lowercase(name) * ":")
+            return strip(String(line[length(name)+2:end]))
+        end
+    end
+    return "application/octet-stream"
 end

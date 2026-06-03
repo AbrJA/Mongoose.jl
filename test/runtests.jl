@@ -1,11 +1,7 @@
 using Test
 using HTTP
-using JSON
+using JSON3
 using Mongoose
-
-# Extend Mongoose.encode for JSON serialization (required for Json format)
-Mongoose.encode(::Type{Json}, body::AbstractDict) = JSON.json(body)
-Mongoose.encode(::Type{Json}, body::AbstractVector) = JSON.json(body)
 
 @testset "Mongoose.jl" begin
     include("helpers.jl")

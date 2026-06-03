@@ -2,20 +2,24 @@ module Mongoose
 
 using Mongoose_jll
 using PrecompileTools
+using JSON3
+using StructTypes
+using CodecZlib
 
 export App, Router, Request, Response, StreamResponse,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, use!, serve!, onerror!, onstart!, onstop!,
     ctx!, Cookie, Headers, bake, cookies, form, header,
     ws!, Message,
-    cors, ratelimit, bearer, apikey, logger, health, metrics, security,
+    cors, ratelimit, bearer, apikey, logger, health, metrics, security, compress,
     RouteError, ServerError, BindError,
     TLSConfig,
     provide!, inject, background!,
     group, RouteGroup, mount!,
     SSEWriter, emit, sse,
     json, html, text, redirect,
-    post!, patch!, options!, head!
+    post!, patch!, options!, head!,
+    query, body, multipart, MultipartFile
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. FFI Layer (C constants, structs, bindings)
@@ -90,11 +94,17 @@ include("middleware/logger.jl")
 include("middleware/health.jl")
 include("middleware/metrics.jl")
 include("middleware/security.jl")
+include("middleware/compress.jl")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 9. Streaming (SSE)
 # ══════════════════════════════════════════════════════════════════════════════
 include("streaming/sse.jl")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 10. Testing utilities
+# ══════════════════════════════════════════════════════════════════════════════
+include("testing.jl")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Module initialization

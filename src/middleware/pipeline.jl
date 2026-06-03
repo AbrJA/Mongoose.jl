@@ -95,26 +95,3 @@ function use!(server::AbstractServer, mw::AbstractMiddleware;
     push!(server.middlewares, wrapped)
     return server
 end
-
-# Backward-compat alias
-@inline plug!(server::AbstractServer, mw::AbstractMiddleware; kwargs...) =
-    use!(server, mw; kwargs...)
-
-# --- Middleware registration ---
-
-"""
-    plug!(server, middleware; paths=nothing)
-
-Register middleware. Executed in FIFO order for each request.
-
-# Keyword Arguments
-- `paths::Union{Nothing, Vector{String}}`: If set, middleware only runs for matching URI prefixes.
-"""
-function plug!(server, middleware::AbstractMiddleware; paths::Union{Nothing,Vector{String}}=nothing)
-    if paths === nothing
-        push!(server.core.middlewares, middleware)
-    else
-        push!(server.core.middlewares, PathFilter(middleware, paths))
-    end
-    return server
-end

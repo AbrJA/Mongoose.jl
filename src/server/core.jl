@@ -175,10 +175,6 @@ mutable struct App <: AbstractServer
     end
 end
 
-# --- Backward-compat property: app.core → app ---
-Base.getproperty(app::App, name::Symbol) = (name === :core ? app : getfield(app, name))
-Base.setproperty!(app::App, name::Symbol, v) = setfield!(app, name, v)
-
 # --- Teardown ---
 
 function teardown!(app::App)

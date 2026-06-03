@@ -45,9 +45,6 @@ function emit(sse::SSEWriter; data::String, event::String="", id::String="", ret
     write(sse.writer, String(take!(io)))
 end
 
-# Backward-compat alias
-@inline event!(sse::SSEWriter; kwargs...) = emit(sse; kwargs...)
-
 """
     sse([req,] producer; headers=[]) → StreamResponse
 
@@ -74,6 +71,3 @@ end
 # Accept req as first arg (ignored, kept for symmetry with other helpers)
 sse(::Request, producer::Function; kwargs...) = sse(producer; kwargs...)
 sse(producer::Function, ::Request; kwargs...) = sse(producer; kwargs...)
-
-# Backward-compat alias
-@inline sse_response(producer::Function; kwargs...) = sse(producer; kwargs...)

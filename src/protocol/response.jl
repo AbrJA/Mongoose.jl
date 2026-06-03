@@ -69,11 +69,12 @@ Response(body::AbstractString; status::Int=200, headers::Vector{Pair{String,Stri
 """
     json(data; status=200, headers=[]) → Response
 
-Create a JSON response. Calls `encode(Json, data)` — users must extend this.
+Create a JSON response. Supports Dict, NamedTuple, Vector, and any JSON3-serializable type.
 
 # Example
 ```julia
 json(Dict("id" => 1, "name" => "Alice"))
+json((id=1, name="Alice"))  # NamedTuple
 json(Dict("error" => "Not Found"); status=404)
 ```
 """
@@ -84,10 +85,33 @@ end
 """
     json(req) → Any
 
-Parse the request body as JSON. Requires `Mongoose.decode(::Type{Json}, body::String)` to be extended.
+Parse the request body as JSON.
 """
 function json(req::Request)
     return decode(Json, req.body)
+end
+
+"""
+    json(req, ::Type{T}) → T
+
+Parse the request body as JSON into a specific type.
+
+# Example
+```julia
+struct User
+    name::String
+    email::String
+end
+StructTypes.StructType(::Type{User}) = StructTypes.Struct()
+
+post!(app, "/users") do req
+    user = json(req, User)
+    json((id=1, name=user.name))
+end
+```
+"""
+function json(req::Request, ::Type{T}) where {T}
+    return decode(Json, req.body, T)
 end
 
 """

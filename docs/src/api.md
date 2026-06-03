@@ -4,21 +4,12 @@
 CurrentModule = Mongoose
 ```
 
-## Server Types
+## App
 
 ```@docs
-Async
-Server
-```
-
-## Lifecycle
-
-```@docs
+App
 start!
 shutdown!
-plug!
-mount!
-fail!
 ```
 
 ## Routing
@@ -27,6 +18,9 @@ fail!
 Router
 route!
 ws!
+RouteGroup
+group
+mount!
 ```
 
 ## Request & Response
@@ -36,42 +30,37 @@ Request
 Response
 StreamResponse
 Headers
-context!
 Cookie
-serialize_cookie
-parse_cookies
 ```
 
-## Utilities
+## Response Helpers
 
 ```@docs
-Config
-TLSConfig
-ServiceRegistry
-register!
-service
-RouteGroup
-group
-register_group!
+json
+html
+text
+redirect
+bake
 ```
 
-## WebSocket Types
+## Request Helpers
 
 ```@docs
-Message
-```
-
-## SSE (Server-Sent Events)
-
-```@docs
-SSEWriter
-event!
-sse_response
+query
+body
+multipart
+MultipartFile
+ctx!
+cookies
+form
+header
+inject
 ```
 
 ## Middleware
 
 ```@docs
+use!
 cors
 ratelimit
 bearer
@@ -80,6 +69,50 @@ logger
 health
 metrics
 security
+compress
+```
+
+## Server-Sent Events
+
+```@docs
+SSEWriter
+emit
+sse
+```
+
+## WebSocket
+
+```@docs
+Message
+```
+
+## Configuration
+
+```@docs
+TLSConfig
+```
+
+## Lifecycle
+
+```@docs
+onerror!
+onstart!
+onstop!
+provide!
+background!
+serve!
+```
+
+## Content Formats
+
+```@docs
+Plain
+Html
+Json
+Css
+Js
+Xml
+Binary
 ```
 
 ## Errors
@@ -89,21 +122,3 @@ RouteError
 ServerError
 BindError
 ```
-
-## JSON
-
-JSON support is enabled by extending `encode`:
-
-```julia
-using JSON
-Mongoose.encode(::Type{Json}, body) = JSON.json(body)
-```
-
-Then use `Response(Json, value)` anywhere in your handlers.
-
-## Static Router
-
-```@docs
-@router
-```
-
