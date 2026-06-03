@@ -17,7 +17,7 @@ function (mw::Bearer)(request::Request, next::Function)
         return Response(Plain, "401 Unauthorized"; status=401, headers=["WWW-Authenticate" => "Bearer"])
     end
 
-    if length(auth_header) < 7 || !_isbearer(auth_header)
+    if length(auth_header) < 8 || !startswith(lowercase(auth_header), "bearer ")
         return Response(Plain, "401 Unauthorized: Invalid scheme"; status=401, headers=["WWW-Authenticate" => "Bearer"])
     end
 
@@ -28,22 +28,6 @@ function (mw::Bearer)(request::Request, next::Function)
     end
 
     return next()
-end
-
-"""
-    _isbearer(s) → Bool
-
-Case-insensitive, zero-allocation check that `s` starts with `"bearer "`.
-"""
-@inline function _isbearer(s::AbstractString)
-    to_lower(codeunit(s, 1)) == UInt8('b') || return false
-    to_lower(codeunit(s, 2)) == UInt8('e') || return false
-    to_lower(codeunit(s, 3)) == UInt8('a') || return false
-    to_lower(codeunit(s, 4)) == UInt8('r') || return false
-    to_lower(codeunit(s, 5)) == UInt8('e') || return false
-    to_lower(codeunit(s, 6)) == UInt8('r') || return false
-    codeunit(s, 7) == UInt8(' ') || return false
-    return true
 end
 
 """

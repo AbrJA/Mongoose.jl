@@ -62,10 +62,8 @@ encode(::Type{Js}, body::String) = body
 encode(::Type{Xml}, body::String) = body
 encode(::Type{Binary}, body::Vector{UInt8}) = body
 
-# Built-in JSON encoding via JSON3
-encode(::Type{Json}, body::AbstractDict) = JSON3.write(body)
-encode(::Type{Json}, body::AbstractVector) = JSON3.write(body)
-encode(::Type{Json}, body::NamedTuple) = JSON3.write(body)
+# Built-in JSON encoding via JSON.jl
+encode(::Type{Json}, body) = JSON.json(body)
 encode(::Type{Json}, body::String) = body  # passthrough for pre-serialized JSON
 
 """
@@ -78,5 +76,4 @@ Mongoose.decode(::Type{MyFormat}, body::String) = deserialize(body)
 ```
 """
 decode(::Type{T}, body::String) where {T<:AbstractFormat} = error("decode not implemented for $T. Implement `Mongoose.decode(::Type{$T}, body::String)`.")
-decode(::Type{Json}, body::String) = JSON3.read(body)
-decode(::Type{Json}, body::String, ::Type{T}) where {T} = JSON3.read(body, T)
+decode(::Type{Json}, body::String) = JSON.parse(body)

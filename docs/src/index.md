@@ -5,7 +5,7 @@
 ## Key Features
 
 - **Unified `App` type** — sync (`workers=0`) or async worker pool (`workers=N`)
-- **Built-in JSON** via JSON3 — `body(req)` for parsing, `json(...)` for responses
+- **Built-in JSON** via JSON — `body(req)` for parsing, `json(...)` for responses
 - **Trie-based routing** — O(1) matching, typed path parameters, wildcards, route groups
 - **Full middleware stack** — CORS, rate limiting, auth, logging, metrics, health, security, compression
 - **WebSocket** — same port, frame limits, idle timeout, upgrade rejection, ping/pong

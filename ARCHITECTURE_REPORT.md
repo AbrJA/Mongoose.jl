@@ -375,3 +375,30 @@ end
 - Documentation comparable to FastAPI
 - Tutorial series
 - Migration guide from HTTP.jl
+
+---
+
+## 9. Implemented Changes (v0.5.0)
+
+The following simplifications and improvements from this report have been implemented:
+
+### Dependency Changes
+- **JSON3 → JSON**: Replaced JSON3.jl with JSON.jl (`import JSON`). Removed StructTypes dependency. `encode(Json, body)` now uses `JSON.json(body)`, `decode(Json, body)` uses `JSON.parse(body)`.
+- **Removed typed deserialization**: `body(req, ::Type{T})` and `json(req, ::Type{T})` removed. Users parse JSON manually with `JSON.parse(body(req))`.
+
+### API Renames (§5.2)
+- `ctx!(req)` → `context(req)` ✅
+- `provide!(app, :name, val)` → `service!(app, :name, val)` ✅
+- `inject(req, :name)` → `service(req, :name)` ✅
+
+### Simplifications (§5.1)
+- **Removed `AbstractRouter` interface** (§5.1.5) ✅ — `Router` is now a concrete struct, no abstract supertype
+- **Removed `uint_to_string`** — replaced with `string()` (stdlib)
+- **Simplified `_isbearer`** — replaced manual byte comparison with `startswith(lowercase(...), "bearer ")`
+
+### Version
+- Bumped to 0.5.0 (breaking release)
+
+### Validation
+- All tests pass
+- Aqua.jl: all checks pass (ambiguity, exports, compat, piracy, stale deps)

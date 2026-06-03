@@ -128,19 +128,19 @@ end
 end
 
 @testset "Context" begin
-    @testset "ctx! creates dict lazily" begin
+    @testset "context() creates dict lazily" begin
         req = Request(:get, "/", "/", Dict{String,String}(), Headers(), "")
         @test req.context === nothing
-        c = ctx!(req)
+        c = context(req)
         @test c isa Dict{Symbol,Any}
         @test req.context !== nothing
     end
 
-    @testset "ctx! returns same dict" begin
+    @testset "context() returns same dict" begin
         req = Request(:get, "/", "/", Dict{String,String}(), Headers(), "")
-        c1 = ctx!(req)
+        c1 = context(req)
         c1[:key] = "value"
-        c2 = ctx!(req)
+        c2 = context(req)
         @test c1 === c2
         @test c2[:key] == "value"
     end
@@ -409,23 +409,6 @@ end
         req = Request(:post, "/data", "/data",
             Dict{String,String}(), Headers(), "raw body content")
         @test body(req) == "raw body content"
-    end
-
-    @testset "body(req, T) parses JSON into struct" begin
-        using StructTypes
-        struct TestUser
-            name::String
-            age::Int
-        end
-        StructTypes.StructType(::Type{TestUser}) = StructTypes.Struct()
-
-        req = Request(:post, "/users", "/users",
-            Dict{String,String}(),
-            Headers(["content-type" => "application/json"]),
-            """{"name":"Alice","age":30}""")
-        user = body(req, TestUser)
-        @test user.name == "Alice"
-        @test user.age == 30
     end
 end
 

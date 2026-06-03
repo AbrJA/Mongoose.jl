@@ -42,7 +42,7 @@ end
         safe = sanitize_header_value(h)
         !isempty(safe) && return safe
     end
-    return uint_to_string(Threads.atomic_add!(server.id_seq, UInt64(1)) + UInt64(1))
+    return string(Threads.atomic_add!(server.id_seq, UInt64(1)) + UInt64(1))
 end
 
 @inline function resolve_request_id_fast(msg::MgHttpMessage, server::AbstractServer)::String
@@ -56,7 +56,7 @@ end
             !isempty(safe) && return safe
         end
     end
-    return uint_to_string(Threads.atomic_add!(server.id_seq, UInt64(1)) + UInt64(1))
+    return string(Threads.atomic_add!(server.id_seq, UInt64(1)) + UInt64(1))
 end
 
 @inline function _is_x_request_id(ptr::Ptr{UInt8})::Bool
@@ -144,7 +144,7 @@ end
 function invoke_http(server::AbstractServer, req::Request)::Union{Response,StreamResponse}
     # Attach app to request context for service injection
     if !isempty(server.services)
-        ctx = ctx!(req)
+        ctx = context(req)
         ctx[:_app] = server
     end
 

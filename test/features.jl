@@ -255,7 +255,7 @@ end
     @testset "Context per request" begin
         s = App()
         get!(s, "/ctx") do req
-            c = ctx!(req)
+            c = context(req)
             c[:user_id] = 42
             uid = c[:user_id]
             text("uid=$uid")
@@ -437,12 +437,12 @@ end
     end
 end
 
-@testset "provide!/inject" begin
+@testset "service!/inject" begin
     @testset "Service retrieved per request" begin
         s = App()
-        provide!(s, :version, "1.0.0")
+        service!(s, :version, "1.0.0")
         get!(s, "/version") do req
-            v = inject(req, :version)
+            v = service(req, :version)
             text("v=$v")
         end
         with_server(s) do port

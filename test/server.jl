@@ -78,11 +78,11 @@ end
     @test_throws ServerError onerror!(app, 600, Response(600, Pair{String,String}[], "bad"))
 end
 
-@testset "provide!/inject integration" begin
+@testset "service!/inject integration" begin
     app = App()
-    provide!(app, :db, () -> "database_connection")
+    service!(app, :db, () -> "database_connection")
     get!(app, "/svc") do req
-        db = inject(req, :db)
+        db = service(req, :db)
         text(db)
     end
 

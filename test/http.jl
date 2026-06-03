@@ -5,7 +5,7 @@
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/data"; status_exception=false)
             @test resp.status == 200
-            @test JSON3.read(String(resp.body))["ok"] == true
+            @test JSON.parse(String(resp.body))["ok"] == true
             ct = HTTP.header(resp, "Content-Type")
             @test contains(ct, "application/json")
         end
@@ -121,7 +121,7 @@ end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/json"; status_exception=false)
             @test contains(HTTP.header(resp, "Content-Type"), "application/json")
-            parsed = JSON3.read(String(resp.body))
+            parsed = JSON.parse(String(resp.body))
             @test parsed["key"] == "value"
         end
     end
@@ -171,12 +171,12 @@ end
     @testset "JSON body parsing" begin
         s = App()
         post!(s, "/json") do req
-            data = JSON3.read(req.body)
+            data = JSON.parse(req.body)
             text("name=$(data["name"])")
         end
         with_server(s) do port
             resp = HTTP.post("http://127.0.0.1:$port/json";
-                body=JSON3.write(Dict("name" => "Julia")),
+                body=JSON.json(Dict("name" => "Julia")),
                 headers=["Content-Type" => "application/json"],
                 status_exception=false)
             @test String(resp.body) == "name=Julia"
@@ -336,12 +336,12 @@ end
 end
 
 @testset "Context" begin
-    @testset "ctx! creates and reuses dict" begin
+    @testset "context creates and reuses dict" begin
         s = App()
         get!(s, "/ctx") do req
-            c = ctx!(req)
+            c = context(req)
             c[:visited] = true
-            c2 = ctx!(req)
+            c2 = context(req)
             text("same=$(c === c2)")
         end
         with_server(s) do port

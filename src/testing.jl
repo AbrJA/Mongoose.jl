@@ -73,7 +73,7 @@ end
 function (client::TestClient)(method::Symbol, path::String, json_body;
                                headers::Vector{Pair{String,String}}=Pair{String,String}[],
                                query::Dict{String,String}=Dict{String,String}())
-    body = JSON3.write(json_body)
+    body = JSON.json(json_body)
     all_headers = ["content-type" => "application/json"; headers]
     return client(method, path; headers=all_headers, body=body, query=query)
 end

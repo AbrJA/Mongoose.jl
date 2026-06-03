@@ -1,6 +1,6 @@
 using Test
 using HTTP
-using JSON3
+import JSON
 using Mongoose
 
 @testset "Mongoose.jl" begin

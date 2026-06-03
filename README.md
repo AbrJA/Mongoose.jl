@@ -28,7 +28,7 @@
 | **Routing** | Trie-based O(1) matching. Typed path parameters (`:id::Int`). Wildcards (`*path`). Route groups with scoped middleware. |
 | **WebSocket** | Same port as HTTP. Frame size limits. Idle timeout. Upgrade rejection. Ping/pong (RFC 6455). |
 | **Middleware** | CORS, rate limiting, bearer/API key auth, structured logging, Prometheus metrics, health checks, security headers, GZip compression. |
-| **JSON** | Built-in JSON serialization via JSON3. `body(req)` for parsing, `json(...)` for responses. Zero config. |
+| **JSON** | Built-in JSON serialization via JSON. `body(req)` for parsing, `json(...)` for responses. Zero config. |
 | **Production** | Graceful shutdown with drain. 503 backpressure on overload. Custom error responses. Background tasks. Dependency injection. |
 
 ---
@@ -322,7 +322,7 @@ route!(router, :get, "/events", req ->
 
 ## JSON (Built-in)
 
-JSON serialization is built-in via JSON3 — no extension needed:
+JSON serialization is built-in via JSON — no extension needed:
 
 ```julia
 # Response helpers
@@ -358,12 +358,12 @@ end)
 app = App(; router=router, workers=4)
 
 # Register services
-provide!(app, :db, connect_to_database())
-provide!(app, :cache, RedisPool())
+service!(app, :db, connect_to_database())
+service!(app, :cache, RedisPool())
 
 # Access in handlers
 route!(router, :get, "/users", req -> begin
-    db = inject(req, :db)
+    db = service(req, :db)
     users = fetch_users(db)
     json(users)
 end)
@@ -516,7 +516,7 @@ serve!(app, "public"; uri_prefix="/static")
 
 onerror!(app, 500, json(Dict("error" => "Internal error"); status=500))
 
-provide!(app, :version, "1.0.0")
+service!(app, :version, "1.0.0")
 
 start!(app; port=8080)
 ```

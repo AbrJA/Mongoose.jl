@@ -104,7 +104,7 @@ const EMPTY_PARAMS = Any[]
     Routes are registered at runtime via `route!()`.
     Supports: static paths, typed parameters (`:id::Int`), wildcard catch-all (`*path`).
 """
-struct Router <: AbstractRouter
+struct Router
     root::TrieNode
     fixed::Dict{String,FixedRoute}
     ws_routes::Dict{String,WsEndpoint}

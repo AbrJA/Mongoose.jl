@@ -69,7 +69,7 @@ Response(body::AbstractString; status::Int=200, headers::Vector{Pair{String,Stri
 """
     json(data; status=200, headers=[]) → Response
 
-Create a JSON response. Supports Dict, NamedTuple, Vector, and any JSON3-serializable type.
+Create a JSON response. Supports Dict, NamedTuple, Vector, and any JSON-serializable type.
 
 # Example
 ```julia
@@ -89,29 +89,6 @@ Parse the request body as JSON.
 """
 function json(req::Request)
     return decode(Json, req.body)
-end
-
-"""
-    json(req, ::Type{T}) → T
-
-Parse the request body as JSON into a specific type.
-
-# Example
-```julia
-struct User
-    name::String
-    email::String
-end
-StructTypes.StructType(::Type{User}) = StructTypes.Struct()
-
-post!(app, "/users") do req
-    user = json(req, User)
-    json((id=1, name=user.name))
-end
-```
-"""
-function json(req::Request, ::Type{T}) where {T}
-    return decode(Json, req.body, T)
 end
 
 """

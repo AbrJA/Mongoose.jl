@@ -78,20 +78,20 @@ function Request(method::Symbol, uri::String,
 end
 
 """
-    ctx!(req) → Dict{Symbol,Any}
+    context(req) → Dict{Symbol,Any}
 
 Return the request's per-request context dict, creating it lazily on first access.
 
 # Example
 ```julia
 get!(app, "/") do req
-    ctx = ctx!(req)
+    ctx = context(req)
     ctx[:user_id] = 42
     json(Dict("ok" => true))
 end
 ```
 """
-@inline function ctx!(req::Request)
+@inline function context(req::Request)
     req.context === nothing && (req.context = Dict{Symbol,Any}())
     return req.context::Dict{Symbol,Any}
 end
@@ -177,29 +177,6 @@ end
 Return the raw request body.
 """
 @inline body(req::Request)::String = req.body
-
-"""
-    body(req, ::Type{T}) → T
-
-Parse the request body as JSON into type T using JSON3/StructTypes.
-
-# Example
-```julia
-struct CreateUser
-    name::String
-    email::String
-end
-StructTypes.StructType(::Type{CreateUser}) = StructTypes.Struct()
-
-post!(app, "/users") do req
-    user = body(req, CreateUser)
-    json((id=1, name=user.name))
-end
-```
-"""
-function body(req::Request, ::Type{T}) where {T}
-    return JSON3.read(req.body, T)
-end
 
 # ── Multipart form data parsing ──────────────────────────────────────────────
 

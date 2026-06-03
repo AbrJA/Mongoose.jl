@@ -214,7 +214,7 @@ end
         end
         output = String(take!(io))
         lines = filter(!isempty, split(output, '\n'))
-        parsed = JSON3.read(lines[end])
+        parsed = JSON.parse(lines[end])
         @test parsed["method"] == "GET"
         @test parsed["status"] == 200
         @test haskey(parsed, "duration")

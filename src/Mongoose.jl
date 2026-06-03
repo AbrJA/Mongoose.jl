@@ -2,19 +2,18 @@ module Mongoose
 
 using Mongoose_jll
 using PrecompileTools
-using JSON3
-using StructTypes
+import JSON
 using CodecZlib
 
 export App, Router, Request, Response, StreamResponse,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, use!, serve!, onerror!, onstart!, onstop!,
-    ctx!, Cookie, Headers, bake, cookies, form, header,
+    context, Cookie, Headers, bake, cookies, form, header,
     ws!, Message,
     cors, ratelimit, bearer, apikey, logger, health, metrics, security, compress,
     RouteError, ServerError, BindError,
     TLSConfig,
-    provide!, inject, background!,
+    service!, service, background!,
     group, RouteGroup, mount!,
     SSEWriter, emit, sse,
     json, html, text, redirect,
@@ -44,7 +43,7 @@ include("protocol/status.jl")        # status_reason()
 include("protocol/request.jl")       # Request struct
 include("protocol/response.jl")      # Response, StreamResponse, Cookie
 include("protocol/ws_types.jl")      # WsConn, Message, Intent, WsEndpoint, Tagged
-include("protocol/context.jl")       # ctx!
+include("protocol/context.jl")       # context()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 4. Middleware Protocol
@@ -146,7 +145,7 @@ end
 
         # --- Request + context ---
         req = Request(:get, "/", Dict{String,String}(), Pair{String,String}[], "", nothing)
-        ctx!(req)
+        context(req)
         header(req, "content-type")
         form_req = Request(:post, "/", Dict{String,String}(),
             ["content-type" => "application/x-www-form-urlencoded"],
@@ -156,7 +155,7 @@ end
         # --- String utilities ---
         sanitize_header_value("abc-123")
         sanitize_header_value("bad\r\nvalue")
-        uint_to_string(UInt64(12345))
+        string(UInt64(12345))
 
         # --- Middleware construction ---
         cors(); cors(origins="https://example.com")

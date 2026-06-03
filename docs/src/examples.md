@@ -78,7 +78,7 @@ start!(app; port=8080)
 
 ## JSON Request and Response
 
-JSON is built-in via JSON3 — no setup required:
+JSON is built-in via JSON — no setup required:
 
 ```julia
 using Mongoose
@@ -361,14 +361,14 @@ end
 router = Router()
 
 route!(router, :get, "/users/:id::Int", (req, id) -> begin
-    db = inject(req, :db)
+    db = service(req, :db)
     name = get(db.users, id, nothing)
     name === nothing && return json(Dict("error" => "not found"); status=404)
     json(Dict("id" => id, "name" => name))
 end)
 
 app = App(; router=router, workers=4)
-provide!(app, :db, FakeDB(Dict(1 => "Alice", 2 => "Bob")))
+service!(app, :db, FakeDB(Dict(1 => "Alice", 2 => "Bob")))
 
 start!(app; port=8080)
 ```
@@ -490,7 +490,7 @@ onerror!(app, 413, json(Dict("error" => "Too large"); status=413))
 onerror!(app, 503, json(Dict("error" => "Overloaded"); status=503))
 
 # Services
-provide!(app, :env, get(ENV, "APP_ENV", "production"))
+service!(app, :env, get(ENV, "APP_ENV", "production"))
 
 # Static assets
 serve!(app, "public"; uri_prefix="/static")

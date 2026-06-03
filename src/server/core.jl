@@ -224,26 +224,26 @@ function onstop!(f::Function, app::App)
 end
 
 """
-    provide!(app, name, value_or_factory)
+    service!(app, name, value)
 
 Register a service for dependency injection.
 
 ```julia
-provide!(app, :db, MyDB.connect())
-inject(req, :db)   # retrieve inside handler
+service!(app, :db, MyDB.connect())
+service(req, :db)   # retrieve inside handler
 ```
 """
-function provide!(app::App, name::Symbol, value)
+function service!(app::App, name::Symbol, value)
     app.services[name] = value
     return app
 end
 
 """
-    inject(req, name) → Any
+    service(req, name) → Any
 
-Retrieve a service by name from the request context (set by provide!).
+Retrieve a service by name from the request context.
 """
-function inject(req::Request, name::Symbol)
+function service(req::Request, name::Symbol)
     ctx = req.context
     if ctx !== nothing
         app = get(ctx, :_app, nothing)

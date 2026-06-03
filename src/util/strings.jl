@@ -107,23 +107,6 @@ end
 @inline to_lower(b::UInt8) = (UInt8('A') <= b <= UInt8('Z')) ? (b | 0x20) : b
 
 """
-    uint_to_string(n::UInt64) → String
-
-Fast decimal conversion without `string()` overhead. Used for request IDs.
-"""
-@inline function uint_to_string(n::UInt64)::String
-    n == 0 && return "0"
-    buf = Vector{UInt8}(undef, 20)
-    i = 20
-    @inbounds while n > 0
-        buf[i] = UInt8('0') + UInt8(n % 10)
-        n = div(n, 10)
-        i -= 1
-    end
-    return String(@view buf[i+1:20])
-end
-
-"""
     sanitize_header_value(s) → String
 
 Validate a header value for injection safety. Returns empty string if invalid.
