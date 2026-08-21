@@ -50,29 +50,13 @@ end
         h.name.buf == C_NULL && break
         h.name.len == 0 && break
         h.name.len == 12 || continue
-        if _is_x_request_id(h.name.buf)
+        if lowercase(unsafe_string(h.name.buf, 12)) == "x-request-id"
             val = to_string(h.val)
             safe = sanitize_header_value(val)
             !isempty(safe) && return safe
         end
     end
     return string(Threads.atomic_add!(server.id_seq, UInt64(1)) + UInt64(1))
-end
-
-@inline function _is_x_request_id(ptr::Ptr{UInt8})::Bool
-    to_lower(unsafe_load(ptr, 1))  == UInt8('x') || return false
-    unsafe_load(ptr, 2)            == UInt8('-') || return false
-    to_lower(unsafe_load(ptr, 3))  == UInt8('r') || return false
-    to_lower(unsafe_load(ptr, 4))  == UInt8('e') || return false
-    to_lower(unsafe_load(ptr, 5))  == UInt8('q') || return false
-    to_lower(unsafe_load(ptr, 6))  == UInt8('u') || return false
-    to_lower(unsafe_load(ptr, 7))  == UInt8('e') || return false
-    to_lower(unsafe_load(ptr, 8))  == UInt8('s') || return false
-    to_lower(unsafe_load(ptr, 9))  == UInt8('t') || return false
-    unsafe_load(ptr, 10)           == UInt8('-') || return false
-    to_lower(unsafe_load(ptr, 11)) == UInt8('i') || return false
-    to_lower(unsafe_load(ptr, 12)) == UInt8('d') || return false
-    return true
 end
 
 # --- Shared preprocessing ---

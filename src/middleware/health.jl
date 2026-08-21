@@ -30,7 +30,7 @@ Create a health check middleware for cloud-native deployments.
 
 # Example
 ```julia
-plug!(server, health(
+use!(server, health(
     health_check = () -> check_database(),
     ready_check = () -> check_dependencies(),
     live_check = () -> true  # Process is always alive if running

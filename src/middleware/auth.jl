@@ -2,6 +2,18 @@
     Authentication middleware — Bearer token and API key authentication.
 """
 
+# Constant-time string comparison to prevent timing attacks
+@noinline function _constant_time_eq(a::AbstractString, b::AbstractString)::Bool
+    a_bytes = codeunits(a)
+    b_bytes = codeunits(b)
+    length(a_bytes) == length(b_bytes) || return false
+    result = UInt8(0)
+    @inbounds for i in eachindex(a_bytes)
+        result |= a_bytes[i] ⊻ b_bytes[i]
+    end
+    return result == 0
+end
+
 """
     Bearer — Bearer token authentication middleware.
     Checks the `Authorization: Bearer <token>` header and delegates validation to a user-supplied function.
@@ -32,16 +44,20 @@ end
 
 """
     bearer(validator)
+    bearer(secret::String)
 
 Create a Bearer token authentication middleware.
-The `validator` function receives the token string and must return `true` if valid.
+When called with a function, `validator(token)` must return `true` if valid.
+When called with a string, uses constant-time comparison to prevent timing attacks.
 
 # Example
 ```julia
-plug!(server, bearer(token -> token == "my-secret-token"))
+use!(server, bearer("my-secret-token"))
+use!(server, bearer(token -> token in valid_tokens))
 ```
 """
 bearer(validator::Function) = Bearer(validator)
+bearer(secret::String) = Bearer(token -> _constant_time_eq(token, secret))
 
 """
     ApiKey — API key authentication middleware.
@@ -55,7 +71,7 @@ end
 function (mw::ApiKey)(request::Request, next::Function)
     apikey = get(request.headers, mw.header_name, nothing)
 
-    if apikey === nothing || apikey ∉ mw.keys
+    if apikey === nothing || !any(k -> _constant_time_eq(apikey, k), mw.keys)
         return Response(Plain, "401 Unauthorized: Invalid API key"; status=401)
     end
 
@@ -73,7 +89,7 @@ Create an API key authentication middleware.
 
 # Example
 ```julia
-plug!(server, apikey(keys=Set(["key-123"])))
+use!(server, apikey(keys=Set(["key-123"])))
 ```
 """
 apikey(; header_name::String="X-API-Key", keys::Set{String}) = ApiKey(lowercase(header_name), keys)

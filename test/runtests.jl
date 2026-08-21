@@ -41,4 +41,8 @@ using Mongoose
     @testset "Features & Edge Cases" begin
         include("features.jl")
     end
+
+    @testset "New Features (v0.5.0)" begin
+        include("new_features.jl")
+    end
 end

@@ -100,7 +100,7 @@ Uses $(_RATE_LIMIT_SHARDS) independent shards internally to minimize lock conten
 
 # Example
 ```julia
-plug!(server, ratelimit(max_requests=50, window_seconds=30))
+use!(server, ratelimit(max_requests=50, window_seconds=30))
 ```
 """
 function ratelimit(; max_requests::Int=100, window_seconds::Int=60)

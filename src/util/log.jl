@@ -1,18 +1,13 @@
 """
-    Logging subsystem — dual-mode: Julia's @info/@warn/@error (JIT) or
-    direct print (AOT trim-safe binaries).
+    Logging subsystem — uses Julia's standard @info/@warn/@error macros.
 
-    Colors auto-detected per output stream at module init time.
-    Set `LOG_TRIMMABLE=true` environment variable for AOT-safe print mode.
+    Colors auto-detected per output stream at module init time for lifecycle banners.
 """
 
 # ── TTY detection ─────────────────────────────────────────────────────────────
 
 const _TTY_OUT = Ref{Bool}(false)
 const _TTY_ERR = Ref{Bool}(false)
-const _TRIMMABLE = Ref{Bool}(false)
-
-@inline is_trimmable() = _TRIMMABLE[]
 
 function init_tty!()
     @static if Sys.iswindows()
@@ -22,12 +17,6 @@ function init_tty!()
         _TTY_OUT[] = (@ccall isatty(1::Cint)::Cint) == 1
         _TTY_ERR[] = (@ccall isatty(2::Cint)::Cint) == 1
     end
-end
-
-function init_log_backend!()
-    val = get(ENV, "LOG_TRIMMABLE", "false")
-    s = lowercase(strip(val))
-    _TRIMMABLE[] = s == "1" || s == "true" || s == "yes" || s == "on"
 end
 
 # ANSI escape codes — only emitted when output is a TTY
@@ -43,89 +32,26 @@ const _RED   = "\e[91m"
 const _BLUE  = "\e[94m"
 const _UNDER = "\e[4m"
 
-# ── Print implementations (used by trim-safe mode) ───────────────────────────
-
-@noinline function _print_info(file::String, line::Int, msg::String)
-    print(Core.stdout,
-        _color(_BOLD), _color(_BLUE), "[Info]", _color(_RST),
-        _color(_DIM), " [Mongoose] ", file, ":", string(line), " — ", _color(_RST), msg, "\n")
-end
-
-@noinline function _print_warn(file::String, line::Int, msg::String)
-    print(Core.stderr,
-        _color(_BOLD, true), _color(_YELLOW, true), "[Warn]", _color(_RST, true),
-        _color(_DIM, true), " [Mongoose] ", file, ":", string(line), " — ", _color(_RST, true), msg, "\n")
-end
-
-@noinline function _print_error(file::String, line::Int, msg::String)::Nothing
-    print(Core.stderr,
-        _color(_BOLD, true), _color(_RED, true), "[Error]", _color(_RST, true),
-        _color(_DIM, true), " [Mongoose] ", file, ":", string(line), " — ", _color(_RST, true), msg, "\n")
-    return nothing
-end
-
-@noinline function _print_error(file::String, line::Int, msg::String, @nospecialize(e))::Nothing
-    _print_error(file, line, msg)
-    detail = try getfield(e, :msg)::String catch; string(e) end
-    print(Core.stderr, "        ", _color(_RED, true), detail, _color(_RST, true), "\n")
-    return nothing
-end
-
-# ── Macros — backend chosen at runtime ───────────────────────────────────────
+# ── Macros — thin wrappers around Julia's standard logging ───────────────────
 
 macro log_info(msg)
-    file, line = basename(string(__source__.file)), __source__.line
-    quote
-        if !is_trimmable()
-            Base.@info $(esc(msg))
-        else
-            _print_info($file, $line, $(esc(msg)))
-        end
-    end
+    :(Base.@info $(esc(msg)))
 end
 
 macro log_warn(msg)
-    file, line = basename(string(__source__.file)), __source__.line
-    quote
-        if !is_trimmable()
-            Base.@warn $(esc(msg))
-        else
-            _print_warn($file, $line, $(esc(msg)))
-        end
-    end
+    :(Base.@warn $(esc(msg)))
 end
 
 macro log_error(msg)
-    file, line = basename(string(__source__.file)), __source__.line
-    quote
-        if !is_trimmable()
-            Base.@error $(esc(msg))
-        else
-            _print_error($file, $line, $(esc(msg)))
-        end
-    end
+    :(Base.@error $(esc(msg)))
 end
 
 macro log_error(msg, e)
-    file, line = basename(string(__source__.file)), __source__.line
-    quote
-        if !is_trimmable()
-            Base.@error $(esc(msg)) exception=$(esc(e))
-        else
-            _print_error($file, $line, $(esc(msg)), $(esc(e)))
-        end
-    end
+    :(Base.@error $(esc(msg)) exception=$(esc(e)))
 end
 
 macro log_error(msg, e, bt)
-    file, line = basename(string(__source__.file)), __source__.line
-    quote
-        if !is_trimmable()
-            Base.@error $(esc(msg)) exception=($(esc(e)), $(esc(bt)))
-        else
-            _print_error($file, $line, $(esc(msg)), $(esc(e)))
-        end
-    end
+    :(Base.@error $(esc(msg)) exception=($(esc(e)), $(esc(bt))))
 end
 
 # ── Lifecycle banners ────────────────────────────────────────────────────────

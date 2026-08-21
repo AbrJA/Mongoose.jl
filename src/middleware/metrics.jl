@@ -175,8 +175,8 @@ minimize lock contention under concurrent load.
 # Example
 ```julia
 server = Async(router; nworkers=4)
-plug!(server, health())
-plug!(server, metrics())   # exposes GET /metrics
+use!(server, health())
+use!(server, metrics())   # exposes GET /metrics
 
 start!(server, port=8080)
 ```

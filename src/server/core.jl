@@ -42,12 +42,51 @@ Base.@kwdef struct TLSConfig
     skip_verification::Bool = false
 end
 
+# --- ServerConfig — Immutable configuration separated from runtime state ---
+
+"""
+    ServerConfig — Immutable tuning parameters for the server.
+
+    Separated from `App` runtime state to clearly distinguish what's
+    configuration (set once) vs what changes during execution.
+"""
+struct ServerConfig
+    poll_timeout::Int
+    max_body::Int
+    drain_timeout::Int
+    request_timeout::Int
+    ws_max_frame::Int
+    ws_idle_timeout::Int
+    workers::Int
+    queuesize::Int
+
+    function ServerConfig(;
+                          poll_timeout::Integer=1,
+                          max_body::Integer=MAX_BODY,
+                          drain_timeout::Integer=DRAIN_TIMEOUT,
+                          request_timeout::Integer=0,
+                          ws_max_frame::Integer=MAX_BODY,
+                          ws_idle_timeout::Integer=0,
+                          workers::Integer=0,
+                          queuesize::Integer=1024)
+        max_body > 0 || throw(ServerError("max_body must be > 0"))
+        poll_timeout >= 0 || throw(ServerError("poll_timeout must be >= 0"))
+        drain_timeout >= 0 || throw(ServerError("drain_timeout must be >= 0"))
+        ws_max_frame > 0 || throw(ServerError("ws_max_frame must be > 0"))
+        workers >= 0 || throw(ServerError("workers must be >= 0"))
+        workers > 0 && queuesize > 0 || workers == 0 ||
+            throw(ServerError("queuesize must be > 0 when workers > 0"))
+        new(Int(poll_timeout), Int(max_body), Int(drain_timeout),
+            Int(request_timeout), Int(ws_max_frame), Int(ws_idle_timeout),
+            Int(workers), Int(queuesize))
+    end
+end
+
 # --- App — unified server type ---
 
 """
     App — Mongoose.jl web application.
 
-    Replaces the former `Server{R}` / `Async{R}` split.
     Use `workers=0` for sync (default) or `workers=N` for async worker pool.
 
     # Constructors
@@ -73,6 +112,9 @@ end
     | `tls`           | `nothing`      | `TLSConfig` for HTTPS                        |
 """
 mutable struct App <: AbstractServer
+    # Immutable configuration
+    const config::ServerConfig
+
     # C / manager state
     running::Threads.Atomic{Bool}
     master::Union{Nothing,Task}
@@ -85,30 +127,20 @@ mutable struct App <: AbstractServer
     id_seq::Threads.Atomic{UInt64}
 
     # Routing & middleware
-    router::Router
-    middlewares::Vector{AbstractMiddleware}
-    mounts::Vector{Tuple{String,String}}
+    const router::Router
+    const middlewares::Vector{AbstractMiddleware}
+    const mounts::Vector{Tuple{String,String}}
 
     # Error handling & DI
-    errors::Dict{Int,Union{Response,Function}}
-    services::Dict{Symbol,Any}
+    const errors::Dict{Int,Union{Response,Function}}
+    const services::Dict{Symbol,Any}
 
     # Lifecycle hooks
-    hooks_start::Vector{Function}
-    hooks_stop::Vector{Function}
-    bg_tasks::Vector{Task}   # background tasks (spawned at start!)
-
-    # Tuning
-    poll_timeout::Int
-    max_body::Int
-    drain_timeout::Int
-    request_timeout::Int
-    ws_max_frame::Int
-    ws_idle_timeout::Int
+    const hooks_start::Vector{Function}
+    const hooks_stop::Vector{Function}
+    bg_tasks::Vector{Task}
 
     # Async worker pool (workers=0 → sync mode)
-    workers::Int
-    queuesize::Int
     worker_tasks::Vector{Task}
     calls::Channel{Tagged{Union{Request,Intent}}}
     replies::Channel{Tagged{Union{Response,StreamResponse,Message}}}
@@ -128,21 +160,19 @@ mutable struct App <: AbstractServer
                  tls::Union{Nothing,TLSConfig}=nothing,
                  errors::Dict{Int,<:Any}=Dict{Int,Union{Response,Function}}(),
                  services::Dict{Symbol,<:Any}=Dict{Symbol,Any}())
-        max_body > 0 || throw(ServerError("max_body must be > 0"))
-        poll_timeout >= 0 || throw(ServerError("poll_timeout must be >= 0"))
-        drain_timeout >= 0 || throw(ServerError("drain_timeout must be >= 0"))
-        ws_max_frame > 0 || throw(ServerError("ws_max_frame must be > 0"))
-        workers >= 0 || throw(ServerError("workers must be >= 0"))
-        workers > 0 && queuesize > 0 || workers == 0 ||
-            throw(ServerError("queuesize must be > 0 when workers > 0"))
+
+        cfg = ServerConfig(;
+            poll_timeout, max_body, drain_timeout, request_timeout,
+            ws_max_frame, ws_idle_timeout, workers, queuesize)
 
         errs = Dict{Int,Union{Response,Function}}(k => v for (k, v) in errors)
         for code in keys(errs)
             (100 <= code <= 599) || throw(ServerError("Error status code must be in [100,599], got $code"))
         end
 
-        ch_size = workers > 0 ? queuesize : 0
+        ch_size = cfg.workers > 0 ? cfg.queuesize : 0
         return new(
+            cfg,
             Threads.Atomic{Bool}(false),
             nothing,
             Manager(empty=true),
@@ -158,14 +188,6 @@ mutable struct App <: AbstractServer
             Function[],
             Function[],
             Task[],
-            Int(poll_timeout),
-            Int(max_body),
-            Int(drain_timeout),
-            Int(request_timeout),
-            Int(ws_max_frame),
-            Int(ws_idle_timeout),
-            Int(workers),
-            Int(queuesize),
             Task[],
             Channel{Tagged{Union{Request,Intent}}}(ch_size),
             Channel{Tagged{Union{Response,StreamResponse,Message}}}(ch_size),
@@ -174,6 +196,18 @@ mutable struct App <: AbstractServer
         )
     end
 end
+
+# --- Config field accessors (backward-compatible) ---
+@inline Base.getproperty(app::App, s::Symbol) = _app_getproperty(app, s, Val(s))
+@inline _app_getproperty(app::App, ::Symbol, ::Val{S}) where {S} = getfield(app, S)
+@inline _app_getproperty(app::App, ::Symbol, ::Val{:poll_timeout}) = getfield(app, :config).poll_timeout
+@inline _app_getproperty(app::App, ::Symbol, ::Val{:max_body}) = getfield(app, :config).max_body
+@inline _app_getproperty(app::App, ::Symbol, ::Val{:drain_timeout}) = getfield(app, :config).drain_timeout
+@inline _app_getproperty(app::App, ::Symbol, ::Val{:request_timeout}) = getfield(app, :config).request_timeout
+@inline _app_getproperty(app::App, ::Symbol, ::Val{:ws_max_frame}) = getfield(app, :config).ws_max_frame
+@inline _app_getproperty(app::App, ::Symbol, ::Val{:ws_idle_timeout}) = getfield(app, :config).ws_idle_timeout
+@inline _app_getproperty(app::App, ::Symbol, ::Val{:workers}) = getfield(app, :config).workers
+@inline _app_getproperty(app::App, ::Symbol, ::Val{:queuesize}) = getfield(app, :config).queuesize
 
 # --- Teardown ---
 
@@ -240,8 +274,15 @@ end
 
 """
     service(req, name) → Any
+    service(req, name, T) → T
 
 Retrieve a service by name from the request context.
+The 3-argument form provides type-stable access via assertion.
+
+# Example
+```julia
+db = service(req, :db, DBPool)  # type-stable: returns DBPool or throws
+```
 """
 function service(req::Request, name::Symbol)
     ctx = req.context
@@ -253,6 +294,13 @@ function service(req::Request, name::Symbol)
         end
     end
     return nothing
+end
+
+function service(req::Request, name::Symbol, ::Type{T})::T where {T}
+    v = service(req, name)
+    v isa T && return v
+    v === nothing && throw(KeyError(name))
+    throw(TypeError(:service, T, v))
 end
 
 """

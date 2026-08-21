@@ -5,12 +5,12 @@ using PrecompileTools
 import JSON
 using CodecZlib
 
-export App, Router, Request, Response, StreamResponse,
+export App, ServerConfig, Router, Request, Response, StreamResponse,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, use!, serve!, onerror!, onstart!, onstop!,
     context, Cookie, Headers, bake, cookies, form, header,
     ws!, Message,
-    cors, ratelimit, bearer, apikey, logger, health, metrics, security, compress,
+    cors, ratelimit, bearer, apikey, logger, health, metrics, security, compress, negotiate,
     RouteError, ServerError, BindError,
     TLSConfig,
     service!, service, background!,
@@ -18,7 +18,8 @@ export App, Router, Request, Response, StreamResponse,
     SSEWriter, emit, sse,
     json, html, text, redirect,
     post!, patch!, options!, head!,
-    query, body, multipart, MultipartFile
+    query, body, multipart, MultipartFile,
+    validate, ValidationError
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. FFI Layer (C constants, structs, bindings)
@@ -44,6 +45,7 @@ include("protocol/request.jl")       # Request struct
 include("protocol/response.jl")      # Response, StreamResponse, Cookie
 include("protocol/ws_types.jl")      # WsConn, Message, Intent, WsEndpoint, Tagged
 include("protocol/context.jl")       # context()
+include("protocol/validation.jl")    # validate(), ValidationError
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 4. Middleware Protocol
@@ -94,6 +96,7 @@ include("middleware/health.jl")
 include("middleware/metrics.jl")
 include("middleware/security.jl")
 include("middleware/compress.jl")
+include("middleware/negotiate.jl")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 9. Streaming (SSE)
@@ -110,7 +113,6 @@ include("testing.jl")
 # ══════════════════════════════════════════════════════════════════════════════
 function __init__()
     init_tty!()
-    init_log_backend!()
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
