@@ -50,11 +50,12 @@ query
 body
 multipart
 MultipartFile
-ctx!
+context
 cookies
 form
 header
-inject
+service
+json
 ```
 
 ## Middleware
@@ -70,6 +71,7 @@ health
 metrics
 security
 compress
+AbstractMiddleware
 ```
 
 ## Server-Sent Events
@@ -98,9 +100,22 @@ TLSConfig
 onerror!
 onstart!
 onstop!
-provide!
+service!
 background!
 serve!
+```
+
+## Extensibility
+
+```@docs
+AbstractRouter
+Endpoint
+AbstractExecutor
+AsyncExecutor
+AbstractTransport
+FakeTransport
+validate
+ValidationError
 ```
 
 ## Content Formats

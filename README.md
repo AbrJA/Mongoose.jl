@@ -23,13 +23,14 @@
 | Category | Highlights |
 |---|---|
 | **Performance** | Sub-100ms TTFR via precompilation. C-level static file serving with Range, ETag, gzip. |
-| **Architecture** | Unified `App` type: sync (`workers=0`) or async worker pool (`workers=N`). Backpressure and per-request timeouts. |
+| **Architecture** | Modular core: `Router`, `Executor`, and `Transport` are replaceable components behind small protocols. Sync (`workers=0`) or bounded async worker pool. Backpressure and per-request timeouts. |
 | **HTTPS/TLS** | Native TLS via `TLSConfig` — cert, key, CA as files, PEM strings, or raw bytes. |
-| **Routing** | Trie-based O(1) matching. Typed path parameters (`:id::Int`). Wildcards (`*path`). Route groups with scoped middleware. |
-| **WebSocket** | Same port as HTTP. Frame size limits. Idle timeout. Upgrade rejection. Ping/pong (RFC 6455). |
-| **Middleware** | CORS, rate limiting, bearer/API key auth, structured logging, Prometheus metrics, health checks, security headers, GZip compression. |
-| **JSON** | Built-in JSON serialization via JSON. `body(req)` for parsing, `json(...)` for responses. Zero config. |
-| **Production** | Graceful shutdown with drain. 503 backpressure on overload. Custom error responses. Background tasks. Dependency injection. |
+| **Routing** | Exact-match `Dict` + ordered parametric patterns. Typed path parameters (`:id::Int`) delivered as typed tuples. Wildcards (`*path`). Route groups with scoped middleware as metadata. |
+| **WebSocket** | Same port as HTTP. Frame size limits. Idle timeout. Origin allowlist. Upgrade rejection. Ping/pong (RFC 6455). |
+| **Middleware** | CORS, rate limiting, bearer/API key auth, structured logging, Prometheus metrics, health checks, security headers, GZip compression. Plain closures work as middleware. |
+| **JSON** | Built-in JSON via JSON. `json(req)` for parsing, `json(...)` for responses. Struct validation with `validate(req, T)`. |
+| **Testing** | `FakeTransport` (aka `TestClient`) runs the whole pipeline with **no server and no FFI**. |
+| **Production** | Graceful shutdown with drain. 503 backpressure on overload. Custom *and* typed exception handlers. Background tasks. Dependency injection. |
 
 ---
 
@@ -48,16 +49,18 @@ using Mongoose
 
 app = App(workers=4)
 
-route!(app.router, :get, "/", req -> text("Hello from Mongoose.jl!"))
+get!(app, "/") do req
+    text("Hello from Mongoose.jl!")
+end
 
-route!(app.router, :get, "/users/:id::Int", (req, id) ->
+get!(app, "/users/:id::Int") do req, id
     json(Dict("id" => id, "name" => "User $id"))
-)
+end
 
-route!(app.router, :post, "/echo", req -> begin
-    data = body(req)  # auto-parses JSON
+post!(app, "/echo") do req
+    data = json(req)                 # parses the JSON request body
     json(data; status=201)
-end)
+end
 
 start!(app; port=8080)
 ```
@@ -71,11 +74,12 @@ start!(app; port=8080)
 ```julia
 router = Router()
 
-route!(router, :get,    "/items",     req -> ...)
-route!(router, :post,   "/items",     req -> ...)
-route!(router, :put,    "/items/:id", (req, id) -> ...)
-route!(router, :patch,  "/items/:id", (req, id) -> ...)
-route!(router, :delete, "/items/:id", (req, id) -> ...)
+get!(router, "/items",       req -> ...)
+post!(router, "/items",      req -> ...)
+put!(router, "/items/:id",   (req, id) -> ...)
+patch!(router, "/items/:id", (req, id) -> ...)
+delete!(router, "/items/:id",(req, id) -> ...)
+route!(router, :get, "/search", req -> ...)
 ```
 
 GET routes automatically handle HEAD requests (body stripped, headers preserved).
@@ -85,28 +89,33 @@ GET routes automatically handle HEAD requests (body stripped, headers preserved)
 Append `::Type` to a segment for automatic parsing. Invalid values return 404:
 
 ```julia
-route!(router, :get, "/users/:id::Int",       (req, id)   -> ...)  # id::Int
-route!(router, :get, "/price/:val::Float64",  (req, val)  -> ...)  # val::Float64
-route!(router, :get, "/posts/:slug",          (req, slug) -> ...)  # slug::String
-route!(router, :get, "/files/*path",          (req, path) -> ...)  # wildcard catch-all
+get!(router, "/users/:id::Int",      (req, id)   -> ...)  # id::Int
+get!(router, "/price/:val::Float64", (req, val)  -> ...)  # val::Float64
+get!(router, "/posts/:slug",         (req, slug) -> ...)  # slug::String
+get!(router, "/files/*path",         (req, path) -> ...)  # wildcard catch-all
 ```
+
+Parameters arrive as **typed tuples**: `/users/42` gives `(42,)` of type
+`Tuple{Int}` — no `Any` boxing.
 
 ### Query Parameters
 
 Use the `query()` helper for type-safe access with defaults:
 
 ```julia
-route!(router, :get, "/search", req -> begin
-    q     = get(req.query, "q", "")
-    page  = tryparse(Int, get(req.query, "page", "1"))
-    limit = tryparse(Int, get(req.query, "limit", ""))
-    Response(Plain, "Searching: $q, page $page")
+get!(router, "/search", req -> begin
+    q     = query(req, "q", "")       # String with default
+    page  = query(req, "page", 1)     # auto-parses to Int
+    limit = query(req, "limit", 20)   # auto-parses to Int
+    text("Searching: $q, page $page, limit $limit")
 end)
 ```
 
 ### Route Groups
 
-Organize routes under a shared prefix with scoped middleware:
+Organize routes under a shared prefix with scoped middleware. Group middleware
+is attached to the routes as **metadata** (not closures), so it is composed
+with app-global middleware at dispatch time in the order `global → group → route`:
 
 ```julia
 api = group("/api/v1", middleware=[
@@ -114,16 +123,22 @@ api = group("/api/v1", middleware=[
     apikey(header_name="x-api-key", keys=Set(["key-abc"])),
 ])
 
-route!(api, :get,  "/users",     list_users)
-route!(api, :post, "/users",     create_user)
-route!(api, :get,  "/users/:id", get_user)
+get!(api, "/users",     list_users)
+post!(api, "/users",    create_user)
+get!(api, "/users/:id", get_user)
 
 # Nested groups
 group!(api, "/admin", middleware=[bearer(t -> t == "admin-token")]) do admin
-    route!(admin, :delete, "/users/:id::Int", delete_user)
+    delete!(admin, "/users/:id::Int", delete_user)
 end
 
-mount!(router, api)
+mount!(app, api)
+```
+
+You can also scope middleware to a single route:
+
+```julia
+route!(router, :get, "/admin/panel", admin_panel; middleware=[bearer(t -> t == "admin-token")])
 ```
 
 ---
@@ -134,33 +149,53 @@ mount!(router, api)
 
 | Expression | Returns | Description |
 |---|---|---|
-| `body(req)` | `Any` | Parse JSON body (Dict, Array, etc.) |
-| `body(req, MyStruct)` | `MyStruct` | Typed deserialization via StructTypes |
-| `query(req, "key")` | `String` | Query parameter (throws if missing) |
+| `body(req)` | `String` | Raw request body |
+| `json(req)` | `Any` | Parsed JSON body (Dict, Array, …) |
+| `validate(req, T)` | `T` | Parse + validate JSON into a struct |
+| `query(req, "key")` | `String \| nothing` | Query parameter |
 | `query(req, "key", default)` | `typeof(default)` | Query param with auto-parsing |
-| `multipart(req)` | `Vector{MultipartFile}` | Parse multipart form data |
-| `get(req.headers, "name", nothing)` | `String \| nothing` | Case-insensitive header lookup |
+| `multipart(req)` | `Dict{String, Union{String,MultipartFile}}` | Parse multipart/form-data |
+| `form(req)` | `Dict{String,String}` | Parse `application/x-www-form-urlencoded` |
+| `header(req, "name")` | `String \| nothing` | Case-insensitive header lookup |
+| `cookies(req)` | `Dict{String,String}` | Parsed cookies |
+| `context(req)` | `Dict{Symbol,Any}` | Lazily-allocated per-request context |
 | `req.uri` | `String` | Full request URI |
 | `req.method` | `Symbol` | `:get`, `:post`, etc. |
-| `ctx!(req)` | `Dict{Symbol,Any}` | Lazily-allocated context dict |
 
 ### Response Helpers
 
 ```julia
-# Typed format responses
 json(Dict("ok" => true))                    # 200, application/json
 json(data; status=201)                      # custom status
 json(data; headers=["X-Custom" => "val"])   # extra headers
 
 text("Hello!")                              # 200, text/plain
-html("<h1>Hi</h1>")                        # 200, text/html
+html("<h1>Hi</h1>")                         # 200, text/html
 redirect("/new-location")                   # 302
-redirect("/new", 301)                       # 301
+redirect("/new"; status=301)                # 301
 
 # Low-level Response constructor
 Response(Json, """{"raw": true}""")         # pre-serialized JSON string
 Response(Plain, "hello"; status=200)
 Response(200, "OK"; headers=["X-H" => "v"])
+```
+
+### Request Validation
+
+Define any plain struct and `validate` will parse + coerce + check required
+fields, throwing `ValidationError` on failure:
+
+```julia
+struct CreateUser
+    name::String
+    email::String
+    age::Int
+end
+
+post!(app, "/users") do req
+    user = validate(req, CreateUser)                 # → CreateUser
+    json(Dict("name" => user.name, "age" => user.age)); 
+end
 ```
 
 ### Content Formats
@@ -181,15 +216,15 @@ Response(200, "OK"; headers=["X-H" => "v"])
 
 ```julia
 app = App(;
-    workers         = 4,          # Worker threads (0 = sync mode)
-    queuesize       = 1024,       # Max pending requests (async)
-    max_body        = 1_048_576,  # 1 MB max request body
-    request_timeout = 5000,       # 5s per-request timeout (0 = disabled)
-    drain_timeout   = 5000,       # Graceful shutdown drain (ms)
-    ws_max_frame    = 1_048_576,  # Max WebSocket frame size
-    ws_idle_timeout = 60_000,     # WS idle timeout (ms, 0 = disabled)
-    router          = Router(),   # Custom router instance
-    tls             = nothing,    # TLSConfig for HTTPS
+    workers          = 4,          # Worker threads (0 = sync mode)
+    queuesize        = 1024,       # Max pending requests (async)
+    max_body         = 1_048_576,  # 1 MB max request body
+    request_timeout  = 5000,       # 5s per-request timeout (0 = disabled)
+    drain_timeout    = 5000,       # Graceful shutdown drain (ms)
+    ws_max_frame     = 1_048_576,  # Max WebSocket frame size
+    ws_idle_timeout  = 60_000,     # WS idle timeout (ms, 0 = disabled)
+    router           = Router(),   # any AbstractRouter
+    tls              = nothing,    # TLSConfig for HTTPS
 )
 ```
 
@@ -209,7 +244,7 @@ start!(app; port=8443)
 ### Custom Error Responses
 
 ```julia
-onerror!(app, 404) do req, status
+onerror!(app, 404) do req          # dynamic handler: (req) → Response
     json(Dict("error" => "Not found", "path" => req.uri); status=404)
 end
 
@@ -217,11 +252,24 @@ onerror!(app, 500, json(Dict("error" => "Internal Server Error"); status=500))
 onerror!(app, 413, json(Dict("error" => "Request body too large"); status=413))
 ```
 
+### Typed Exception Handlers
+
+Route handler/middleware exceptions by *type*:
+
+```julia
+struct NotFound <: Exception end
+
+onerror!(app, NotFound) do req, e
+    json(Dict("error" => "not found"); status=404)
+end
+```
+
 ---
 
 ## Middleware
 
-Middleware runs in registration order. Each middleware can inspect/modify the request, short-circuit, or pass to the next handler.
+Middleware runs in registration order: app-global first, then group/route-scoped.
+Each middleware can inspect/modify the request, short-circuit, or call `next()`.
 
 ```julia
 app = App(; router=router, workers=4)
@@ -244,8 +292,8 @@ use!(app, compress(min_size=1024))
 # Structured JSON access logs
 use!(app, logger())
 
-# Rate limiting — 200 requests per 60s per client IP
-use!(app, ratelimit(max_requests=200, window_seconds=60))
+# Rate limiting — 100 requests per 60s per client IP
+use!(app, ratelimit(max_requests=100, window_seconds=60))
 
 # Bearer token auth — scoped to /api routes only
 use!(app, bearer(token -> token == ENV["API_TOKEN"]); paths=["/api"])
@@ -259,7 +307,20 @@ serve!(app, "public"; uri_prefix="/static")
 
 ### Custom Middleware
 
-Subtype `AbstractMiddleware` and implement the call operator:
+**No subtyping required.** Any callable `(req, next) → Response` is a
+middleware — plain closures work out of the box:
+
+```julia
+use!(app) do req, next
+    t = time()
+    res = next()
+    @info "$(req.method) $(req.uri)" status=res.status ms=round((time()-t)*1000; digits=1)
+    res
+end
+```
+
+For configurable/named middleware, subtype `AbstractMiddleware` (or just return
+a closure from a factory):
 
 ```julia
 struct RequestTimer <: Mongoose.AbstractMiddleware end
@@ -267,8 +328,7 @@ struct RequestTimer <: Mongoose.AbstractMiddleware end
 function (::RequestTimer)(req::Request, next::Function)
     t = time()
     res = next()
-    elapsed = round((time() - t) * 1000, digits=1)
-    @info "$(req.method) $(req.uri)" status=res.status ms=elapsed
+    @info "$(req.method) $(req.uri)" ms=round((time()-t)*1000; digits=1)
     return res
 end
 
@@ -280,12 +340,12 @@ use!(app, RequestTimer())
 ## WebSocket
 
 ```julia
-ws!(router, "/chat";
+ws!(app, "/chat";
+    allowed_origins = ["https://myapp.com"],  # optional Origin allowlist
     on_open = (req::Request) -> begin
-        # Return false to reject upgrade with 403
+        # Return false to reject the upgrade with 403
         auth = get(req.headers, "authorization", nothing)
         auth === nothing && return false
-        @info "WS connected" uri=req.uri
         true
     end,
     on_message = (msg::Message) -> Message("Echo: $(msg.data)"),
@@ -295,6 +355,7 @@ ws!(router, "/chat";
 
 | Callback | Signature | Notes |
 |---|---|---|
+| `allowed_origins` | `Vector{String}` | Only these Origins may upgrade (empty = allow any). Optional. |
 | `on_open` | `(req) → Any` | Return `false` to reject with 403. Optional. |
 | `on_message` | `(msg) → Message \| nothing` | Called per frame. Return `nothing` for no reply. |
 | `on_close` | `() → Any` | Connection already gone. Optional. |
@@ -306,49 +367,18 @@ ws!(router, "/chat";
 Push real-time events to clients:
 
 ```julia
-route!(router, :get, "/events", req ->
+get!(app, "/events") do req
     sse(req) do writer
         for i in 1:10
             emit(writer; data="Tick $i", event="update", id=string(i))
             sleep(1)
         end
     end
-)
-```
-
-`sse()` returns a `StreamResponse` with correct SSE headers. `emit()` formats each event per the W3C EventSource spec.
-
----
-
-## JSON (Built-in)
-
-JSON serialization is built-in via JSON — no extension needed:
-
-```julia
-# Response helpers
-json(Dict("id" => 1, "name" => "Alice"))
-json(["a", "b", "c"]; status=200)
-
-# Request body parsing
-route!(router, :post, "/users", req -> begin
-    data = body(req)  # parses JSON body → Dict/Array
-    json(Dict("created" => data["name"]); status=201)
-end)
-
-# Typed deserialization (requires StructTypes)
-using StructTypes
-
-struct User
-    name::String
-    age::Int
 end
-StructTypes.StructType(::Type{User}) = StructTypes.Struct()
-
-route!(router, :post, "/users", req -> begin
-    user = body(req, User)  # deserializes JSON → User
-    json(Dict("hello" => user.name))
-end)
 ```
+
+`sse()` returns a `StreamResponse` with correct SSE headers. `emit()` formats
+each event per the W3C EventSource spec.
 
 ---
 
@@ -357,16 +387,19 @@ end)
 ```julia
 app = App(; router=router, workers=4)
 
-# Register services
+# Register services (values or zero-arg callables for lazy factories)
 service!(app, :db, connect_to_database())
 service!(app, :cache, RedisPool())
 
 # Access in handlers
-route!(router, :get, "/users", req -> begin
-    db = service(req, :db)
+get!(app, "/users") do req
+    db = service(req, :db)              # → Any; use 3-arg form for a checked type
     users = fetch_users(db)
     json(users)
-end)
+end
+
+# Type-checked access
+db = service(req, :db, DBPool)          # throws if not a DBPool
 ```
 
 ---
@@ -374,19 +407,16 @@ end)
 ## Background Tasks & Lifecycle Hooks
 
 ```julia
-# Run a function when the server starts
 onstart!(app) do
     @info "Server started"
     seed_database!()
 end
 
-# Run during graceful shutdown
 onstop!(app) do
     @info "Closing connections..."
     close_database!()
 end
 
-# Spawn a background task at startup
 background!(app) do
     while true
         cleanup_expired_sessions!()
@@ -400,58 +430,80 @@ end
 ## Cookies
 
 ```julia
-route!(router, :get, "/profile", req -> begin
+get!(app, "/profile") do req
     session = get(cookies(req), "session", nothing)
     session === nothing && return text("Not logged in"; status=401)
     text("Hello!")
-end)
+end
 
-route!(router, :post, "/login", req -> begin
+post!(app, "/login") do req
     c = Cookie("session", "abc123";
         httponly = true,
         secure   = true,
         max_age  = 3600,
         samesite = :strict,
     )
-    bake(text("Logged in"), c)
-end)
+    text("Logged in"; headers=["Set-Cookie" => bake(c)])
+end
 ```
 
 ---
 
-## Security Headers
+## Pluggable Components
 
-```julia
-use!(app, security(
-    hsts_max_age  = 31_536_000,          # 1 year HSTS
-    frame_options = "DENY",              # X-Frame-Options
-    csp           = "default-src 'self'",# Content-Security-Policy
-))
-```
+Each boundary is a replacement point, so you can swap parts without rewriting
+your app.
 
-Default headers: `Strict-Transport-Security`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'self'`, `Referrer-Policy: strict-origin-when-cross-origin`.
+### Router
+
+Implement `AbstractRouter` and hand it to `App(router=my_router)`. The
+required protocol:
+
+| Function | Role |
+|---|---|
+| `route!(r, method, path, handler; middleware, metadata)` | register an `Endpoint` |
+| `dispatch_route(r, method, path)` | return a match or `nothing` |
+| `get_handler(match, method)` | handler for that method, or `nothing` |
+| `get_endpoint(match, method)` | the route's `Endpoint`, or `nothing` |
+| `match_route_exact(r, method, path)` | dispatch without 404-fallback |
+
+Optional capabilities (`has_ws_routes`, `ws_endpoint`, `ws!`, `route_count`)
+have safe "not supported" defaults. Missing required methods fail loudly via
+fallback `MethodError`s.
+
+### Executor
+
+`SyncExecutor` (inline) and `AsyncExecutor` (bound worker pool) implement the
+`submit!/start!/stop!/has_pending` contract. `App(workers=n)` chooses between
+them; a custom executor can carry its own concurrency policy.
+
+### Transport
+
+`AbstractTransport` declares capabilities via trait functions
+(`supports_websocket`, `supports_tls`, `supports_streaming`). The default
+`MongooseTransport` wraps the C library; `FakeTransport` runs everything in
+pure Julia — that is what `TestClient` is.
 
 ---
 
 ## Testing
 
-Use the built-in `TestClient` for fast, network-free testing:
+Use `FakeTransport` (alias `TestClient`) for fast, network-free testing:
 
 ```julia
 using Test, Mongoose
 
-app = App(; router=Router())
-route!(app.router, :get, "/hello", req -> json(Dict("msg" => "hi")))
+app = App()
+get!(app, "/hello", req -> json(Dict("msg" => "hi")))
 use!(app, cors())
 
-client = TestClient(app)
+client = FakeTransport(app)   # or TestClient(app)
 
-# Make requests without starting a server
+# Make requests without starting a server — no ports, no Mongoose_jll
 resp = client(:get, "/hello")
 @test resp.status == 200
 @test contains(resp.body, "\"msg\"")
 
-# Test with headers, body, query params
 resp = client(:post, "/users";
     body = """{"name": "Alice"}""",
     headers = ["Content-Type" => "application/json"],
@@ -464,45 +516,41 @@ resp = client(:post, "/users";
 
 ## Full Example
 
-A complete production app with REST API, WebSocket, SSE, middleware, and DI:
-
 ```julia
 using Mongoose
 
-router = Router()
+app = App(; workers=4, request_timeout=10_000, ws_idle_timeout=60_000)
 
 # Health
-route!(router, :get, "/health", req -> text("ok"))
+get!(app, "/health") do req; text("ok") end
 
 # REST API
-route!(router, :get, "/api/users/:id::Int", (req, id) ->
+get!(app, "/api/users/:id::Int") do req, id
     json(Dict("id" => id, "name" => "User $id"))
-)
+end
 
-route!(router, :post, "/api/users", req -> begin
-    data = body(req)
+post!(app, "/api/users") do req
+    data = json(req)
     json(Dict("created" => data["name"]); status=201)
-end)
+end
 
-# WebSocket
-ws!(router, "/ws";
+# WebSocket with origin allowlist
+ws!(app, "/ws";
+    allowed_origins = ["https://example.com"],
     on_message = msg -> Message(Mongoose.encode(Json, Dict("ack" => true))),
     on_open = req -> @info("WS connected"),
     on_close = () -> @info("WS disconnected"),
 )
 
 # SSE
-route!(router, :get, "/events", req ->
+get!(app, "/events") do req
     sse(req) do writer
         for i in 1:5
             emit(writer; data="tick $i", event="heartbeat", id=string(i))
             sleep(1)
         end
     end
-)
-
-# App
-app = App(; router=router, workers=4, request_timeout=10_000, ws_idle_timeout=60_000)
+end
 
 use!(app, security())
 use!(app, health())
@@ -515,7 +563,6 @@ use!(app, bearer(t -> t == "secret"); paths=["/api"])
 serve!(app, "public"; uri_prefix="/static")
 
 onerror!(app, 500, json(Dict("error" => "Internal error"); status=500))
-
 service!(app, :version, "1.0.0")
 
 start!(app; port=8080)

@@ -90,24 +90,21 @@ route!(router, :get, "/users/:id::Int", (req, id) ->
     json(Dict("id" => id, "name" => "User $id", "active" => true))
 )
 
-# Parse JSON request body with body()
+# Parse JSON request body with json()
 route!(router, :post, "/users", req -> begin
-    data = body(req)  # returns Dict/Array from JSON
+    data = json(req)  # returns Dict/Array from JSON
     json(Dict("created" => data["name"]); status=201)
 end)
 
-# Typed deserialization with StructTypes
-using StructTypes
-
+# Typed request validation into a struct
 struct CreateUser
     name::String
     email::String
     age::Int
 end
-StructTypes.StructType(::Type{CreateUser}) = StructTypes.Struct()
 
 route!(router, :post, "/users/typed", req -> begin
-    user = body(req, CreateUser)  # deserializes into struct
+    user = validate(req, CreateUser)  # parses + validates; throws ValidationError
     json(Dict("name" => user.name, "email" => user.email))
 end)
 
@@ -123,14 +120,15 @@ using Mongoose
 router = Router()
 
 route!(router, :post, "/upload", req -> begin
-    files = multipart(req)
-    isempty(files) && return json(Dict("error" => "No files"); status=400)
+    parts = multipart(req)  # Dict{String, Union{String, MultipartFile}}
+    isempty(parts) && return json(Dict("error" => "No files"); status=400)
 
-    results = map(files) do f
-        Dict("filename" => f.filename, "size" => length(f.data), "type" => f.content_type)
+    for (name, value) in parts
+        # value is a String (form field) or MultipartFile (uploaded file)
     end
 
-    json(Dict("files" => results, "count" => length(files)); status=201)
+    file = parts["avatar"]::MultipartFile
+    json(Dict("files" => [file.filename], "size" => length(file.data)); status=201)
 end)
 
 app = App(; router=router, workers=4, max_body=10_000_000)  # 10MB limit
@@ -202,7 +200,7 @@ api = group("/api/v1", middleware=[
 
 route!(api, :get, "/users", req -> json(Dict("users" => [])))
 route!(api, :post, "/users", req -> begin
-    data = body(req)
+    data = json(req)
     json(Dict("created" => data["name"]); status=201)
 end)
 route!(api, :get, "/users/:id::Int", (req, id) -> json(Dict("id" => id)))
@@ -312,7 +310,8 @@ route!(router, :post, "/login", req -> begin
         max_age  = 3600,
         samesite = :strict,
     )
-    bake(json(Dict("logged_in" => true)), c)
+    bake(c)  # serialize to a Set-Cookie header value; add it as a response header:
+    json(Dict("logged_in" => true); headers=["Set-Cookie" => bake(c)])
 end)
 
 route!(router, :get, "/profile", req -> begin
@@ -340,8 +339,8 @@ app = App(; router=router, workers=4)
 onerror!(app, 500, json(Dict("error" => "Internal Server Error"); status=500))
 onerror!(app, 413, json(Dict("error" => "Payload too large"); status=413))
 
-# Dynamic error handler
-onerror!(app, 404) do req, status
+# Dynamic error handler (handler receives the request)
+onerror!(app, 404) do req
     json(Dict("error" => "Not found", "path" => req.uri); status=404)
 end
 
@@ -422,7 +421,11 @@ use!(app, compress(min_size=1024))
 start!(app; port=8080)
 ```
 
-## Testing with TestClient
+## Testing with FakeTransport (TestClient)
+
+`TestClient` is an alias of `FakeTransport`, the FFI-free reference transport:
+it dispatches requests through the full pipeline with **no server and no
+`Mongoose_jll`**, so tests never bind a port.
 
 ```julia
 using Test, Mongoose
@@ -431,14 +434,14 @@ using Test, Mongoose
 router = Router()
 route!(router, :get, "/hello", req -> json(Dict("msg" => "hi")))
 route!(router, :post, "/echo", req -> begin
-    data = body(req)
+    data = json(req)
     json(data; status=201)
 end)
 
 app = App(; router=router)
 use!(app, cors())
 
-client = TestClient(app)
+client = FakeTransport(app)   # or: TestClient(app)
 
 # Test GET
 resp = client(:get, "/hello")

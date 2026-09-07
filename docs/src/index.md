@@ -4,15 +4,19 @@
 
 ## Key Features
 
-- **Unified `App` type** — sync (`workers=0`) or async worker pool (`workers=N`)
-- **Built-in JSON** via JSON — `body(req)` for parsing, `json(...)` for responses
-- **Trie-based routing** — O(1) matching, typed path parameters, wildcards, route groups
+- **Modular, pluggable core** — `Router`, `Executor`, and `Transport` are
+  replaceable components behind small protocols (`AbstractRouter`,
+  `AbstractExecutor`, `AbstractTransport`)
+- **Unified `App` type** — sync (`SyncExecutor`) or async worker pool (`AsyncExecutor`)
+- **Built-in JSON** via JSON — `json(req)` for parsing, `json(...)` for responses
+- **Typed routing** — exact `Dict` lookup + ordered parametric patterns,
+  typed path parameters (`:id::Int`) as typed tuples, wildcards, route groups
 - **Full middleware stack** — CORS, rate limiting, auth, logging, metrics, health, security, compression
-- **WebSocket** — same port, frame limits, idle timeout, upgrade rejection, ping/pong
+- **WebSocket** — same port, frame limits, idle timeout, origin allowlist, upgrade rejection, ping/pong
 - **SSE** — Server-Sent Events with `sse()` / `emit()`
 - **Native TLS** — HTTPS via `TLSConfig`
-- **Production-ready** — graceful shutdown, backpressure, custom errors, DI, background tasks
-- **Fast startup** — sub-100ms TTFR via `PrecompileTools`
+- **Production-ready** — graceful shutdown, backpressure, custom + typed errors, DI, background tasks
+- **Testable without FFI** — `FakeTransport` (aka `TestClient`) runs the whole pipeline without `Mongoose_jll`
 
 ## Installation
 
@@ -25,45 +29,48 @@
 ```julia
 using Mongoose
 
-router = Router()
+app = App(workers=4)
 
-route!(router, :get, "/", req -> text("Hello, World!"))
+get!(app, "/") do req
+    text("Hello, World!")
+end
 
-route!(router, :get, "/users/:id::Int", (req, id) ->
+get!(app, "/users/:id::Int") do req, id
     json(Dict("id" => id, "name" => "User $id"))
-)
+end
 
-route!(router, :post, "/users", req -> begin
-    data = body(req)  # parses JSON automatically
+post!(app, "/users") do req
+    data = json(req)
     json(Dict("created" => data["name"]); status=201)
-end)
+end
 
-app = App(; router=router, workers=4)
 start!(app; port=8080)
 ```
 
 ## Architecture
 
-Mongoose.jl uses a layered architecture:
+Mongoose.jl is layered so each boundary is a replacement point:
 
 ```
 ┌──────────────────────────────────────────┐
-│  App (configuration, lifecycle, DI)      │
+│  App (config, lifecycle, services)       │
+│    + Router  <: AbstractRouter           │
+│    + Executor <: AbstractExecutor        │
 ├──────────────────────────────────────────┤
-│  Middleware Pipeline (onion model)       │
+│  Pipeline (invoke_request) & Middleware  │
 ├──────────────────────────────────────────┤
-│  Router (trie-based, groups)             │
+│  MongooseCore (protocol, router, types)  │
 ├──────────────────────────────────────────┤
-│  Protocol (Request, Response, formats)   │
-├──────────────────────────────────────────┤
-│  Transport (Mongoose C library FFI)      │
+│  Transport (<: AbstractTransport)        │
+│    - MongooseTransport (C FFI, default)  │
+│    - FakeTransport (no FFI, for tests)   │
 └──────────────────────────────────────────┘
 ```
 
-- **Router** defines routes, handlers, and WebSocket endpoints
-- **App** wraps the router with configuration, middleware, and lifecycle management
-- `workers=0` runs the event loop on the calling thread (sync mode)
-- `workers=N` spawns N worker tasks to process requests via channels (async mode)
+- **Router** registers `Endpoint`s (handler + scoped middleware + metadata) and resolves matches; it never runs handlers.
+- **App** composes a router, an executor, middleware, and lifecycle.
+- **SyncExecutor** runs jobs inline; **AsyncExecutor** is a bounded worker pool.
+- The request→response seam (`invoke_request`) lives in `MongooseCore` and works with no server and no FFI.
 
 ## Next Steps
 
