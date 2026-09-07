@@ -26,9 +26,7 @@ end
 
 # --- WebSocket endpoint ---
 
-abstract type AbstractWsEndpoint end
-
-struct WsEndpoint <: AbstractWsEndpoint
+struct WsEndpoint
     on_message::Function
     on_open::Union{Function,Nothing}
     on_close::Union{Function,Nothing}

@@ -5,7 +5,7 @@ using PrecompileTools
 import JSON
 using CodecZlib
 
-export App, ServerConfig, Router, Request, Response, StreamResponse,
+export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, use!, serve!, onerror!, onstart!, onstop!,
     context, Cookie, Headers, bake, cookies, form, header,
@@ -44,7 +44,6 @@ include("protocol/status.jl")        # status_reason()
 include("protocol/request.jl")       # Request struct
 include("protocol/response.jl")      # Response, StreamResponse, Cookie
 include("protocol/ws_types.jl")      # WsConn, Message, Intent, WsEndpoint, Tagged
-include("protocol/context.jl")       # context()
 include("protocol/validation.jl")    # validate(), ValidationError
 
 # ══════════════════════════════════════════════════════════════════════════════

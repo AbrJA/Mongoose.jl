@@ -45,20 +45,6 @@ end
     return string(Threads.atomic_add!(server.id_seq, UInt64(1)) + UInt64(1))
 end
 
-@inline function resolve_request_id_fast(msg::MgHttpMessage, server::AbstractServer)::String
-    for h in msg.headers
-        h.name.buf == C_NULL && break
-        h.name.len == 0 && break
-        h.name.len == 12 || continue
-        if lowercase(unsafe_string(h.name.buf, 12)) == "x-request-id"
-            val = to_string(h.val)
-            safe = sanitize_header_value(val)
-            !isempty(safe) && return safe
-        end
-    end
-    return string(Threads.atomic_add!(server.id_seq, UInt64(1)) + UInt64(1))
-end
-
 # --- Shared preprocessing ---
 
 function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})::Union{Nothing,Request}
@@ -112,7 +98,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         end
     else
         # Async path: enqueue to worker pool
-        id = Int(Threads.atomic_add!(server.id_seq, UInt64(1)) + UInt64(1))
+        id = Int(Threads.atomic_add!(server.conn_seq, UInt64(1)) + UInt64(1))
         server.connections[id] = conn
 
         tagged = Tagged{Union{Request,Intent}}(id, req)
@@ -151,10 +137,10 @@ end
 
 Route a request to its handler. Handles 404, 405, and auto-HEAD.
 """
-function dispatch_to_handler(router::Router, req::Request)::Union{Response,StreamResponse}
+function dispatch_to_handler(router::AbstractRouter, req::Request)::Union{Response,StreamResponse}
     matched = dispatch_route(router, req.method, req.uri)
     if matched !== nothing
-        handler = get_handler(matched.handlers, req.method)
+        handler = get_handler(matched, req.method)
         if handler !== nothing
             result = handler(req, matched.params...)
             result isa Union{Response,StreamResponse} || throw(TypeError(:dispatch_to_handler, Union{Response,StreamResponse}, result))
@@ -162,7 +148,7 @@ function dispatch_to_handler(router::Router, req::Request)::Union{Response,Strea
         end
         # Auto-HEAD: try GET handler, strip body
         if req.method === :head
-            get_h = matched.handlers.get
+            get_h = get_handler(matched, :get)
             if get_h !== nothing
                 resp = get_h(req, matched.params...)
                 resp isa Response && return Response(resp.status, resp.headers, "")
@@ -273,20 +259,5 @@ function serve!(server::AbstractServer, uri_prefix::AbstractString, directory::A
     isdir(dir) || throw(ArgumentError("serve!: directory does not exist: $dir"))
     prefix = "/" * lstrip(rstrip(uri_prefix, '/'), '/')
     push!(server.mounts, (dir, prefix))
-    return server
-end
-
-# Backward-compat alias: mount! for static files (old API)
-@inline mount_static!(server::AbstractServer, directory::AbstractString; kwargs...) =
-    serve!(server, directory; kwargs...)
-
-"""
-    fail!(server, status, response)
-
-Register a custom error response for a given HTTP status code.
-"""
-function fail!(server::AbstractServer, status::Integer, response::Response)
-    (100 <= status <= 599) || throw(ServerError("Status must be in [100,599]"))
-    server.core.errors[Int(status)] = response
     return server
 end

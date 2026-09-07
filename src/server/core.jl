@@ -111,7 +111,7 @@ end
     | `router`        | `Router()`     | Custom router instance                       |
     | `tls`           | `nothing`      | `TLSConfig` for HTTPS                        |
 """
-mutable struct App <: AbstractServer
+mutable struct App{R<:AbstractRouter} <: AbstractServer
     # Immutable configuration
     const config::ServerConfig
 
@@ -124,10 +124,11 @@ mutable struct App <: AbstractServer
 
     # Connection tracking
     ws_clients::Dict{Int,WsConn}
-    id_seq::Threads.Atomic{UInt64}
+    id_seq::Threads.Atomic{UInt64}       # X-Request-Id sequence
+    conn_seq::Threads.Atomic{UInt64}     # Async connection id sequence
 
     # Routing & middleware
-    const router::Router
+    const router::R
     const middlewares::Vector{AbstractMiddleware}
     const mounts::Vector{Tuple{String,String}}
 
@@ -156,10 +157,10 @@ mutable struct App <: AbstractServer
                  request_timeout::Integer=0,
                  ws_max_frame::Integer=MAX_BODY,
                  ws_idle_timeout::Integer=0,
-                 router::Router=Router(),
+                 router::R=Router(),
                  tls::Union{Nothing,TLSConfig}=nothing,
                  errors::Dict{Int,<:Any}=Dict{Int,Union{Response,Function}}(),
-                 services::Dict{Symbol,<:Any}=Dict{Symbol,Any}())
+                 services::Dict{Symbol,<:Any}=Dict{Symbol,Any}()) where {R<:AbstractRouter}
 
         cfg = ServerConfig(;
             poll_timeout, max_body, drain_timeout, request_timeout,
@@ -171,7 +172,7 @@ mutable struct App <: AbstractServer
         end
 
         ch_size = cfg.workers > 0 ? cfg.queuesize : 0
-        return new(
+        return new{R}(
             cfg,
             Threads.Atomic{Bool}(false),
             nothing,
@@ -179,6 +180,7 @@ mutable struct App <: AbstractServer
             C_NULL,
             tls,
             Dict{Int,WsConn}(),
+            Threads.Atomic{UInt64}(0),
             Threads.Atomic{UInt64}(0),
             router,
             AbstractMiddleware[],
@@ -221,11 +223,11 @@ end
     onerror!(app, status, handler)
 
 Register a custom error handler for a specific HTTP status code.
-`handler` may be a `Response` (static) or `Function(req, status) → Response` (dynamic).
+`handler` may be a `Response` (static) or `Function(req) → Response` (dynamic).
 
 # Example
 ```julia
-onerror!(app, 404) do req, status
+onerror!(app, 404) do req
     json(Dict("error" => "not found", "path" => req.uri); status=404)
 end
 ```

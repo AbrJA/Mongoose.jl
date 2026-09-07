@@ -31,10 +31,6 @@ end
     server.ws_clients[conn_id] = WsConn(uri, time(), false)
 end
 
-@inline function ws_forget!(server::AbstractServer, conn_id::Int)
-    pop!(server.ws_clients, conn_id, nothing)
-end
-
 # --- Upgrade ---
 
 function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
@@ -121,7 +117,7 @@ function close_ws!(server::AbstractServer, conn_id::Int)
     uri = entry === nothing ? nothing : entry.uri
 
     if uri !== nothing
-        endpoint = get(server.router.ws_routes, uri, nothing)
+        endpoint = ws_endpoint(server.router, uri)
         if endpoint !== nothing && endpoint.on_close !== nothing
             try
                 endpoint.on_close()
@@ -153,7 +149,7 @@ end
 # --- WS Dispatch ---
 
 function invoke_ws(server::AbstractServer, request::Tagged{Intent})
-    endpoint = get(server.router.ws_routes, request.payload.uri, nothing)
+    endpoint = ws_endpoint(server.router, request.payload.uri)
     endpoint === nothing && return nothing
     return call_ws_endpoint(endpoint, request)
 end

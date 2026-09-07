@@ -94,6 +94,8 @@ struct RouteMatch
     params::Vector{Any}
 end
 
+@inline get_handler(m::RouteMatch, method::Symbol) = get_handler(m.handlers, method)
+
 const EMPTY_PARAMS = Any[]
 
 # --- Router ---
@@ -104,7 +106,7 @@ const EMPTY_PARAMS = Any[]
     Routes are registered at runtime via `route!()`.
     Supports: static paths, typed parameters (`:id::Int`), wildcard catch-all (`*path`).
 """
-struct Router
+struct Router <: AbstractRouter
     root::TrieNode
     fixed::Dict{String,FixedRoute}
     ws_routes::Dict{String,WsEndpoint}
@@ -114,7 +116,10 @@ end
 @inline has_ws_routes(r::Router) = !isempty(r.ws_routes)
 @inline ws_endpoint(r::Router, uri::String) = get(r.ws_routes, uri, nothing)
 
-route_count(r::Router) = string(length(r.fixed) + count_trie_handlers(r.root))
+function route_count(r::Router)::AbstractString
+    n = length(r.fixed) + count_trie_handlers(r.root)
+    return string(n)
+end
 
 # --- Supported parameter types (extensible) ---
 
