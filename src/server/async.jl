@@ -135,26 +135,17 @@ end
 
 # --- Timed HTTP execution ---
 
-const _TIMED_INFLIGHT = Threads.Atomic{Int}(0)
-const _MAX_TIMED = max(Threads.nthreads() * 2, 8)
+# A timed request runs the handler on its own task so the worker thread can
+# enforce the deadline with timedwait. On timeout a 504 is returned and the
+# task is dropped; if it later finishes, its reply is discarded because the
+# connection id has already been removed from `app.connections`.
 
 function invoke_timed_http(server::AbstractServer, req::Request, timeout::Integer)::Union{Response,StreamResponse}
-    current = Threads.atomic_add!(_TIMED_INFLIGHT, 1)
-    if current >= _MAX_TIMED
-        Threads.atomic_sub!(_TIMED_INFLIGHT, 1)
-        @log_warn "Timed request limit reached uri=$(req.uri)"
-        return error_response(server.errors, 503)
-    end
     t = Threads.@spawn invoke_http(server, req)
-    try
-        r = timedwait(() -> istaskdone(t), timeout / 1000.0; pollint=0.002)
-        if r === :ok
-            return fetch(t)
-        else
-            @log_warn "Request timeout uri=$(req.uri)"
-            return error_response(server.errors, 504)
-        end
-    finally
-        Threads.atomic_sub!(_TIMED_INFLIGHT, 1)
+    r = timedwait(() -> istaskdone(t), timeout / 1000.0; pollint=0.002)
+    if r === :ok
+        return fetch(t)
     end
+    @log_warn "Request timeout uri=$(req.uri)"
+    return error_response(server.errors, 504)
 end

@@ -106,3 +106,23 @@ end
     end
     @test stopped[] == true
 end
+
+@testset "Per-request timeout (async)" begin
+    app = App(workers=1, request_timeout=150)
+    get!(app, "/slow") do req
+        sleep(1.0)
+        text("late")
+    end
+    get!(app, "/fast") do req
+        text("fast")
+    end
+
+    with_server(app) do port
+        resp = HTTP.get("http://127.0.0.1:$port/slow"; status_exception=false)
+        @test resp.status == 504
+
+        resp2 = HTTP.get("http://127.0.0.1:$port/fast"; status_exception=false)
+        @test resp2.status == 200
+        @test String(resp2.body) == "fast"
+    end
+end
