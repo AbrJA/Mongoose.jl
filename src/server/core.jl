@@ -42,6 +42,21 @@ Base.@kwdef struct TLSConfig
     skip_verification::Bool = false
 end
 
+# --- Active streaming responses (chunk channels drained by the event loop) ---
+
+"""
+    ActiveStream — one in-flight streaming response.
+
+    The producer writes chunks to `channel` from a separate task; the event
+    loop drains the channel on the poll thread (`drain_streams!`) and sends
+    bytes via the C connection (which is not thread-safe).
+"""
+mutable struct ActiveStream
+    channel::Channel{Union{Vector{UInt8},Nothing}}
+    conn::MgConnection
+    done::Bool
+end
+
 # --- ServerConfig — Immutable configuration separated from runtime state ---
 
 """
@@ -145,6 +160,9 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
     # Transport-side in-flight requests (async only): id → connection
     connections::Dict{Int,MgConnection}
 
+    # Active streaming responses (chunk channels drained by the event loop)
+    streams::Dict{Int,ActiveStream}
+
     # Execution strategy: SyncExecutor (inline) or AsyncExecutor (worker pool)
     const executor::AbstractExecutor
 
@@ -192,6 +210,7 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
             Function[],
             Task[],
             Dict{Int,MgConnection}(),
+            Dict{Int,ActiveStream}(),
             exec
         )
     end
@@ -212,6 +231,10 @@ end
 # --- Teardown ---
 
 function teardown!(app::App)
+    for st in values(app.streams)
+        close(st.channel)
+    end
+    empty!(app.streams)
     free!(app.manager)
 end
 

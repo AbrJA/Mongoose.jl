@@ -64,7 +64,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         end
         rid = resolve_request_id(req, server)
         if res isa StreamResponse
-            send_stream_response!(conn, res)
+            send_stream_response!(server, conn, res)
         else
             send_http_response!(conn, res::Response, rid)
         end

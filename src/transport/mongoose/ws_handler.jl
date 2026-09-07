@@ -122,6 +122,9 @@ function on_connection_close(server::AbstractServer, conn::MgConnection, ::Ptr{C
     conn_id = Int(conn)
     close_ws!(server, conn_id)
     filter!(kv -> kv.second != conn, server.connections)
+    # Abort any active stream on this connection: unblocks the producer.
+    st = pop!(server.streams, conn_id, nothing)
+    st !== nothing && close(st.channel)
 end
 
 function close_ws!(server::AbstractServer, conn_id::Int)

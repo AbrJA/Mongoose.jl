@@ -60,22 +60,29 @@ end
 
 # --- Streaming support ---
 
-"""
-    StreamWriter — IO interface for writing chunked data to a connection.
+# Chunked-encoding terminal chunk, enqueued once per stream.
+const _STREAM_TERMINAL = UInt8[0x30, 0x0d, 0x0a, 0x0d, 0x0a]
 
-    Used by `StreamResponse` producers. Each `write` emits a chunk.
-    Call `close` to send the terminal chunk and signal end-of-body.
+"""
+    StreamWriter — chunked-encoding writer fed by a task, drained by the loop.
+
+    `write` enqueues a chunk onto the stream's channel; the event loop drains
+    the channel and sends bytes with `mg_send` on the poll thread. Producers
+    therefore never touch the connection directly, and a slow producer only
+    blocks its own task (bounded channel = natural backpressure), never the
+    event loop.
+
+    `close`/EOF pushes the terminal chunk followed by a `nothing` sentinel.
 """
 mutable struct StreamWriter <: IO
-    conn::MgConnection
+    channel::Channel{Union{Vector{UInt8},Nothing}}
     open::Bool
 end
 
 function Base.write(w::StreamWriter, data::String)
     w.open || error("StreamWriter is closed")
     chunk = string(string(ncodeunits(data); base=16), "\r\n", data, "\r\n")
-    buf = Vector{UInt8}(codeunits(chunk))
-    mg_send(w.conn, buf)
+    put!(w.channel, Vector{UInt8}(codeunits(chunk)))
     return ncodeunits(data)
 end
 
@@ -83,23 +90,28 @@ function Base.write(w::StreamWriter, data::Vector{UInt8})
     w.open || error("StreamWriter is closed")
     header = string(string(length(data); base=16), "\r\n")
     hbuf = Vector{UInt8}(codeunits(header))
-    trailer = Vector{UInt8}(codeunits("\r\n"))
+    trailer = UInt8[0x0d, 0x0a]
     buf = Vector{UInt8}(undef, length(hbuf) + length(data) + 2)
     copyto!(buf, 1, hbuf, 1, length(hbuf))
     copyto!(buf, length(hbuf) + 1, data, 1, length(data))
     copyto!(buf, length(hbuf) + length(data) + 1, trailer, 1, 2)
-    mg_send(w.conn, buf)
+    put!(w.channel, buf)
     return length(data)
 end
 
 function Base.flush(::StreamWriter)
-    # No-op: mg_send buffers are flushed on next poll
+    # No-op: chunks are drained by the event loop on its next pass.
     nothing
 end
 
 function Base.close(w::StreamWriter)
     if w.open
-        mg_send(w.conn, Vector{UInt8}(codeunits("0\r\n\r\n")))
+        try
+            put!(w.channel, _STREAM_TERMINAL)
+            put!(w.channel, nothing)
+        catch e
+            e isa InvalidStateException || rethrow(e)
+        end
         w.open = false
     end
 end
@@ -107,12 +119,14 @@ end
 Base.isopen(w::StreamWriter) = w.open
 
 """
-    send_stream_response!(conn, stream_resp)
+    send_stream_response!(server, conn, resp)
 
-Initiate a chunked streaming response. Sends headers immediately,
-then calls the producer with a StreamWriter.
+Initiate a chunked streaming response. Headers are sent immediately; the
+producer runs on its own task and writes chunks to a bounded channel which
+the event loop drains (`drain_streams!`). The poll thread never runs user
+code, so one slow stream cannot stall the server.
 """
-function send_stream_response!(conn::MgConnection, resp::StreamResponse)
+function send_stream_response!(server::AbstractServer, conn::MgConnection, resp::StreamResponse)
     headers = string(
         content_type_header_raw(resp.content_type),
         format_headers(resp.headers),
@@ -122,12 +136,56 @@ function send_stream_response!(conn::MgConnection, resp::StreamResponse)
                   headers, "\r\n")
     mg_send(conn, Vector{UInt8}(codeunits(head)))
 
-    writer = StreamWriter(conn, true)
+    chan = Channel{Union{Vector{UInt8},Nothing}}(64)
+    server.streams[Int(conn)] = ActiveStream(chan, conn, false)
+    producer = resp.producer
+    @async _run_stream(chan, producer)
+    return nothing
+end
+
+function _run_stream(chan::Channel{Union{Vector{UInt8},Nothing}}, producer::Function)
+    writer = StreamWriter(chan, true)
     try
-        resp.producer(writer)
+        producer(writer)
+    catch e
+        e isa InvalidStateException ||
+            @log_error "Stream producer error" e catch_backtrace()
     finally
-        close(writer)
+        if writer.open
+            try
+                put!(chan, _STREAM_TERMINAL)
+                put!(chan, nothing)
+            catch
+            end
+        end
     end
+end
+
+"""
+    drain_streams!(server)
+
+Send any pending chunks for in-flight streams. Called from the event loop;
+must run on the poll thread only (C connections are not thread-safe).
+"""
+function drain_streams!(server::AbstractServer)
+    streams = server.streams
+    isempty(streams) && return
+    done = Int[]
+    for (id, st) in streams
+        chan = st.channel
+        while isopen(chan) && isready(chan)
+            chunk = take!(chan)
+            if chunk === nothing
+                push!(done, id)
+                break
+            end
+            mg_send(st.conn, chunk)
+        end
+    end
+    for id in done
+        delete!(streams, id)
+    end
+    return
 end
 
 @inline content_type_header_raw(ct::String) = "Content-Type: " * ct * "\r\n"

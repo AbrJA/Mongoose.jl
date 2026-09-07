@@ -124,7 +124,9 @@ end
     StreamResponse — Response whose body is produced incrementally.
 
     The `producer` function receives a `StreamWriter` and writes chunks to it.
-    Only supported with `Async` servers (streaming blocks a worker thread).
+    The producer runs on its own task, feeding a bounded channel that the
+    event loop drains — a slow producer never blocks the poll thread or other
+    connections. Works in both sync and async modes.
 
     # Example
     ```julia

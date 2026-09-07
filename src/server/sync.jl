@@ -17,6 +17,7 @@ function _event_loop_sync(app::App)
     while app.running[]
         mg_mgr_poll(mgr, timeout)
         isempty(app.ws_clients) || mg_mgr_poll(mgr, 0)
+        drain_streams!(app)
         if app.ws_idle_timeout > 0 && !isempty(app.ws_clients)
             now = time()
             if (now - last_sweep) >= 5.0
@@ -37,6 +38,7 @@ function _event_loop_async(app::App)
 
         did_ws = dispatch_replies!(app)
         did_ws && mg_mgr_poll(app.manager.ptr, 1)
+        drain_streams!(app)
 
         now = time()
 

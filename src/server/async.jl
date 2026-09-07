@@ -114,6 +114,7 @@ function init_server!(app::App)
     app.manager = Manager()
     app.executor isa AsyncExecutor && init_executor!(app.executor)
     empty!(app.connections)
+    empty!(app.streams)
     empty!(app.ws_clients)
 end
 
@@ -136,7 +137,7 @@ function dispatch_replies!(app::App)::Bool
             send_http_response!(conn, reply.payload)
             delete!(app.connections, reply.id)
         elseif reply.payload isa StreamResponse
-            try send_stream_response!(conn, reply.payload) catch e; @log_error "Stream error" e catch_backtrace() end
+            try send_stream_response!(app, conn, reply.payload) catch e; @log_error "Stream error" e catch_backtrace() end
             delete!(app.connections, reply.id)
         else  # Message (WebSocket)
             try
