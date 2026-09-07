@@ -627,6 +627,31 @@ end
     @test sink == ["grp", "handler", "grp:after"]
 end
 
+@testset "Plain callable middleware (no subtype needed)" begin
+    r = Router()
+    hang = String[]
+    get!(r, "/c", req -> (push!(hang, "handler"); text("ok")))
+
+    # use! accepts a plain closure.
+    app = App()
+    use!(app) do req, next
+        push!(hang, "mw")
+        next()
+    end
+    @test app.middlewares[1] isa Mongoose.FunctionMiddleware
+
+    res = Mongoose.invoke_request(r, app.middlewares,
+        Dict{Int,Union{Response,Function}}(), Dict{Symbol,Any}(),
+        Request(:get, "/c", Dict{String,String}(), Pair{String,String}[], ""))
+    @test res.status == 200
+    @test hang == ["mw", "handler"]
+
+    # route!(; middleware=[...]) accepts closures too.
+    route!(r, :get, "/s", req -> (push!(hang, "shandler"); text("ok"));
+           middleware=[(req, next) -> (push!(hang, "smw"); next())])
+    @test r.fixed["/s"].handlers.get.middleware[1] isa Mongoose.FunctionMiddleware
+end
+
 @testset "Standalone pipeline (no server, MongooseCore seam)" begin
     r = Router()
     get!(r, "/hi") do req; text("hello") end

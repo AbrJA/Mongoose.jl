@@ -175,14 +175,14 @@ end
 # --- Routing convenience on server/app ---
 
 function route!(server::AbstractServer, method::Symbol, path::AbstractString, @nospecialize(handler::Function);
-                middleware::Vector{<:AbstractMiddleware}=AbstractMiddleware[],
+                middleware::AbstractVector=AbstractMiddleware[],
                 metadata=nothing)
     route!(server.router, method, path, handler; middleware=middleware, metadata=metadata)
     return server
 end
 
 function route!(server::AbstractServer, method::AbstractString, path::AbstractString, @nospecialize(handler::Function);
-                middleware::Vector{<:AbstractMiddleware}=AbstractMiddleware[],
+                middleware::AbstractVector=AbstractMiddleware[],
                 metadata=nothing)
     route!(server.router, Symbol(lowercase(method)), path, handler;
            middleware=middleware, metadata=metadata)

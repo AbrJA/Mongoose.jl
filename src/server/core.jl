@@ -337,19 +337,25 @@ end
 """
     use!(app, middleware; paths=[])
 
-Add middleware to an app. When `paths` is non-empty, the middleware only
+Add middleware to an app. `middleware` may be any callable
+`(req, next) → Response` or an `AbstractMiddleware` subtype; plain functions
+are wrapped automatically. When `paths` is non-empty, the middleware only
 applies to requests whose URI starts with one of the given prefixes.
 
 # Example
 ```julia
 use!(app, cors())
 use!(app, bearer(validate_token); paths=["/api"])
-use!(app, logger())
+use!(app, (req, next) -> (req.headers ...; next()))
 ```
 """
-function use!(server::AbstractServer, mw::AbstractMiddleware;
-              paths::Vector{String}=String[])
-    wrapped = isempty(paths) ? mw : PathFilter(mw, paths)
+function use!(server::AbstractServer, @nospecialize(mw); paths::Vector{String}=String[])
+    inner = as_middleware(mw)
+    wrapped = isempty(paths) ? inner : PathFilter(inner, paths)
     push!(server.middlewares, wrapped)
     return server
 end
+
+# Do-block convenience: use!(app) do req, next ... end
+use!(f::Function, server::AbstractServer; paths::Vector{String}=String[]) =
+    use!(server, f; paths=paths)

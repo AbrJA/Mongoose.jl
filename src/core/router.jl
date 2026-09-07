@@ -35,9 +35,10 @@ struct Endpoint
 end
 
 function Endpoint(handler::Function;
-                  middleware::Vector{<:AbstractMiddleware}=AbstractMiddleware[],
+                  middleware::AbstractVector=AbstractMiddleware[],
                   metadata=nothing)
-    return Endpoint(handler, AbstractMiddleware[middleware...], metadata)
+    mws = AbstractMiddleware[as_middleware(m) for m in middleware]
+    return Endpoint(handler, mws, metadata)
 end
 
 # --- Method Dispatch (struct fields instead of Dict for zero-allocation dispatch) ---
@@ -205,7 +206,7 @@ Overlapping parametric routes resolve first-registered-first at dispatch;
 static routes always take precedence over parametric ones.
 """
 function route!(router::Router, method::Symbol, path::AbstractString, @nospecialize(handler::Function);
-                middleware::Vector{<:AbstractMiddleware}=AbstractMiddleware[],
+                middleware::AbstractVector=AbstractMiddleware[],
                 metadata=nothing)
     method in VALID_METHODS || throw(RouteError("Invalid HTTP method: $method"))
     _register_route!(router, method, String(path),
@@ -214,7 +215,7 @@ function route!(router::Router, method::Symbol, path::AbstractString, @nospecial
 end
 
 function route!(router::Router, method::AbstractString, path::AbstractString, @nospecialize(handler::Function);
-                middleware::Vector{<:AbstractMiddleware}=AbstractMiddleware[],
+                middleware::AbstractVector=AbstractMiddleware[],
                 metadata=nothing)
     route!(router, Symbol(lowercase(method)), path, handler;
            middleware=middleware, metadata=metadata)

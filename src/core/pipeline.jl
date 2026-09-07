@@ -54,6 +54,26 @@ function (mw::PathFilter)(req::Request, next::Function)
     return next()
 end
 
+# --- FunctionMiddleware: allow plain callables as middleware ---
+
+"""
+    FunctionMiddleware{F} — adapter that lets any callable `f(req, next)` act
+    as a middleware without subtyping `AbstractMiddleware`.
+
+    User code rarely needs this directly: `use!` and `route!(; middleware=...)`
+    accept plain closures/functions and wrap them automatically.
+"""
+struct FunctionMiddleware{F} <: AbstractMiddleware
+    f::F
+end
+
+function (mw::FunctionMiddleware)(req::Request, next::Function)
+    return mw.f(req, next)
+end
+
+as_middleware(mw::AbstractMiddleware) = mw
+as_middleware(mw) = FunctionMiddleware(mw)
+
 # --- Pipeline execution ---
 
 """
