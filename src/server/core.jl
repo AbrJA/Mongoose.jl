@@ -144,8 +144,8 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
     # Transport-side in-flight requests (async only): id → connection
     connections::Dict{Int,MgConnection}
 
-    # Execution: nothing = sync (inline), AsyncExecutor = worker pool
-    executor::Union{Nothing,AbstractExecutor}
+    # Execution strategy: SyncExecutor (inline) or AsyncExecutor (worker pool)
+    const executor::AbstractExecutor
 
     function App(;
                  workers::Integer=0,
@@ -170,7 +170,7 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
             (100 <= code <= 599) || throw(ServerError("Error status code must be in [100,599], got $code"))
         end
 
-        exec = cfg.workers > 0 ? AsyncExecutor(cfg.workers, cfg.queuesize) : nothing
+        exec = cfg.workers > 0 ? AsyncExecutor(cfg.workers, cfg.queuesize) : SyncExecutor()
         return new{R}(
             cfg,
             Threads.Atomic{Bool}(false),

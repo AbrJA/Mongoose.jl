@@ -31,9 +31,7 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
             try hook() catch e; @log_error "onstart! hook error" e catch_backtrace() end
         end
 
-        if server.executor !== nothing
-            start!(server.executor, server)
-        end
+        start!(server.executor, server)
         log_server_start(server, url)
 
         if blocking
@@ -68,9 +66,7 @@ function shutdown!(server::AbstractServer)
     end
 
     drain!(server)
-    if server.executor !== nothing
-        stop!(server.executor)
-    end
+    stop!(server.executor)
     stop_event_loop!(server)
     unregister_server!(server)
     teardown!(server)

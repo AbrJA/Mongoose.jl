@@ -112,12 +112,12 @@ end
 
 function init_server!(app::App)
     app.manager = Manager()
-    app.executor === nothing || init_executor!(app.executor)
+    app.executor isa AsyncExecutor && init_executor!(app.executor)
     empty!(app.connections)
     empty!(app.ws_clients)
 end
 
-has_pending(app::App) = app.executor === nothing ? false : has_pending(app.executor)
+has_pending(app::App) = app.executor isa AsyncExecutor ? has_pending(app.executor) : false
 
 function drain_poll!(app::App)
     mg_mgr_poll(app.manager.ptr, 10)

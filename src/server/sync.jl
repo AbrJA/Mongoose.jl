@@ -3,7 +3,7 @@
 """
 
 function event_loop(app::App)
-    if app.executor === nothing
+    if !(app.executor isa AsyncExecutor)
         _event_loop_sync(app)
     else
         _event_loop_async(app)
@@ -29,8 +29,7 @@ function _event_loop_sync(app::App)
 end
 
 function _event_loop_async(app::App)
-    exec = app.executor
-    exec === nothing && return
+    exec = app.executor::AsyncExecutor
     last_sweep = time()
     last_health = time()
     while app.running[]

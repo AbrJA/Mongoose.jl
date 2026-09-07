@@ -54,7 +54,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
     req = preprocess_http(server, conn, ev_data)
     req === nothing && return
 
-    if server.executor === nothing
+    if !(server.executor isa AsyncExecutor)
         # Sync path: handle inline
         res = try
             invoke_http(server, req)

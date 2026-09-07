@@ -88,7 +88,7 @@ function on_ws_message(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
     ws_msg = parse_ws_message(msg)
     uri = let e = get(server.ws_clients, conn_id, nothing); e === nothing ? "" : e.uri end
 
-    if server.executor !== nothing
+    if server.executor isa AsyncExecutor
         # Async: submit the dispatch as a job to the worker pool
         exec = server.executor
         server.connections[conn_id] = conn
@@ -111,7 +111,7 @@ end
 function on_connection_close(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
     conn_id = Int(conn)
     close_ws!(server, conn_id)
-    server.executor !== nothing && filter!(kv -> kv.second != conn, server.connections)
+    server.executor isa AsyncExecutor && filter!(kv -> kv.second != conn, server.connections)
 end
 
 function close_ws!(server::AbstractServer, conn_id::Int)

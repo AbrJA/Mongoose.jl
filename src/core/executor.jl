@@ -34,6 +34,8 @@ abstract type AbstractExecutor end
 struct SyncExecutor <: AbstractExecutor end
 
 submit!(::SyncExecutor, job::Function) = job()::Any
+start!(::SyncExecutor, app) = nothing
+stop!(::SyncExecutor) = nothing
 
 # --- Contract-by-fallback methods ---
 

@@ -4,7 +4,7 @@
         @test app isa App
         @test app.running[] == false
         @test app.workers == 0
-        @test app.executor === nothing
+        @test app.executor isa SyncExecutor
     end
 
     @testset "Async App" begin
