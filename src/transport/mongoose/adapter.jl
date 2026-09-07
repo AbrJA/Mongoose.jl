@@ -62,34 +62,15 @@ end
 """
     parse_method(str::MgStr) → Symbol
 
-Zero-allocation HTTP method parsing via direct byte comparison.
+Convert the C method string to a lowercase `Symbol`. The previous hand-rolled
+byte comparison avoided a per-request `String` at the cost of ~25 hard-to-read
+lines; the surrounding adapter already allocates Strings/Dicts per request, so
+the simple version is the right trade-off.
 """
 @inline function parse_method(str::MgStr)::Symbol
-    (str.buf == C_NULL || str.len == 0) && return :unknown
-    ptr = str.buf
-    len = str.len
-    b1 = unsafe_load(ptr, 1)
-
-    if b1 == 0x47 && len == 3  # GET
-        unsafe_load(ptr, 2) == 0x45 && unsafe_load(ptr, 3) == 0x54 && return :get
-    elseif b1 == 0x50  # P...
-        if len == 3  # PUT
-            unsafe_load(ptr, 2) == 0x55 && unsafe_load(ptr, 3) == 0x54 && return :put
-        elseif len == 4  # POST
-            unsafe_load(ptr, 2) == 0x4F && unsafe_load(ptr, 3) == 0x53 && unsafe_load(ptr, 4) == 0x54 && return :post
-        elseif len == 5  # PATCH
-            unsafe_load(ptr, 2) == 0x41 && unsafe_load(ptr, 3) == 0x54 && unsafe_load(ptr, 4) == 0x43 && unsafe_load(ptr, 5) == 0x48 && return :patch
-        end
-    elseif b1 == 0x44 && len == 6  # DELETE
-        unsafe_load(ptr, 2) == 0x45 && unsafe_load(ptr, 3) == 0x4C && unsafe_load(ptr, 4) == 0x45 &&
-        unsafe_load(ptr, 5) == 0x54 && unsafe_load(ptr, 6) == 0x45 && return :delete
-    elseif b1 == 0x4F && len == 7  # OPTIONS
-        unsafe_load(ptr, 2) == 0x50 && unsafe_load(ptr, 3) == 0x54 && unsafe_load(ptr, 4) == 0x49 &&
-        unsafe_load(ptr, 5) == 0x4F && unsafe_load(ptr, 6) == 0x4E && unsafe_load(ptr, 7) == 0x53 && return :options
-    elseif b1 == 0x48 && len == 4  # HEAD
-        unsafe_load(ptr, 2) == 0x45 && unsafe_load(ptr, 3) == 0x41 && unsafe_load(ptr, 4) == 0x44 && return :head
-    end
-    return Symbol(lowercase(to_string(str)))
+    s = to_string(str)
+    isempty(s) && return :unknown
+    return Symbol(lowercase(s))
 end
 
 """
