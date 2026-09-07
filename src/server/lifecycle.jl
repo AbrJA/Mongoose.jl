@@ -31,8 +31,8 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
             try hook() catch e; @log_error "onstart! hook error" e catch_backtrace() end
         end
 
-        if server.workers > 0
-            spawn_workers!(server)
+        if server.executor !== nothing
+            start!(server.executor, server)
         end
         log_server_start(server, url)
 
@@ -68,8 +68,8 @@ function shutdown!(server::AbstractServer)
     end
 
     drain!(server)
-    if server.workers > 0
-        stop_workers!(server)
+    if server.executor !== nothing
+        stop!(server.executor)
     end
     stop_event_loop!(server)
     unregister_server!(server)
@@ -118,9 +118,7 @@ end
 
 # Defaults (overridden for async App)
 has_pending(::AbstractServer) = false
-drain_poll!(server::AbstractServer) = (server.workers > 0 && drain_poll!(server); yield())
-spawn_workers!(::AbstractServer) = nothing
-stop_workers!(::AbstractServer) = nothing
+drain_poll!(server::AbstractServer) = yield()
 
 # --- TLS Material Loading ---
 

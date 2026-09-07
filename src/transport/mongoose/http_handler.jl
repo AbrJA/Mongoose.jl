@@ -54,7 +54,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
     req = preprocess_http(server, conn, ev_data)
     req === nothing && return
 
-    if server.workers == 0
+    if server.executor === nothing
         # Sync path: handle inline
         res = try
             invoke_http(server, req)
@@ -69,16 +69,59 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
             send_http_response!(conn, res::Response, rid)
         end
     else
-        # Async path: enqueue to worker pool
+        # Async path: enqueue a job to the worker pool
+        exec = server.executor
         id = Int(Threads.atomic_add!(server.conn_seq, UInt64(1)) + UInt64(1))
         server.connections[id] = conn
 
-        tagged = Tagged{Union{Request,Intent}}(id, req)
-        if !try_enqueue!(server.calls, tagged, server.queuesize)
+        timeout = server.request_timeout
+        job = if timeout > 0
+            () -> _http_job_timed(server, id, req, timeout)
+        else
+            () -> _http_job(server, id, req)
+        end
+        if !submit!(exec, job)
             delete!(server.connections, id)
             send_http_response!(conn, error_response(server.errors, 503))
         end
     end
+end
+
+# --- Async job builders (worker-pool payloads) ---
+
+"""
+    _http_job(server, id, request) → Tagged
+
+Build the reply for a buffered/streamed HTTP request, adding `X-Request-Id`.
+"""
+function _http_job(server::AbstractServer, id::Int, req::Request)
+    rid = resolve_request_id(req, server)
+    res = try
+        invoke_http(server, req)
+    catch e
+        @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
+        error_response(server.errors, req, 500)
+    end
+    if res isa StreamResponse
+        return Tagged{Union{Response,StreamResponse,Message}}(id, res)
+    end
+    resp = Response(res.status, [res.headers; "X-Request-Id" => rid], res.body)
+    return Tagged{Union{Response,StreamResponse,Message}}(id, resp)
+end
+
+"""
+    _http_job_timed(server, id, request, timeout) → Tagged
+
+Run `_http_job` under a `request_timeout` deadline; on timeout reply 504 and
+drop the still-running task (its late reply is discarded because the connection
+id is gone from `app.connections`).
+"""
+function _http_job_timed(server::AbstractServer, id::Int, req::Request, timeout::Integer)
+    t = Threads.@spawn _http_job(server, id, req)
+    r = timedwait(() -> istaskdone(t), timeout / 1000.0; pollint=0.002)
+    r === :ok && return fetch(t)
+    @log_warn "Request timeout uri=$(req.uri)"
+    return Tagged{Union{Response,StreamResponse,Message}}(id, error_response(server.errors, 504))
 end
 
 # --- HTTP dispatch (thin transport wrapper over the core pipeline) ---

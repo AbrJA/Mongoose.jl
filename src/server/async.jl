@@ -1,49 +1,135 @@
 """
-    Async worker pool for App (workers>0).
+    AsyncExecutor — bounded worker pool with a reply queue.
 
     Architecture:
-    - Event loop branches on app.workers in sync.jl
-    - Worker pool (N threads): process requests, send replies via reply channel
-    - Supervisor: respawns dead workers every 2 seconds
+    - Transport submits closures (`() → Union{Nothing,Tagged}`) via `submit!`.
+    - `workers` threads dequeue and run jobs, pushing replies onto `replies`.
+    - The event loop drains `replies` (see `dispatch_replies!`) and sends them
+      through the transport's connections.
+    - `supervise_workers!` respawns dead workers on a timer.
+
+    The executor never interprets requests/responses; it only runs jobs and
+    ships the replies they produce. Timeout policy is applied by the transport
+    when it builds a job.
 """
+
+mutable struct AsyncExecutor <: AbstractExecutor
+    workers::Int
+    queuesize::Int
+    worker_tasks::Vector{Task}
+    calls::Channel{Function}
+    replies::Channel{Tagged{Union{Response,StreamResponse,Message}}}
+    inflight::Threads.Atomic{Int}
+end
+
+function AsyncExecutor(workers::Int, queuesize::Int)
+    return AsyncExecutor(workers, queuesize, Task[],
+        Channel{Function}(queuesize),
+        Channel{Tagged{Union{Response,StreamResponse,Message}}}(queuesize),
+        Threads.Atomic{Int}(0))
+end
+
+# --- Lifecycle ---
+
+function init_executor!(exec::AsyncExecutor)
+    exec.calls = Channel{Function}(exec.queuesize)
+    exec.replies = Channel{Tagged{Union{Response,StreamResponse,Message}}}(exec.queuesize)
+    empty!(exec.worker_tasks)
+    return exec
+end
+
+function start!(exec::AsyncExecutor, app)
+    spawn_workers!(exec)
+    return exec
+end
+
+function spawn_workers!(exec::AsyncExecutor)
+    empty!(exec.worker_tasks)
+    for _ in 1:exec.workers
+        push!(exec.worker_tasks, Threads.@spawn worker_loop(exec))
+    end
+end
+
+function stop!(exec::AsyncExecutor)
+    close(exec.calls)
+    for t in exec.worker_tasks
+        try wait(t) catch end
+    end
+    close(exec.replies)
+    empty!(exec.worker_tasks)
+    return exec
+end
+
+has_pending(exec::AsyncExecutor) =
+    isready(exec.calls) || isready(exec.replies) || exec.inflight[] > 0
+
+# --- Submission ---
+
+@inline function submit!(exec::AsyncExecutor, job::Function)
+    isopen(exec.calls) || return false
+    Base.n_avail(exec.calls) >= exec.queuesize && return false
+    try
+        put!(exec.calls, job)
+    catch e
+        e isa InvalidStateException || rethrow(e)
+        return false
+    end
+    return true
+end
+
+# --- Worker loop ---
+
+function worker_loop(exec::AsyncExecutor)
+    try
+        for job in exec.calls
+            Threads.atomic_add!(exec.inflight, 1)
+            try
+                reply = job()
+                reply === nothing && continue
+                isopen(exec.replies) && put!(exec.replies, reply)
+            finally
+                Threads.atomic_sub!(exec.inflight, 1)
+            end
+        end
+    catch e
+        e isa InvalidStateException || rethrow(e)
+    end
+end
+
+# --- Supervisor ---
+
+function supervise_workers!(exec::AsyncExecutor)
+    for i in eachindex(exec.worker_tasks)
+        t = exec.worker_tasks[i]
+        if istaskdone(t)
+            istaskfailed(t) && @log_warn "Worker $i died, respawning"
+            exec.worker_tasks[i] = Threads.@spawn worker_loop(exec)
+        end
+    end
+end
+
+# --- App wiring (server-level orchestration) ---
 
 function init_server!(app::App)
     app.manager = Manager()
-    app.calls = Channel{Tagged{Union{Request,Intent}}}(app.queuesize)
-    app.replies = Channel{Tagged{Union{Response,StreamResponse,Message}}}(app.queuesize)
+    app.executor === nothing || init_executor!(app.executor)
     empty!(app.connections)
     empty!(app.ws_clients)
 end
 
-function spawn_workers!(app::App)
-    empty!(app.worker_tasks)
-    for _ in 1:app.workers
-        push!(app.worker_tasks, Threads.@spawn worker_loop(app))
-    end
-end
-
-function stop_workers!(app::App)
-    close(app.calls)
-    for t in app.worker_tasks
-        try wait(t) catch end
-    end
-    close(app.replies)
-    empty!(app.worker_tasks)
-end
-
-has_pending(app::App) = isready(app.calls) || isready(app.replies) || app.inflight[] > 0
+has_pending(app::App) = app.executor === nothing ? false : has_pending(app.executor)
 
 function drain_poll!(app::App)
     mg_mgr_poll(app.manager.ptr, 10)
     dispatch_replies!(app)
 end
 
-# --- Reply Dispatch ---
-
 function dispatch_replies!(app::App)::Bool
+    exec = app.executor
+    exec === nothing && return false
     did_ws = false
-    while isopen(app.replies) && isready(app.replies)
-        reply = try take!(app.replies) catch e; e isa InvalidStateException && break; rethrow(e) end
+    while isopen(exec.replies) && isready(exec.replies)
+        reply = try take!(exec.replies) catch e; e isa InvalidStateException && break; rethrow(e) end
         conn = get(app.connections, reply.id, nothing)
         conn === nothing && continue
         if reply.payload isa Response
@@ -62,90 +148,4 @@ function dispatch_replies!(app::App)::Bool
         end
     end
     return did_ws
-end
-
-# --- Worker Loop ---
-
-function worker_loop(app::App)
-    timeout = app.request_timeout
-    try
-        for tagged_req in app.calls
-            Threads.atomic_add!(app.inflight, 1)
-            try
-                if tagged_req.payload isa Request
-                    rid = resolve_request_id(tagged_req.payload, app)
-                    res = try
-                        if timeout > 0
-                            invoke_timed_http(app, tagged_req.payload, timeout)
-                        else
-                            invoke_http(app, tagged_req.payload)
-                        end
-                    catch e
-                        @log_error "Handler error uri=$(tagged_req.payload.uri)" e catch_backtrace()
-                        error_response(app.errors, tagged_req.payload, 500)
-                    end
-                    tagged_res = if res isa StreamResponse
-                        Tagged{Union{Response,StreamResponse,Message}}(tagged_req.id, res)
-                    else
-                        resp_with_id = Response(res.status,
-                            [res.headers; ["X-Request-Id" => rid]],
-                            res.body)
-                        Tagged{Union{Response,StreamResponse,Message}}(tagged_req.id, resp_with_id)
-                    end
-                    try isopen(app.replies) && put!(app.replies, tagged_res) catch end
-                else  # Intent (WebSocket)
-                    ws_tagged = Tagged{Intent}(tagged_req.id, tagged_req.payload::Intent)
-                    res = invoke_ws(app, ws_tagged)
-                    try res !== nothing && isopen(app.replies) && put!(app.replies, res) catch end
-                end
-            finally
-                Threads.atomic_sub!(app.inflight, 1)
-            end
-        end
-    catch e
-        e isa InvalidStateException || rethrow(e)
-    end
-end
-
-# --- Supervisor ---
-
-function supervise_workers!(app::App)
-    for i in eachindex(app.worker_tasks)
-        t = app.worker_tasks[i]
-        if istaskdone(t)
-            istaskfailed(t) && @log_warn "Worker $i died, respawning"
-            app.worker_tasks[i] = Threads.@spawn worker_loop(app)
-        end
-    end
-end
-
-# --- Non-blocking enqueue ---
-
-@inline function try_enqueue!(ch::Channel, val, capacity::Int)::Bool
-    isopen(ch) || return false
-    Base.n_avail(ch) >= capacity && return false
-    try
-        put!(ch, val)
-    catch e
-        e isa InvalidStateException || rethrow(e)
-        return false
-    end
-    return true
-end
-
-# --- Timed HTTP execution ---
-
-# A timed request runs the handler on its own task so the worker thread can
-# enforce the deadline with timedwait. On timeout a 504 is returned and the
-# task is dropped; if it later finishes, its reply is discarded because the
-# connection id has already been removed from `app.connections`.
-
-function invoke_timed_http(server::AbstractServer, req::Request, timeout::Integer)::Union{Response,StreamResponse}
-    t = Threads.@spawn invoke_http(server, req)
-    r = timedwait(() -> istaskdone(t), timeout / 1000.0; pollint=0.002)
-    if r === :ok
-        return fetch(t)
-    end
-    @log_warn "Request timeout uri=$(req.uri)"
-    return error_response(server.errors, 504)
 end

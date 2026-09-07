@@ -1,12 +1,12 @@
 """
-    Unified event loop for App. Branches on workers>0 for async mode.
+    Unified event loop for App. Branches on the executor for sync/async mode.
 """
 
 function event_loop(app::App)
-    if app.workers > 0
-        _event_loop_async(app)
-    else
+    if app.executor === nothing
         _event_loop_sync(app)
+    else
+        _event_loop_async(app)
     end
 end
 
@@ -29,6 +29,8 @@ function _event_loop_sync(app::App)
 end
 
 function _event_loop_async(app::App)
+    exec = app.executor
+    exec === nothing && return
     last_sweep = time()
     last_health = time()
     while app.running[]
@@ -40,7 +42,7 @@ function _event_loop_async(app::App)
         now = time()
 
         if (now - last_health) >= 2.0
-            supervise_workers!(app)
+            supervise_workers!(exec)
             last_health = now
         end
 

@@ -88,10 +88,12 @@ function on_ws_message(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
     ws_msg = parse_ws_message(msg)
     uri = let e = get(server.ws_clients, conn_id, nothing); e === nothing ? "" : e.uri end
 
-    if server.workers > 0
-        # Async: queue to worker pool
+    if server.executor !== nothing
+        # Async: submit the dispatch as a job to the worker pool
+        exec = server.executor
         server.connections[conn_id] = conn
-        if !try_enqueue!(server.calls, Tagged{Union{Request,Intent}}(conn_id, Intent(ws_msg, uri)), server.queuesize)
+        tagged = Tagged(conn_id, Intent(ws_msg, uri))
+        if !submit!(exec, () -> invoke_ws(server, tagged))
             @log_warn "WebSocket message dropped: worker queue full conn_id=$conn_id"
         end
     else
@@ -109,7 +111,7 @@ end
 function on_connection_close(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
     conn_id = Int(conn)
     close_ws!(server, conn_id)
-    server.workers > 0 && filter!(kv -> kv.second != conn, server.connections)
+    server.executor !== nothing && filter!(kv -> kv.second != conn, server.connections)
 end
 
 function close_ws!(server::AbstractServer, conn_id::Int)

@@ -29,6 +29,7 @@ include("ws_types.jl")      # Message, Intent, WsEndpoint, Tagged, WsConn
 include("validation.jl")    # validate(), ValidationError
 
 include("pipeline.jl")      # AbstractMiddleware, before/after, execute_pipeline
+include("executor.jl")      # AbstractExecutor, SyncExecutor, submit!/start!/stop!
 
 include("interface.jl")     # AbstractRouter protocol
 include("router.jl")        # Default Router (method map + ordered patterns)
@@ -58,6 +59,7 @@ export AbstractRequest, Request, Headers, context, form, header, query, body,
     route!, ws!, group, group!, RouteGroup, mount!, post!, patch!, options!, head!,
     Endpoint, error_response, invoke_request,
     AbstractMiddleware, before, after, PathFilter, execute_pipeline,
+    AbstractExecutor, SyncExecutor, submit!, start!, stop!,
     Cors, Bearer, ApiKey, RateLimit, Compress, Logger, Health,
     PrometheusMetrics, SecurityHeaders, Negotiate,
     cors, ratelimit, bearer, apikey, logger, health, metrics, security, compress, negotiate,

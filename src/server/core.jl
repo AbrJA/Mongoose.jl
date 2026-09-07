@@ -141,12 +141,11 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
     const hooks_stop::Vector{Function}
     bg_tasks::Vector{Task}
 
-    # Async worker pool (workers=0 → sync mode)
-    worker_tasks::Vector{Task}
-    calls::Channel{Tagged{Union{Request,Intent}}}
-    replies::Channel{Tagged{Union{Response,StreamResponse,Message}}}
+    # Transport-side in-flight requests (async only): id → connection
     connections::Dict{Int,MgConnection}
-    inflight::Threads.Atomic{Int}
+
+    # Execution: nothing = sync (inline), AsyncExecutor = worker pool
+    executor::Union{Nothing,AbstractExecutor}
 
     function App(;
                  workers::Integer=0,
@@ -171,7 +170,7 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
             (100 <= code <= 599) || throw(ServerError("Error status code must be in [100,599], got $code"))
         end
 
-        ch_size = cfg.workers > 0 ? cfg.queuesize : 0
+        exec = cfg.workers > 0 ? AsyncExecutor(cfg.workers, cfg.queuesize) : nothing
         return new{R}(
             cfg,
             Threads.Atomic{Bool}(false),
@@ -190,11 +189,8 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
             Function[],
             Function[],
             Task[],
-            Task[],
-            Channel{Tagged{Union{Request,Intent}}}(ch_size),
-            Channel{Tagged{Union{Response,StreamResponse,Message}}}(ch_size),
             Dict{Int,MgConnection}(),
-            Threads.Atomic{Int}(0)
+            exec
         )
     end
 end

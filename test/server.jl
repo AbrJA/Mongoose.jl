@@ -4,6 +4,7 @@
         @test app isa App
         @test app.running[] == false
         @test app.workers == 0
+        @test app.executor === nothing
     end
 
     @testset "Async App" begin
@@ -12,6 +13,9 @@
         @test app.running[] == false
         @test app.workers == 4
         @test app.queuesize == 1024
+        @test app.executor isa AsyncExecutor
+        @test app.executor.workers == 4
+        @test app.executor.queuesize == 1024
     end
 
     @testset "App with custom options" begin
