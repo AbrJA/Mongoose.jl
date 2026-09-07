@@ -99,9 +99,9 @@ responses for 4xx/5xx results.
 
 # Arguments
 - `router::AbstractRouter` — route table (see the router protocol).
-- `middlewares::Vector{AbstractMiddleware}` — app-global middleware stack.
+- `middlewares::AbstractVector{<:AbstractMiddleware}` — app-global middleware stack.
 - `errors` — `Dict{Int,Union{Response,Function}}` of custom error responses.
-- `services` — `Dict{Symbol,Any}` of dependency-injection services (may be empty).
+- `services::NamedTuple` — dependency-injection services (may be empty).
 - `request::Request` — the transport-agnostic request.
 
 Middleware is composed with the matched route's scoped `Endpoint` middleware
@@ -111,7 +111,7 @@ metrics) observes all requests.
 """
 function invoke_request(router::AbstractRouter, middlewares::AbstractVector{<:AbstractMiddleware},
                         errors::Dict{Int,Union{Response,Function}},
-                        services::Dict{Symbol,Any}, request::Request)::Union{Response,StreamResponse}
+                        services::NamedTuple, request::Request)::Union{Response,StreamResponse}
     if !isempty(services)
         ctx = context(request)
         ctx[:_services] = services

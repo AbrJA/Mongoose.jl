@@ -42,6 +42,20 @@ Base.@kwdef struct TLSConfig
     skip_verification::Bool = false
 end
 
+# --- Dependency injection registry ---
+
+"""
+    ServiceRegistry — mutable container for typed NamedTuple services.
+
+    `App(services=(db=pool, ...))` stores its services here; `service!` rebuilds
+    the NamedTuple (a cold, pre-start operation). Handlers access services with
+    `service(req, Val(:db))` for type-stable retrieval.
+"""
+mutable struct ServiceRegistry{T<:NamedTuple}
+    deps::T
+end
+ServiceRegistry() = ServiceRegistry(NamedTuple())
+
 # --- Active streaming responses (chunk channels drained by the event loop) ---
 
 """
@@ -150,7 +164,7 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
     # Error handling & DI
     const errors::Dict{Int,Union{Response,Function}}
     const exception_handlers::Dict{DataType,Function}
-    const services::Dict{Symbol,Any}
+    services::ServiceRegistry
 
     # Lifecycle hooks
     const hooks_start::Vector{Function}
@@ -178,7 +192,7 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
                  router::R=Router(),
                  tls::Union{Nothing,TLSConfig}=nothing,
                  errors::Dict{Int,<:Any}=Dict{Int,Union{Response,Function}}(),
-                 services::Dict{Symbol,<:Any}=Dict{Symbol,Any}()) where {R<:AbstractRouter}
+                 services::NamedTuple=NamedTuple()) where {R<:AbstractRouter}
 
         cfg = ServerConfig(;
             poll_timeout, max_body, drain_timeout, request_timeout,
@@ -205,7 +219,7 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
             Tuple{String,String}[],
             errs,
             Dict{DataType,Function}(),
-            Dict{Symbol,Any}(services),
+            ServiceRegistry(services),
             Function[],
             Function[],
             Task[],
@@ -328,24 +342,31 @@ Register a service for dependency injection.
 
 ```julia
 service!(app, :db, MyDB.connect())
-service(req, :db)   # retrieve inside handler
+service(req, :db)      # retrieve inside handler
 ```
 """
 function service!(app::App, name::Symbol, value)
-    app.services[name] = value
+    old = app.services.deps
+    app.services = ServiceRegistry((; old..., name => value))
     return app
 end
 
 """
     service(req, name) → Any
+    service(req, ::Val{name}) → T
     service(req, name, T) → T
 
 Retrieve a service by name from the request context.
-The 3-argument form provides type-stable access via assertion.
+- `service(req, :db)` returns the raw value (values may be zero-arg callables,
+  which are invoked).
+- `service(req, Val(:db))` is the **typed** form: with `services` registered as
+  a NamedTuple, the return type is statically known.
+- `service(req, :db, DBPool)` asserts the type and throws otherwise.
 
 # Example
 ```julia
-db = service(req, :db, DBPool)  # type-stable: returns DBPool or throws
+app = App(services=(db=pool, cache=redis))
+db = service(req, Val(:db))        # type-stable: DBPool
 ```
 """
 function service(req::Request, name::Symbol)
@@ -354,10 +375,25 @@ function service(req::Request, name::Symbol)
     svcs = get(ctx, :_services, nothing)
     if svcs === nothing
         app = get(ctx, :_app, nothing)
-        app isa App && (svcs = app.services)
+        app isa App && (svcs = app.services.deps)
     end
-    svcs === nothing && return nothing
-    v = get(svcs, name, nothing)
+    svcs isa NamedTuple || return nothing
+    hasproperty(svcs, name) || return nothing
+    v = getproperty(svcs, name)
+    return v isa Function ? v() : v
+end
+
+@inline function service(req::Request, ::Val{name}) where {name}
+    ctx = req.context
+    ctx === nothing && return nothing
+    svcs = get(ctx, :_services, nothing)
+    if svcs === nothing
+        app = get(ctx, :_app, nothing)
+        app isa App && (svcs = app.services.deps)
+    end
+    svcs isa NamedTuple || return nothing
+    hasproperty(svcs, name) || return nothing
+    v = getfield(svcs, name)
     return v isa Function ? v() : v
 end
 

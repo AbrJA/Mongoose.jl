@@ -602,7 +602,7 @@ end
     # Global ball then route-scoped middleware compose: g → route → handler.
     global_mw = _RecordMw("global", sink)
     res = Mongoose.invoke_request(r, [_RecordMw("global", sink)],
-        Dict{Int,Union{Response,Function}}(), Dict{Symbol,Any}(),
+        Dict{Int,Union{Response,Function}}(), NamedTuple(),
         Request(:get, "/s", Dict{String,String}(), Pair{String,String}[], ""))
     @test res.status == 200
     @test sink == ["global", "route", "handler", "route:after", "global:after"]
@@ -621,7 +621,7 @@ end
     @test ep.middleware[1].label == "grp"
 
     res = Mongoose.invoke_request(r, Mongoose.AbstractMiddleware[],
-        Dict{Int,Union{Response,Function}}(), Dict{Symbol,Any}(),
+        Dict{Int,Union{Response,Function}}(), NamedTuple(),
         Request(:get, "/api/x", Dict{String,String}(), Pair{String,String}[], ""))
     @test res.status == 200
     @test sink == ["grp", "handler", "grp:after"]
@@ -641,7 +641,7 @@ end
     @test app.middlewares[1] isa Mongoose.FunctionMiddleware
 
     res = Mongoose.invoke_request(r, app.middlewares,
-        Dict{Int,Union{Response,Function}}(), Dict{Symbol,Any}(),
+        Dict{Int,Union{Response,Function}}(), NamedTuple(),
         Request(:get, "/c", Dict{String,String}(), Pair{String,String}[], ""))
     @test res.status == 200
     @test hang == ["mw", "handler"]
@@ -658,7 +658,7 @@ end
     route!(r, :get, "/users/:id::Int", (req, id) -> text("user $id"))
 
     empty_errors = Dict{Int,Union{Response,Function}}()
-    empty_services = Dict{Symbol,Any}()
+    empty_services = NamedTuple()
 
     req = Request(:get, "/hi", Dict{String,String}(), Pair{String,String}[], "")
     res = Mongoose.invoke_request(r, Mongoose.AbstractMiddleware[], empty_errors, empty_services, req)
@@ -671,7 +671,7 @@ end
 
     # Custom error response + middleware + services all apply without a server.
     errs = Dict{Int,Union{Response,Function}}(404 => req -> Response(404, Pair{String,String}[], "custom 404"))
-    svcs = Dict{Symbol,Any}(:db => "pool")
+    svcs = (db="pool",)
     mws = Mongoose.AbstractMiddleware[logger(threshold=0, output=devnull)]
     res3 = Mongoose.invoke_request(r, mws, errs, svcs,
         Request(:get, "/nope", Dict{String,String}(), Pair{String,String}[], ""))
@@ -681,7 +681,7 @@ end
     req4 = Request(:get, "/hi", Dict{String,String}(), Pair{String,String}[], "")
     ctx4 = context(req4)
     Mongoose.invoke_request(r, mws, errs, svcs, req4)
-    @test ctx4[:_services][:db] == "pool"
+    @test ctx4[:_services].db == "pool"
 end
 
 @testset "Executor contract" begin

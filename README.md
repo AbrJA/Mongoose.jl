@@ -384,22 +384,25 @@ each event per the W3C EventSource spec.
 
 ## Dependency Injection
 
+Services are stored as a typed NamedTuple, registrable at construction or via
+`service!`:
+
 ```julia
-app = App(; router=router, workers=4)
+app = App(; router=router, workers=4, services=(db=connect_to_database(), cache=RedisPool()))
 
-# Register services (values or zero-arg callables for lazy factories)
+# Or incrementally:
 service!(app, :db, connect_to_database())
-service!(app, :cache, RedisPool())
 
-# Access in handlers
+# Access in handlers — the Val form is type-stable:
 get!(app, "/users") do req
-    db = service(req, :db)              # → Any; use 3-arg form for a checked type
+    db = service(req, Val(:db))     # type-stable: DBPool
     users = fetch_users(db)
     json(users)
 end
 
-# Type-checked access
-db = service(req, :db, DBPool)          # throws if not a DBPool
+# Symbol lookup (any) and checked lookup:
+service(req, :db)                   # → Any
+service(req, :db, DBPool)            # → DBPool or throws
 ```
 
 ---

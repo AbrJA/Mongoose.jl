@@ -128,7 +128,7 @@ end
 
 function invoke_http(server::AbstractServer, req::Request)::Union{Response,StreamResponse}
     return invoke_request(
-        server.router, server.middlewares, server.errors, server.services, req)
+        server.router, server.middlewares, server.errors, server.services.deps, req)
 end
 
 # --- Static File Serving ---
