@@ -32,6 +32,7 @@ include("pipeline.jl")      # AbstractMiddleware, before/after, execute_pipeline
 include("executor.jl")      # AbstractExecutor, SyncExecutor, submit!/start!/stop!
 
 include("interface.jl")     # AbstractRouter protocol
+include("transport.jl")     # AbstractTransport + capability traits
 include("router.jl")        # Default Router (method map + ordered patterns)
 include("groups.jl")        # RouteGroup + mount!
 include("process.jl")       # invoke_request — the transport-agnostic seam
@@ -60,6 +61,7 @@ export AbstractRequest, Request, Headers, context, form, header, query, body,
     Endpoint, error_response, invoke_request,
     AbstractMiddleware, before, after, PathFilter, execute_pipeline, FunctionMiddleware, as_middleware,
     AbstractExecutor, SyncExecutor, submit!, start!, stop!,
+    AbstractTransport, supports_websocket, supports_tls, supports_streaming,
     Cors, Bearer, ApiKey, RateLimit, Compress, Logger, Health,
     PrometheusMetrics, SecurityHeaders, Negotiate,
     cors, ratelimit, bearer, apikey, logger, health, metrics, security, compress, negotiate,

@@ -1,37 +1,50 @@
 """
-    TestClient — Test applications without network I/O.
+    FakeTransport — reference transport that runs the pipeline with no FFI.
 
-    Dispatches requests directly through the middleware pipeline and router,
-    bypassing the C event loop entirely. Useful for unit and integration testing.
+    A `TestClient` really is a fake transport: it dispatches requests directly
+    through the middleware pipeline and router (`invoke_request`), bypassing
+    the C event loop entirely. It declares its capabilities via the standard
+    `supports_*` traits (no WebSocket, no TLS, streaming supported), and can
+    drive a full request cycle without a running server — including on systems
+    where `Mongoose_jll` was never loaded.
 
     # Example
     ```julia
-    using Mongoose: TestClient
-
     app = App()
     get!(app, "/hello") do req
         json((message="Hello World",))
     end
 
-    client = TestClient(app)
+    client = FakeTransport(app)      # alias: TestClient(app)
     resp = client(:get, "/hello")
     @assert resp.status == 200
     @assert contains(resp.body, "Hello World")
     ```
 """
-struct TestClient
+struct FakeTransport <: AbstractTransport
     app::App
 end
+
+"""Backward-compatible name for `FakeTransport`.
+
+The old `TestClient` name is kept as an alias so the FFI-free transport is
+both obvious and familiar.
+"""
+const TestClient = FakeTransport
+
+supports_websocket(::FakeTransport) = false
+supports_tls(::FakeTransport) = false
+supports_streaming(::FakeTransport) = true
 
 """
     (client::TestClient)(method, path; headers=[], body="", query=Dict()) → Response
 
 Execute a request against the app without network I/O.
 """
-function (client::TestClient)(method::Symbol, path::String;
-                               headers::Vector{Pair{String,String}}=Pair{String,String}[],
-                               body::String="",
-                               query::Dict{String,String}=Dict{String,String}())
+function (client::FakeTransport)(method::Symbol, path::String;
+                                 headers::Vector{Pair{String,String}}=Pair{String,String}[],
+                                 body::String="",
+                                 query::Dict{String,String}=Dict{String,String}())
     # Build URI with query string
     uri = if isempty(query)
         path
@@ -70,9 +83,9 @@ function (client::TestClient)(method::Symbol, path::String;
 end
 
 # Convenience methods
-function (client::TestClient)(method::Symbol, path::String, json_body;
-                               headers::Vector{Pair{String,String}}=Pair{String,String}[],
-                               query::Dict{String,String}=Dict{String,String}())
+function (client::FakeTransport)(method::Symbol, path::String, json_body;
+                                 headers::Vector{Pair{String,String}}=Pair{String,String}[],
+                                 query::Dict{String,String}=Dict{String,String}())
     body = JSON.json(json_body)
     all_headers = ["content-type" => "application/json"; headers]
     return client(method, path; headers=all_headers, body=body, query=query)

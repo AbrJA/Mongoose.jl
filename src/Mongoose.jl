@@ -15,6 +15,8 @@ export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamRespo
     TLSConfig,
     service!, service, background!,
     AbstractExecutor, SyncExecutor, AsyncExecutor, submit!, stop!, has_pending,
+    AbstractTransport, FakeTransport, TestClient,
+    supports_websocket, supports_tls, supports_streaming,
     group, RouteGroup, mount!,
     SSEWriter, emit, sse,
     json, html, text, redirect,
@@ -29,7 +31,8 @@ include("core/MongooseCore.jl")      # nested module: protocol, router, middlewa
 using .MongooseCore
 # Server/transport layers extend these core generics; `using` alone is read-only.
 import .MongooseCore: route!, ws!, post!, patch!, options!, head!,
-    submit!, start!, stop!, has_pending
+    submit!, start!, stop!, has_pending,
+    supports_websocket, supports_tls, supports_streaming
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. FFI Layer (C constants, structs, bindings)
