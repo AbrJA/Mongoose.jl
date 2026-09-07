@@ -34,6 +34,13 @@ end
 # --- Upgrade ---
 
 function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
+    if !isempty(endpoint.allowed_origins)
+        origin = get(parse_headers(msg), "origin", "")
+        if !any(o -> o == origin, endpoint.allowed_origins)
+            mg_http_reply(conn, 403, "", "Forbidden")
+            return
+        end
+    end
     if endpoint.on_open !== nothing
         req = adapt_request(msg)
         accepted = try

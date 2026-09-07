@@ -385,8 +385,10 @@ end
 function ws!(router::Router, path::AbstractString;
              on_message::Function,
              on_open::Union{Function,Nothing}=nothing,
-             on_close::Union{Function,Nothing}=nothing)
-    router.ws_routes[String(path)] = WsEndpoint(on_message=on_message, on_open=on_open, on_close=on_close)
+             on_close::Union{Function,Nothing}=nothing,
+             allowed_origins::Vector{String}=String[])
+    router.ws_routes[String(path)] = WsEndpoint(on_message=on_message, on_open=on_open,
+        on_close=on_close, allowed_origins=allowed_origins)
     return router
 end
 

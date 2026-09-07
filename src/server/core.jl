@@ -134,6 +134,7 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
 
     # Error handling & DI
     const errors::Dict{Int,Union{Response,Function}}
+    const exception_handlers::Dict{DataType,Function}
     const services::Dict{Symbol,Any}
 
     # Lifecycle hooks
@@ -185,6 +186,7 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
             AbstractMiddleware[],
             Tuple{String,String}[],
             errs,
+            Dict{DataType,Function}(),
             Dict{Symbol,Any}(services),
             Function[],
             Function[],
@@ -234,6 +236,47 @@ function onerror!(app::App, status::Int, handler::Union{Response,Function})
     return app
 end
 onerror!(f::Function, app::App, status::Int) = onerror!(app, status, f)
+
+"""
+    onerror!(app, ::Type{E}, handler)
+
+Register a typed exception handler: `handler(req, e)` returns the `Response`
+for any handler/middleware error that is a `E` (or subtype). Handlers are
+tried in registration order; unhandled exceptions fall through to the default
+500 path.
+
+# Example
+```julia
+struct NotFound <: Exception end
+onerror!(app, NotFound) do req, e
+    json(Dict("error" => "not found"); status=404)
+end
+```
+"""
+function onerror!(server::AbstractServer, ::Type{E}, handler::Function) where {E<:Exception}
+    server.exception_handlers[E] = handler
+    return server
+end
+onerror!(handler::Function, server::AbstractServer, ::Type{E}) where {E<:Exception} =
+    onerror!(server, E, handler)
+
+"""
+    invoke_guarded(server, req, f)
+
+Run `f()` and route any exception through `onerror!(::Type{E})` handlers. Falls
+back to rethrowing so the default 500 path applies for unhandled types.
+"""
+function invoke_guarded(server::AbstractServer, req::Request, f::Function)
+    isempty(server.exception_handlers) && return f()
+    try
+        return f()
+    catch e
+        for (T, handler) in server.exception_handlers
+            e isa T && return handler(req, e)
+        end
+        rethrow(e)
+    end
+end
 
 """
     onstart!(app, f)

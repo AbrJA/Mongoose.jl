@@ -62,7 +62,7 @@ function (client::FakeTransport)(method::Symbol, path::String;
 
     # Run through pipeline exactly as the real server would
     result = try
-        invoke_http(client.app, req)
+        invoke_guarded(client.app, req, () -> invoke_http(client.app, req))
     catch e
         error_response(client.app.errors, req, 500)
     end

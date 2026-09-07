@@ -50,8 +50,7 @@ end
 function _send_binary_response!(conn::MgConnection, status::Int, headers::String, body::Vector{UInt8})
     status_text = status_reason(status)
     head = string("HTTP/1.1 ", status, " ", status_text, "\r\n",
-                  headers, "Content-Length: ", length(body), "\r\n",
-                  "Connection: close\r\n\r\n")
+                  headers, "Content-Length: ", length(body), "\r\n\r\n")
     hlen = ncodeunits(head)
     buf = Vector{UInt8}(undef, hlen + length(body))
     copyto!(buf, 1, codeunits(head), 1, hlen)

@@ -57,7 +57,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
     if !(server.executor isa AsyncExecutor)
         # Sync path: handle inline
         res = try
-            invoke_http(server, req)
+            invoke_guarded(server, req, () -> invoke_http(server, req))
         catch e
             @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
             error_response(server.errors, req, 500)
@@ -97,7 +97,7 @@ Build the reply for a buffered/streamed HTTP request, adding `X-Request-Id`.
 function _http_job(server::AbstractServer, id::Int, req::Request)
     rid = resolve_request_id(req, server)
     res = try
-        invoke_http(server, req)
+        invoke_guarded(server, req, () -> invoke_http(server, req))
     catch e
         @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
         error_response(server.errors, req, 500)

@@ -333,6 +333,38 @@ end
             @test resp.status == 500
         end
     end
+
+    @testset "Typed exception handler" begin
+        struct TeapotError <: Exception end
+
+        s = App()
+        onerror!(s, TeapotError) do req, e
+            Response(418, Pair{String,String}["content-type" => "text/plain"], "teapot")
+        end
+        get!(s, "/tea") do req; throw(TeapotError()) end
+
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/tea"; status_exception=false)
+            @test resp.status == 418
+            @test String(resp.body) == "teapot"
+        end
+    end
+end
+
+@testset "Binary response keep-alive" begin
+    s = App()
+    get!(s, "/bin") do req
+        Response(200, Pair{String,String}[], "binarydata")
+    end
+
+    with_server(s) do port
+        resp1 = HTTP.get("http://127.0.0.1:$port/bin"; status_exception=false)
+        resp2 = HTTP.get("http://127.0.0.1:$port/bin"; status_exception=false)
+        @test resp1.status == 200
+        @test resp2.status == 200
+        # Binary responses must not force-close the connection.
+        @test !any(h -> h.first == "connection" && h.second == "close", resp1.headers)
+    end
 end
 
 @testset "Context" begin

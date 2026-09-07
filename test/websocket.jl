@@ -119,3 +119,24 @@ end
         end
     end
 end
+
+@testset "WS origin allowlist" begin
+    s = App()
+    ws!(s, "/ws/guard";
+        on_message=msg -> Message("ok"),
+        allowed_origins=["https://allowed.example"])
+
+    with_server(s) do port
+        # Disallowed (and absent) origins are rejected with 403 before upgrade.
+        ok = try
+            HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/guard";
+                                 headers=["Origin" => "https://evil.example"]) do ws
+                HTTP.WebSockets.receive(ws)
+            end
+            true
+        catch
+            false
+        end
+        @test ok == false
+    end
+end
