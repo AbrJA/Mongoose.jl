@@ -97,10 +97,10 @@ Use the `query()` helper for type-safe access with defaults:
 
 ```julia
 route!(router, :get, "/search", req -> begin
-    q     = query(req, "q", "")         # String with default
-    page  = query(req, "page", 1)       # Auto-parsed to Int
-    limit = query(req, "limit", 10)     # Auto-parsed to Int
-    json(Dict("query" => q, "page" => page, "limit" => limit))
+    q     = get(req.query, "q", "")
+    page  = tryparse(Int, get(req.query, "page", "1"))
+    limit = tryparse(Int, get(req.query, "limit", ""))
+    Response(Plain, "Searching: $q, page $page")
 end)
 ```
 
