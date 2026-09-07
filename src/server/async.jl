@@ -82,7 +82,7 @@ function worker_loop(app::App)
                         end
                     catch e
                         @log_error "Handler error uri=$(tagged_req.payload.uri)" e catch_backtrace()
-                        error_response(app, tagged_req.payload, 500)
+                        error_response(app.errors, tagged_req.payload, 500)
                     end
                     tagged_res = if res isa StreamResponse
                         Tagged{Union{Response,StreamResponse,Message}}(tagged_req.id, res)
@@ -143,7 +143,7 @@ function invoke_timed_http(server::AbstractServer, req::Request, timeout::Intege
     if current >= _MAX_TIMED
         Threads.atomic_sub!(_TIMED_INFLIGHT, 1)
         @log_warn "Timed request limit reached uri=$(req.uri)"
-        return error_response(server, 503)
+        return error_response(server.errors, 503)
     end
     t = Threads.@spawn invoke_http(server, req)
     try
@@ -152,7 +152,7 @@ function invoke_timed_http(server::AbstractServer, req::Request, timeout::Intege
             return fetch(t)
         else
             @log_warn "Request timeout uri=$(req.uri)"
-            return error_response(server, 504)
+            return error_response(server.errors, 504)
         end
     finally
         Threads.atomic_sub!(_TIMED_INFLIGHT, 1)

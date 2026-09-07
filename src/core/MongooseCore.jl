@@ -33,6 +33,7 @@ include("pipeline.jl")      # AbstractMiddleware, before/after, execute_pipeline
 include("interface.jl")     # AbstractRouter protocol
 include("router.jl")        # Default Router (method map + ordered patterns)
 include("groups.jl")        # RouteGroup + mount!
+include("process.jl")       # invoke_request — the transport-agnostic seam
 
 include("cors.jl")
 include("ratelimit.jl")
@@ -55,6 +56,7 @@ export AbstractRequest, Request, Headers, context, form, header, query, body,
     AbstractRouter, Router, RouteMatch, MethodMap, dispatch_route, match_route_exact,
     get_handler, set_handler!, has_ws_routes, ws_endpoint, route_count,
     route!, ws!, group, group!, RouteGroup, mount!, post!, patch!, options!, head!,
+    dispatch_to_handler, error_response, invoke_request,
     AbstractMiddleware, before, after, PathFilter, execute_pipeline,
     Cors, Bearer, ApiKey, RateLimit, Compress, Logger, Health,
     PrometheusMetrics, SecurityHeaders, Negotiate,

@@ -51,7 +51,7 @@ function (client::TestClient)(method::Symbol, path::String;
     result = try
         invoke_http(client.app, req)
     catch e
-        error_response(client.app, req, 500)
+        error_response(client.app.errors, req, 500)
     end
 
     if result isa StreamResponse

@@ -1,38 +1,10 @@
 """
     HTTP event handler — the hot path from C event → Request → Response → send.
+
+    The dispatch pipeline itself (`invoke_request`, `dispatch_to_handler`,
+    `error_response`) lives in `MongooseCore`; this file binds it to the
+    transport/server.
 """
-
-# --- Default error responses (module-level singletons) ---
-
-const DEFAULT_500 = Response(Plain, "500 Internal Server Error"; status=500)
-const DEFAULT_413 = Response(Plain, "413 Payload Too Large"; status=413)
-const DEFAULT_503 = Response(Plain, "503 Service Unavailable"; status=503)
-const DEFAULT_504 = Response(Plain, "504 Gateway Timeout"; status=504)
-
-"""
-    error_response(server, status) → Response
-
-Look up custom error response, falling back to module defaults.
-"""
-@inline function error_response(server::AbstractServer, req::Union{Request,Nothing}, status::Int)::Response
-    custom = get(server.errors, status, nothing)
-    if custom !== nothing
-        custom isa Response && return custom
-        custom isa Function && req !== nothing && return try
-            result = custom(req)
-            result isa Response ? result : Response(Plain, "$status $(status_reason(status))"; status=status)
-        catch
-            Response(Plain, "$status $(status_reason(status))"; status=status)
-        end
-    end
-    status == 500 && return DEFAULT_500
-    status == 413 && return DEFAULT_413
-    status == 503 && return DEFAULT_503
-    status == 504 && return DEFAULT_504
-    return Response(Plain, "$status $(status_reason(status))"; status=status)
-end
-
-@inline error_response(server::AbstractServer, status::Int) = error_response(server, nothing, status)
 
 # --- Request ID resolution ---
 
@@ -63,7 +35,7 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
 
     # 2. Body size enforcement
     if msg.body.len > server.max_body
-        send_http_response!(conn, error_response(server, 413))
+        send_http_response!(conn, error_response(server.errors, 413))
         return nothing
     end
 
@@ -88,7 +60,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
             invoke_http(server, req)
         catch e
             @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
-            error_response(server, req, 500)
+            error_response(server.errors, req, 500)
         end
         rid = resolve_request_id(req, server)
         if res isa StreamResponse
@@ -104,60 +76,16 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         tagged = Tagged{Union{Request,Intent}}(id, req)
         if !try_enqueue!(server.calls, tagged, server.queuesize)
             delete!(server.connections, id)
-            send_http_response!(conn, error_response(server, 503))
+            send_http_response!(conn, error_response(server.errors, 503))
         end
     end
 end
 
-# --- HTTP dispatch pipeline ---
+# --- HTTP dispatch (thin transport wrapper over the core pipeline) ---
 
 function invoke_http(server::AbstractServer, req::Request)::Union{Response,StreamResponse}
-    # Attach app to request context for service injection
-    if !isempty(server.services)
-        ctx = context(req)
-        ctx[:_app] = server
-    end
-
-    result = if isempty(server.middlewares)
-        dispatch_to_handler(server.router, req)
-    else
-        final = (r) -> dispatch_to_handler(server.router, r)
-        execute_pipeline(server.middlewares, req, final)
-    end
-
-    # Apply custom error handlers for 4xx/5xx responses
-    if result isa Response && haskey(server.errors, result.status)
-        return error_response(server, req, result.status)
-    end
-    return result
-end
-
-"""
-    dispatch_to_handler(router, request) → Union{Response, StreamResponse}
-
-Route a request to its handler. Handles 404, 405, and auto-HEAD.
-"""
-function dispatch_to_handler(router::AbstractRouter, req::Request)::Union{Response,StreamResponse}
-    matched = dispatch_route(router, req.method, req.uri)
-    if matched !== nothing
-        handler = get_handler(matched, req.method)
-        if handler !== nothing
-            result = handler(req, matched.params...)
-            result isa Union{Response,StreamResponse} || throw(TypeError(:dispatch_to_handler, Union{Response,StreamResponse}, result))
-            return result
-        end
-        # Auto-HEAD: try GET handler, strip body
-        if req.method === :head
-            get_h = get_handler(matched, :get)
-            if get_h !== nothing
-                resp = get_h(req, matched.params...)
-                resp isa Response && return Response(resp.status, resp.headers, "")
-                resp isa StreamResponse && return resp
-            end
-        end
-        return Response(Plain, "405 Method Not Allowed"; status=405)
-    end
-    return Response(Plain, "404 Not Found"; status=404)
+    return invoke_request(
+        server.router, server.middlewares, server.errors, server.services, req)
 end
 
 # --- Static File Serving ---

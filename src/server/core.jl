@@ -288,14 +288,15 @@ db = service(req, :db, DBPool)  # type-stable: returns DBPool or throws
 """
 function service(req::Request, name::Symbol)
     ctx = req.context
-    if ctx !== nothing
+    ctx === nothing && return nothing
+    svcs = get(ctx, :_services, nothing)
+    if svcs === nothing
         app = get(ctx, :_app, nothing)
-        if app isa App
-            v = get(app.services, name, nothing)
-            return v isa Function ? v() : v
-        end
+        app isa App && (svcs = app.services)
     end
-    return nothing
+    svcs === nothing && return nothing
+    v = get(svcs, name, nothing)
+    return v isa Function ? v() : v
 end
 
 function service(req::Request, name::Symbol, ::Type{T})::T where {T}

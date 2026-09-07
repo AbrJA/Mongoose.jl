@@ -131,7 +131,7 @@ end
         use!(app, cors())
         get!(app, "/") do r; json(Dict("ok" => true)) end
         post!(app, "/data") do r; text("ok") end
-        error_response(app, req, 500)
+        error_response(app.errors, req, 500)
 
         # --- Event dispatch ---
         is_handled_event(MG_EV_HTTP_MSG)
