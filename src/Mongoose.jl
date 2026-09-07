@@ -22,88 +22,51 @@ export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamRespo
     validate, ValidationError
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 1. FFI Layer (C constants, structs, bindings)
+# 1. Core layer (transport-agnostic; loads standalone, no FFI)
+# ══════════════════════════════════════════════════════════════════════════════
+include("core/MongooseCore.jl")      # nested module: protocol, router, middleware
+using .MongooseCore
+# Transport-layer functions extend these core generics; `using` alone is read-only.
+import .MongooseCore: route!, ws!, post!, patch!, options!, head!
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 2. FFI Layer (C constants, structs, bindings)
 # ══════════════════════════════════════════════════════════════════════════════
 include("ffi/constants.jl")
 include("ffi/structs.jl")
 include("ffi/bindings.jl")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 2. Utilities (no internal dependencies)
+# 3. Utilities (server-aware: lifecycle banners / logging)
 # ══════════════════════════════════════════════════════════════════════════════
-include("util/errors.jl")
-include("util/strings.jl")
 include("util/log.jl")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 3. Protocol Layer (transport-agnostic types)
+# 4. Server Layer (AbstractServer, App, registry, lifecycle, workers)
 # ══════════════════════════════════════════════════════════════════════════════
-include("protocol/base.jl")          # AbstractRequest, AbstractServer
-include("protocol/formats.jl")       # Content format types
-include("protocol/status.jl")        # status_reason()
-include("protocol/request.jl")       # Request struct
-include("protocol/response.jl")      # Response, StreamResponse, Cookie
-include("protocol/ws_types.jl")      # WsConn, Message, Intent, WsEndpoint, Tagged
-include("protocol/validation.jl")    # validate(), ValidationError
+include("protocol/base.jl")          # abstract type AbstractServer
+include("server/core.jl")            # App, Manager, ServerConfig, TLSConfig
+include("server/registry.jl")        # Global server registry (GC-safe callback recovery)
+include("server/lifecycle.jl")       # start!, shutdown!, TLS, bind, drain
+include("server/sync.jl")            # Server event loop
+include("server/async.jl")           # Async worker pool
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 4. Middleware Protocol
-# ══════════════════════════════════════════════════════════════════════════════
-include("middleware/pipeline.jl")     # AbstractMiddleware, execute_pipeline, use!
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 5. Router Layer
-# ══════════════════════════════════════════════════════════════════════════════
-include("router/interface.jl")        # AbstractRouter protocols
-include("router/trie.jl")             # Dynamic Router (trie-based)
-include("router/groups.jl")           # Route groups with scoped middleware
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 6. Transport Layer (Mongoose C library adapter)
+# 5. Transport Layer (Mongoose C library adapter)
 # ══════════════════════════════════════════════════════════════════════════════
 include("transport/mongoose/adapter.jl")      # FFI → Request conversion
 include("transport/mongoose/connection.jl")    # send_http_response!, send_ws_frame!, StreamWriter
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 7. Server Layer
-# ══════════════════════════════════════════════════════════════════════════════
-include("server/core.jl")             # App, Manager, TLSConfig
-include("server/registry.jl")         # Global server registry (GC-safe callback recovery)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 8. Transport Handlers (need Server/Async types)
-# ══════════════════════════════════════════════════════════════════════════════
 include("transport/mongoose/ws_handler.jl")    # WS event handlers (upgrade, message, close)
 include("transport/mongoose/events.jl")        # C callback dispatch
 include("transport/mongoose/http_handler.jl")  # HTTP request processing hot path
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 9. Server Lifecycle
-# ══════════════════════════════════════════════════════════════════════════════
-include("server/lifecycle.jl")        # start!, shutdown!, TLS, bind, drain
-include("server/sync.jl")             # Server event loop
-include("server/async.jl")            # Async worker pool
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 8. Middleware Implementations
-# ══════════════════════════════════════════════════════════════════════════════
-include("middleware/cors.jl")
-include("middleware/ratelimit.jl")
-include("middleware/auth.jl")
-include("middleware/logger.jl")
-include("middleware/health.jl")
-include("middleware/metrics.jl")
-include("middleware/security.jl")
-include("middleware/compress.jl")
-include("middleware/negotiate.jl")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 9. Streaming (SSE)
+# 6. Streaming (SSE)
 # ══════════════════════════════════════════════════════════════════════════════
 include("streaming/sse.jl")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 10. Testing utilities
+# 7. Testing utilities
 # ══════════════════════════════════════════════════════════════════════════════
 include("testing.jl")
 

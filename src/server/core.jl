@@ -332,3 +332,27 @@ function Base.show(io::IO, app::App)
     routes = route_count(app.router)
     print(io, "App($mode, $routes routes, $(length(app.middlewares)) middleware)")
 end
+
+# --- use! (add middleware to an app) ---
+# The middleware protocol (AbstractMiddleware, before/after) lives in
+# MongooseCore; this server-layer method wires it onto an App.
+
+"""
+    use!(app, middleware; paths=[])
+
+Add middleware to an app. When `paths` is non-empty, the middleware only
+applies to requests whose URI starts with one of the given prefixes.
+
+# Example
+```julia
+use!(app, cors())
+use!(app, bearer(validate_token); paths=["/api"])
+use!(app, logger())
+```
+"""
+function use!(server::AbstractServer, mw::AbstractMiddleware;
+              paths::Vector{String}=String[])
+    wrapped = isempty(paths) ? mw : PathFilter(mw, paths)
+    push!(server.middlewares, wrapped)
+    return server
+end

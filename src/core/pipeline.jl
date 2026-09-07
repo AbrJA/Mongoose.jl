@@ -72,26 +72,3 @@ end
     next = () -> _build_chain(middlewares, req, handler, idx + 1)
     return mw(req, next)
 end
-
-# --- use! (add middleware to server/app) ---
-# Defined here as the generic protocol; concrete overloads are in server/core.jl
-
-"""
-    use!(app_or_router, middleware; paths=[])
-
-Add middleware to an app or router. When `paths` is non-empty, the middleware
-only applies to requests whose URI starts with one of the given prefixes.
-
-# Example
-```julia
-use!(app, cors())
-use!(app, bearer(validate_token); paths=["/api"])
-use!(app, logger())
-```
-"""
-function use!(server::AbstractServer, mw::AbstractMiddleware;
-              paths::Vector{String}=String[])
-    wrapped = isempty(paths) ? mw : PathFilter(mw, paths)
-    push!(server.middlewares, wrapped)
-    return server
-end

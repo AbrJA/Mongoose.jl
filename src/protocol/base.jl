@@ -1,5 +1,4 @@
 """
-    Base abstract types — loaded before all other modules.
+    Base abstract server type — loaded before all server modules.
 """
-abstract type AbstractRequest end
 abstract type AbstractServer end
