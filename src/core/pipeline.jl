@@ -78,17 +78,28 @@ as_middleware(mw) = FunctionMiddleware(mw)
 
 """
     execute_pipeline(middlewares, request, handler) → Response
+
+Run the middleware onion around `handler`: each middleware receives
+`(request, next)`; `next` advances to the following middleware and finally the
+handler. Middleware may short-circuit by returning without calling `next`.
+
+The chain is executed with a **single closure** plus a mutable cursor instead
+of one closure per middleware per request (`_build_chain` recursion), keeping
+the per-request allocation constant regardless of stack depth.
 """
 @inline function execute_pipeline(middlewares::Vector{AbstractMiddleware}, req::Request,
                                   handler::Function)
-    isempty(middlewares) && return handler(req)
-    return _build_chain(middlewares, req, handler, 1)
+    n = length(middlewares)
+    n == 0 && return handler(req)
+    cell = _ChainCursor(0)
+    next = () -> begin
+        cell.i += 1
+        cell.i <= n || return handler(req)
+        middlewares[cell.i](req, next)
+    end
+    return next()
 end
 
-@inline function _build_chain(middlewares::Vector{AbstractMiddleware}, req::Request,
-                              handler::Function, idx::Int)
-    idx > length(middlewares) && return handler(req)
-    mw = middlewares[idx]
-    next = () -> _build_chain(middlewares, req, handler, idx + 1)
-    return mw(req, next)
+mutable struct _ChainCursor
+    i::Int
 end
