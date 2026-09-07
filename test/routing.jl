@@ -1,3 +1,18 @@
+@testset "Router protocol (contract-by-fallback)" begin
+    struct _FallbackRouter <: AbstractRouter end
+
+    r = _FallbackRouter()
+    # Optional capabilities default to "not supported".
+    @test Mongoose.has_ws_routes(r) == false
+    @test Mongoose.ws_endpoint(r, "/ws") === nothing
+    @test Mongoose.route_count(r) == "?"
+    # Required protocol throws a clear MethodError when unimplemented.
+    @test_throws MethodError Mongoose.dispatch_route(r, :get, "/")
+    @test_throws MethodError Mongoose.match_route_exact(r, :get, "/")
+    @test_throws MethodError route!(r, :get, "/x", req -> text(""))
+    @test_throws MethodError ws!(r, "/x"; on_message=req -> nothing)
+end
+
 @testset "Router construction" begin
     r = Router()
     @test r isa Router
