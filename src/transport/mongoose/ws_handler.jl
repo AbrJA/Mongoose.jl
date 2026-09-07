@@ -27,8 +27,11 @@ end
     entry.last_active = time()
 end
 
-@inline function ws_register!(server::AbstractServer, conn_id::Int, uri::String)
+@inline function ws_register!(server::AbstractServer, conn_id::Int, uri::String, conn::MgConnection)
     server.ws_clients[conn_id] = WsConn(uri, time(), false)
+    # Track the connection so idle sweeps can send close frames in sync mode
+    # too (async mode also inserts it, but the mapping is mode-agnostic now).
+    server.connections[conn_id] = conn
 end
 
 # --- Upgrade ---
@@ -56,7 +59,7 @@ function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
         end
     end
     mg_ws_upgrade(conn, ev_data, C_NULL)
-    ws_register!(server, Int(conn), uri)
+    ws_register!(server, Int(conn), uri, conn)
 end
 
 # --- WS Control Frames (Ping/Pong/Close) ---
@@ -118,7 +121,7 @@ end
 function on_connection_close(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
     conn_id = Int(conn)
     close_ws!(server, conn_id)
-    server.executor isa AsyncExecutor && filter!(kv -> kv.second != conn, server.connections)
+    filter!(kv -> kv.second != conn, server.connections)
 end
 
 function close_ws!(server::AbstractServer, conn_id::Int)
