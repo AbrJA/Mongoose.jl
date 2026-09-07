@@ -89,10 +89,27 @@
         @test_throws RouteError route!(r, :invalid, "/test", req -> text(""))
     end
 
-    @testset "Parameter conflict at same position" begin
+    @testset "Overlapping parametric routes resolve in registration order" begin
         r = Router()
-        route!(r, :get, "/users/:id::Int", (req, id) -> text(""))
-        @test_throws RouteError route!(r, :get, "/users/:name", (req, name) -> text(""))
+        route!(r, :get, "/users/:id::Int", (req, id) -> text("int:$id"))
+        route!(r, :get, "/users/:name", (req, name) -> text("str:$name"))
+        # Typed route wins when the segment parses; otherwise the string route.
+        m1 = Mongoose.dispatch_route(r, :get, "/users/42")
+        @test m1 !== nothing
+        @test Mongoose.get_handler(m1, :get)(nothing, 42).body == "int:42"
+        @test Mongoose.dispatch_route(r, :get, "/users/abc") !== nothing
+        m2 = Mongoose.dispatch_route(r, :get, "/users/abc")
+        @test m2 !== nothing
+        @test Mongoose.get_handler(m2, :get)(nothing, "abc").body == "str:abc"
+    end
+
+    @testset "Static routes take precedence over parametric" begin
+        r = Router()
+        route!(r, :get, "/users/:name", (req, name) -> text("param:$name"))
+        route!(r, :get, "/users/me", req -> text("static"))
+        m = Mongoose.dispatch_route(r, :get, "/users/me")
+        @test m !== nothing
+        @test Mongoose.get_handler(m, :get)(nothing).body == "static"
     end
 
     @testset "All HTTP methods on App" begin

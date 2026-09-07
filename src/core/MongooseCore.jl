@@ -31,7 +31,7 @@ include("validation.jl")    # validate(), ValidationError
 include("pipeline.jl")      # AbstractMiddleware, before/after, execute_pipeline
 
 include("interface.jl")     # AbstractRouter protocol
-include("trie.jl")          # Default trie-based Router
+include("router.jl")        # Default Router (method map + ordered patterns)
 include("groups.jl")        # RouteGroup + mount!
 
 include("cors.jl")
