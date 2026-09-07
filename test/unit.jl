@@ -563,6 +563,70 @@ end
     end
 end
 
+@testset "Typed route parameters (tuples)" begin
+    r = Router()
+    route!(r, :get, "/u/:id::Int/:name", (req, id, name) -> text("$id/$name"))
+    route!(r, :get, "/fixed", req -> text("f"))
+
+    m = Mongoose.dispatch_route(r, :get, "/u/7/alice")
+    @test m === nothing ? false : (m.params == (7, "alice") && m.params isa Tuple{Int,String})
+
+    mf = Mongoose.dispatch_route(r, :get, "/fixed")
+    @test mf !== nothing && mf.params == ()
+end
+
+# Middleware that records its phase into a shared sink.
+struct _RecordMw <: Mongoose.AbstractMiddleware
+    label::String
+    sink::Vector{String}
+end
+function (mw::_RecordMw)(req::Request, next::Function)
+    push!(mw.sink, mw.label)
+    response = next()
+    push!(mw.sink, string(mw.label, ":after"))
+    return response
+end
+
+@testset "Scoped middleware as route metadata (Endpoint)" begin
+    r = Router()
+    sink = String[]
+
+    route!(r, :get, "/s", req -> (push!(sink, "handler"); text("ok"));
+           middleware=[_RecordMw("route", sink)], metadata=:docs)
+
+    ep = r.fixed["/s"].handlers.get
+    @test ep isa Mongoose.Endpoint
+    @test length(ep.middleware) == 1
+    @test ep.metadata === :docs
+
+    # Global ball then route-scoped middleware compose: g → route → handler.
+    global_mw = _RecordMw("global", sink)
+    res = Mongoose.invoke_request(r, [_RecordMw("global", sink)],
+        Dict{Int,Union{Response,Function}}(), Dict{Symbol,Any}(),
+        Request(:get, "/s", Dict{String,String}(), Pair{String,String}[], ""))
+    @test res.status == 200
+    @test sink == ["global", "route", "handler", "route:after", "global:after"]
+end
+
+@testset "Group middleware is metadata, not closures" begin
+    r = Router()
+    sink = String[]
+    grp = group("/api", middleware=[_RecordMw("grp", sink)])
+    get!(grp, "/x") do req; push!(sink, "handler"); text("ok") end
+    mount!(r, grp)
+
+    ep = r.fixed["/api/x"].handlers.get
+    @test ep isa Mongoose.Endpoint
+    @test length(ep.middleware) == 1
+    @test ep.middleware[1].label == "grp"
+
+    res = Mongoose.invoke_request(r, Mongoose.AbstractMiddleware[],
+        Dict{Int,Union{Response,Function}}(), Dict{Symbol,Any}(),
+        Request(:get, "/api/x", Dict{String,String}(), Pair{String,String}[], ""))
+    @test res.status == 200
+    @test sink == ["grp", "handler", "grp:after"]
+end
+
 @testset "Standalone pipeline (no server, MongooseCore seam)" begin
     r = Router()
     get!(r, "/hi") do req; text("hello") end

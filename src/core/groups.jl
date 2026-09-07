@@ -124,7 +124,9 @@ end
     mount!(router_or_app, group)
 
 Mount a `RouteGroup` into a router or app, registering all its routes with
-the group's prefix and middleware applied.
+the group's prefix applied and its middleware attached as **scoped route
+metadata**. The runtime composes scoped middleware with app-global
+middleware at dispatch time — no per-route closures are created.
 
 # Example
 ```julia
@@ -142,12 +144,7 @@ function mount!(router, g::RouteGroup, parent_prefix::String="",
 
     for (method, path, handler) in g.routes
         full_path = full_prefix * path
-        if isempty(combined_mw)
-            route!(router, method, full_path, handler)
-        else
-            wrapped = _wrap_with_middleware(handler, combined_mw)
-            route!(router, method, full_path, wrapped)
-        end
+        route!(router, method, full_path, handler; middleware=combined_mw)
     end
 
     for (path, kwargs) in g.ws_routes
@@ -157,18 +154,5 @@ function mount!(router, g::RouteGroup, parent_prefix::String="",
 
     for child in g.children
         mount!(router, child, full_prefix, combined_mw)
-    end
-end
-
-"""
-    _wrap_with_middleware(handler, middlewares) → Function
-
-Wrap a handler with a middleware stack. The returned function matches
-the handler signature expected by the router.
-"""
-function _wrap_with_middleware(handler::Function, middlewares::Vector{AbstractMiddleware})
-    return function(req::AbstractRequest, params...)
-        final = (r) -> handler(r, params...)
-        execute_pipeline(middlewares, req, final)
     end
 end

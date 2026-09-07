@@ -7,53 +7,88 @@
       (`:name::Type` and `*wildcard` segments),
     - a `"*"` catch-all fallback registered in the fixed table.
 
-    The previous radix trie was removed: its byte-level segment scanning,
-    wildcard sentinels, and in-trie parameter-conflict bookkeeping were
-    complexity not worth the performance for the route counts most apps have.
     Exact (static) matches always win; overlapping parametric routes resolve
-    in registration order.
+    in registration order. Parameters are returned as *typed tuples*, so a
+    matched route carries its concrete parameter types (`RouteMatch{<:Tuple}`)
+    and handlers splat a statically-known arity when the call is specialized.
+
+    The router never interprets handlers, middleware, or metadata: each route
+    owns an `Endpoint`, and the runtime composes global + scoped middleware.
 
     Implementers wanting a different strategy should subtype `AbstractRouter`
     and implement the protocol in `router/interface.jl`.
 """
 
+# --- Route endpoint (handler + scoped middleware + metadata) ---
+
+"""
+    Endpoint — what a route owns: handler, scoped middleware, and metadata.
+
+    The router only stores and returns `Endpoint`s; it does not execute
+    middleware. `middleware` applies to this route (in addition to app-global
+    middleware); `metadata` is opaque and available for OpenAPI-style docs.
+"""
+struct Endpoint
+    handler::Function
+    middleware::Vector{AbstractMiddleware}
+    metadata::Any
+end
+
+function Endpoint(handler::Function;
+                  middleware::Vector{<:AbstractMiddleware}=AbstractMiddleware[],
+                  metadata=nothing)
+    return Endpoint(handler, AbstractMiddleware[middleware...], metadata)
+end
+
 # --- Method Dispatch (struct fields instead of Dict for zero-allocation dispatch) ---
 
 """
-    MethodMap — Fixed-slot storage for HTTP method → handler mapping.
+    MethodMap — Fixed-slot storage for HTTP method → endpoint mapping.
 """
 mutable struct MethodMap
-    get::Union{Nothing,Function}
-    post::Union{Nothing,Function}
-    put::Union{Nothing,Function}
-    delete::Union{Nothing,Function}
-    patch::Union{Nothing,Function}
-    options::Union{Nothing,Function}
-    head::Union{Nothing,Function}
+    get::Union{Nothing,Endpoint}
+    post::Union{Nothing,Endpoint}
+    put::Union{Nothing,Endpoint}
+    delete::Union{Nothing,Endpoint}
+    patch::Union{Nothing,Endpoint}
+    options::Union{Nothing,Endpoint}
+    head::Union{Nothing,Endpoint}
     MethodMap() = new(nothing, nothing, nothing, nothing, nothing, nothing, nothing)
 end
 
-@inline function get_handler(mm::MethodMap, method::Symbol)::Union{Nothing,Function}
-    method === :get     && return mm.get
-    method === :post    && return mm.post
-    method === :put     && return mm.put
-    method === :delete  && return mm.delete
-    method === :patch   && return mm.patch
-    method === :options && return mm.options
-    method === :head    && return mm.head
-    return nothing
-end
-
-@inline function set_handler!(mm::MethodMap, method::Symbol, @nospecialize(handler::Function))
-    method === :get     && (mm.get = handler; return)
-    method === :post    && (mm.post = handler; return)
-    method === :put     && (mm.put = handler; return)
-    method === :delete  && (mm.delete = handler; return)
-    method === :patch   && (mm.patch = handler; return)
-    method === :options && (mm.options = handler; return)
-    method === :head    && (mm.head = handler; return)
+@inline function _method_slot(mm::MethodMap, method::Symbol)::Symbol
+    method === :get     && return :get
+    method === :post    && return :post
+    method === :put     && return :put
+    method === :delete  && return :delete
+    method === :patch   && return :patch
+    method === :options && return :options
+    method === :head    && return :head
     throw(RouteError("Invalid HTTP method: $method"))
 end
+
+"""
+    get_endpoint(mm, method) → Union{Nothing, Endpoint}
+"""
+@inline function get_endpoint(mm::MethodMap, method::Symbol)::Union{Nothing,Endpoint}
+    return getfield(mm, _method_slot(mm, method))
+end
+
+"""
+    get_handler(mm, method) → Union{Nothing, Function}
+"""
+@inline function get_handler(mm::MethodMap, method::Symbol)::Union{Nothing,Function}
+    ep = getfield(mm, _method_slot(mm, method))
+    return ep === nothing ? nothing : ep.handler
+end
+
+function set_handler!(mm::MethodMap, method::Symbol, ep::Endpoint)
+    setfield!(mm, _method_slot(mm, method), ep)
+    return
+end
+
+@inline set_handler!(mm::MethodMap, method::Symbol, handler::Function) =
+    set_handler!(mm, method, Endpoint(handler))
 
 @inline function has_any_handler(mm::MethodMap)::Bool
     return mm.get !== nothing || mm.post !== nothing || mm.put !== nothing ||
@@ -91,10 +126,17 @@ PatternSegment(name::AbstractString, ::Type{T}) where {T} = PatternSegment(true,
 
 """
     ParamRoute — a registered route whose path contains `:` or `*` segments.
+
+    Parameter positions and their types are stored as concrete tuples so that
+    matched parameters come back as a statically-typed `Tuple` (no `Any`
+    boxing, and a splat with compile-time arity when dispatch is specialized).
 """
-struct ParamRoute
+struct ParamRoute{P<:Tuple,N}
     segments::Vector{PatternSegment}
     handlers::MethodMap
+    is_wildcard::Bool              # last segment is a `*` catch-all
+    param_pos::NTuple{N,Int}       # segment indices that capture parameters
+    param_types::P                 # e.g. (Int, String)
 end
 
 # --- Route Match Result ---
@@ -102,15 +144,17 @@ end
 """
     RouteMatch — result of a successful `dispatch_route`.
 
-    `params` carries the captured path parameters. Fixed routes use an empty
-    tuple (zero allocation); parametric routes use a `Vector{Any}`.
+    `params` carries the captured path parameters. Fixed routes yield an empty
+    tuple (zero allocation); parametric routes yield a typed tuple such as
+    `Tuple{Int}` or `Tuple{Int,String}`.
 """
-struct RouteMatch
+struct RouteMatch{P}
     handlers::MethodMap
-    params::Any    # () or Vector{Any}
+    params::P
 end
 
 @inline get_handler(m::RouteMatch, method::Symbol) = get_handler(m.handlers, method)
+@inline get_endpoint(m::RouteMatch, method::Symbol) = get_endpoint(m.handlers, method)
 
 """
     Router — default `AbstractRouter` implementation.
@@ -145,7 +189,7 @@ const PARAM_TYPES = Dict{String,Type}(
 # --- Route Registration ---
 
 """
-    route!(router, method, path, handler) → router
+    route!(router, method, path, handler; middleware=[], metadata=nothing) → router
 
 Register an HTTP route. Supports:
 - Static: `/health`
@@ -153,29 +197,39 @@ Register an HTTP route. Supports:
 - String params: `/posts/:slug`
 - Wildcard: `/*path` (must be last segment)
 
+`middleware` is scoped to this route (composed with app-global middleware at
+dispatch time); `metadata` is opaque and available for future OpenAPI-style
+tooling.
+
 Overlapping parametric routes resolve first-registered-first at dispatch;
 static routes always take precedence over parametric ones.
 """
-function route!(router::Router, method::Symbol, path::AbstractString, @nospecialize(handler::Function))
+function route!(router::Router, method::Symbol, path::AbstractString, @nospecialize(handler::Function);
+                middleware::Vector{<:AbstractMiddleware}=AbstractMiddleware[],
+                metadata=nothing)
     method in VALID_METHODS || throw(RouteError("Invalid HTTP method: $method"))
-    _register_route!(router, method, String(path), handler)
+    _register_route!(router, method, String(path),
+                     Endpoint(handler; middleware=middleware, metadata=metadata))
     return router
 end
 
-function route!(router::Router, method::AbstractString, path::AbstractString, @nospecialize(handler::Function))
-    route!(router, Symbol(lowercase(method)), path, handler)
+function route!(router::Router, method::AbstractString, path::AbstractString, @nospecialize(handler::Function);
+                middleware::Vector{<:AbstractMiddleware}=AbstractMiddleware[],
+                metadata=nothing)
+    route!(router, Symbol(lowercase(method)), path, handler;
+           middleware=middleware, metadata=metadata)
 end
 
-function _register_route!(router::Router, method::Symbol, path::String, @nospecialize(handler::Function))
+function _register_route!(router::Router, method::Symbol, path::String, endpoint::Endpoint)
     if path == "*"
         entry = get!(() -> FixedRoute(), router.fixed, "*")
-        set_handler!(entry.handlers, method, handler)
+        set_handler!(entry.handlers, method, endpoint)
         return
     end
 
     if !occursin(':', path) && !occursin('*', path)
         entry = get!(() -> FixedRoute(), router.fixed, path)
-        set_handler!(entry.handlers, method, handler)
+        set_handler!(entry.handlers, method, endpoint)
         return
     end
 
@@ -194,12 +248,23 @@ function _register_route!(router::Router, method::Symbol, path::String, @nospeci
         end
     end
 
+    pos = Int[]
+    types = Type[]
+    for (i, seg) in enumerate(segments)
+        seg.is_param || continue
+        push!(pos, i)
+        push!(types, seg.T)
+    end
+    is_wildcard = !isempty(types) && types[end] === WildcardParam
+
     route = findfirst(r -> r.segments == segments, router.param_routes)
     if route === nothing
-        push!(router.param_routes, ParamRoute(segments, MethodMap()))
-        set_handler!(router.param_routes[end].handlers, method, handler)
+        param_route = ParamRoute(segments, MethodMap(), is_wildcard,
+                                 (pos...,), (types...,))
+        push!(router.param_routes, param_route)
+        set_handler!(router.param_routes[end].handlers, method, endpoint)
     else
-        set_handler!(router.param_routes[route].handlers, method, handler)
+        set_handler!(router.param_routes[route].handlers, method, endpoint)
     end
 end
 
@@ -220,35 +285,48 @@ end
     return tryparse(T, String(value))
 end
 
+# --- Typed parameter extraction ---
+
+@inline _extract(::Tuple{}, ::Tuple{}, ::Vector{String}) = ()
+
+function _extract(types::Tuple, pos::Tuple, parts::Vector{String})
+    T = types[1]
+    i = pos[1]
+    v = if T === WildcardParam
+        join(parts[i:end], "/")
+    else
+        _try_parse_param(parts[i], T)
+    end
+    v === nothing && return nothing
+    rest = _extract(Base.tail(types), Base.tail(pos), parts)
+    rest === nothing && return nothing
+    return (v, rest...)
+end
+
 # --- Route Matching ---
 
 """
-    _match_route(route, parts) → Union{Nothing,Vector{Any}}
+    _match_route(route, parts) → Union{Nothing, <:Tuple}
 
-Match a parametric route pattern against the split path segments. Returns
-the captured parameters on success, `nothing` on failure.
+Match a parametric route pattern against the split path segments. Returns the
+captured parameters as a typed tuple on success, `nothing` on failure.
 """
-function _match_route(route::ParamRoute, parts::Vector{String})::Union{Nothing,Vector{Any}}
+function _match_route(route::ParamRoute{P,N}, parts::Vector{String}) where {P,N}
+    nseg = length(route.segments)
     n = length(parts)
-    params = Any[]
-    for (idx, seg) in enumerate(route.segments)
-        if seg.is_param
-            # Wildcard captures everything remaining (possibly empty).
-            if seg.T === WildcardParam
-                push!(params, join(parts[idx:end], "/"))
-                return params
-            end
-            idx <= n || return nothing
-            parsed = _try_parse_param(parts[idx], seg.T)
-            parsed === nothing && return nothing
-            push!(params, parsed)
-        else
-            idx <= n || return nothing
+    if route.is_wildcard
+        n < nseg - 1 && return nothing
+    elseif n != nseg
+        return nothing
+    end
+
+    @inbounds for idx in 1:nseg
+        seg = route.segments[idx]
+        if !seg.is_param
             parts[idx] == seg.text || return nothing
         end
     end
-    n == length(route.segments) || return nothing
-    return params
+    return _extract(route.param_types, route.param_pos, parts)
 end
 
 """

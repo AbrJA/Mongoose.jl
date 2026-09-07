@@ -189,7 +189,9 @@ struct DictRouter <: AbstractRouter
 end
 DictRouter() = DictRouter(Dict{String,Mongoose.MethodMap}())
 
-function Mongoose.route!(r::DictRouter, method::Symbol, path::AbstractString, @nospecialize(handler::Function))
+function Mongoose.route!(r::DictRouter, method::Symbol, path::AbstractString, @nospecialize(handler::Function);
+                         middleware::Vector{<:Mongoose.AbstractMiddleware}=Mongoose.AbstractMiddleware[],
+                         metadata=nothing)
     m = get!(() -> Mongoose.MethodMap(), r.routes, String(path))
     Mongoose.set_handler!(m, method, handler)
     return r

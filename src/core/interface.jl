@@ -6,9 +6,12 @@
     this protocol; they never inspect internal fields.
 
     Required protocol for HTTP dispatch:
-    - `route!(r::R, method, path, handler) → r`      (register an HTTP route)
+    - `route!(r::R, method, path, handler; middleware=[], metadata=nothing) → r`
+      (register an HTTP route; the router stores the handler inside an
+      `Endpoint` and never interprets it)
     - `dispatch_route(r::R, method, path)`           → `nothing` or a match object
     - `get_handler(match, method)`                   → handler or `nothing`
+    - `get_endpoint(match, method)`                  → `Endpoint` or `nothing`
     - `match_route_exact(r::R, method, path)`        → `nothing` or a match object
 
     Required protocol for WebSocket:

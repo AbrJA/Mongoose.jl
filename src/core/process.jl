@@ -43,34 +43,51 @@ end
 @inline error_response(errors::Dict{Int,Union{Response,Function}}, status::Int) =
     error_response(errors, nothing, status)
 
-"""
-    dispatch_to_handler(router, request) → Union{Response, StreamResponse}
+# --- Handler invocation ---
 
-Route a request to its handler. Handles 404, 405, and auto-HEAD.
+@inline function _call_handler(handler::Function, params, request::Request)
+    return isempty(params) ? handler(request) : handler(request, params...)
+end
+
 """
-function dispatch_to_handler(router::AbstractRouter, req::Request)::Union{Response,StreamResponse}
-    matched = dispatch_route(router, req.method, req.uri)
-    if matched !== nothing
-        handler = get_handler(matched, req.method)
-        if handler !== nothing
-            params = matched.params
-            result = isempty(params) ? handler(req) : handler(req, params...)
-            result isa Union{Response,StreamResponse} || throw(TypeError(:dispatch_to_handler, Union{Response,StreamResponse}, result))
-            return result
-        end
-        # Auto-HEAD: try GET handler, strip body
-        if req.method === :head
-            get_h = get_handler(matched, :get)
-            if get_h !== nothing
-                params = matched.params
-                resp = isempty(params) ? get_h(req) : get_h(req, params...)
-                resp isa Response && return Response(resp.status, resp.headers, "")
-                resp isa StreamResponse && return resp
-            end
-        end
-        return Response(Plain, "405 Method Not Allowed"; status=405)
+    _resolve_terminal(router, request) → (terminal, scoped_middleware)
+
+Resolve a request into a `terminal` callable `(Request) → Response` and the
+route's scoped middleware. The terminal is always a short-circuiting
+404/405 (or auto-HEAD) producer when no handler matches, so middleware sees
+every request exactly like the handler path.
+"""
+function _resolve_terminal(router::AbstractRouter, request::Request)
+    matched = dispatch_route(router, request.method, request.uri)
+    if matched === nothing
+        return ((r) -> Response(Plain, "404 Not Found"; status=404)), AbstractMiddleware[]
     end
-    return Response(Plain, "404 Not Found"; status=404)
+
+    handler = get_handler(matched, request.method)
+    params = matched.params
+    if handler !== nothing
+        ep = get_endpoint(matched, request.method)
+        scoped = ep === nothing ? AbstractMiddleware[] : ep.middleware
+        return ((r) -> _call_handler(handler, params, r)), scoped
+    end
+
+    # Auto-HEAD: fall back to the GET endpoint and strip the body.
+    if request.method === :head
+        get_h = get_handler(matched, :get)
+        if get_h !== nothing
+            ep = get_endpoint(matched, :get)
+            scoped = ep === nothing ? AbstractMiddleware[] : ep.middleware
+            ghandler = get_h
+            gparams = matched.params
+            strip = (r) -> begin
+                resp = _call_handler(ghandler, gparams, r)
+                resp isa Response ? Response(resp.status, resp.headers, "") : resp
+            end
+            return strip, scoped
+        end
+    end
+
+    return ((r) -> Response(Plain, "405 Method Not Allowed"; status=405)), AbstractMiddleware[]
 end
 
 """
@@ -82,12 +99,17 @@ responses for 4xx/5xx results.
 
 # Arguments
 - `router::AbstractRouter` — route table (see the router protocol).
-- `middlewares::Vector{AbstractMiddleware}` — app-level middleware stack.
+- `middlewares::Vector{AbstractMiddleware}` — app-global middleware stack.
 - `errors` — `Dict{Int,Union{Response,Function}}` of custom error responses.
 - `services` — `Dict{Symbol,Any}` of dependency-injection services (may be empty).
 - `request::Request` — the transport-agnostic request.
+
+Middleware is composed with the matched route's scoped `Endpoint` middleware
+(`global → group/route → handler`), and it wraps *every* terminal — including
+the 404/405/auto-HEAD producers — so interception middleware (CORS, health,
+metrics) observes all requests.
 """
-function invoke_request(router::AbstractRouter, middlewares::Vector{AbstractMiddleware},
+function invoke_request(router::AbstractRouter, middlewares::AbstractVector{<:AbstractMiddleware},
                         errors::Dict{Int,Union{Response,Function}},
                         services::Dict{Symbol,Any}, request::Request)::Union{Response,StreamResponse}
     if !isempty(services)
@@ -95,11 +117,11 @@ function invoke_request(router::AbstractRouter, middlewares::Vector{AbstractMidd
         ctx[:_services] = services
     end
 
-    result = if isempty(middlewares)
-        dispatch_to_handler(router, request)
+    terminal, scoped = _resolve_terminal(router, request)
+    result = if isempty(middlewares) && isempty(scoped)
+        terminal(request)
     else
-        final = (r) -> dispatch_to_handler(router, r)
-        execute_pipeline(middlewares, request, final)
+        execute_pipeline([middlewares; scoped], request, terminal)
     end
 
     if result isa Response && haskey(errors, result.status)
