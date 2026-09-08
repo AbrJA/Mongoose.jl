@@ -18,6 +18,7 @@ export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamRespo
     AbstractTransport, FakeTransport, TestClient,
     supports_websocket, supports_tls, supports_streaming,
     group, RouteGroup, mount!,
+    freeze!, is_frozen,
     SSEWriter, emit, sse,
     json, html, text, redirect,
     post!, patch!, options!, head!,

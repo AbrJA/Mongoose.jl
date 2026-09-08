@@ -1,9 +1,8 @@
-"""
-    Quality gates — Aqua + JET over the whole package.
+# Quality gates — Aqua + JET over the whole package.
+#
+# Run with:
+#     julia --project=test test/quality/quality.jl
 
-    Run with:
-        julia --project=test test/quality/quality.jl
-"""
 using Aqua
 using JET
 using Mongoose

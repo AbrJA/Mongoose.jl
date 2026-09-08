@@ -162,13 +162,31 @@ end
 
     Supports: static paths, typed parameters (`:id::Int`), string parameters
     (`:slug`), and a catch-all wildcard (`*path`, must be the last segment).
+    `freeze!` closes the route table (registration throws afterwards) — the
+    contract that makes the router amenable to AOT/`--trim=safe` builds.
 """
-struct Router <: AbstractRouter
+mutable struct Router <: AbstractRouter
     fixed::Dict{String,FixedRoute}
     param_routes::Vector{ParamRoute}
     ws_routes::Dict{String,WsEndpoint}
-    Router() = new(Dict{String,FixedRoute}(), ParamRoute[], Dict{String,WsEndpoint}())
+    frozen::Bool
+    Router() = new(Dict{String,FixedRoute}(), ParamRoute[],
+                   Dict{String,WsEndpoint}(), false)
 end
+
+"""
+    freeze!(router) → router
+
+Close the route table: any later `route!`/`ws!` throws `RouteError`. Dispatch
+keeps working. This is the closed-route contract required by AOT/`--trim=safe`
+profiles (a static route table can be compiled once and pruned).
+"""
+function freeze!(r::Router)
+    r.frozen = true
+    return r
+end
+
+@inline is_frozen(r::Router) = r.frozen
 
 @inline has_ws_routes(r::Router) = !isempty(r.ws_routes)
 @inline ws_endpoint(r::Router, uri::String) = get(r.ws_routes, uri, nothing)
@@ -209,6 +227,7 @@ function route!(router::Router, method::Symbol, path::AbstractString, @nospecial
                 middleware::AbstractVector=AbstractMiddleware[],
                 metadata=nothing)
     method in VALID_METHODS || throw(RouteError("Invalid HTTP method: $method"))
+    router.frozen && throw(RouteError("router is frozen: registration is closed"))
     _register_route!(router, method, String(path),
                      Endpoint(handler; middleware=middleware, metadata=metadata))
     return router
@@ -387,6 +406,7 @@ function ws!(router::Router, path::AbstractString;
              on_open::Union{Function,Nothing}=nothing,
              on_close::Union{Function,Nothing}=nothing,
              allowed_origins::Vector{String}=String[])
+    router.frozen && throw(RouteError("router is frozen: registration is closed"))
     router.ws_routes[String(path)] = WsEndpoint(on_message=on_message, on_open=on_open,
         on_close=on_close, allowed_origins=allowed_origins)
     return router

@@ -66,3 +66,9 @@ end
 ws_endpoint(::AbstractRouter, ::AbstractString) = nothing
 
 route_count(::AbstractRouter) = "?"
+
+# Closed-route profile (AOT/trim): optional; defaults to "always open".
+function freeze!(router::AbstractRouter)
+    throw(MethodError(freeze!, (router,)))
+end
+is_frozen(::AbstractRouter) = false

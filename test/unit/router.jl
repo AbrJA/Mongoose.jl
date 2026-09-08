@@ -86,3 +86,30 @@ function (mw::_RecordMw)(req::Request, next::Function)
     return response
 end
 
+
+@testset "Router freeze! (closed route table / trim profile)" begin
+    r = Router()
+    get!(r, "/a", req -> text("a"))
+
+    freeze!(r)
+    @test is_frozen(r) == true
+
+    # Registration is closed; dispatch still works.
+    @test_throws RouteError route!(r, :get, "/b", req -> text("b"))
+    @test_throws RouteError get!(r, "/b", req -> text("b"))
+    @test_throws RouteError ws!(r, "/ws"; on_message=req -> nothing)
+    @test Mongoose.dispatch_route(r, :get, "/a") !== nothing
+
+    # A frozen router keeps working through the full pipeline.
+    res = Mongoose.invoke_request(r, Mongoose.AbstractMiddleware[],
+        Dict{Int,Union{Response,Function}}(), NamedTuple(),
+        Request(:get, "/a", Dict{String,String}(), Pair{String,String}[], ""))
+    @test res.status == 200
+    @test res.body == "a"
+
+    # Fresh routers are open; contract fallback for custom routers.
+    @test is_frozen(Router()) == false
+    struct _OpenRouter <: Mongoose.AbstractRouter end
+    @test is_frozen(_OpenRouter()) == false
+    @test_throws MethodError Mongoose.freeze!(_OpenRouter())
+end
