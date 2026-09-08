@@ -1,8 +1,47 @@
 # Mongoose.jl — Design Redesign (TARGET ARCHITECTURE)
 
-Status: **proposal**. Companion to `ARCHITECTURE_REPORT.md` (the audit) and this repo's
-current code. Everything in this file is the *target*; nothing here is implemented yet
-unless marked **DONE**.
+Status: **implemented in large part** across the `feat/modular` series.
+Companion to `ARCHITECTURE_REPORT.md` (the audit) and this repo's current
+code. Items not yet done remain marked *target*.
+
+## Implemented (as of the modularization series)
+
+- G1 core without FFI: `MongooseCore` loads standalone
+  (`using Mongoose.MongooseCore`); `invoke_request`/`FakeTransport` run full
+  requests with no server and no `Mongoose_jll`.
+- G2/g router replaceability: `AbstractRouter` protocol with contract-by-
+  fallback methods; `App{R<:AbstractRouter}`; `Router` = exact Dict +
+  ordered typed-tuple patterns. `freeze!(router)` closes the route table
+  (AOT/`--trim=safe` contract).
+- G3 typed dispatch: `Endpoint` (handler + scoped middleware + metadata);
+  `RouteMatch{P}` with typed param tuples; middleware accepts plain
+  callables (`FunctionMiddleware`); the onion chain runs via a single
+  closure + cursor (no per-layer closure allocation).
+- G4 execution: `AbstractExecutor` + `SyncExecutor`/`AsyncExecutor`; App
+  always holds an executor; timeouts applied at job build time.
+- Transport seam: `AbstractTransport` + capability traits
+  (`supports_websocket/tls/streaming`); `TestClient` is `FakeTransport`.
+- Derived type-stability fixes: `App.services` is a typed
+  `ServiceRegistry{T<:NamedTuple}` (`service(req, Val(:x))` is stable);
+  `parse_method` simplified; streaming producers run off the poll thread
+  (channel-backed `StreamWriter`); WS origin allowlist; typed exception
+  handlers; binary responses keep-alive; executor marker instead of
+  `Union{Nothing,…}`.
+- Test suite split into topic modules (`test/{unit,routing,middleware,
+  server,http,websocket,tls,quality}`) and a production example with an
+  interactive dashboard (`examples/production/`, gitignored).
+
+## Remaining *target* items
+
+- Full written transport contract (`init!/listen!/poll!/send!`) behind the
+  C adapter — `AbstractTransport` + traits exist; the C event loop is not
+  yet rewired through them.
+- Composed-tuple middleware (immutable App + builder) and a compiled
+  frozen-route dispatch table (the actual `--trim=safe` profile; `freeze!`
+  provides the closed-table guarantee but dispatch is not yet code-
+  generated).
+- Registry GC-rooting redesign — deliberately shelved (current per-event
+  SpinLock lookup is uncontended and GC-safe).
 
 ---
 
