@@ -66,9 +66,13 @@ function (mw::PrometheusMetrics)(request::Request, next::Function)
     response = next()
     elapsed_s = (time_ns() - t0) * 1e-9
 
-    if response isa Response
+    # Record both buffered responses and completed streams (SSE). The
+    # streaming status is only known at dispatch (200), so streams are
+    # bucketed as their nominal status — still visible in the histogram.
+    if response isa Response || response isa StreamResponse
+        status = response isa Response ? response.status : 200
         method = uppercase(String(request.method))
-        key = string(method, "_", response.status)
+        key = string(method, "_", status)
         bidx = _histidx(elapsed_s)
 
         shard = _shard(mw)

@@ -74,6 +74,7 @@ using Mongoose
     # ── HTTP features ──
     @testset "HTTP" begin
         include("http/features.jl")
+        include("http/binary.jl")
         include("http/request.jl")
         include("http/errors.jl")
         include("http/formats.jl")

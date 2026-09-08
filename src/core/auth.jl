@@ -93,3 +93,40 @@ use!(server, apikey(keys=Set(["key-123"])))
 ```
 """
 apikey(; header_name::String="X-API-Key", keys::Set{String}) = ApiKey(lowercase(header_name), keys)
+
+"""
+    BasicAuth — HTTP Basic authentication middleware.
+    Validates `Authorization: Basic <base64(user:password)>` with
+    constant-time comparison.
+"""
+struct BasicAuth <: AbstractMiddleware
+    user::String
+    password::String
+    realm::String
+end
+
+function (mw::BasicAuth)(request::Request, next::Function)
+    auth_header = get(request.headers, "authorization", nothing)
+    expected = "Basic " * base64encode(mw.user * ":" * mw.password)
+
+    if auth_header !== nothing && _constant_time_eq(auth_header, expected)
+        return next()
+    end
+
+    return Response(Plain, "401 Unauthorized"; status=401,
+                    headers=["WWW-Authenticate" => "Basic realm=\"$(mw.realm)\""])
+end
+
+"""
+    basic_auth(user, password; realm="restricted")
+
+Create an HTTP Basic authentication middleware with constant-time credential
+comparison.
+
+# Example
+```julia
+use!(server, basic_auth("admin", ENV["ADMIN_PASSWORD"]))
+```
+"""
+basic_auth(user::String, password::String; realm::String="restricted") =
+    BasicAuth(user, password, realm)

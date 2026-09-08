@@ -52,6 +52,13 @@ struct Logger <: AbstractMiddleware
     structured::Bool
 end
 
+@inline function _find_response_header(response::Response, name::String)::String
+    for (k, v) in response.headers
+        lowercase(k) == name && return v
+    end
+    return ""
+end
+
 function (mw::Logger)(request::Request, next::Function)
     t0 = time_ns()
     response = next()
@@ -60,6 +67,7 @@ function (mw::Logger)(request::Request, next::Function)
     if elapsed_ns >= mw.threshold_ns
         elapsed_ms = elapsed_ns / 1_000_000
         status = response isa Response ? response.status : 0
+        rid = response isa Response ? _find_response_header(response, "x-request-id") : ""
 
         if mw.structured
             # JSON structured log line (no dependency — manual formatting)
@@ -70,10 +78,14 @@ function (mw::Logger)(request::Request, next::Function)
                 "\",\"uri\":\"", uri,
                 "\",\"status\":", status,
                 ",\"duration\":", round(elapsed_ms; digits=2),
-                ",\"ts\":\"", Libc.strftime("%Y-%m-%dT%H:%M:%S", time()),
+                ",\"request_id\":\"", _escape(rid),
+                "\",\"ts\":\"", Libc.strftime("%Y-%m-%dT%H:%M:%S", time()),
                 "\"}")
         else
-            println(mw.output, uppercase(String(request.method)), " ", request.uri, " → ", status, " (", round(elapsed_ms; digits=2), "ms)")
+            line = uppercase(String(request.method)), " ", request.uri,
+                   " → ", status, " (", round(elapsed_ms; digits=2), "ms)"
+            isempty(rid) || (line = (line..., " id=", rid))
+            println(mw.output, line...)
         end
     end
 

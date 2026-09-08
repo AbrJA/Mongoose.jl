@@ -51,7 +51,8 @@ end
 negotiate(; formats::Vector{DataType}=[Json, Html, Plain]) = Negotiate(formats)
 
 function _negotiate_format(accept::AbstractString, supported::Vector{DataType})::DataType
-    # Parse Accept header: "text/html, application/json;q=0.9, */*;q=0.8"
+    # Parse Accept header: "text/*, application/json;q=0.9, */*;q=0.8"
+    # Returns the best supported format; q=0 media ranges are excluded.
     best_format = supported[1]  # Server default
     best_quality = -1.0
 
@@ -60,8 +61,10 @@ function _negotiate_format(accept::AbstractString, supported::Vector{DataType}):
         isempty(part) && continue
 
         # Split "type/subtype;q=0.9" into media type and quality
-        mime_part, quality = _parse_accept_part(part)
-        fmt = get(_ACCEPT_MAP, mime_part, nothing)
+        q = _parse_accept_part(part)
+        MIME = q[1]; quality = q[2]
+        quality <= 0 && continue                                   # explicitly refused
+        fmt = _match_accept_format(MIME, supported)
 
         if fmt !== nothing && fmt in supported && quality > best_quality
             best_quality = quality
@@ -70,6 +73,30 @@ function _negotiate_format(accept::AbstractString, supported::Vector{DataType}):
     end
 
     return best_format
+end
+
+"""
+    _match_accept_format(mime, supported) → Union{Nothing, DataType}
+
+Resolve a media range to a supported format. Handles exact types and
+wildcards (`text/*`, `*/*`); wildcards resolve to the first supported
+format whose MIME type matches (server-preference order).
+"""
+function _match_accept_format(mime_part::AbstractString, supported::Vector{DataType})
+    if mime_part == "*/*"
+        return supported[1]
+    end
+    fmt = get(_ACCEPT_MAP, String(mime_part), nothing)
+    if fmt !== nothing
+        return fmt in supported ? fmt : nothing
+    end
+    if endswith(mime_part, "/*")
+        prefix = String(mime_part[1:prevind(mime_part, lastindex(mime_part))])
+        for T in supported
+            startswith(mime(T), prefix) && return T
+        end
+    end
+    return nothing
 end
 
 function _parse_accept_part(part::AbstractString)

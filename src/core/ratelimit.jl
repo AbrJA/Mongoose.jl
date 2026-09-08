@@ -1,7 +1,14 @@
 """
     Rate limiting middleware using a fixed-window counter with sharded locks.
-    Tracks requests per client IP with automatic cleanup.
-    Uses N shards (each with its own lock) to reduce contention under high concurrency.
+
+    Tracks requests per bucket key with automatic cleanup, using N shards
+    (each with its own lock) to reduce contention under high concurrency.
+
+    Buckets are keyed by a user-supplied `key_fn(request) -> String`, or by a
+    default that optionally trusts `X-Forwarded-For`/`X-Real-IP` when the app
+    sits behind a proxy. Trusting proxy headers is a spoofing vector when
+    exposed directly to clients, so it must be enabled explicitly for
+    deployments you control the headers of.
 """
 
 const _RATE_LIMIT_SHARDS = 16
@@ -17,22 +24,33 @@ struct RateLimit <: AbstractMiddleware
     window_seconds::Int
     cleanup_interval::Float64
     shards::Vector{_RateShard}
+    key_fn::Function            # (Request) -> bucket key
+    trust_proxies::Bool
 end
 
 @inline function _shard(mw::RateLimit, key::String)
     return mw.shards[mod1(hash(key), length(mw.shards))]
 end
 
-function (mw::RateLimit)(request::Request, next::Function)
-    client_id = let h = get(request.headers, "x-forwarded-for", nothing)
-        if h !== nothing
-            ci = findfirst(',', h)
-            ci !== nothing ? String(strip(h[1:ci-1])) : String(strip(h))
-        else
+# Default bucket key: first X-Forwarded-For entry, or X-Real-IP, when proxy
+# headers are trusted; otherwise a shared "unknown" bucket (override with key_fn).
+function _default_key_fn(trust::Bool)
+    return function (request)
+        if trust
+            h = get(request.headers, "x-forwarded-for", nothing)
+            if h !== nothing
+                ci = findfirst(',', h)
+                return ci !== nothing ? String(strip(h[1:ci-1])) : String(strip(h))
+            end
             h2 = get(request.headers, "x-real-ip", nothing)
-            h2 !== nothing ? String(strip(h2)) : "unknown"
+            h2 !== nothing && return String(strip(h2))
         end
+        return "unknown"
     end
+end
+
+function (mw::RateLimit)(request::Request, next::Function)
+    client_id = mw.key_fn(request)
 
     shard = _shard(mw, client_id)
     now_t = time()
@@ -87,7 +105,7 @@ function (mw::RateLimit)(request::Request, next::Function)
 end
 
 """
-    ratelimit(; max_requests, window_seconds)
+    ratelimit(; max_requests, window_seconds, trust_proxies, key_fn)
 
 Create a rate-limiting middleware using a sharded fixed-window counter.
 Returns 429 Too Many Requests when the limit is exceeded.
@@ -97,17 +115,25 @@ Uses $(_RATE_LIMIT_SHARDS) independent shards internally to minimize lock conten
 # Keyword Arguments
 - `max_requests::Int`: Maximum requests allowed per window (default: `100`).
 - `window_seconds::Int`: Time window duration in seconds (default: `60`).
+- `trust_proxies::Bool`: Trust `X-Forwarded-For`/`X-Real-IP` for the default
+  bucket key (default: `false`). Enable only behind a proxy that overwrites
+  these headers; otherwise clients can spoof their bucket.
+- `key_fn::Function`: Custom bucket key `(Request) -> String`, overriding the
+  default IP-based key (e.g. an API key extracted from the request).
 
 # Example
 ```julia
 use!(server, ratelimit(max_requests=50, window_seconds=30))
+use!(server, ratelimit(max_requests=100, key_fn=req -> apikey(req)))
 ```
 """
-function ratelimit(; max_requests::Int=100, window_seconds::Int=60)
+function ratelimit(; max_requests::Int=100, window_seconds::Int=60,
+                   trust_proxies::Bool=false, key_fn::Union{Function,Nothing}=nothing)
     shards = [_RateShard(Dict{String,Tuple{Int,Float64}}(), Threads.SpinLock(), Ref(time())) for _ in 1:_RATE_LIMIT_SHARDS]
+    key = key_fn === nothing ? _default_key_fn(trust_proxies) : key_fn
     return RateLimit(
         max_requests, window_seconds,
         max(window_seconds * 2.0, 60.0),
-        shards
+        shards, key, trust_proxies
     )
 end

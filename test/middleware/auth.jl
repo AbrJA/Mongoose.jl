@@ -1,3 +1,4 @@
+import Base64
 @testset "Bearer auth" begin
     @testset "Valid token passes" begin
         s = App()
@@ -123,5 +124,35 @@ end
 
         resp = client(:get, "/"; headers=["x-api-key" => "wrong-key"])
         @test resp.status == 401
+    end
+end
+
+@testset "Basic auth" begin
+    app = App()
+    get!(app, "/secure") do req
+        text("secret data")
+    end
+    use!(app, basic_auth("admin", "hunter2"))
+
+    with_server(app) do port
+        base = "http://127.0.0.1:$port"
+
+        # No credentials → 401 with WWW-Authenticate.
+        nogood = HTTP.get("$base/secure"; status_exception=false, retry=false)
+        @test nogood.status == 401
+        @test any(h -> lowercase(h.first) == "www-authenticate" && occursin("Basic", h.second), nogood.headers)
+
+        # Wrong password → 401.
+        bad = HTTP.get("$base/secure";
+                       headers=["Authorization" => "Basic " * Base64.base64encode("admin:wrong")],
+                       status_exception=false, retry=false)
+        @test bad.status == 401
+
+        # Correct credentials → 200.
+        ok = HTTP.get("$base/secure";
+                      headers=["Authorization" => "Basic " * Base64.base64encode("admin:hunter2")],
+                      status_exception=false, retry=false)
+        @test ok.status == 200
+        @test String(ok.body) == "secret data"
     end
 end

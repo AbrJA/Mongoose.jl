@@ -45,7 +45,7 @@
     @testset "Rate limit window expiry" begin
         s = App()
         get!(s, "/") do req; text("ok") end
-        use!(s, ratelimit(max_requests=1, window_seconds=1))
+        use!(s, ratelimit(max_requests=1, window_seconds=1; trust_proxies=true))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/";

@@ -30,3 +30,20 @@
     end
 end
 
+
+@testset "Metrics count streaming responses" begin
+    app = App()
+    get!(app, "/events") do req
+        sse(req) do writer
+            emit(writer; data="one")
+        end
+    end
+    use!(app, metrics())
+
+    with_server(app) do port
+        HTTP.get("http://127.0.0.1:$port/events"; status_exception=false)
+        body = String(HTTP.get("http://127.0.0.1:$port/metrics"; status_exception=false).body)
+        # The streamed SSE response is counted as a GET_200.
+        @test occursin("http_requests_total{method=\"GET\",status=\"200\"} 1", body)
+    end
+end

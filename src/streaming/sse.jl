@@ -21,7 +21,7 @@
     ```
 """
 struct SSEWriter
-    writer::StreamWriter
+    writer::IO                       # StreamWriter (live) or a test buffer
 end
 
 """

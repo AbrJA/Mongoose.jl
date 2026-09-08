@@ -17,6 +17,7 @@ module MongooseCore
 
 import JSON
 using CodecZlib
+using Base64
 
 include("base.jl")          # AbstractRequest
 include("errors.jl")        # RouteError, ServerError, BindError
@@ -62,9 +63,9 @@ export AbstractRequest, Request, Headers, context, form, header, query, body,
     AbstractMiddleware, before, after, PathFilter, execute_pipeline, FunctionMiddleware, as_middleware,
     AbstractExecutor, SyncExecutor, submit!, start!, stop!,
     AbstractTransport, supports_websocket, supports_tls, supports_streaming,
-    Cors, Bearer, ApiKey, RateLimit, Compress, Logger, Health,
+    Cors, Bearer, ApiKey, BasicAuth, RateLimit, Compress, Logger, Health,
     PrometheusMetrics, SecurityHeaders, Negotiate,
-    cors, ratelimit, bearer, apikey, logger, health, metrics, security, compress, negotiate,
+    cors, ratelimit, bearer, apikey, basic_auth, logger, health, metrics, security, compress, negotiate,
     parse_query, strip_query, format_headers, sanitize_header_value, to_lower, url_decode
 
 end # module MongooseCore

@@ -127,10 +127,15 @@ the event loop drains (`drain_streams!`). The poll thread never runs user
 code, so one slow stream cannot stall the server.
 """
 function send_stream_response!(server::AbstractServer, conn::MgConnection, resp::StreamResponse)
+    # Chunks are written with raw mg_send, which bypasses Mongoose's internal
+    # response-framing state; reusing the connection afterwards wedges it.
+    # Close after the stream (standard for SSE anyway — each client keeps its
+    # own connection) to keep the server safe and predictable.
     headers = string(
         content_type_header_raw(resp.content_type),
         format_headers(resp.headers),
-        "Transfer-Encoding: chunked\r\n"
+        "Transfer-Encoding: chunked\r\n",
+        "Connection: close\r\n"
     )
     head = string("HTTP/1.1 ", resp.status, " ", status_reason(resp.status), "\r\n",
                   headers, "\r\n")

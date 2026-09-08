@@ -15,7 +15,36 @@
             @test contains(body, "event: greeting")
             @test contains(body, "data: world")
             @test contains(body, "id: 1")
+            @test endswith(body, "\n\n")                       # terminated
+            @test occursin("event: greeting", body) # order check
+            idx_id  = findfirst("id: 1", body)
+            idx_data = findfirst("data: world", body)
+            @test idx_data !== nothing && idx_id !== nothing && idx_id < idx_data
         end
+    end
+
+    @testset "SSE framing (unit, via FakeTransport)" begin
+        s = App()
+        get!(s, "/events") do req
+            sse(req) do writer
+                emit(writer; data="line1\nline2", event="evt", id="7", retry=1000)
+                emit(writer; data="third")
+            end
+        end
+        resp = FakeTransport(s)(:get, "/events")
+        @test resp.status == 200
+        body = String(resp.body)
+
+        # Event 1: id/event/retry lines, multi-line data, blank-line end.
+        @test startswith(body, "id: 7\nevent: evt\nretry: 1000\n")
+        @test occursin("data: line1\ndata: line2\n\n", body)
+        # Event 2: only data.
+        @test endswith(body, "data: third\n\n")
+        # Content-Type is the SSE media type.
+        @test any(h -> h.first == "Content-Type" && h.second == "text/event-stream",
+                  resp.headers)
+        # Events are separated by exactly one blank line.
+        @test occursin("data: line2\n\ndata: third", body)
     end
 
     @testset "Slow stream does not block the event loop" begin

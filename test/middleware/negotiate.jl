@@ -40,3 +40,34 @@
     end
 end
 
+
+@testset "Negotiation wildcards and q=0" begin
+    app = App()
+    get!(app, "/data") do req
+        accept = context(req)[:accept]
+        accept === Json ? json(Dict("json" => true)) :
+        accept === Html ? html("<p>html</p>") :
+        accept === Plain ? text("plain") : text("none")
+    end
+    use!(app, negotiate(formats=[Json, Html, Plain]))
+
+    with_server(app) do port
+        base = "http://127.0.0.1:$port/data"
+
+        # Subtype wildcard text/* resolves to the first text format (Html).
+        r = HTTP.get(base; headers=["Accept" => "text/*"], status_exception=false, retry=false)
+        @test r.status == 200
+        @test occursin("text/html", get(Dict(r.headers), "Content-Type", ""))
+
+        # q=0 excludes a media range.
+        r2 = HTTP.get(base; headers=["Accept" => "application/json;q=0, text/plain"],
+                      status_exception=false, retry=false)
+        @test String(r2.body) == "plain"
+
+        # Explicit refusal of everything → server default (formats[1] = Json).
+        r3 = HTTP.get(base; headers=["Accept" => "application/json;q=0, text/html;q=0, text/plain;q=0"],
+                      status_exception=false, retry=false)
+        @test r3.status == 200
+        @test occursin("\"json\"", String(r3.body))
+    end
+end

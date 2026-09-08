@@ -97,3 +97,25 @@ end
     @test r.fixed["/s"].handlers.get.middleware[1] isa Mongoose.FunctionMiddleware
 end
 
+
+@testset "Compression sets Vary even when skipped" begin
+    mw = compress(min_size=10_000)
+    req = Request(:get, "/", "/", Dict{String,String}(),
+        Headers(["accept-encoding" => "gzip"]), "")
+    handler = () -> Response(Json, "small")   # too small to compress
+    resp = mw(req, handler)
+    @test !any(p -> p.first == "Content-Encoding", resp.headers)
+    # Cache-correctness: representation varies with Accept-Encoding regardless.
+    @test any(p -> p.first == "Vary" && p.second == "Accept-Encoding", resp.headers)
+end
+
+@testset "Logger includes request id" begin
+    mw = logger(threshold=0, output=IOBuffer())
+    req = Request(:get, "/", "/", Dict{String,String}(), Headers(), "")
+    handler = () -> Response(200, Pair{String,String}["X-Request-Id" => "abc123"], "ok")
+    resp = mw(req, handler)
+    @test resp.status == 200
+    io = mw.output
+    content = String(take!(io))
+    @test occursin("abc123", content)
+end

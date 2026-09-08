@@ -18,15 +18,6 @@ function (mw::Compress)(request::Request, next::Function)
     response = next()
     response isa Response || return response
 
-    # Skip small responses
-    body_data = response.body
-    body_size = body_data isa String ? ncodeunits(body_data) : length(body_data)
-    body_size < mw.min_size && return response
-
-    # Check if client accepts gzip
-    accept_enc = get(request.headers, "accept-encoding", "")
-    contains(accept_enc, "gzip") || return response
-
     # Check if response is compressible content type
     ct = ""
     for (k, v) in response.headers
@@ -35,12 +26,31 @@ function (mw::Compress)(request::Request, next::Function)
             break
         end
     end
-    _is_compressible(ct) || return response
+    compressible = _is_compressible(ct)
 
     # Already encoded?
-    for (k, _) in response.headers
-        (k == "Content-Encoding" || k == "content-encoding") && return response
+    already_encoded = any(h -> h.first == "Content-Encoding" || h.first == "content-encoding",
+                          response.headers)
+
+    # Cache-correctness: whenever the body could have been compressed, advertise
+    # that the representation varies with Accept-Encoding.
+    if compressible && !already_encoded
+        has_vary = any(h -> h.first == "Vary" || h.first == "vary", response.headers)
+        if !has_vary
+            response = Response(response.status, [response.headers; "Vary" => "Accept-Encoding"],
+                                response.body)
+        end
     end
+
+    # Skip small responses
+    body_data = response.body
+    body_size = body_data isa String ? ncodeunits(body_data) : length(body_data)
+    body_size < mw.min_size && return response
+
+    # Check if client accepts gzip
+    accept_enc = get(request.headers, "accept-encoding", "")
+    contains(accept_enc, "gzip") || return response
+    (compressible && !already_encoded) || return response
 
     # Compress
     compressed = transcode(GzipCompressor, body_data isa String ? Vector{UInt8}(body_data) : body_data)
@@ -48,7 +58,7 @@ function (mw::Compress)(request::Request, next::Function)
     # Only use compressed if it's actually smaller
     length(compressed) >= body_size && return response
 
-    new_headers = [response.headers; "Content-Encoding" => "gzip"; "Vary" => "Accept-Encoding"]
+    new_headers = [response.headers; "Content-Encoding" => "gzip"]
     return Response(response.status, new_headers, compressed)
 end
 

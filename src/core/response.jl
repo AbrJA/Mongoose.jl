@@ -18,8 +18,8 @@ struct Response
 
     Response(status::Int, headers::Vector{Pair{String,String}}, body::AbstractString) =
         new(status, headers, String(body))
-    Response(status::Int, headers::Vector{Pair{String,String}}, body::Vector{UInt8}) =
-        new(status, headers, body)
+    Response(status::Int, headers::Vector{Pair{String,String}}, body::AbstractVector{UInt8}) =
+        new(status, headers, Vector{UInt8}(body))
 end
 
 # --- Primary ergonomic constructor: status + body ---
