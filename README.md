@@ -301,6 +301,16 @@ use!(app, bearer(token -> token == ENV["API_TOKEN"]); paths=["/api"])
 # API key auth
 use!(app, apikey(header_name="x-api-key", keys=Set(["key-abc", "key-xyz"])))
 
+# HTTP Basic auth
+use!(app, basic_auth("admin", ENV["ADMIN_PASSWORD"]))
+
+# Rate limiting (private-keyed; trust proxy headers only behind your proxy)
+use!(app, ratelimit(max_requests=100, window_seconds=60; trust_proxies=false))
+use!(app, ratelimit(max_requests=100, key_fn=req -> req.headers_get("x-api-key")))
+
+# CORS: allowlist + credentials, preflight-validated
+use!(app, cors(origins=["https://myapp.com"], allow_credentials=true))
+
 # Static file serving (C-level, with Range/ETag/gzip)
 serve!(app, "public"; uri_prefix="/static")
 ```
