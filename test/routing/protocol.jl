@@ -1,0 +1,60 @@
+@testset "Router protocol (contract-by-fallback)" begin
+    struct _FallbackRouter <: AbstractRouter end
+
+    r = _FallbackRouter()
+    # Optional capabilities default to "not supported".
+    @test Mongoose.has_ws_routes(r) == false
+    @test Mongoose.ws_endpoint(r, "/ws") === nothing
+    @test Mongoose.route_count(r) == "?"
+    # Required protocol throws a clear MethodError when unimplemented.
+    @test_throws MethodError Mongoose.dispatch_route(r, :get, "/")
+    @test_throws MethodError Mongoose.match_route_exact(r, :get, "/")
+    @test_throws MethodError route!(r, :get, "/x", req -> text(""))
+    @test_throws MethodError ws!(r, "/x"; on_message=req -> nothing)
+end
+
+@testset "RegexRouter alternative (pluggability showcase)" begin
+    # A tiny regex-based router implementing the AbstractRouter contract.
+    struct RegexRouter <: AbstractRouter
+        entries::Vector{Tuple{Regex,Symbol,Mongoose.Endpoint}}
+    end
+    RegexRouter() = RegexRouter(Tuple{Regex,Symbol,Mongoose.Endpoint}[])
+
+    function Mongoose.route!(r::RegexRouter, method::Symbol, path::AbstractString,
+                             handler::Function; middleware::AbstractVector=Mongoose.AbstractMiddleware[],
+                             metadata=nothing)
+        push!(r.entries, (Regex("^" * String(path) * "\$"), method,
+                          Mongoose.Endpoint(handler; middleware=middleware, metadata=metadata)))
+        return r
+    end
+
+    struct RegexMatch
+        ep::Mongoose.Endpoint
+        params::Tuple{}    # no captures in this showcase
+    end
+    Mongoose.get_handler(m::RegexMatch, method::Symbol) = m.ep.handler
+    Mongoose.get_endpoint(m::RegexMatch, method::Symbol) = m.ep
+
+    function Mongoose.dispatch_route(r::RegexRouter, method::Symbol, path::AbstractString)
+        clean = Mongoose.strip_query(path)
+        for (re, m, ep) in r.entries
+            m === method || continue
+            match(re, String(clean)) === nothing && continue
+            return RegexMatch(ep, ())
+        end
+        return nothing
+    end
+    Mongoose.match_route_exact(r::RegexRouter, method::Symbol, path::AbstractString) =
+        Mongoose.dispatch_route(r, method, path)
+
+    app = App(router=RegexRouter())
+    get!(app, "/re/.*", req -> text("regex route"))
+    with_server(app) do port
+        resp = HTTP.get("http://127.0.0.1:$port/re/anything"; status_exception=false)
+        @test resp.status == 200
+        @test String(resp.body) == "regex route"
+        resp404 = HTTP.get("http://127.0.0.1:$port/other"; status_exception=false)
+        @test resp404.status == 404
+    end
+end
+
