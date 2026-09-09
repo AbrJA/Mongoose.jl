@@ -26,7 +26,6 @@
 # Pre-built short-circuit terminals (immutable singletons; mirror the generic
 # path's inline 404/405 producers).
 const TERM_404 = (req) -> Response(Plain, "404 Not Found"; status=404)
-const TERM_405 = (req) -> Response(Plain, "405 Method Not Allowed"; status=405)
 
 """
     Terminal{H} — pre-built terminal for a fixed route / catch-all.
@@ -144,6 +143,7 @@ end
 """
 struct CompiledPath
     methods::MethodMap
+    not_allowed::Function            # (req) -> 405 Response with Allow header
     get::Union{Nothing,Function}
     post::Union{Nothing,Function}
     put::Union{Nothing,Function}
@@ -155,7 +155,7 @@ end
 
 @inline function _compile_path(fr::FixedRoute)
     mm = fr.handlers
-    return CompiledPath(mm,
+    return CompiledPath(mm, (r) -> _method_not_allowed(mm),
         _bake_slot(mm.get), _bake_slot(mm.post), _bake_slot(mm.put),
         _bake_slot(mm.delete), _bake_slot(mm.patch), _bake_slot(mm.options),
         _bake_head_slot(mm.head, mm.get))
@@ -174,6 +174,7 @@ end
 struct CompiledParam{P,N}
     route::ParamRoute{P,N}
     ops::Tuple
+    not_allowed::Function            # (req) -> 405 Response with Allow header
     get::Union{Nothing,Function}
     post::Union{Nothing,Function}
     put::Union{Nothing,Function}
@@ -198,6 +199,7 @@ end
     mm = route.handlers
     PC = _call_param_type(route)
     return CompiledParam{P,N}(route, _build_ops(route.segments),
+        (r) -> _method_not_allowed(mm),
         _bake_param_slot(mm.get, PC), _bake_param_slot(mm.post, PC),
         _bake_param_slot(mm.put, PC), _bake_param_slot(mm.delete, PC),
         _bake_param_slot(mm.patch, PC), _bake_param_slot(mm.options, PC),
@@ -256,10 +258,12 @@ struct WildOp end
 # dispatch on the `::Type` value happens once per route at freeze time; the
 # returned closure body is statically typed.
 @inline function _make_parser(::Type{String})
-    return (s, j0, j1) -> String(SubString(s, j0, j1 - 1))
+    # `s` is an owned String and the span [j0, j1) is char-aligned, so the
+    # zero-copy decode fast path applies when the segment is plain.
+    return (s, j0, j1) -> decode_path_segment(s, j0, j1 - 1)
 end
 @inline function _make_parser(::Type{T}) where {T}
-    return (s, j0, j1) -> tryparse(T, String(SubString(s, j0, j1 - 1)))
+    return (s, j0, j1) -> tryparse(T, decode_path_segment(s, j0, j1 - 1))
 end
 
 @inline function _seg_op(seg::PatternSegment)
@@ -366,7 +370,8 @@ end
         p === nothing && return nothing
         return _walk_ops(rest, s, ni, (out..., p))
     else # WildOp — consumes every remaining segment, marks the path as walked.
-        v = _join_tail(s, i)
+        raw = _join_tail(s, i)
+        v = decode_path_segment(raw)
         return _walk_ops(rest, s, ncodeunits(s) + 1, (out..., v))
     end
 end
@@ -386,7 +391,7 @@ end
     method === :patch   && (t = p.patch;   t !== nothing && return t)
     method === :options && (t = p.options; t !== nothing && return t)
     method === :head    && (t = p.head;    t !== nothing && return t)
-    return TERM_405
+    return p.not_allowed
 end
 
 # Parametric node: bind the matched tuple through the baked terminal factory.
@@ -398,7 +403,7 @@ end
     method === :patch   && (t = node.patch;   t !== nothing && return t(p))
     method === :options && (t = node.options; t !== nothing && return t(p))
     method === :head    && (t = node.head;    t !== nothing && return t(p))
-    return TERM_405
+    return node.not_allowed
 end
 
 # Static recursion over the heterogeneous chain (unrolled per node).

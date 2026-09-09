@@ -78,6 +78,8 @@ const ERRORS = Dict{Int,Union{Response,Function}}()
         (:get,    "/scop"),                         # route-scoped middleware
         (:get,    "/health//"),                     # trailing slashes (keepempty)
         (:get,    "/users//42"),                    # empty segment collapsed
+        (:get,    "/users/john%20doe"),             # URL-decoded param
+        (:get,    "/users/a+b"),                    # '+' stays literal in paths
     ]
 
     for (method, path) in probes

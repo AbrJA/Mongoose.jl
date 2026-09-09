@@ -58,6 +58,14 @@ const CLOSE = ["Connection" => "close"]
         end
 
         progress("Query + form features")
+        @testset "Echo (raw body round-trip)" begin
+            body_str = "raw echo body"
+            r = HTTP.post("$base/api/echo"; status_exception=false, read_idle_timeout=10,
+                headers=AUTH, body=body_str)
+            @test r.status == 200
+            @test String(r.body) == body_str
+        end
+
         @testset "Query + form features" begin
             r = HTTP.get("$base/api/search?q=julia&page=2&limit=5"; status_exception=false, headers=AUTH, read_idle_timeout=10)
             @test JSON.parse(String(r.body)) == Dict("q" => "julia", "page" => 2, "limit" => 5)
@@ -212,6 +220,51 @@ const CLOSE = ["Connection" => "close"]
         end
 
         progress("Frozen router guardrails + request id")
+        @testset "HTTP semantics: 405 Allow + raw chunked" begin
+            # RFC 9110 §15.5.6: 405 must carry the Allow header. (/api/quote is
+            # GET-only; /healthz is intercepted by the health middleware.)
+            r = HTTP.request("POST", "$base/api/quote"; status_exception=false,
+                headers=AUTH, read_idle_timeout=10)
+            @test r.status == 405
+            allow = HTTP.header(r, "Allow")
+            @test occursin("GET", allow) && occursin("HEAD", allow)
+
+            # RFC 9112 §7.1: chunked request bodies are decoded by the adapter
+            # (decode_chunked is unit-tested in test/unit/request.jl). A
+            # wire-level curl probe is deliberately omitted: raw-body clients
+            # wedging the C connection — the same keep-alive interaction as the
+            # old multipart hang — costs far more than it proves.
+        end
+
+        @testset "Cookies + typed validation" begin
+            # Set a cookie, then read it back on the next request.
+            r = HTTP.get("$base/api/cookie"; status_exception=false,
+                headers=AUTH, read_idle_timeout=10)
+            @test r.status == 200
+            @test contains(String(r.body), "cookie=none")
+            set_cookie = HTTP.header(r, "Set-Cookie")
+            @test occursin("session=abc123", set_cookie)
+            @test occursin("HttpOnly", set_cookie)
+
+            r = HTTP.get("$base/api/cookie"; status_exception=false,
+                headers=[AUTH; "Cookie" => "session=abc123"], read_idle_timeout=10)
+            @test contains(String(r.body), "cookie=abc123")
+
+            # Typed validation: valid body parses, invalid body rejects.
+            r = HTTP.post("$base/api/validate"; status_exception=false, read_idle_timeout=10,
+                headers=["Content-Type" => "application/json", "Authorization" => "Bearer test-token",
+                         "Connection" => "close"],
+                body=JSON.json(Dict("name" => "Alice", "age" => 30)))
+            @test r.status == 200
+            @test JSON.parse(String(r.body))["age"] == 30
+
+            r = HTTP.post("$base/api/validate"; status_exception=false, read_idle_timeout=10,
+                headers=["Content-Type" => "application/json", "Authorization" => "Bearer test-token",
+                         "Connection" => "close"],
+                body=JSON.json(Dict("name" => "Bob", "age" => "old")))
+            @test r.status == 500
+        end
+
         @testset "Frozen router guardrails + request id" begin
             @test Mongoose.isfrozen(app.router)
             @test_throws Mongoose.RouteError Mongoose.route!(app.router, :get, "/late", req -> text("x"))

@@ -328,10 +328,14 @@ function _parse_param_spec(spec::AbstractString)
     return (name, T)
 end
 
-@inline _try_parse_param(value::AbstractString, ::Type{String}) = String(value)
+# Path segments are URL-decoded before parsing (RFC 3986): `+` stays a literal
+# plus in paths, unlike query strings.
+@inline function _try_parse_param(value::AbstractString, ::Type{String})::String
+    return decode_path_segment(String(value))
+end
 
 @inline function _try_parse_param(value::AbstractString, ::Type{T})::Union{Nothing,T} where {T}
-    return tryparse(T, String(value))
+    return tryparse(T, decode_path_segment(String(value)))
 end
 
 # --- Typed parameter extraction ---
@@ -342,7 +346,7 @@ function _extract(types::Tuple, pos::Tuple, parts::Vector{String})
     T = types[1]
     i = pos[1]
     v = if T === WildcardParam
-        join(parts[i:end], "/")
+        decode_path_segment(join(parts[i:end], "/"))
     else
         _try_parse_param(parts[i], T)
     end

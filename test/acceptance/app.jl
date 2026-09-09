@@ -15,6 +15,12 @@ using Base64
 const PNG_1X1 = base64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=")
 
+# ── Validation model (typed request validation demo) ─────────────────────────
+struct NewUser
+    name::String
+    age::Int
+end
+
 # ── Error types used by the app ──────────────────────────────────────────────
 struct ApiNotFound <: Exception
     resource::String
@@ -62,7 +68,7 @@ function buildapp(; token::String="test-token", workers::Integer=2)
                   "head" => String(file.data[1:min(8, end)])))
     end
     post!(router, "/api/echo") do req
-        body(req)
+        text(body(req))
     end
 
     # --- Binary responses ---
@@ -72,6 +78,19 @@ function buildapp(; token::String="test-token", workers::Integer=2)
     end
     get!(router, "/api/png") do req
         Response(200, ["Content-Type" => "image/png"], PNG_1X1)
+    end
+
+    # --- Cookies ---
+    get!(router, "/api/cookie") do req
+        current = get(Mongoose.cookies(req), "session", "none")
+        c = Mongoose.Cookie("session", "abc123"; httponly=true, samesite=:lax, max_age=3600)
+        text("cookie=$current"; headers=["Set-Cookie" => Mongoose.bake(c)])
+    end
+
+    # --- Typed validation ---
+    post!(router, "/api/validate") do req
+        user = validate(req, NewUser)
+        json(Dict("name" => user.name, "age" => user.age))
     end
 
     # --- GZip target (text/plain, ~1.1KB, clearly compressible) ---

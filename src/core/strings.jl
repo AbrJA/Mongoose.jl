@@ -6,16 +6,19 @@
 # --- URL Decoding ---
 
 """
-    url_decode(bytes, start_i, end_i) → String
+    url_decode(bytes, start_i, end_i; plus=true) → String
 
-Decode a URL-encoded byte range. Handles `+` → space and `%XX` hex escapes.
+Decode a URL-encoded byte range. Handles `+` → space (form semantics) and
+`%XX` hex escapes. Pass `plus=false` for path segments, where `+` is a
+literal character (RFC 3986 §2.3).
 """
-function url_decode(bytes::AbstractVector{<:UInt8}, start_i::Int, end_i::Int)
+function url_decode(bytes::AbstractVector{<:UInt8}, start_i::Int, end_i::Int;
+                    plus::Bool=true)
     out = IOBuffer(sizehint=end_i - start_i + 1)
     i = start_i
     @inbounds while i <= end_i
         b = bytes[i]
-        if b == UInt8('+')
+        if plus && b == UInt8('+')
             write(out, UInt8(' '))
             i += 1
         elseif b == UInt8('%') && i + 2 <= end_i
@@ -101,6 +104,77 @@ function format_headers(headers::Vector{Pair{String,String}})::String
     end
     return String(take!(io))
 end
+
+# --- Chunked body decoding (RFC 9112 §7.1) ---
+
+"""
+    decode_chunked(data) → String
+
+Decode a `Transfer-Encoding: chunked` request body into its payload bytes.
+
+Grammar (RFC 9112 §7.1): `chunk-size [chunk-ext] CRLF chunk-data CRLF`…
+terminated by a zero chunk plus optional trailers, then a final CRLF.
+
+Decoding is best-effort and defensive: malformed framing is returned
+verbatim (the caller's own parsing/limits still apply), so a hostile body
+can never crash or loop the decoder.
+"""
+function decode_chunked(data::AbstractString)::String
+    bytes = codeunits(data)
+    n = length(bytes)
+    i = 1
+    out = IOBuffer()
+    while i <= n
+        # chunk-size line: "<hex>[;ext] CRLF" — stop at ';' or CR/LF.
+        j = i
+        while j <= n && bytes[j] != UInt8(';') && bytes[j] != UInt8('\r') && bytes[j] != UInt8('\n')
+            j += 1
+        end
+        size = tryparse(UInt, String(bytes[i:j-1]); base=16)
+        size === nothing && return data
+        # skip chunk-ext if present
+        while j <= n && bytes[j] != UInt8('\r')
+            j += 1
+        end
+        (j + 1 <= n && bytes[j] == UInt8('\r') && bytes[j+1] == UInt8('\n')) || return data
+        j += 2
+        if size == 0
+            # zero chunk: trailing bytes are the trailer section, ending in a
+            # blank line — either way the payload is complete.
+            return String(take!(out))
+        end
+        j + Int(size) <= n || return data
+        write(out, view(bytes, j:j+Int(size)-1))
+        i = j + Int(size)
+        (i + 1 <= n && bytes[i] == UInt8('\r') && bytes[i+1] == UInt8('\n')) || return data
+        i += 2
+    end
+    return String(take!(out))
+end
+
+# --- Path-segment decoding (RFC 3986) ---
+
+# Is there a percent-escape anywhere in the span? Cheap pre-check so the hot
+# capture path pays nothing when segments are plain.
+@inline function _has_pct(bytes::AbstractVector{<:UInt8}, s::Int, e::Int)::Bool
+    for i in s:e
+        bytes[i] == UInt8('%') && return true
+    end
+    return false
+end
+
+# Decode a path segment span; returns the ORIGINAL string when no escaping is
+# present (zero-copy hot path). `+` is never turned into a space in paths.
+@inline function decode_path_segment(s::AbstractString, j0::Int, j1::Int)::String
+    return decode_path_segment(String(SubString(s, j0, j1)))
+end
+
+@inline function decode_path_segment(bytes::AbstractVector{<:UInt8}, s::Int, e::Int)::String
+    _has_pct(bytes, s, e) || return String(view(bytes, s:e))
+    return url_decode(bytes, s, e; plus=false)
+end
+
+@inline decode_path_segment(s::String) = decode_path_segment(codeunits(s), 1, ncodeunits(s))
 
 # --- Byte-level utilities ---
 

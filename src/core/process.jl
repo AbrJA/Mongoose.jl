@@ -49,6 +49,26 @@ end
     return isempty(params) ? handler(request) : handler(request, params...)
 end
 
+# --- Allow header for 405 (RFC 9110 §15.5.6) ---
+
+@inline function _allow_header(mm::MethodMap)::String
+    allow = String[]
+    mm.get     === nothing || push!(allow, "GET")
+    mm.post    === nothing || push!(allow, "POST")
+    mm.put     === nothing || push!(allow, "PUT")
+    mm.delete  === nothing || push!(allow, "DELETE")
+    mm.patch   === nothing || push!(allow, "PATCH")
+    mm.options === nothing || push!(allow, "OPTIONS")
+    # HEAD is always available via the auto-HEAD fallback when GET exists.
+    (mm.head === nothing && mm.get === nothing) || push!(allow, "HEAD")
+    return join(allow, ", ")
+end
+
+@inline function _method_not_allowed(mm::MethodMap)
+    return Response(Plain, "405 Method Not Allowed"; status=405,
+        headers=["Allow" => _allow_header(mm)])
+end
+
 """
     _resolve_terminal(router, request) → (terminal, scoped_middleware)
 
@@ -94,7 +114,7 @@ function _resolve_terminal(router::AbstractRouter, request::Request)
         end
     end
 
-    return ((r) -> Response(Plain, "405 Method Not Allowed"; status=405)), AbstractMiddleware[]
+    return ((r) -> _method_not_allowed(matched.handlers)), AbstractMiddleware[]
 end
 
 """

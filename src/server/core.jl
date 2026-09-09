@@ -252,6 +252,13 @@ function teardown!(app::App)
     free!(app.manager)
 end
 
+# --- Registration-after-start guard ---
+
+@inline function _ensure_registratable(server::AbstractServer, what::String)
+    server.running[] && throw(ServerError("cannot register $what after start!"))
+    return nothing
+end
+
 # --- Registration helpers ---
 
 """
@@ -269,6 +276,7 @@ end
 """
 function onerror!(app::App, status::Int, handler::Union{Response,Function})
     (100 <= status <= 599) || throw(ServerError("Status code must be in [100,599]"))
+    _ensure_registratable(app, "error responses")
     app.errors[status] = handler
     return app
 end
@@ -291,6 +299,7 @@ end
 ```
 """
 function onerror!(server::AbstractServer, ::Type{E}, handler::Function) where {E<:Exception}
+    _ensure_registratable(server, "exception handlers")
     server.exception_handlers[E] = handler
     return server
 end
@@ -321,6 +330,7 @@ end
 Register a callback to run after the server starts (before accepting connections).
 """
 function onstart!(f::Function, app::App)
+    _ensure_registratable(app, "start hooks")
     push!(app.hooks_start, f)
     return app
 end
@@ -331,6 +341,7 @@ end
 Register a callback to run during graceful shutdown.
 """
 function onstop!(f::Function, app::App)
+    _ensure_registratable(app, "stop hooks")
     push!(app.hooks_stop, f)
     return app
 end
@@ -346,6 +357,7 @@ service(req, :db)      # retrieve inside handler
 ```
 """
 function service!(app::App, name::Symbol, value)
+    _ensure_registratable(app, "services")
     old = app.services.deps
     app.services = ServiceRegistry((; old..., name => value))
     return app
@@ -373,10 +385,6 @@ function service(req::Request, name::Symbol)
     ctx = req.context
     ctx === nothing && return nothing
     svcs = get(ctx, :_services, nothing)
-    if svcs === nothing
-        app = get(ctx, :_app, nothing)
-        app isa App && (svcs = app.services.deps)
-    end
     svcs isa NamedTuple || return nothing
     hasproperty(svcs, name) || return nothing
     v = getproperty(svcs, name)
@@ -387,10 +395,6 @@ end
     ctx = req.context
     ctx === nothing && return nothing
     svcs = get(ctx, :_services, nothing)
-    if svcs === nothing
-        app = get(ctx, :_app, nothing)
-        app isa App && (svcs = app.services.deps)
-    end
     svcs isa NamedTuple || return nothing
     hasproperty(svcs, name) || return nothing
     v = getfield(svcs, name)
@@ -420,6 +424,7 @@ end
 ```
 """
 function background!(f::Function, app::App)
+    _ensure_registratable(app, "background tasks")
     push!(app.hooks_start, () -> push!(app.bg_tasks, @async f()))
     return app
 end
@@ -452,6 +457,7 @@ use!(app, (req, next) -> (req.headers ...; next()))
 ```
 """
 function use!(server::AbstractServer, @nospecialize(mw); paths::Vector{String}=String[])
+    _ensure_registratable(server, "middleware")
     inner = as_middleware(mw)
     wrapped = isempty(paths) ? inner : PathFilter(inner, paths)
     push!(server.middlewares, wrapped)

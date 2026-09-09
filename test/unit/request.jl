@@ -194,3 +194,33 @@ end
     end
 end
 
+
+@testset "Chunked body decoding (RFC 9112 §7.1)" begin
+    import Mongoose.MongooseCore: decode_chunked, decode_path_segment
+
+    env = @__MODULE__  # module so struct types resolve below
+
+    @testset "Basic framing" begin
+        @test decode_chunked("6\r\nchunky\r\n0\r\n\r\n") == "chunky"
+        @test decode_chunked("4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n") == "Wikipedia"
+    end
+    @testset "Extensions + trailers" begin
+        @test decode_chunked("4;ext=1\r\nWiki\r\n0;done\r\nX-Trailer: yes\r\n\r\n") == "Wiki"
+    end
+    @testset "Multi-chunk with embedded CRLF" begin
+        @test decode_chunked("4\r\nA\r\nB\r\n0\r\n\r\n") == "A\r\nB"
+    end
+    @testset "Malformed framing passes through untouched" begin
+        @test decode_chunked("not chunked at all") == "not chunked at all"
+        @test decode_chunked("ff\r\ntoomuch\r\n0\r\n\r\n") == "ff\r\ntoomuch\r\n0\r\n\r\n"
+    end
+    @testset "Empty" begin
+        @test decode_chunked("0\r\n\r\n") == ""
+    end
+    @testset "Path segment decoding (RFC 3986; '+' literal)" begin
+        @test decode_path_segment("john%20doe") == "john doe"
+        @test decode_path_segment("a+b") == "a+b"
+        @test decode_path_segment("plain") == "plain"
+        @test decode_path_segment("caf%C3%A9") == "café"
+    end
+end

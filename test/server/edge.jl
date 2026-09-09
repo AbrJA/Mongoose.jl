@@ -77,3 +77,17 @@
     end
 end
 
+
+@testset "Registration is rejected after start!" begin
+    s = App()
+    get!(s, "/before", req -> text("ok"))
+    with_server(s) do port
+        @test_throws Mongoose.ServerError get!(s, "/late", req -> text("x"))
+        @test_throws Mongoose.ServerError route!(s, :get, "/late2", req -> text("x"))
+        @test_throws Mongoose.ServerError use!(s, cors())
+        @test_throws Mongoose.ServerError onerror!(s, 404, req -> text("x"))
+        @test_throws Mongoose.ServerError ws!(s, "/ws"; on_message=req -> nothing)
+        # pre-start registration still fine
+        @test HTTP.get("http://127.0.0.1:$port/before"; status_exception=false).status == 200
+    end
+end

@@ -218,6 +218,7 @@ end
 function route!(server::AbstractServer, method::Symbol, path::AbstractString, @nospecialize(handler::Function);
                 middleware::AbstractVector=AbstractMiddleware[],
                 metadata=nothing)
+    _ensure_registratable(server, "routes")
     route!(server.router, method, path, handler; middleware=middleware, metadata=metadata)
     return server
 end
@@ -231,6 +232,7 @@ function route!(server::AbstractServer, method::AbstractString, path::AbstractSt
 end
 
 function ws!(server::AbstractServer, path::AbstractString; kwargs...)
+    _ensure_registratable(server, "websocket routes")
     ws!(server.router, path; kwargs...)
     return server
 end
@@ -259,6 +261,7 @@ head!(f::Function, server::AbstractServer, path::AbstractString) = head!(server,
 Serve static files from `directory`.
 """
 function serve!(server::AbstractServer, directory::AbstractString; uri_prefix::AbstractString="/")
+    _ensure_registratable(server, "static mounts")
     dir = rstrip(abspath(directory), '/')
     isdir(dir) || throw(ArgumentError("serve!: directory does not exist: $dir"))
     prefix = "/" * lstrip(rstrip(uri_prefix, '/'), '/')
@@ -272,6 +275,7 @@ end
 Positional 3-arg form: serve static files from `directory` under `uri_prefix`.
 """
 function serve!(server::AbstractServer, uri_prefix::AbstractString, directory::AbstractString)
+    _ensure_registratable(server, "static mounts")
     dir = rstrip(abspath(directory), '/')
     isdir(dir) || throw(ArgumentError("serve!: directory does not exist: $dir"))
     prefix = "/" * lstrip(rstrip(uri_prefix, '/'), '/')

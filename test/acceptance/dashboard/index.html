@@ -49,6 +49,12 @@
     <h2>Streams</h2>
     <button data-k="sse">SSE (EventSource)</button>
     <button data-k="ws">WebSocket echo</button>
+    <h2>Semantics</h2>
+    <button data-m="POST" data-p="/healthz">405 (POST to GET-only)</button>
+    <button data-m="HEAD" data-p="/api/users/42">HEAD (headers only)</button>
+    <button data-m="POST" data-p="/api/echo#big">413 (2MB body)</button>
+    <button data-m="GET" data-p="/api/cookie">Cookies (set + read)</button>
+    <button data-m="POST" data-p="/api/validate">Validate (typed body)</button>
     <h2>Infra</h2>
     <button data-m="GET" data-p="/healthz">Health</button>
     <button data-m="GET" data-p="/metrics">Prometheus metrics</button>
@@ -101,7 +107,10 @@ async function fetchIt(method, path, opts) {
   } catch (_) {
     detail = "[no body]";
   }
-  line(kind, `${method} ${path} → ${resp.status} (${ms}ms, ${resp.headers.get("content-length") || "?"} bytes)\n${detail.slice(0, 1500)}`);
+  const hd = resp.headers;
+  const keys = ["content-type", "content-encoding", "allow", "location", "set-cookie", "x-request-id"];
+  const lines = keys.filter(k => hd.get(k)).map(k => `${k}: ${hd.get(k)}`);
+  line(kind, `${method} ${path} → ${resp.status} (${ms}ms${hd.get("content-length") ? ", " + hd.get("content-length") + " B" : ""})\n${lines.join("\n")}${detail ? "\n" + detail.slice(0, 1200) : ""}`);
 }
 
 document.querySelectorAll("nav button").forEach(b => {
@@ -130,6 +139,9 @@ document.querySelectorAll("nav button").forEach(b => {
       return fetchIt("POST", "/api/users", { body: JSON.stringify({ name: "Alice" }),
         headers: { "Content-Type": "application/json" } });
     }
+    if (method === "HEAD") {
+      return fetchIt("HEAD", path);
+    }
     if (method === "POST" && path === "/api/form") {
       return fetchIt("POST", "/api/form", { body: "a=1&b=hello",
         headers: { "Content-Type": "application/x-www-form-urlencoded" } });
@@ -145,8 +157,18 @@ document.querySelectorAll("nav button").forEach(b => {
       return fetchIt("POST", "/api/upload", { body,
         headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` } });
     }
+    if (method === "POST" && path === "/api/echo#big") {
+      return fetchIt("POST", "/api/echo", { body: "x".repeat(2_000_000) });
+    }
     if (method === "POST" && path === "/api/echo") {
       return fetchIt("POST", "/api/echo", { body: "raw echo body" });
+    }
+    if (method === "POST" && path === "/api/validate") {
+      return fetchIt("POST", "/api/validate", { body: JSON.stringify({ name: "Alice", age: 30 }),
+        headers: { "Content-Type": "application/json" } });
+    }
+    if (method === "GET" && path === "/api/cookie") {
+      return fetchIt("GET", "/api/cookie");
     }
     return fetchIt(method, path);
   });

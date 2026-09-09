@@ -17,7 +17,7 @@ function adapt_request(msg::MgHttpMessage)::Request
     query_str = to_string(msg.query)
     query = parse_query(query_str)
     headers = parse_headers(msg)
-    body = to_string(msg.body)
+    body = body_of(msg, headers)
     path = strip_query(uri)
     return Request(method, uri, String(path), query, headers, body, nothing)
 end
@@ -31,9 +31,20 @@ function adapt_request(msg::MgHttpMessage, method::Symbol, uri::String)::Request
     query_str = to_string(msg.query)
     query = parse_query(query_str)
     headers = parse_headers(msg)
-    body = to_string(msg.body)
+    body = body_of(msg, headers)
     path = String(strip_query(uri))
     return Request(method, uri, path, query, headers, body, nothing)
+end
+
+# --- Request body extraction ---
+
+# RFC 9112 §7.1: the C layer folds complete bodies into msg.body but leaves
+# `Transfer-Encoding: chunked` bodies un-decoded — decode them here so
+# `body(req)`/`form`/`multipart` see real payload bytes.
+@inline function body_of(msg::MgHttpMessage, headers::Headers)::String
+    raw = to_string(msg.body)
+    te = get(headers, "transfer-encoding", "")
+    return occursin("chunked", te) ? decode_chunked(raw) : raw
 end
 
 """
