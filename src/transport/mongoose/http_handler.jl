@@ -14,7 +14,7 @@
         safe = sanitize_header_value(h)
         !isempty(safe) && return safe
     end
-    return string(Threads.atomic_add!(server.id_seq, UInt64(1)) + UInt64(1))
+    return string(Threads.atomic_add!(server.runtime.id_seq, UInt64(1)) + UInt64(1))
 end
 
 # --- Connection: close echo (RFC 7230 §6.3) ---
@@ -72,7 +72,7 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
     end
 
 # 2. Body size enforcement
-    if msg.body.len > server.max_body
+    if msg.body.len > server.config.max_body
         send_http_response!(conn, _echo_conn_close_error!(error_response(server.errors, 413), msg))
         return nothing
     end
@@ -86,7 +86,7 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
     return adapt_request(msg, method, uri)
 end
 
-# --- Unified HTTP handler (sync and async branching on app.workers) ---
+# --- Unified HTTP handler (sync and async branching on the executor) ---
 
 function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
     req = preprocess_http(server, conn, ev_data)
@@ -110,17 +110,17 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
     else
         # Async path: enqueue a job to the worker pool
         exec = server.executor
-        id = Int(Threads.atomic_add!(server.conn_seq, UInt64(1)) + UInt64(1))
-        server.connections[id] = conn
+        id = Int(Threads.atomic_add!(server.runtime.conn_seq, UInt64(1)) + UInt64(1))
+        server.runtime.connections[id] = conn
 
-        timeout = server.request_timeout
+        timeout = server.config.request_timeout
         job = if timeout > 0
             () -> _http_job_timed(server, id, req, timeout)
         else
             () -> _http_job(server, id, req)
         end
         if !submit!(exec, job)
-            delete!(server.connections, id)
+            delete!(server.runtime.connections, id)
             res = _echo_conn_close!(error_response(server.errors, 503), req)
             send_http_response!(conn, res)
         end

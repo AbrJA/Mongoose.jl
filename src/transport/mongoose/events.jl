@@ -71,7 +71,7 @@ end
 # --- Default handlers ---
 
 on_accept(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid}) = begin
-    tls = server.tls
+    tls = server.runtime.tls
     tls !== nothing && init_tls!(conn, tls)
 end
 

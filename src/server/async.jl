@@ -111,17 +111,17 @@ end
 # --- App wiring (server-level orchestration) ---
 
 function init_server!(app::App)
-    app.manager = Manager()
+    app.runtime.manager = Manager()
     app.executor isa AsyncExecutor && init_executor!(app.executor)
-    empty!(app.connections)
-    empty!(app.streams)
-    empty!(app.ws_clients)
+    empty!(app.runtime.connections)
+    empty!(app.runtime.streams)
+    empty!(app.runtime.ws_clients)
 end
 
 haspending(app::App) = app.executor isa AsyncExecutor ? haspending(app.executor) : false
 
 function drain_poll!(app::App)
-    mg_mgr_poll(app.manager.ptr, 10)
+    mg_mgr_poll(app.runtime.manager.ptr, 10)
     dispatch_replies!(app)
 end
 
@@ -131,14 +131,14 @@ function dispatch_replies!(app::App)::Bool
     did_ws = false
     while isopen(exec.replies) && isready(exec.replies)
         reply = try take!(exec.replies) catch e; e isa InvalidStateException && break; rethrow(e) end
-        conn = get(app.connections, reply.id, nothing)
+        conn = get(app.runtime.connections, reply.id, nothing)
         conn === nothing && continue
         if reply.payload isa Response
             send_http_response!(conn, reply.payload)
-            delete!(app.connections, reply.id)
+            delete!(app.runtime.connections, reply.id)
         elseif reply.payload isa StreamResponse
             try send_stream_response!(app, conn, reply.payload) catch e; @log_error "Stream error" e catch_backtrace() end
-            delete!(app.connections, reply.id)
+            delete!(app.runtime.connections, reply.id)
         else  # Message (WebSocket)
             try
                 send_ws_frame!(conn, reply.payload)

@@ -1,9 +1,9 @@
 @testset "ServerConfig" begin
     @testset "config stores tuning parameters" begin
         app = App(workers=2, max_body=1024, poll_timeout=5)
-        @test app.workers == 2
-        @test app.max_body == 1024
-        @test app.poll_timeout == 5
+        @test app.config.workers == 2
+        @test app.config.max_body == 1024
+        @test app.config.poll_timeout == 5
         @test app.config isa Mongoose.ServerConfig
         @test app.config.workers == 2
     end

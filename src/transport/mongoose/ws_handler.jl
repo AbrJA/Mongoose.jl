@@ -22,16 +22,16 @@ end
 # --- Connection tracking ---
 
 @inline function ws_touch!(server::AbstractServer, conn_id::Int)
-    entry = get(server.ws_clients, conn_id, nothing)
+    entry = get(server.runtime.ws_clients, conn_id, nothing)
     entry === nothing && return
     entry.last_active = time()
 end
 
 @inline function ws_register!(server::AbstractServer, conn_id::Int, uri::String, conn::MgConnection)
-    server.ws_clients[conn_id] = WsConn(uri, time(), false)
+    server.runtime.ws_clients[conn_id] = WsConn(uri, time(), false)
     # Track the connection so idle sweeps can send close frames in sync mode
     # too (async mode also inserts it, but the mapping is mode-agnostic now).
-    server.connections[conn_id] = conn
+    server.runtime.connections[conn_id] = conn
 end
 
 # --- Upgrade ---
@@ -88,20 +88,20 @@ function on_ws_message(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
     conn_id = Int(conn)
     ws_touch!(server, conn_id)
 
-    if msg.data.len > server.ws_max_frame
+    if msg.data.len > server.config.ws_max_frame
         mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
-        entry = get(server.ws_clients, conn_id, nothing)
+        entry = get(server.runtime.ws_clients, conn_id, nothing)
         entry !== nothing && (entry.closing = true)
         return
     end
 
     ws_msg = parse_ws_message(msg)
-    uri = let e = get(server.ws_clients, conn_id, nothing); e === nothing ? "" : e.uri end
+    uri = let e = get(server.runtime.ws_clients, conn_id, nothing); e === nothing ? "" : e.uri end
 
     if server.executor isa AsyncExecutor
         # Async: submit the dispatch as a job to the worker pool
         exec = server.executor
-        server.connections[conn_id] = conn
+        server.runtime.connections[conn_id] = conn
         tagged = Tagged(conn_id, Intent(ws_msg, uri))
         if !submit!(exec, () -> invoke_ws(server, tagged))
             @log_warn "WebSocket message dropped: worker queue full conn_id=$conn_id"
@@ -121,14 +121,14 @@ end
 function on_connection_close(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
     conn_id = Int(conn)
     close_ws!(server, conn_id)
-    filter!(kv -> kv.second != conn, server.connections)
+    filter!(kv -> kv.second != conn, server.runtime.connections)
     # Abort any active stream on this connection: unblocks the producer.
-    st = pop!(server.streams, conn_id, nothing)
+    st = pop!(server.runtime.streams, conn_id, nothing)
     st !== nothing && close(st.channel)
 end
 
 function close_ws!(server::AbstractServer, conn_id::Int)
-    entry = pop!(server.ws_clients, conn_id, nothing)
+    entry = pop!(server.runtime.ws_clients, conn_id, nothing)
     uri = entry === nothing ? nothing : entry.uri
 
     if uri !== nothing
@@ -147,15 +147,15 @@ end
 
 function ws_idle_sweep!(server::AbstractServer)
     now = time()
-    timeout = Float64(server.ws_idle_timeout)
+    timeout = Float64(server.config.ws_idle_timeout)
     to_close = Int[]
-    for (id, entry) in server.ws_clients
+    for (id, entry) in server.runtime.ws_clients
         if (now - entry.last_active) > timeout
             push!(to_close, id)
         end
     end
     for id in to_close
-        conn = get(server.connections, id, nothing)
+        conn = get(server.runtime.connections, id, nothing)
         conn !== nothing && mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
         close_ws!(server, id)
     end

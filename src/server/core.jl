@@ -140,44 +140,89 @@ end
     | `router`        | `Router()`     | Custom router instance                       |
     | `tls`           | `nothing`      | `TLSConfig` for HTTPS                        |
 """
-mutable struct App{R<:AbstractRouter} <: AbstractServer
-    # Immutable configuration
-    const config::ServerConfig
 
-    # C / manager state
+"""
+    RunState — per-instance mutable runtime, owned by App.
+
+    Everything that changes while the server runs lives here: connection
+    tracking (HTTP in-flight, WebSockets, active streams), the C manager and
+    event-loop task, TLS material, lifecycle atomics, and background tasks.
+    Configuration (`ServerConfig`), routes, middleware, errors and services
+    are all build-phase state on `App` itself.
+"""
+mutable struct RunState
     running::Threads.Atomic{Bool}
     master::Union{Nothing,Task}
     manager::Manager
-    c_handler::Ptr{Cvoid}
     tls::Union{Nothing,TLSConfig}
-
-    # Connection tracking
     ws_clients::Dict{Int,WsConn}
     id_seq::Threads.Atomic{UInt64}       # X-Request-Id sequence
     conn_seq::Threads.Atomic{UInt64}     # Async connection id sequence
+    connections::Dict{Int,MgConnection}  # Transport-side in-flight (async): id → conn
+    streams::Dict{Int,ActiveStream}      # Streaming responses drained by the loop
+    bg_tasks::Vector{Task}
+end
 
-    # Routing & middleware
+RunState() = RunState(Threads.Atomic{Bool}(false), nothing, Manager(empty=true), nothing,
+    Dict{Int,WsConn}(), Threads.Atomic{UInt64}(0), Threads.Atomic{UInt64}(0),
+    Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(), Task[])
+
+"""
+    App — Mongoose.jl web application.
+
+    Use `workers=0` for sync (default) or `workers=N` for async worker pool.
+
+    # Constructors
+    ```julia
+    app = App()                          # sync, dynamic router
+    app = App(workers=4)                 # async, 4 workers
+    app = App(workers=4, queuesize=2048) # async with larger queue
+    app = App(router=my_router)          # bring-your-own router
+    ```
+
+    # Configuration keyword arguments
+    | Keyword         | Default        | Description                                  |
+    |-----------------|----------------|----------------------------------------------|
+    | `workers`       | `0`            | Worker threads (0 = sync)                    |
+    | `queuesize`     | `1024`         | Max pending requests (async only)            |
+    | `poll_timeout`  | `1`            | Mongoose poll interval (ms)                  |
+    | `max_body`      | `MAX_BODY`     | Max request body size (bytes)                |
+    | `drain_timeout` | `DRAIN_TIMEOUT`| Graceful shutdown drain (ms)                 |
+    | `request_timeout`| `0`           | Per-request timeout ms (0 = disabled)        |
+    | `ws_max_frame`  | `MAX_BODY`     | Max WebSocket frame size (bytes)             |
+    | `ws_idle_timeout`| `0`           | WS idle timeout ms (0 = disabled)            |
+    | `router`        | `Router()`     | Custom router instance                       |
+    | `tls`           | `nothing`      | `TLSConfig` for HTTPS                        |
+
+    # Structure (DESIGN G4)
+    - `app.config` — immutable `ServerConfig`.
+    - `app.runtime` — mutable `RunState` (connections, manager, loop, TLS…).
+    - `app.router`, `app.middlewares`, `app.errors`, `app.services`, … —
+      build-phase state; registration after `start!` throws `ServerError`.
+    - `app.executor` — `SyncExecutor` or `AsyncExecutor` (the worker pool).
+"""
+mutable struct App{R<:AbstractRouter} <: AbstractServer
+    # ── Immutable configuration ────────────────────────────────────────────────
+    const config::ServerConfig
+
+    # ── Mutable runtime (connections, loop, TLS, background tasks) ────────────
+    const runtime::RunState
+
+    # ── Build-phase routing & middleware ──────────────────────────────────────
     const router::R
     const middlewares::Vector{AbstractMiddleware}
     const mounts::Vector{Tuple{String,String}}
 
-    # Error handling & DI
+    # ── Build-phase error handling & DI ───────────────────────────────────────
     const errors::Dict{Int,Union{Response,Function}}
     const exception_handlers::Dict{DataType,Function}
     services::ServiceRegistry
 
-    # Lifecycle hooks
+    # ── Build-phase lifecycle hooks ───────────────────────────────────────────
     const hooks_start::Vector{Function}
     const hooks_stop::Vector{Function}
-    bg_tasks::Vector{Task}
 
-    # Transport-side in-flight requests (async only): id → connection
-    connections::Dict{Int,MgConnection}
-
-    # Active streaming responses (chunk channels drained by the event loop)
-    streams::Dict{Int,ActiveStream}
-
-    # Execution strategy: SyncExecutor (inline) or AsyncExecutor (worker pool)
+    # ── Execution strategy: SyncExecutor (inline) or AsyncExecutor ───────────
     const executor::AbstractExecutor
 
     function App(;
@@ -204,16 +249,11 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
         end
 
         exec = cfg.workers > 0 ? AsyncExecutor(cfg.workers, cfg.queuesize) : SyncExecutor()
+        rs = RunState()
+        rs.tls = tls   # raw TLSConfig material; normalized at start!
         return new{R}(
             cfg,
-            Threads.Atomic{Bool}(false),
-            nothing,
-            Manager(empty=true),
-            C_NULL,
-            tls,
-            Dict{Int,WsConn}(),
-            Threads.Atomic{UInt64}(0),
-            Threads.Atomic{UInt64}(0),
+            rs,
             router,
             AbstractMiddleware[],
             Tuple{String,String}[],
@@ -222,40 +262,25 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
             ServiceRegistry(services),
             Function[],
             Function[],
-            Task[],
-            Dict{Int,MgConnection}(),
-            Dict{Int,ActiveStream}(),
             exec
         )
     end
 end
 
-# --- Config field accessors (backward-compatible) ---
-@inline Base.getproperty(app::App, s::Symbol) = _app_getproperty(app, s, Val(s))
-@inline _app_getproperty(app::App, ::Symbol, ::Val{S}) where {S} = getfield(app, S)
-@inline _app_getproperty(app::App, ::Symbol, ::Val{:poll_timeout}) = getfield(app, :config).poll_timeout
-@inline _app_getproperty(app::App, ::Symbol, ::Val{:max_body}) = getfield(app, :config).max_body
-@inline _app_getproperty(app::App, ::Symbol, ::Val{:drain_timeout}) = getfield(app, :config).drain_timeout
-@inline _app_getproperty(app::App, ::Symbol, ::Val{:request_timeout}) = getfield(app, :config).request_timeout
-@inline _app_getproperty(app::App, ::Symbol, ::Val{:ws_max_frame}) = getfield(app, :config).ws_max_frame
-@inline _app_getproperty(app::App, ::Symbol, ::Val{:ws_idle_timeout}) = getfield(app, :config).ws_idle_timeout
-@inline _app_getproperty(app::App, ::Symbol, ::Val{:workers}) = getfield(app, :config).workers
-@inline _app_getproperty(app::App, ::Symbol, ::Val{:queuesize}) = getfield(app, :config).queuesize
-
 # --- Teardown ---
 
 function teardown!(app::App)
-    for st in values(app.streams)
+    for st in values(app.runtime.streams)
         close(st.channel)
     end
-    empty!(app.streams)
-    free!(app.manager)
+    empty!(app.runtime.streams)
+    free!(app.runtime.manager)
 end
 
 # --- Registration-after-start guard ---
 
 @inline function _ensure_registratable(server::AbstractServer, what::String)
-    server.running[] && throw(ServerError("cannot register $what after start!"))
+    server.runtime.running[] && throw(ServerError("cannot register $what after start!"))
     return nothing
 end
 
@@ -425,14 +450,14 @@ end
 """
 function background!(f::Function, app::App)
     _ensure_registratable(app, "background tasks")
-    push!(app.hooks_start, () -> push!(app.bg_tasks, @async f()))
+    push!(app.hooks_start, () -> push!(app.runtime.bg_tasks, @async f()))
     return app
 end
 
 # --- Display ---
 
 function Base.show(io::IO, app::App)
-    mode = app.workers == 0 ? "sync" : "async($(app.workers) workers)"
+    mode = app.config.workers == 0 ? "sync" : "async($(app.config.workers) workers)"
     routes = route_count(app.router)
     print(io, "App($mode, $routes routes, $(length(app.middlewares)) middleware)")
 end

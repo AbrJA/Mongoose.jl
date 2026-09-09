@@ -18,10 +18,10 @@ start!(app; port=8080)
 """
 function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::Integer=8080,
                 blocking::Bool=true, tls::Union{Nothing,TLSConfig}=nothing)
-    Threads.atomic_xchg!(server.running, true) && return
+    Threads.atomic_xchg!(server.runtime.running, true) && return
 
     try
-        server.tls = normalize_tls(tls)
+        server.runtime.tls = normalize_tls(tls)
         register_server!(server)
         init_server!(server)
         url = bind_server!(server, host, port)
@@ -46,7 +46,7 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
             spawn_event_loop!(server)
         end
     catch e
-        server.running[] && shutdown!(server)
+        server.runtime.running[] && shutdown!(server)
         e isa InterruptException || rethrow(e)
     end
 end
@@ -57,7 +57,7 @@ end
 Gracefully stop the server: drain requests, stop workers, free resources.
 """
 function shutdown!(server::AbstractServer)
-    Threads.atomic_xchg!(server.running, false) || return
+    Threads.atomic_xchg!(server.runtime.running, false) || return
     log_server_stop(server)
 
     # Run lifecycle stop hooks
@@ -76,35 +76,35 @@ end
 # --- Internal lifecycle helpers ---
 
 function bind_server!(server::AbstractServer, host::AbstractString, port::Integer)
-    scheme = server.tls === nothing ? "http" : "https"
+    scheme = server.runtime.tls === nothing ? "http" : "https"
     url = "$scheme://$host:$port"
     fn_data = Ptr{Cvoid}(objectid(server))
-    listener = mg_http_listen(server.manager.ptr, url, get_c_callback(), fn_data)
+    listener = mg_http_listen(server.runtime.manager.ptr, url, get_c_callback(), fn_data)
     listener == C_NULL && throw(BindError("Failed to bind to $url. Port may be in use."))
     return url
 end
 
 function spawn_event_loop!(server::AbstractServer)
-    server.master = @async begin
+    server.runtime.master = @async begin
         try
             event_loop(server)
         catch e
             e isa InterruptException || @log_error "Event loop error" e catch_backtrace()
         finally
-            server.running[] = false
+            server.runtime.running[] = false
         end
     end
 end
 
 function stop_event_loop!(server::AbstractServer)
-    master = server.master
+    master = server.runtime.master
     master === nothing && return
     try wait(master) catch end
-    server.master = nothing
+    server.runtime.master = nothing
 end
 
 function drain!(server::AbstractServer)
-    deadline = time() + server.drain_timeout / 1000.0
+    deadline = time() + server.config.drain_timeout / 1000.0
     while time() < deadline
         haspending(server) || break
         drain_poll!(server)

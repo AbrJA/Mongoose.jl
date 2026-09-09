@@ -2,17 +2,17 @@
     @testset "Default App (sync)" begin
         app = App()
         @test app isa App
-        @test app.running[] == false
-        @test app.workers == 0
+        @test app.runtime.running[] == false
+        @test app.config.workers == 0
         @test app.executor isa SyncExecutor
     end
 
     @testset "Async App" begin
         app = App(workers=4)
         @test app isa App
-        @test app.running[] == false
-        @test app.workers == 4
-        @test app.queuesize == 1024
+        @test app.runtime.running[] == false
+        @test app.config.workers == 4
+        @test app.config.queuesize == 1024
         @test app.executor isa AsyncExecutor
         @test app.executor.workers == 4
         @test app.executor.queuesize == 1024
@@ -20,10 +20,10 @@
 
     @testset "App with custom options" begin
         app = App(workers=2, queuesize=512, poll_timeout=2, max_body=2048)
-        @test app.workers == 2
-        @test app.queuesize == 512
-        @test app.poll_timeout == 2
-        @test app.max_body == 2048
+        @test app.config.workers == 2
+        @test app.config.queuesize == 512
+        @test app.config.poll_timeout == 2
+        @test app.config.max_body == 2048
     end
 
     @testset "App with invalid options" begin

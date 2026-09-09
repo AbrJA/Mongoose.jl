@@ -21,7 +21,7 @@
     resp = client(:get, "/hi")
     @test resp.status == 200
     @test contains(String(resp.body), "hi")
-    @test app.running[] == false  # never started the C server
+    @test app.runtime.running[] == false  # never started the C server
 
     # TestClient is the same fake transport (compat alias).
     @test Mongoose.TestClient === FakeTransport

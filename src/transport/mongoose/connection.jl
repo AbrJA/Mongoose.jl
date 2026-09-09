@@ -43,9 +43,6 @@ send_ws_frame!(conn::MgConnection, msg::Message) = send_ws_frame!(conn, msg.data
 
 # --- Internal binary response assembly ---
 
-function _send_binary_response!(conn::MgConnection, res::Response)
-    _send_binary_response!(conn, res.status, format_headers(res.headers), res.body::Vector{UInt8})
-end
 
 function _send_binary_response!(conn::MgConnection, status::Int, headers::String, body::Vector{UInt8})
     status_text = status_reason(status)
@@ -142,7 +139,7 @@ function send_stream_response!(server::AbstractServer, conn::MgConnection, resp:
     mg_send(conn, Vector{UInt8}(codeunits(head)))
 
     chan = Channel{Union{Vector{UInt8},Nothing}}(64)
-    server.streams[Int(conn)] = ActiveStream(chan, conn, false)
+    server.runtime.streams[Int(conn)] = ActiveStream(chan, conn, false)
     producer = resp.producer
     @async _run_stream(chan, producer)
     return nothing
@@ -173,7 +170,7 @@ Send any pending chunks for in-flight streams. Called from the event loop;
 must run on the poll thread only (C connections are not thread-safe).
 """
 function drain_streams!(server::AbstractServer)
-    streams = server.streams
+    streams = server.runtime.streams
     isempty(streams) && return
     done = Int[]
     for (id, st) in streams
