@@ -36,10 +36,10 @@
 - [x] **T2** Auto-serialize non-`Response` handler returns (`format_response`
       dispatch: Response/StreamResponse passthrough, String→text, bytes→binary,
       Dict/NamedTuple→JSON, nothing→204). *commit: `94c3b27`*
-- [ ] **T3** `RouteResult` ADT: `Matched`/`NotFound`/`MethodNotAllowed{allowed}`;
+- [x] **T3** `RouteResult` ADT: `Matched`/`NotFound`/`MethodNotAllowed{allowed}`;
       `match_route` replaces `dispatch_route`; 405 `Allow` from a method bitmask
       at match time; auto-HEAD resolved at match; protocol collapsed.
-      *commit: —*
+      *commit: `165fffc`*
 
 ### Phase 2 — Request layer & errors
 
@@ -83,3 +83,5 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
   Aqua/JET green.
 - **T2 shipped** (`94c3b27`): auto-serialize; 780 tests + 71 acceptance +
   Aqua/JET green.
+- **T3 shipped** (`165fffc`): RouteResult ADT / match_route; 787 tests + 71
+  acceptance + Aqua/JET + docs green. Phase 1 complete.
