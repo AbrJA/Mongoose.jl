@@ -74,6 +74,11 @@ function buildapp(; token::String="test-token", workers::Integer=2)
         Response(200, ["Content-Type" => "image/png"], PNG_1X1)
     end
 
+    # --- GZip target (text/plain, ~1.1KB, clearly compressible) ---
+    get!(router, "/api/quote") do req
+        text(repeat("All partial functions are structured transformations. ", 20))
+    end
+
     # --- Typed exception handler ---
     get!(router, "/api/boom") do req
         throw(ApiNotFound("everything"))
