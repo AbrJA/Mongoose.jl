@@ -2,7 +2,7 @@
 # path, plus the AOT/trim-friendly contract (freeze! → per-route codegen via
 # `terminal_for`).
 
-import Mongoose: AbstractMiddleware, dispatch_route, freeze!, invoke_request,
+import Mongoose: AbstractMiddleware, match_route, freeze!, invoke_request,
     terminal_for, isfrozen, RouteError
 
 mkreq(method, path) = Request(method, path, Dict{String,String}(),
@@ -91,16 +91,24 @@ const ERRORS = Dict{Int,Union{Response,Function}}()
     end
 end
 
-@testset "Compiled dispatch: dispatch_route still agrees" begin
+@testset "Compiled dispatch: match_route still agrees" begin
     rf = freeze!(_sample_router!(Router()))
     rg = _sample_router!(Router())
     for (method, path) in [(:get, "/users/42"), (:get, "/users/alice"),
                            (:get, "/files/a/b.txt"), (:get, "/x/y/z"),
                            (:get, "/missing"), (:get, "/health")]
-        mf = dispatch_route(rf, method, path)
-        mg = dispatch_route(rg, method, path)
-        @test (mf === nothing) == (mg === nothing)
-        mf === nothing && continue
+        mf = match_route(rf, method, path)
+        mg = match_route(rg, method, path)
+        @test (mf isa Mongoose.NotFound) == (mg isa Mongoose.NotFound)
+        if mf isa Mongoose.NotFound
+            @test mg isa Mongoose.NotFound
+            continue
+        end
+        @test (mf isa Mongoose.MethodNotAllowed) == (mg isa Mongoose.MethodNotAllowed)
+        if mf isa Mongoose.MethodNotAllowed
+            @test mf.allowed == mg.allowed
+            continue
+        end
         @test mf.params == mg.params
         hf = Mongoose.get_handler(mf, method)
         hg = Mongoose.get_handler(mg, method)

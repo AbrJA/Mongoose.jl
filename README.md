@@ -510,7 +510,7 @@ required protocol:
 | Function | Role |
 |---|---|
 | `route!(r, method, path, handler; middleware, metadata)` | register an `Endpoint` |
-| `dispatch_route(r, method, path)` | return a match or `nothing` |
+| `match_route(r, method, path)` | return a `RouteResult` (`Matched`/`NotFound`/`MethodNotAllowed`) |
 | `get_handler(match, method)` | handler for that method, or `nothing` |
 | `get_endpoint(match, method)` | the route's `Endpoint`, or `nothing` |
 | `match_route_exact(r, method, path)` | dispatch without 404-fallback |

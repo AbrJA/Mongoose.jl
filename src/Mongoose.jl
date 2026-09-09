@@ -95,10 +95,10 @@ end
         route!(router, :get,    "/users/:id::Int", (req, id) -> Response(200, Pair{String,String}[], ""))
         route!(router, :post,   "/data",           req -> Response(200, Pair{String,String}[], ""))
 
-        dispatch_route(router, :get,  "/")
-        dispatch_route(router, :get,  "/users/1")
-        dispatch_route(router, :post, "/data")
-        dispatch_route(router, :get,  "/nonexistent")
+        match_route(router, :get,  "/")
+        match_route(router, :get,  "/users/1")
+        match_route(router, :post, "/data")
+        match_route(router, :get,  "/nonexistent")
 
         # --- Response constructors & helpers ---
         Response(Plain, "ok")
@@ -146,9 +146,9 @@ end
         route!(frozen, :get, "/users/:id::Int", (req, id) -> Response(200, Pair{String,String}[], "u"))
         route!(frozen, :get, "/files/*path", (req, path) -> Response(200, Pair{String,String}[], "w"))
         freeze!(frozen)
-        dispatch_route(frozen, :get, "/fixed")
-        dispatch_route(frozen, :get, "/users/1")
-        dispatch_route(frozen, :get, "/files/a/b")
+        match_route(frozen, :get, "/fixed")
+        match_route(frozen, :get, "/users/1")
+        match_route(frozen, :get, "/files/a/b")
         invoke_request(frozen, AbstractMiddleware[], Dict{Int,Union{Response,Function}}(),
             NamedTuple(), req)
         invoke_request(frozen, AbstractMiddleware[], Dict{Int,Union{Response,Function}}(),

@@ -24,11 +24,14 @@ RouteGroup
 group
 group!
 mount!
-dispatch_route
+match_route
 match_route_exact
 get_handler
 get_endpoint
-RouteMatch
+Matched
+NotFound
+MethodNotAllowed
+RouteResult
 MethodMap
 post!
 patch!
@@ -116,6 +119,7 @@ Bearer
 ApiKey
 BasicAuth
 RateLimit
+Compress
 ```
 
 ## Server-Sent Events
@@ -154,6 +158,7 @@ TLSConfig
 
 ```@docs
 AbstractRouter
+SingleEndpoint
 Endpoint
 AbstractExecutor
 SyncExecutor

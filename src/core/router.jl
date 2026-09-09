@@ -9,7 +9,7 @@
 
     Exact (static) matches always win; overlapping parametric routes resolve
     in registration order. Parameters are returned as *typed tuples*, so a
-    matched route carries its concrete parameter types (`RouteMatch{<:Tuple}`)
+    matched route carries its concrete parameter types (`Matched{<:Tuple}`)
     and handlers splat a statically-known arity when the call is specialized.
 
     The router never interprets handlers, middleware, or metadata: each route
@@ -140,23 +140,6 @@ struct ParamRoute{P<:Tuple,N}
     param_types::P                 # e.g. (Int, String)
 end
 
-# --- Route Match Result ---
-
-"""
-    RouteMatch — result of a successful `dispatch_route`.
-
-    `params` carries the captured path parameters. Fixed routes yield an empty
-    tuple (zero allocation); parametric routes yield a typed tuple such as
-    `Tuple{Int}` or `Tuple{Int,String}`.
-"""
-struct RouteMatch{P}
-    handlers::MethodMap
-    params::P
-end
-
-@inline get_handler(m::RouteMatch, method::Symbol) = get_handler(m.handlers, method)
-@inline get_endpoint(m::RouteMatch, method::Symbol) = get_endpoint(m.handlers, method)
-
 """
     AbstractCompiledDispatch — opaque handle to a frozen router's compiled table.
 
@@ -199,7 +182,7 @@ Freezing also **compiles** the closed table into a `CompiledDispatch` (see
 terminal (handler + scoped middleware fused, with the handler's concrete type
 captured), and parametric matching runs through a statically-typed chain with
 no per-request path splitting. The pipeline uses the compiled path via
-`terminal_for` when `compiled !== nothing`; `dispatch_route` keeps its
+`terminal_for` when `compiled !== nothing`; `match_route` keeps its
 generic (correct) implementation.
 """
 function freeze!(r::Router)
@@ -383,50 +366,118 @@ function _match_route(route::ParamRoute{P,N}, parts::Vector{String}) where {P,N}
 end
 
 """
-    dispatch_route(router, method, path) → Union{Nothing, RouteMatch}
+    match_route(router, method, path) → RouteResult
 
-Find the matching route for the given method and path. Exact (static) matches
-win; parametric routes are scanned in registration order; `"*"` catch-all is
-the final fallback.
+Resolve a request to its exhaustive outcome: `Matched(endpoint, handlers,
+params)` when the route serves the method (auto-HEAD resolves to the GET
+endpoint), `NotFound` when the path matches nothing, or
+`MethodNotAllowed{allowed}` carrying the route's method bitmask. Exact
+(static) matches win; parametric routes are scanned in registration order;
+the `"*"` catch-all is the final fallback.
 """
-function dispatch_route(router::Router, method::Symbol, path::AbstractString)::Union{Nothing,RouteMatch}
+function match_route(router::Router, method::Symbol, path::AbstractString)::RouteResult
     clean = strip_query(path)
-
-    # Fast path: exact match in the fixed-route table.
-    fixed = get(router.fixed, clean, nothing)
-    fixed !== nothing && return RouteMatch(fixed.handlers, ())
-
-    # Parametric patterns (linear scan in registration order).
-    if !isempty(router.param_routes)
-        parts = String[String(seg) for seg in eachsplit(clean, '/'; keepempty=false)]
-        for route in router.param_routes
-            params = _match_route(route, parts)
-            params === nothing || return RouteMatch(route.handlers, params)
-        end
-    end
-
-    # Wildcard catch-all via "*" key in fixed routes.
-    wildcard = get(router.fixed, "*", nothing)
-    wildcard !== nothing && return RouteMatch(wildcard.handlers, ())
-
-    return nothing
+    found = _find_route(router, clean)
+    found === nothing && return NotFound()
+    mm, params = found
+    ep = resolve_method(mm, method)
+    ep === nothing && return MethodNotAllowed(method_bitmask(mm))
+    return Matched(ep, mm, params)
 end
 
 """
-    match_route_exact(router, method, path) → Union{Nothing, RouteMatch}
+    match_route_exact(router, method, path) → Union{Nothing, Matched}
 
 Match without the `"*"` fallback (used by static file serving to check route
-ownership).
+ownership). Path ownership is method-independent.
 """
-function match_route_exact(router::Router, method::Symbol, path::AbstractString)::Union{Nothing,RouteMatch}
+function match_route_exact(router::Router, method::Symbol, path::AbstractString)::Union{Nothing,Matched}
     clean = strip_query(path)
+    found = _find_route_no_wildcard(router, clean)
+    found === nothing && return nothing
+    mm, params = found
+    ep = resolve_method(mm, method)
+    ep === nothing && (ep = _first_endpoint(mm))
+    return Matched(ep, mm, params)
+end
+
+# --- RouteResult helpers ---
+
+# Method bitmask: GET=1, POST=2, PUT=4, DELETE=8, PATCH=16, OPTIONS=32, HEAD=64.
+@inline function method_bitmask(mm::MethodMap)::UInt8
+    mask = UInt8(0)
+    mm.get     === nothing || (mask |= 0x01)
+    mm.post    === nothing || (mask |= 0x02)
+    mm.put     === nothing || (mask |= 0x04)
+    mm.delete  === nothing || (mask |= 0x08)
+    mm.patch   === nothing || (mask |= 0x10)
+    mm.options === nothing || (mask |= 0x20)
+    mm.head    === nothing || (mask |= 0x40)
+    # HEAD is always served thanks to the auto-HEAD fallback on GET.
+    (mask & 0x40) == 0 && (mask & 0x01) != 0 && (mask |= 0x40)
+    return mask
+end
+
+# Serialize the bitmask as the RFC 9110 §15.5.6 Allow header value.
+@inline function allow_from_bitmask(mask::UInt8)::String
+    allow = String[]
+    (mask & 0x01) != 0 && push!(allow, "GET")
+    (mask & 0x02) != 0 && push!(allow, "POST")
+    (mask & 0x04) != 0 && push!(allow, "PUT")
+    (mask & 0x08) != 0 && push!(allow, "DELETE")
+    (mask & 0x10) != 0 && push!(allow, "PATCH")
+    (mask & 0x20) != 0 && push!(allow, "OPTIONS")
+    (mask & 0x40) != 0 && push!(allow, "HEAD")
+    return join(allow, ", ")
+end
+
+# Resolve a method against a route's MethodMap, applying the auto-HEAD rule:
+# HEAD with no explicit HEAD endpoint falls back to the GET endpoint.
+@inline function resolve_method(mm::MethodMap, method::Symbol)
+    ep = get_endpoint(mm, method)
+    ep !== nothing && return ep
+    if method === :head
+        gep = get_endpoint(mm, :get)
+        gep !== nothing && return gep
+    end
+    return nothing
+end
+
+@inline function _first_endpoint(mm::MethodMap)
+    mm.get     !== nothing && return mm.get
+    mm.post    !== nothing && return mm.post
+    mm.put     !== nothing && return mm.put
+    mm.delete  !== nothing && return mm.delete
+    mm.patch   !== nothing && return mm.patch
+    mm.options !== nothing && return mm.options
+    mm.head    !== nothing && return mm.head
+    return nothing
+end
+
+# Path-only lookup (includes the "*" catch-all): (handlers, params) or nothing.
+@inline function _find_route(router::Router, clean::AbstractString)
     fixed = get(router.fixed, clean, nothing)
-    fixed !== nothing && return RouteMatch(fixed.handlers, ())
+    fixed !== nothing && return (fixed.handlers, ())
     if !isempty(router.param_routes)
         parts = String[String(seg) for seg in eachsplit(clean, '/'; keepempty=false)]
         for route in router.param_routes
             params = _match_route(route, parts)
-            params === nothing || return RouteMatch(route.handlers, params)
+            params === nothing || return (route.handlers, params)
+        end
+    end
+    wildcard = get(router.fixed, "*", nothing)
+    wildcard !== nothing && return (wildcard.handlers, ())
+    return nothing
+end
+
+@inline function _find_route_no_wildcard(router::Router, clean::AbstractString)
+    fixed = get(router.fixed, clean, nothing)
+    fixed !== nothing && return (fixed.handlers, ())
+    if !isempty(router.param_routes)
+        parts = String[String(seg) for seg in eachsplit(clean, '/'; keepempty=false)]
+        for route in router.param_routes
+            params = _match_route(route, parts)
+            params === nothing || return (route.handlers, params)
         end
     end
     return nothing

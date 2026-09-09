@@ -9,10 +9,18 @@
     - `route!(r::R, method, path, handler; middleware=[], metadata=nothing) → r`
       (register an HTTP route; the router stores the handler inside an
       `Endpoint` and never interprets it)
-    - `dispatch_route(r::R, method, path)`           → `nothing` or a match object
-    - `get_handler(match, method)`                   → handler or `nothing`
-    - `get_endpoint(match, method)`                  → `Endpoint` or `nothing`
-    - `match_route_exact(r::R, method, path)`        → `nothing` or a match object
+    - `match_route(r::R, method, path)`                → a `RouteResult`
+      (`Matched` / `NotFound` / `MethodNotAllowed{allowed}` — 404/405 and the
+      `Allow` set are resolved by the router at match time)
+    - `match_route_exact(r::R, method, path)`          → `nothing` or a `Matched`
+      (no `"*"` fallback — route ownership check for static serving)
+    - `get_handler(match, method)` / `get_endpoint(match, method)` — work on
+      any `Matched`, including custom routers' matches and `SingleEndpoint`
+
+    Custom routers return a `RouteResult` from `match_route`. Returning a
+    `Matched` directly is enough when the route has no auto-HEAD distinction:
+    wrap the endpoint with `SingleEndpoint(ep, method)` as the match's
+    `handlers` value.
 
     Optional capabilities (safe defaults are provided):
     - `has_ws_routes(r::R) → Bool`                   (default: `false`)
@@ -32,6 +40,57 @@
 """
 abstract type AbstractRouter end
 
+# ── RouteResult — the exhaustive router match (Ciro/Keel-style ADT) ──────────
+
+"""
+    RouteResult — outcome of `match_route`: `Matched`, `NotFound`, or
+    `MethodNotAllowed{allowed}` (the last carries the route's method bitmask,
+    so 405 `Allow` needs no secondary lookup).
+"""
+abstract type RouteResult end
+
+"""
+    Matched{endpoint,handlers,params} <: RouteResult
+
+A successful route match. `endpoint` is the `Endpoint` for the requested
+method — auto-HEAD resolves to the GET endpoint — `handlers` carries the
+route's method information (a `MethodMap`, or `SingleEndpoint` for routers
+with one handler) so the pipeline can tell auto-HEAD from an explicit HEAD,
+and `params` is the typed parameter tuple.
+"""
+struct Matched{E,P,H} <: RouteResult
+    endpoint::E
+    handlers::H
+    params::P
+end
+
+"""No route matched the path."""
+struct NotFound <: RouteResult end
+
+"""
+    MethodNotAllowed{allowed::UInt8} <: RouteResult
+
+The path matched but the method isn't registered; `allowed` is a bitmask of
+served methods (HEAD is implied by GET). Serialize with
+`allow_from_bitmask` for the RFC 9110 §15.5.6 `Allow` header.
+"""
+struct MethodNotAllowed <: RouteResult
+    allowed::UInt8
+end
+
+"""
+    SingleEndpoint — minimal "handlers" carrier for custom routers that don't
+    track per-method maps. `get_handler`/`get_endpoint` answer for exactly the
+    one method the endpoint serves.
+"""
+struct SingleEndpoint{E,S}
+    endpoint::E
+    method::S
+end
+get_endpoint(se::SingleEndpoint, m::Symbol) = m == se.method ? se.endpoint : nothing
+get_handler(se::SingleEndpoint, m::Symbol) =
+    m == se.method ? se.endpoint.handler : nothing
+
 # --- Required protocol: throwing fallbacks ---
 
 function route!(router::AbstractRouter, method::Symbol, path::AbstractString,
@@ -39,8 +98,8 @@ function route!(router::AbstractRouter, method::Symbol, path::AbstractString,
     throw(MethodError(route!, (router, method, path, handler)))
 end
 
-function dispatch_route(router::AbstractRouter, method::Symbol, path::AbstractString)
-    throw(MethodError(dispatch_route, (router, method, path)))
+function match_route(router::AbstractRouter, method::Symbol, path::AbstractString)
+    throw(MethodError(match_route, (router, method, path)))
 end
 
 function match_route_exact(router::AbstractRouter, method::Symbol, path::AbstractString)
@@ -54,6 +113,10 @@ end
 function get_endpoint(matched, method::Symbol)
     throw(MethodError(get_endpoint, (matched, method)))
 end
+
+# Matched exposes the handlers accessors too (introspection + tests).
+@inline get_handler(m::Matched, method::Symbol) = get_handler(m.handlers, method)
+@inline get_endpoint(m::Matched, method::Symbol) = get_endpoint(m.handlers, method)
 
 # --- Optional capabilities: safe defaults ---
 

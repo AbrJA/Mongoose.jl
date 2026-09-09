@@ -7,7 +7,7 @@
     @test Mongoose.ws_endpoint(r, "/ws") === nothing
     @test Mongoose.route_count(r) == 0
     # Required protocol throws a clear MethodError when unimplemented.
-    @test_throws MethodError Mongoose.dispatch_route(r, :get, "/")
+    @test_throws MethodError Mongoose.match_route(r, :get, "/")
     @test_throws MethodError Mongoose.match_route_exact(r, :get, "/")
     @test_throws MethodError route!(r, :get, "/x", req -> text(""))
     @test_throws MethodError ws!(r, "/x"; on_message=req -> nothing)
@@ -28,24 +28,19 @@ end
         return r
     end
 
-    struct RegexMatch
-        ep::Mongoose.Endpoint
-        params::Tuple{}    # no captures in this showcase
-    end
-    Mongoose.get_handler(m::RegexMatch, method::Symbol) = m.ep.handler
-    Mongoose.get_endpoint(m::RegexMatch, method::Symbol) = m.ep
-
-    function Mongoose.dispatch_route(r::RegexRouter, method::Symbol, path::AbstractString)
+    function Mongoose.match_route(r::RegexRouter, method::Symbol, path::AbstractString)
         clean = Mongoose.strip_query(path)
         for (re, m, ep) in r.entries
             m === method || continue
             match(re, String(clean)) === nothing && continue
-            return RegexMatch(ep, ())
+            return Mongoose.Matched(ep, Mongoose.SingleEndpoint(ep, method), ())
         end
-        return nothing
+        return Mongoose.NotFound()
     end
-    Mongoose.match_route_exact(r::RegexRouter, method::Symbol, path::AbstractString) =
-        Mongoose.dispatch_route(r, method, path)
+    function Mongoose.match_route_exact(r::RegexRouter, method::Symbol, path::AbstractString)
+        m = Mongoose.match_route(r, method, path)
+        return m isa Mongoose.Matched ? m : nothing
+    end
 
     app = App(router=RegexRouter())
     get!(app, "/re/.*", req -> text("regex route"))

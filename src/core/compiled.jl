@@ -4,7 +4,7 @@
     `freeze!(router)` compiles the closed route table into a
     `CompiledDispatch`. The pipeline then resolves a request through
     `terminal_for` (see `interface.jl`) instead of the generic
-    `dispatch_route` path, so the hot path:
+    `match_route`/pipeline path, so the hot path:
 
     - never allocates a per-request closure or `[global; scoped]` concat,
     - never splits the path into a `Vector{String}` (parametric matching walks
@@ -139,7 +139,7 @@ end
 
 """
     CompiledPath — one frozen fixed path: original MethodMap (for
-    `dispatch_route` compatibility) plus 7 pre-baked 0-arity terminals.
+    `match_route` compatibility) plus 7 pre-baked 0-arity terminals.
 """
 struct CompiledPath
     methods::MethodMap
@@ -155,7 +155,7 @@ end
 
 @inline function _compile_path(fr::FixedRoute)
     mm = fr.handlers
-    return CompiledPath(mm, (r) -> _method_not_allowed(mm),
+    return CompiledPath(mm, (r) -> _method_not_allowed(method_bitmask(mm)),
         _bake_slot(mm.get), _bake_slot(mm.post), _bake_slot(mm.put),
         _bake_slot(mm.delete), _bake_slot(mm.patch), _bake_slot(mm.options),
         _bake_head_slot(mm.head, mm.get))
@@ -165,7 +165,7 @@ end
     CompiledParam{P,N} — one frozen parametric route.
 
     `route::ParamRoute{P,N}` keeps the pattern + MethodMap (registration-order
-    dispatch semantics and `dispatch_route` compatibility); `ops` is the
+    dispatch semantics and `match_route` compatibility); `ops` is the
     heterogeneous tuple of compiled segment ops (`LitOp`/`CaptureOp`/`WildOp`)
     built at freeze time, making the matcher fully static per route. The 7
     slots hold `(req, p::P) → Response` thunks, bound to request params at
@@ -199,7 +199,7 @@ end
     mm = route.handlers
     PC = _call_param_type(route)
     return CompiledParam{P,N}(route, _build_ops(route.segments),
-        (r) -> _method_not_allowed(mm),
+        (r) -> _method_not_allowed(method_bitmask(mm)),
         _bake_param_slot(mm.get, PC), _bake_param_slot(mm.post, PC),
         _bake_param_slot(mm.put, PC), _bake_param_slot(mm.delete, PC),
         _bake_param_slot(mm.patch, PC), _bake_param_slot(mm.options, PC),

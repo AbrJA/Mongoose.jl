@@ -45,10 +45,6 @@ end
 
 # --- Handler invocation ---
 
-@inline function _call_handler(handler::Function, params, request::Request)
-    return isempty(params) ? handler(request) : handler(request, params...)
-end
-
 # --- Auto-serialization of non-Response handler returns ---
 
 # A handler may return anything; these methods turn the common shapes into a
@@ -64,25 +60,17 @@ end
 @inline format_response(::Nothing) = Response(204, Pair{String,String}[], "")
 @inline format_response(x) = Response(Plain, string(x))
 
-# --- Allow header for 405 (RFC 9110 §15.5.6) ---
+# --- Allow header for 405 (RFC 9110 §15.5.6) — single source: the bitmask ---
 
-@inline function _allow_header(mm::MethodMap)::String
-    allow = String[]
-    mm.get     === nothing || push!(allow, "GET")
-    mm.post    === nothing || push!(allow, "POST")
-    mm.put     === nothing || push!(allow, "PUT")
-    mm.delete  === nothing || push!(allow, "DELETE")
-    mm.patch   === nothing || push!(allow, "PATCH")
-    mm.options === nothing || push!(allow, "OPTIONS")
-    # HEAD is always available via the auto-HEAD fallback when GET exists.
-    (mm.head === nothing && mm.get === nothing) || push!(allow, "HEAD")
-    return join(allow, ", ")
-end
+@inline _allow_header(mm::MethodMap) = allow_from_bitmask(method_bitmask(mm))
 
-@inline function _method_not_allowed(mm::MethodMap)
+@inline function _method_not_allowed(mask::UInt8)
     return Response(Plain, "405 Method Not Allowed"; status=405,
-        headers=["Allow" => _allow_header(mm)])
+        headers=["Allow" => allow_from_bitmask(mask)])
 end
+
+@inline _call_endpoint(ep::Endpoint, params, req::Request) =
+    isempty(params) ? ep.handler(req) : ep.handler(req, params...)
 
 """
     _resolve_terminal(router, request) → (terminal, scoped_middleware)
@@ -100,36 +88,24 @@ function _resolve_terminal(router::AbstractRouter, request::Request)
         return compiled, nothing
     end
 
-    matched = dispatch_route(router, request.method, request.uri)
-    if matched === nothing
+    result = match_route(router, request.method, request.uri)
+    if result isa NotFound
         return ((r) -> Response(Plain, "404 Not Found"; status=404)), AbstractMiddleware[]
+    elseif result isa MethodNotAllowed
+        return ((r) -> _method_not_allowed(result.allowed)), AbstractMiddleware[]
     end
 
-    handler = get_handler(matched, request.method)
-    params = matched.params
-    if handler !== nothing
-        ep = get_endpoint(matched, request.method)
-        scoped = ep === nothing ? AbstractMiddleware[] : ep.middleware
-        return ((r) -> _call_handler(handler, params, r)), scoped
-    end
-
-    # Auto-HEAD: fall back to the GET endpoint and strip the body.
-    if request.method === :head
-        get_h = get_handler(matched, :get)
-        if get_h !== nothing
-            ep = get_endpoint(matched, :get)
-            scoped = ep === nothing ? AbstractMiddleware[] : ep.middleware
-            ghandler = get_h
-            gparams = matched.params
-            strip = (r) -> begin
-                resp = format_response(_call_handler(ghandler, gparams, r))
-                resp isa Response ? Response(resp.status, resp.headers, "") : resp
-            end
-            return strip, scoped
+    ep = result.endpoint::Endpoint
+    params = result.params
+    if request.method === :head && get_endpoint(result.handlers, :head) === nothing
+        # Auto-HEAD: the router resolved the GET endpoint; run it and strip.
+        strip = (r) -> begin
+            resp = format_response(_call_endpoint(ep, params, r))
+            resp isa Response ? Response(resp.status, resp.headers, "") : resp
         end
+        return strip, ep.middleware
     end
-
-    return ((r) -> _method_not_allowed(matched.handlers)), AbstractMiddleware[]
+    return ((r) -> _call_endpoint(ep, params, r)), ep.middleware
 end
 
 """
