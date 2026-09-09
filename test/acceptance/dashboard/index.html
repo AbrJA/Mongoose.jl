@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mongoose.jl — Acceptance Dashboard</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: ui-monospace, Menlo, Consolas, monospace; background: #111; color: #ddd; margin: 0; }
+  header { padding: 14px 22px; background: #1b1b1b; border-bottom: 1px solid #333; display: flex; gap: 14px; align-items: baseline; }
+  header h1 { font-size: 16px; margin: 0; color: #7ee787; }
+  header span { color: #888; font-size: 12px; }
+  main { display: grid; grid-template-columns: 300px 1fr; min-height: calc(100vh - 49px); }
+  nav { padding: 14px; background: #151515; border-right: 1px solid #333; }
+  nav h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #666; margin: 12px 0 6px; }
+  nav button { display: block; width: 100%; text-align: left; margin: 3px 0; padding: 7px 9px;
+    background: #222; color: #ccc; border: 1px solid #333; border-radius: 6px; cursor: pointer; font: inherit; font-size: 13px; }
+  nav button:hover { background: #2a2a2a; border-color: #555; }
+  nav input[type=file] { width: 100%; margin: 4px 0 8px; font-size: 12px; color: #aaa; }
+  #log { padding: 14px; overflow-y: auto; font-size: 12px; }
+  .entry { border: 1px solid #333; border-radius: 6px; margin: 6px 0; padding: 8px 10px; background: #161616; }
+  .entry .req { color: #79c0ff; }
+  .entry .ok { color: #7ee787; }
+  .entry .err { color: #ff7b72; }
+  .entry pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-all; color: #bbb; }
+</style>
+</head>
+<body>
+<header>
+  <h1>&#128640; Mongoose.jl acceptance dashboard</h1>
+  <span>one server, every feature — API token: <b>test-token</b></span>
+</header>
+<main>
+  <nav>
+    <h2>REST</h2>
+    <button data-m="GET"    data-p="/api/users">List users</button>
+    <button data-m="GET"    data-p="/api/users/42">Get user 42</button>
+    <button data-m="GET"    data-p="/api/users/999999">Get user 999999 (404)</button>
+    <button data-m="POST"   data-p="/api/users">Create user</button>
+    <button data-m="DELETE" data-p="/api/users/7">Delete user 7</button>
+    <h2>Requests</h2>
+    <button data-m="GET"  data-p="/api/search?q=julia&page=2&limit=5">Search with query</button>
+    <button data-m="POST" data-p="/api/form">Form (urlencoded)</button>
+    <button data-m="POST" data-p="/api/upload">Upload (last picked file)</button>
+    <input type="file" id="file">
+    <button data-m="POST" data-p="/api/echo">Echo body</button>
+    <h2>Binary / media</h2>
+    <button data-m="GET" data-p="/api/binary">Binary bytes</button>
+    <button data-m="GET" data-p="/api/png">PNG image</button>
+    <h2>Streams</h2>
+    <button data-k="sse">SSE (EventSource)</button>
+    <button data-k="ws">WebSocket echo</button>
+    <h2>Infra</h2>
+    <button data-m="GET" data-p="/healthz">Health</button>
+    <button data-m="GET" data-p="/metrics">Prometheus metrics</button>
+    <button data-m="GET" data-p="/api/meta">DI services</button>
+    <button data-m="GET" data-p="/api/boom">Typed exception</button>
+    <button data-m="GET" data-p="/missing">Custom 404</button>
+    <button data-m="GET" data-p="/">Static dashboard</button>
+  </nav>
+  <div id="log"></div>
+</main>
+<script>
+const TOKEN = "test-token";
+const log = document.getElementById("log");
+const base = location.origin;
+
+function line(kind, text) {
+  const e = document.createElement("div");
+  e.className = "entry " + kind;
+  e.textContent = text;
+  log.prepend(e);
+}
+
+async function fetchIt(method, path, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({ Authorization: "Bearer " + TOKEN }, opts.headers || {});
+  const t0 = performance.now();
+  let resp;
+  try {
+    resp = await fetch(base + path, opts);
+  } catch (err) {
+    line("err", `${method} ${path} → network error: ${err}`);
+    return;
+  }
+  const ms = (performance.now() - t0).toFixed(0);
+  const kind = resp.status < 400 ? "ok" : "err";
+  let detail = "";
+  try {
+    const ct = resp.headers.get("content-type") || "";
+    if (ct.includes("json")) {
+      detail = JSON.stringify(await resp.json(), null, 2);
+    } else if (ct.includes("png")) {
+      const blob = await resp.blob();
+      detail = `[image/png, ${blob.size} bytes]`;
+    } else if (ct.includes("gzip") || ct.includes("octet-stream")) {
+      const blob = await resp.blob();
+      detail = `[${blob.size} bytes]`;
+    } else {
+      detail = await resp.text();
+    }
+  } catch (_) {
+    detail = "[no body]";
+  }
+  line(kind, `${method} ${path} → ${resp.status} (${ms}ms, ${resp.headers.get("content-length") || "?"} bytes)\n${detail.slice(0, 1500)}`);
+}
+
+document.querySelectorAll("nav button").forEach(b => {
+  b.addEventListener("click", () => {
+    if (b.dataset.k === "sse") {
+      line("ok", "SSE /api/events → connecting…");
+      const es = new EventSource(base + "/api/events");
+      es.onmessage = e => line("ok", "SSE event: " + e.data);
+      es.onerror = () => { line("ok", "SSE stream closed"); es.close(); };
+      setTimeout(() => es.close(), 5000);
+      return;
+    }
+    if (b.dataset.k === "ws") {
+      line("ok", "WS /ws → connecting…");
+      const ws = new WebSocket(location.origin.replace(/^http/, "ws") + "/ws");
+      ws.onopen = () => ws.send("hello from the dashboard");
+      ws.onmessage = e => line("ok", "WS echo: " + e.data);
+      ws.onclose = () => line("ok", "WS closed");
+      ws.onerror = () => line("err", "WS error");
+      setTimeout(() => ws.close(), 3000);
+      return;
+    }
+    const method = b.dataset.m;
+    const path = b.dataset.p;
+    if (method === "POST" && path === "/api/users") {
+      return fetchIt("POST", "/api/users", { body: JSON.stringify({ name: "Alice" }),
+        headers: { "Content-Type": "application/json" } });
+    }
+    if (method === "POST" && path === "/api/form") {
+      return fetchIt("POST", "/api/form", { body: "a=1&b=hello",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+    }
+    if (method === "POST" && path === "/api/upload") {
+      const f = document.getElementById("file").files[0];
+      if (!f) { line("err", "POST /api/upload → pick a file first"); return; }
+      const boundary = "----AcceptanceBoundary" + Math.random().toString(36).slice(2);
+      const enc = new TextEncoder();
+      const head = enc.encode(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${f.name}"\r\nContent-Type: application/octet-stream\r\n\r\n`);
+      const tail = enc.encode(`\r\n--${boundary}--\r\n`);
+      const body = new Blob([head, f, tail], { type: "multipart/form-data" });
+      return fetchIt("POST", "/api/upload", { body,
+        headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` } });
+    }
+    if (method === "POST" && path === "/api/echo") {
+      return fetchIt("POST", "/api/echo", { body: "raw echo body" });
+    }
+    return fetchIt(method, path);
+  });
+});
+</script>
+</body>
+</html>
