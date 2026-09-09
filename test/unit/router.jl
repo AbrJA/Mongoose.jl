@@ -92,7 +92,7 @@ end
     get!(r, "/a", req -> text("a"))
 
     freeze!(r)
-    @test is_frozen(r) == true
+    @test isfrozen(r) == true
 
     # Registration is closed; dispatch still works.
     @test_throws RouteError route!(r, :get, "/b", req -> text("b"))
@@ -108,8 +108,8 @@ end
     @test res.body == "a"
 
     # Fresh routers are open; contract fallback for custom routers.
-    @test is_frozen(Router()) == false
+    @test isfrozen(Router()) == false
     struct _OpenRouter <: Mongoose.AbstractRouter end
-    @test is_frozen(_OpenRouter()) == false
+    @test isfrozen(_OpenRouter()) == false
     @test_throws MethodError Mongoose.freeze!(_OpenRouter())
 end
