@@ -63,7 +63,7 @@
       transport and `TestClient` share one exact code path (`invoke_guarded`
       deleted). `App` holds `context::RequestContext` mirroring its live
       containers; `service!` rebuilds it (services are snapshot-copied).
-      *commit: (T6)*
+      *commit: `5d72d9e`*
 
 ### Phase 3 — Modularity & coupling
 
@@ -110,7 +110,7 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
   mapping). Note: `ValidationError <: HTTPError{422}` was IMPOSSIBLE (Julia
   forbids subtyping concrete types) → explicit 422 branch in `invoke_guarded`
   instead. Docs: `HTTPError`/`error_status` added to api.md Errors section.
-- **T6 shipped** (this commit): RequestContext seam. 811 tests + 73 acceptance
+- **T6 shipped** (`5d72d9e`): RequestContext seam. 811 tests + 73 acceptance
   + Aqua/JET + docs green. `invoke_request(ctx, req)` is the single pipeline
   seam; typed-exception dispatch + HTTPError/ValidationError mapping moved from
   the transport into core. `invoke_guarded` DELETED (its logic is now inside
