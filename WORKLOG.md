@@ -31,8 +31,8 @@
 
 - [x] **T0** Create this worklog.
       commit: (current)
-- [ ] **T1** Unify `Headers` type for `Response` (drop raw `Vector{Pair}` splices;
-      add `push!`/`append!`/helpers). *commit: —*
+- [x] **T1** Unify `Headers` type for `Response` (drop raw `Vector{Pair}` splices;
+      add `push!`/`append!`/helpers). *commit: `ffaf1e1`*
 - [ ] **T2** Auto-serialize non-`Response` handler returns (`format_response`
       dispatch: Response/StreamResponse passthrough, String→text, bytes→binary,
       Dict/NamedTuple→JSON, nothing→204). *commit: —*
@@ -78,4 +78,6 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
 
 ## Changelog
 
-- **Sep 08 — Phase 1 kickoff.** Decisions recorded above. T1 begins.
+- **Sep 08 — Phase 1 kickoff.** Decisions recorded above.
+- **T1 shipped** (`ffaf1e1`): unified Headers; 763 tests + 71 acceptance +
+  Aqua/JET green.
