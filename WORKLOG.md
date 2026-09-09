@@ -9,8 +9,8 @@
 1. Confirm scope in WORKLOG.
 2. Implement in `src/`, update tests.
 3. Gates before commit:
-   - `julia --project=test test/runtests_stream.jl` (751 tests)
-   - `julia --project=test test/acceptance/production.jl` (71 checks)
+   - `julia --project=test test/runtests_stream.jl` (811 tests)
+   - `julia --project=test test/acceptance/production.jl` (73 checks)
    - `julia --project=test test/quality/quality.jl` (Aqua + JET)
    - `julia --project=docs docs/make.jl` when public API changes
 4. One commit per task; update WORKLOG; iterate.
@@ -44,11 +44,17 @@
 ### Phase 2 — Request layer & errors
 
 - [ ] **T4** `LazyRequest` — lazily parse query/body/headers on first access
-      (memoized), cutting eager per-request allocations. *(trade-off pending
-      user confirm)*
-- [ ] **T5** Typed `HTTPError` hierarchy (`ParseError`/`ProtocolError`/
-      `TimeoutError`…), `Base.showerror` on each, transport error wrapping at
-      the FFI boundary.
+      (memoized), cutting eager per-request allocations. *(trade-off reviewed
+      Sep 09 with the user and DEFERRED: the C buffer is transient so laziness
+      can only defer parse steps, not copies; union-typed fields clash with the
+      type-stability doctrine; the body copy is unavoidable anyway.)*
+- [x] **T5** Typed `HTTPError` hierarchy — parametric `HTTPError{status}`
+      (compile-time status, `error_status(e)` free) + named 4xx/5xx aliases
+      (`NotFoundError`, `ConflictError`, `ImATeapotError`, …) + `showerror`;
+      automatic mapping at the FFI boundary in `invoke_guarded` (custom
+      `onerror!` handlers and `onerror!(app, status)` pages take precedence);
+      unhandled `ValidationError` now defaults to **422** (was 500).
+      *commit: (T5)*
 
 ### Phase 3 — Modularity & coupling
 
@@ -85,3 +91,13 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
   Aqua/JET green.
 - **T3 shipped** (`165fffc`): RouteResult ADT / match_route; 787 tests + 71
   acceptance + Aqua/JET + docs green. Phase 1 complete.
+- **Sep 09 — T4 deferred.** Reviewed `LazyRequest` with the user: the C message
+  buffer is transient, so laziness can only defer parse/transform steps (not
+  copies); memoized `Union` fields violate the type-stability doctrine; body
+  copy is bounded anyway. Skipped in favor of T5.
+- **T5 shipped** (this commit): HTTPError hierarchy + ValidationError→422.
+  811 tests + 73 acceptance + Aqua/JET + docs green. `invoke_guarded` lost its
+  `isempty(exception_handlers)` fast-path (must always catch for the built-in
+  mapping). Note: `ValidationError <: HTTPError{422}` was IMPOSSIBLE (Julia
+  forbids subtyping concrete types) → explicit 422 branch in `invoke_guarded`
+  instead. Docs: `HTTPError`/`error_status` added to api.md Errors section.

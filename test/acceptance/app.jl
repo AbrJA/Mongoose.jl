@@ -103,6 +103,11 @@ function buildapp(; token::String="test-token", workers::Integer=2)
         throw(ApiNotFound("everything"))
     end
 
+    # --- Built-in HTTPError (status-carrying exception, automatic mapping) ---
+    get!(router, "/api/http-error") do req
+        throw(ImATeapotError("short and stout"))
+    end
+
     # --- DI: typed service access ---
     get!(router, "/api/meta") do req
         json(Dict("version" => service(req, Val(:version)),

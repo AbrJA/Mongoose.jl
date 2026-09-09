@@ -12,6 +12,15 @@ export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamRespo
     ws!, Message,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress,
     RouteError, ServerError, BindError,
+    HTTPError, error_status,
+    BadRequestError, UnauthorizedError, PaymentRequiredError, ForbiddenError,
+    NotFoundError, MethodNotAllowedError, NotAcceptableError, RequestTimeoutError,
+    ConflictError, GoneError, LengthRequiredError, PreconditionFailedError,
+    PayloadTooLargeError, URITooLongError, UnsupportedMediaTypeError,
+    RangeNotSatisfiableError, ExpectationFailedError, ImATeapotError,
+    UnprocessableEntityError, LockedError, FailedDependencyError, TooEarlyError,
+    UpgradeRequiredError, PreconditionRequiredError, TooManyRequestsError,
+    UnavailableForLegalReasonsError, InternalServerError,
     TLSConfig,
     service!, service, background!,
     AbstractExecutor, SyncExecutor, AsyncExecutor, submit!, stop!, haspending,
@@ -139,6 +148,19 @@ end
         get!(app, "/") do r; json(Dict("ok" => true)) end
         post!(app, "/data") do r; text("ok") end
         error_response(app.errors, req, 500)
+
+        # --- HTTPError hierarchy + transport fallback ---
+        err404 = NotFoundError("user missing")
+        error_status(err404)
+        sprint(showerror, err404)
+        ValidationError("bad field", "age")
+        thrower = App()
+        get!(thrower, "/bad") do r; throw(BadRequestError("bad input")) end
+        get!(thrower, "/gone") do r; throw(NotFoundError("user 7")) end
+        req_bad = Request(:get, "/bad", Dict{String,String}(), Pair{String,String}[], "")
+        req_gone = Request(:get, "/gone", Dict{String,String}(), Pair{String,String}[], "")
+        invoke_guarded(thrower, req_bad, () -> invoke_http(thrower, req_bad))
+        invoke_guarded(thrower, req_gone, () -> invoke_http(thrower, req_gone))
 
         # --- Frozen-router dispatch (compiled table + terminals) ---
         frozen = Router()

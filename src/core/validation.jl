@@ -28,6 +28,10 @@
 
 """
     ValidationError — Thrown when request body fails validation.
+
+An unhandled `ValidationError` maps to a `422 Unprocessable Entity` response by
+default at the transport boundary (override with
+`onerror!(app, ValidationError) do req, e … end`).
 """
 struct ValidationError <: Exception
     message::String

@@ -20,12 +20,12 @@ using CodecZlib
 using Base64
 
 include("base.jl")          # AbstractRequest
-include("errors.jl")        # RouteError, ServerError, BindError
 include("strings.jl")       # URL/query/header utilities
 include("formats.jl")       # AbstractFormat + MIME + encode/decode
 include("status.jl")        # status_reason
 include("request.jl")       # Request, Headers, form/multipart/query helpers
 include("response.jl")      # Response, StreamResponse, Cookie
+include("errors.jl")        # RouteError/ServerError/BindError, HTTPError hierarchy
 include("ws_types.jl")      # Message, Intent, WsEndpoint, Tagged, WsConn
 include("validation.jl")    # validate(), ValidationError
 
@@ -54,6 +54,15 @@ export AbstractRequest, Request, Headers, context, form, header, query, body,
     Plain, Html, Css, Js, Json, Xml, Binary, mime, content_type_pair, encode, decode,
     status_reason,
     RouteError, ServerError, BindError,
+    HTTPError, error_status,
+    BadRequestError, UnauthorizedError, PaymentRequiredError, ForbiddenError,
+    NotFoundError, MethodNotAllowedError, NotAcceptableError, RequestTimeoutError,
+    ConflictError, GoneError, LengthRequiredError, PreconditionFailedError,
+    PayloadTooLargeError, URITooLongError, UnsupportedMediaTypeError,
+    RangeNotSatisfiableError, ExpectationFailedError, ImATeapotError,
+    UnprocessableEntityError, LockedError, FailedDependencyError, TooEarlyError,
+    UpgradeRequiredError, PreconditionRequiredError, TooManyRequestsError,
+    UnavailableForLegalReasonsError, InternalServerError,
     validate, ValidationError,
     Message, Intent, WsEndpoint, WsConn, Tagged,
     AbstractRouter, Router, MethodMap, RouteResult, Matched, NotFound, MethodNotAllowed,

@@ -193,6 +193,8 @@ Mongoose.MongooseCore
 ## Errors
 
 ```@docs
+HTTPError
+error_status
 RouteError
 ServerError
 BindError

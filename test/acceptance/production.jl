@@ -201,6 +201,11 @@ const CLOSE = ["Connection" => "close"]
             @test r.status == 404
             @test contains(String(r.body), "everything")
 
+            # Built-in HTTPError{418}: automatic mapping, no onerror! needed.
+            r = HTTP.get("$base/api/http-error"; status_exception=false, headers=AUTH, read_idle_timeout=10)
+            @test r.status == 418
+            @test String(r.body) == "short and stout"
+
             # Body limit → 413.
             r = HTTP.post("$base/api/echo"; status_exception=false, headers=AUTH,
                 body=repeat("x", 2_000_000))
@@ -262,7 +267,7 @@ const CLOSE = ["Connection" => "close"]
                 headers=["Content-Type" => "application/json", "Authorization" => "Bearer test-token",
                          "Connection" => "close"],
                 body=JSON.json(Dict("name" => "Bob", "age" => "old")))
-            @test r.status == 500
+            @test r.status == 422  # ValidationError → 422 (was 500 pre-HTTPError)
         end
 
         @testset "Frozen router guardrails + request id" begin

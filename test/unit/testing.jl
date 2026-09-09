@@ -52,3 +52,71 @@
     end
 end
 
+@testset "HTTPError via TestClient" begin
+    struct ErrUser
+        name::String
+        age::Int
+    end
+
+    app = App()
+    get!(app, "/teapot") do req
+        throw(ImATeapotError("short and stout"))
+    end
+    get!(app, "/gone") do req
+        throw(NotFoundError("user 7 missing"))
+    end
+    get!(app, "/conflict") do req
+        throw(ConflictError("duplicate email"))
+    end
+    post!(app, "/valid") do req
+        validate(req, ErrUser)
+    end
+    post!(app, "/valid/json") do req
+        json(validate(req, ErrUser))
+    end
+
+    client = Mongoose.TestClient(app)
+
+    @testset "error_status / showerror on the types" begin
+        e = NotFoundError("user 7 missing")
+        @test Mongoose.error_status(e) == 404
+        @test e isa Mongoose.HTTPError
+        @test occursin("Not Found (404): user 7 missing", sprint(showerror, e))
+        @test BadRequestError === HTTPError{400}
+        @test occursin("Too Many Requests (429): slow down", sprint(showerror, TooManyRequestsError("slow down")))
+    end
+
+    @testset "automatic fallback to Response" begin
+        r = client(:get, "/gone")
+        @test r.status == 404
+        @test r.body == "user 7 missing"
+        @test get(r.headers, "content-type", "") == "text/plain"
+
+        r = client(:get, "/conflict")
+        @test r.status == 409
+
+        r = client(:get, "/teapot")
+        @test r.status == 418
+        @test r.body == "short and stout"
+    end
+
+    @testset "ValidationError defaults to 422" begin
+        r = client(:post, "/valid"; body="not json")
+        @test r.status == 422
+        r = client(:post, "/valid/json"; body=JSON.json(Dict("name" => "Alice")))
+        @test r.status == 422
+    end
+
+    @testset "onerror! registration beats the automatic mapping" begin
+        ae = App()
+        get!(ae, "/g") do req; throw(NotFoundError("boom")) end
+        onerror!(ae, NotFoundError) do req, e
+            text("custom: $(e.message)"; status=404)
+        end
+        c = Mongoose.TestClient(ae)
+        r = c(:get, "/g")
+        @test r.status == 404
+        @test r.body == "custom: boom"
+    end
+end
+

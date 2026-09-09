@@ -335,19 +335,36 @@ onerror!(handler::Function, server::AbstractServer, ::Type{E}) where {E<:Excepti
     invoke_guarded(server, req, f)
 
 Run `f()` and route any exception through `onerror!(::Type{E})` handlers. Falls
-back to rethrowing so the default 500 path applies for unhandled types.
+back to the automatic `HTTPError` mapping (a thrown `HTTPError{status}` becomes
+a `Response(status, message)`, honoring a registered `onerror!(app, status, …)`
+error page when present), then rethrows so the default 500 path applies for
+unhandled types.
 """
 function invoke_guarded(server::AbstractServer, req::Request, f::Function)
-    isempty(server.exception_handlers) && return f()
     try
         return f()
     catch e
         for (T, handler) in server.exception_handlers
             e isa T && return handler(req, e)
         end
+        e isa HTTPError     && return _http_error_response(server, req, e)
+        e isa ValidationError && return _http_error_response(server, req, 422, e.message)
         rethrow(e)
     end
 end
+
+# Built-in mapping for status-carrying exceptions: a custom error page for that
+# status (onerror!(app, status, …)) wins; otherwise reply with the message.
+@inline function _http_error_response(server::AbstractServer, req::Request,
+                                      status::Int, message::String,
+                                      headers::Headers=Headers())::Response
+    haskey(server.errors, status) && return error_response(server.errors, req, status)
+    isempty(headers) && push!(headers, "content-type" => "text/plain")
+    return Response(status, headers, message)
+end
+
+@inline _http_error_response(server::AbstractServer, req::Request, e::HTTPError{status}) where {status} =
+    _http_error_response(server, req, status, e.message, e.headers)
 
 """
     onstart!(app, f)
