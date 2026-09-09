@@ -17,6 +17,44 @@
     return string(Threads.atomic_add!(server.id_seq, UInt64(1)) + UInt64(1))
 end
 
+# --- Connection: close echo (RFC 7230 §6.3) ---
+
+# Mongoose honors a client's `Connection: close` by closing the socket after
+# the response, but it does NOT announce that in the response headers — a
+# client-side pool that saw a keep-alive-looking reply then hands out the
+# dead connection, and the next request on it hangs. Echo the header so
+# clients tear the connection down themselves.
+
+@inline conn_close_requested(req::Request) = get(req.headers, "connection", "") == "close"
+
+@inline function _echo_conn_close!(res, req::Request)
+    if conn_close_requested(req) && res isa Response
+        _has_conn_header(res.headers) || append!(res.headers, ["Connection" => "close"])
+    end
+    return res
+end
+
+@inline _has_conn_header(hs::Vector{Pair{String,String}}) =
+    any(p -> lowercase(p.first) == "connection", hs)
+
+
+@inline function _conn_close_in_headers(msg::MgHttpMessage)::Bool
+    head = lowercase(to_string(msg.head))
+    for line in eachsplit(head, '\n')
+        startswith(line, "connection:") && occursin("close", line) && return true
+    end
+    return false
+end
+
+# Early error responses (413/503) are sent before a Request is built; the C
+# message headers tell us whether the client asked for a close.
+@inline function _echo_conn_close_error!(res, msg::MgHttpMessage)
+    if _conn_close_in_headers(msg) && res isa Response
+        _has_conn_header(res.headers) || append!(res.headers, ["Connection" => "close"])
+    end
+    return res
+end
+
 # --- Shared preprocessing ---
 
 function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})::Union{Nothing,Request}
@@ -33,9 +71,9 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
         end
     end
 
-    # 2. Body size enforcement
+# 2. Body size enforcement
     if msg.body.len > server.max_body
-        send_http_response!(conn, error_response(server.errors, 413))
+        send_http_response!(conn, _echo_conn_close_error!(error_response(server.errors, 413), msg))
         return nothing
     end
 
@@ -62,6 +100,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
             @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
             error_response(server.errors, req, 500)
         end
+        _echo_conn_close!(res, req)
         rid = resolve_request_id(req, server)
         if res isa StreamResponse
             send_stream_response!(server, conn, res)
@@ -82,7 +121,8 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         end
         if !submit!(exec, job)
             delete!(server.connections, id)
-            send_http_response!(conn, error_response(server.errors, 503))
+            res = _echo_conn_close!(error_response(server.errors, 503), req)
+            send_http_response!(conn, res)
         end
     end
 end
@@ -102,6 +142,7 @@ function _http_job(server::AbstractServer, id::Int, req::Request)
         @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
         error_response(server.errors, req, 500)
     end
+    _echo_conn_close!(res, req)
     if res isa StreamResponse
         return Tagged{Union{Response,StreamResponse,Message}}(id, res)
     end
