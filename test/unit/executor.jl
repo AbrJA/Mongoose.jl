@@ -2,7 +2,7 @@
     # SyncExecutor runs jobs inline.
     s = SyncExecutor()
     @test submit!(s, () -> 42) == 42
-    @test has_pending(s) == false
+    @test haspending(s) == false
 
     # Missing capabilities fail loudly.
     struct _NoExec <: Mongoose.AbstractExecutor end

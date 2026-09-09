@@ -5,7 +5,7 @@
     # Optional capabilities default to "not supported".
     @test Mongoose.has_ws_routes(r) == false
     @test Mongoose.ws_endpoint(r, "/ws") === nothing
-    @test Mongoose.route_count(r) == "?"
+    @test Mongoose.route_count(r) == 0
     # Required protocol throws a clear MethodError when unimplemented.
     @test_throws MethodError Mongoose.dispatch_route(r, :get, "/")
     @test_throws MethodError Mongoose.match_route_exact(r, :get, "/")

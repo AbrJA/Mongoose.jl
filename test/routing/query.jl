@@ -37,5 +37,5 @@ function Mongoose.match_route_exact(r::DictRouter, method::Symbol, path::Abstrac
 end
 
 Mongoose.has_ws_routes(::DictRouter) = false
-Mongoose.route_count(r::DictRouter) = string(length(r.routes))
+Mongoose.route_count(r::DictRouter) = length(r.routes)
 

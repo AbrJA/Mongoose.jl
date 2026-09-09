@@ -18,7 +18,7 @@
     - `submit!(executor, job)` — schedule a job. `SyncExecutor` runs it
       inline and returns its value; pool executors return nothing.
     - `start!(executor, app)` / `stop!(executor)` — lifecycle.
-    - `has_pending(executor)` — is work still in flight? (drain support)
+    - `haspending(executor)` — is work still in flight? (drain support)
 
     Missing methods fail loudly via fallback methods below.
 """
@@ -51,4 +51,4 @@ function stop!(executor::AbstractExecutor)
     throw(MethodError(stop!, (executor,)))
 end
 
-has_pending(::AbstractExecutor) = false
+haspending(::AbstractExecutor) = false

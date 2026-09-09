@@ -118,15 +118,15 @@ function (mw::BasicAuth)(request::Request, next::Function)
 end
 
 """
-    basic_auth(user, password; realm="restricted")
+    basicauth(user, password; realm="restricted")
 
 Create an HTTP Basic authentication middleware with constant-time credential
 comparison.
 
 # Example
 ```julia
-use!(server, basic_auth("admin", ENV["ADMIN_PASSWORD"]))
+use!(server, basicauth("admin", ENV["ADMIN_PASSWORD"]))
 ```
 """
-basic_auth(user::String, password::String; realm::String="restricted") =
+basicauth(user::String, password::String; realm::String="restricted") =
     BasicAuth(user, password, realm)

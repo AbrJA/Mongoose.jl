@@ -106,14 +106,14 @@ end
 function drain!(server::AbstractServer)
     deadline = time() + server.drain_timeout / 1000.0
     while time() < deadline
-        has_pending(server) || break
+        haspending(server) || break
         drain_poll!(server)
         yield()
     end
 end
 
 # Defaults (overridden for async App)
-has_pending(::AbstractServer) = false
+haspending(::AbstractServer) = false
 drain_poll!(server::AbstractServer) = yield()
 
 # --- TLS Material Loading ---

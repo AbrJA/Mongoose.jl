@@ -132,7 +132,7 @@ end
     get!(app, "/secure") do req
         text("secret data")
     end
-    use!(app, basic_auth("admin", "hunter2"))
+    use!(app, basicauth("admin", "hunter2"))
 
     with_server(app) do port
         base = "http://127.0.0.1:$port"
