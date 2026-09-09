@@ -49,6 +49,21 @@ end
     return isempty(params) ? handler(request) : handler(request, params...)
 end
 
+# --- Auto-serialization of non-Response handler returns ---
+
+# A handler may return anything; these methods turn the common shapes into a
+# Response so `return Dict(...)`/`return "text"` just work (only the default
+# fallback allocates) and raw returns can never silently 500.
+@inline format_response(r::Response) = r
+@inline format_response(s::StreamResponse) = s
+@inline format_response(x::AbstractString) = Response(Plain, String(x))
+@inline format_response(x::Vector{UInt8}) =
+    Response(200, ["Content-Type" => "application/octet-stream"], x)
+@inline format_response(x::AbstractDict) = Response(Json, x)
+@inline format_response(x::NamedTuple) = Response(Json, x)
+@inline format_response(::Nothing) = Response(204, Pair{String,String}[], "")
+@inline format_response(x) = Response(Plain, string(x))
+
 # --- Allow header for 405 (RFC 9110 §15.5.6) ---
 
 @inline function _allow_header(mm::MethodMap)::String
@@ -107,7 +122,7 @@ function _resolve_terminal(router::AbstractRouter, request::Request)
             ghandler = get_h
             gparams = matched.params
             strip = (r) -> begin
-                resp = _call_handler(ghandler, gparams, r)
+                resp = format_response(_call_handler(ghandler, gparams, r))
                 resp isa Response ? Response(resp.status, resp.headers, "") : resp
             end
             return strip, scoped
@@ -154,6 +169,9 @@ function invoke_request(router::AbstractRouter, middlewares::AbstractVector{<:Ab
     else
         execute_pipeline([middlewares; scoped], request, terminal)
     end
+
+    # Auto-serialize non-Response returns (String/Dict/bytes/nothing/…).
+    result = format_response(result)
 
     if result isa Response && haskey(errors, result.status)
         return error_response(errors, request, result.status)

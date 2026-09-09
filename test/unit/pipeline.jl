@@ -30,3 +30,58 @@
     @test ctx4[:_services].db == "pool"
 end
 
+
+@testset "Auto-serialization of handler returns (format_response)" begin
+    import Mongoose.MongooseCore: format_response
+
+    @testset "Kinds" begin
+        @test format_response(text("t")) == text("t")            # Response passthrough
+        @test format_response("hi") isa Response
+        @test format_response("hi").body == "hi"
+        @test format_response("hi").status == 200
+        @test get(format_response("hi").headers, "content-type", "") == "text/plain; charset=utf-8"
+
+        b = format_response(UInt8[0x00, 0xff])
+        @test b.body == UInt8[0x00, 0xff]
+        @test get(b.headers, "content-type", "") == "application/octet-stream"
+
+        d = format_response(Dict("ok" => true))
+        @test get(d.headers, "content-type", "") == "application/json; charset=utf-8"
+
+        n = format_response((a = 1, b = "x"))
+        @test contains(String(n.body), "\"a\":1")
+
+        z = format_response(nothing)
+        @test z.status == 204
+        @test isempty(z.body)
+    end
+
+    @testset "End-to-end via the pipeline" begin
+        r = Router()
+        get!(r, "/raw", req -> "raw text")
+        get!(r, "/dict", req -> Dict("k" => 1))
+        get!(r, "/nil", req -> nothing)
+        errs = Dict{Int,Union{Response,Function}}()
+        mk(p) = Request(:get, p, Dict{String,String}(), Pair{String,String}[], "")
+
+        resp = Mongoose.invoke_request(r, Mongoose.AbstractMiddleware[], errs, NamedTuple(), mk("/raw"))
+        @test resp.status == 200 && String(resp.body) == "raw text"
+        @test get(resp.headers, "content-type", "") == "text/plain; charset=utf-8"
+
+        resp = Mongoose.invoke_request(r, Mongoose.AbstractMiddleware[], errs, NamedTuple(), mk("/dict"))
+        @test resp.status == 200 && contains(String(resp.body), "\"k\":1")
+
+        resp = Mongoose.invoke_request(r, Mongoose.AbstractMiddleware[], errs, NamedTuple(), mk("/nil"))
+        @test resp.status == 204 && isempty(resp.body)
+    end
+
+    @testset "HEAD on a raw-returning route has no body" begin
+        r = Router()
+        get!(r, "/dict", req -> Dict("k" => 1))
+        errs = Dict{Int,Union{Response,Function}}()
+        req = Request(:head, "/dict", Dict{String,String}(), Pair{String,String}[], "")
+        resp = Mongoose.invoke_request(r, Mongoose.AbstractMiddleware[], errs, NamedTuple(), req)
+        @test resp.status == 200
+        @test isempty(resp.body)
+    end
+end

@@ -68,7 +68,7 @@ function buildapp(; token::String="test-token", workers::Integer=2)
                   "head" => String(file.data[1:min(8, end)])))
     end
     post!(router, "/api/echo") do req
-        text(body(req))
+        body(req)                 # raw return: auto-serialized to text
     end
 
     # --- Binary responses ---

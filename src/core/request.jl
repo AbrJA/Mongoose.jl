@@ -17,6 +17,7 @@ struct Headers
     Headers() = new(Pair{String,String}[])
 end
 
+@inline Base.:(==)(a::Headers, b::Headers) = a.data == b.data
 @inline Base.isempty(h::Headers)   = isempty(h.data)
 @inline Base.length(h::Headers)    = length(h.data)
 @inline Base.getindex(h::Headers, i::Int) = h.data[i]

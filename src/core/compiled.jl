@@ -81,7 +81,7 @@ end
 @inline function _bake_head_action(ep::Endpoint)::Function
     inner = Terminal{typeof(ep.handler)}(ep.handler)
     stripped = (req) -> begin
-        resp = inner(req)
+        resp = format_response(inner(req))
         resp isa Response ? Response(resp.status, resp.headers, "") : resp
     end
     return _wrap_scoped(stripped, ep.middleware)
@@ -114,7 +114,7 @@ end
 @inline function _bake_param_head_slot(ep::Endpoint, ::Type{P})::Function where {P}
     call = ParamCall{typeof(ep.handler), P}(ep.handler)
     stripped = (req, p::P) -> begin
-        resp = call(req, p)
+        resp = format_response(call(req, p))
         resp isa Response ? Response(resp.status, resp.headers, "") : resp
     end
     mws = ep.middleware

@@ -26,6 +26,9 @@ struct Response
         new(status, Headers(headers), Vector{UInt8}(body))
 end
 
+Base.:(==)(a::Response, b::Response) =
+    a.status == b.status && a.headers == b.headers && a.body == b.body
+
 # --- Primary ergonomic constructor: status + body ---
 
 """
