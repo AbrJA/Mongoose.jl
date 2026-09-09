@@ -158,20 +158,33 @@ end
 @inline get_endpoint(m::RouteMatch, method::Symbol) = get_endpoint(m.handlers, method)
 
 """
+    AbstractCompiledDispatch — opaque handle to a frozen router's compiled table.
+
+    `freeze!(router)` builds a `CompiledDispatch` (see `compiled.jl`) that
+    pre-bakes per-route terminals and matches parametric routes through a
+    statically-typed chain. The field stays abstract so `Router` never depends
+    on the compiled types; dispatch reaches the concrete table via method
+    dispatch on this handle.
+"""
+abstract type AbstractCompiledDispatch end
+
+"""
     Router — default `AbstractRouter` implementation.
 
     Supports: static paths, typed parameters (`:id::Int`), string parameters
     (`:slug`), and a catch-all wildcard (`*path`, must be the last segment).
-    `freeze!` closes the route table (registration throws afterwards) — the
-    contract that makes the router amenable to AOT/`--trim=safe` builds.
+    `freeze!` closes the route table (registration throws afterwards) and
+    compiles the closed table into a `CompiledDispatch` — the contract that
+    makes the router amenable to AOT/`--trim=safe` builds.
 """
 mutable struct Router <: AbstractRouter
     fixed::Dict{String,FixedRoute}
     param_routes::Vector{ParamRoute}
     ws_routes::Dict{String,WsEndpoint}
     frozen::Bool
+    compiled::Union{Nothing,AbstractCompiledDispatch}
     Router() = new(Dict{String,FixedRoute}(), ParamRoute[],
-                   Dict{String,WsEndpoint}(), false)
+                   Dict{String,WsEndpoint}(), false, nothing)
 end
 
 """
@@ -180,19 +193,35 @@ end
 Close the route table: any later `route!`/`ws!` throws `RouteError`. Dispatch
 keeps working. This is the closed-route contract required by AOT/`--trim=safe`
 profiles (a static route table can be compiled once and pruned).
+
+Freezing also **compiles** the closed table into a `CompiledDispatch` (see
+`compiled.jl`): each fixed route and parametric route gets a pre-baked
+terminal (handler + scoped middleware fused, with the handler's concrete type
+captured), and parametric matching runs through a statically-typed chain with
+no per-request path splitting. The pipeline uses the compiled path via
+`terminal_for` when `compiled !== nothing`; `dispatch_route` keeps its
+generic (correct) implementation.
 """
 function freeze!(r::Router)
+    r.frozen && return r
     r.frozen = true
+    r.compiled = _compile!(r)
     return r
 end
 
-@inline is_frozen(r::Router) = r.frozen
+"""
+    isfrozen(router) → Bool
+
+Whether `freeze!` has been called on this router (registration closed; the
+table compiled). Custom `AbstractRouter`s default to `false`.
+"""
+@inline isfrozen(r::Router) = r.frozen
 
 @inline has_ws_routes(r::Router) = !isempty(r.ws_routes)
 @inline ws_endpoint(r::Router, uri::String) = get(r.ws_routes, uri, nothing)
 
-function route_count(r::Router)::AbstractString
-    return string(length(r.fixed) + length(r.param_routes))
+function route_count(r::Router)::Int
+    return length(r.fixed) + length(r.param_routes)
 end
 
 # --- Supported parameter types (extensible) ---

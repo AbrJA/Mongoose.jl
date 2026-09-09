@@ -18,7 +18,7 @@
     - `has_ws_routes(r::R) → Bool`                   (default: `false`)
     - `ws!(r::R, path; ...)`                         (no default)
     - `ws_endpoint(r::R, uri)`                       (default: `nothing`)
-    - `route_count(r::R)`                            (default: `"?"`)
+    - `route_count(r::R)`                            (default: `0`)
 
     The default implementation is `Router` in `router.jl`.
 
@@ -65,10 +65,26 @@ end
 
 ws_endpoint(::AbstractRouter, ::AbstractString) = nothing
 
-route_count(::AbstractRouter) = "?"
+route_count(::AbstractRouter) = 0
 
 # Closed-route profile (AOT/trim): optional; defaults to "always open".
 function freeze!(router::AbstractRouter)
     throw(MethodError(freeze!, (router,)))
 end
-is_frozen(::AbstractRouter) = false
+isfrozen(::AbstractRouter) = false
+
+# ── Compiled-dispatch capability (optional) ──────────────────────────────
+
+"""
+    terminal_for(router, request) → Union{Nothing,Function}
+
+Optional compiled-dispatch capability. A frozen `Router` that compiled its
+route table returns a **pre-built terminal** `(req) → Response` for the
+request (scoped middleware already fused, handler call statically typed);
+`nothing` means "fall back to the generic dispatch path".
+
+This is the contract-by-fallback seam that lets the pipeline skip the
+per-request closure/concat allocation when the router is compiled, without
+forcing every router implementation to understand compilation.
+"""
+terminal_for(::AbstractRouter, ::Request) = nothing

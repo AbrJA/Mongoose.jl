@@ -86,9 +86,12 @@ handler. Middleware may short-circuit by returning without calling `next`.
 The chain is executed with a **single closure** plus a mutable cursor instead
 of one closure per middleware per request (`_build_chain` recursion), keeping
 the per-request allocation constant regardless of stack depth.
+
+`handler` may be any 0-arity callable (`Function` or functor) — the compiled
+dispatch path passes pre-baked terminal functors.
 """
 @inline function execute_pipeline(middlewares::Vector{AbstractMiddleware}, req::Request,
-                                  handler::Function)
+                                  handler)
     n = length(middlewares)
     n == 0 && return handler(req)
     cell = _ChainCursor(0)

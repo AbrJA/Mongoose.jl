@@ -36,6 +36,7 @@ include("interface.jl")     # AbstractRouter protocol
 include("transport.jl")     # AbstractTransport + capability traits
 include("router.jl")        # Default Router (method map + ordered patterns)
 include("groups.jl")        # RouteGroup + mount!
+include("compiled.jl")      # Compiled frozen-route dispatch (freeze! table)
 include("process.jl")       # invoke_request — the transport-agnostic seam
 
 include("cors.jl")
@@ -59,13 +60,13 @@ export AbstractRequest, Request, Headers, context, form, header, query, body,
     AbstractRouter, Router, RouteMatch, MethodMap, dispatch_route, match_route_exact,
     get_handler, get_endpoint, set_handler!, has_ws_routes, ws_endpoint, route_count,
     route!, ws!, group, group!, RouteGroup, mount!, post!, patch!, options!, head!,
-    Endpoint, error_response, invoke_request, freeze!, is_frozen,
+    Endpoint, error_response, invoke_request, freeze!, isfrozen, terminal_for,
     AbstractMiddleware, before, after, PathFilter, execute_pipeline, FunctionMiddleware, as_middleware,
     AbstractExecutor, SyncExecutor, submit!, start!, stop!,
     AbstractTransport, supports_websocket, supports_tls, supports_streaming,
     Cors, Bearer, ApiKey, BasicAuth, RateLimit, Compress, Logger, Health,
     PrometheusMetrics, SecurityHeaders, Negotiate,
-    cors, ratelimit, bearer, apikey, basic_auth, logger, health, metrics, security, compress, negotiate,
+    cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, negotiate,
     parse_query, strip_query, format_headers, sanitize_header_value, to_lower, url_decode
 
 end # module MongooseCore

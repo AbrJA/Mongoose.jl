@@ -39,6 +39,7 @@ const FILES = String[
     "routing/groups.jl",
     "routing/query.jl",
     "routing/pluggable.jl",
+    "routing/compiled.jl",
     "middleware/cors.jl",
     "middleware/ratelimit.jl",
     "middleware/auth.jl",

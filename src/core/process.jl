@@ -58,6 +58,13 @@ route's scoped middleware. The terminal is always a short-circuiting
 every request exactly like the handler path.
 """
 function _resolve_terminal(router::AbstractRouter, request::Request)
+    compiled = terminal_for(router, request)
+    if compiled !== nothing
+        # Frozen/compiled router: the terminal already fuses scoped middleware
+        # (and any auto-HEAD stripping); `nothing` marks scoped as baked-in.
+        return compiled, nothing
+    end
+
     matched = dispatch_route(router, request.method, request.uri)
     if matched === nothing
         return ((r) -> Response(Plain, "404 Not Found"; status=404)), AbstractMiddleware[]
@@ -118,8 +125,12 @@ function invoke_request(router::AbstractRouter, middlewares::AbstractVector{<:Ab
     end
 
     terminal, scoped = _resolve_terminal(router, request)
-    result = if isempty(middlewares) && isempty(scoped)
+    result = if isempty(middlewares) && (scoped === nothing || isempty(scoped))
         terminal(request)
+    elseif scoped === nothing
+        # Compiled path: scoped middleware is already fused into the terminal,
+        # so global middleware wraps it directly (no per-request concat).
+        execute_pipeline(middlewares, request, terminal)
     else
         execute_pipeline([middlewares; scoped], request, terminal)
     end

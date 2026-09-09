@@ -10,15 +10,15 @@ export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamRespo
     start!, shutdown!, route!, use!, serve!, onerror!, onstart!, onstop!,
     context, Cookie, Headers, bake, cookies, form, header,
     ws!, Message,
-    cors, ratelimit, bearer, apikey, basic_auth, logger, health, metrics, security, compress, negotiate,
+    cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, negotiate,
     RouteError, ServerError, BindError,
     TLSConfig,
     service!, service, background!,
-    AbstractExecutor, SyncExecutor, AsyncExecutor, submit!, stop!, has_pending,
+    AbstractExecutor, SyncExecutor, AsyncExecutor, submit!, stop!, haspending,
     AbstractTransport, FakeTransport, TestClient,
     supports_websocket, supports_tls, supports_streaming,
     group, RouteGroup, mount!,
-    freeze!, is_frozen,
+    freeze!, isfrozen,
     SSEWriter, emit, sse,
     json, html, text, redirect,
     post!, patch!, options!, head!,
@@ -32,8 +32,9 @@ include("core/MongooseCore.jl")      # nested module: protocol, router, middlewa
 using .MongooseCore
 # Server/transport layers extend these core generics; `using` alone is read-only.
 import .MongooseCore: route!, ws!, post!, patch!, options!, head!,
-    submit!, start!, stop!, has_pending,
-    supports_websocket, supports_tls, supports_streaming
+    submit!, start!, stop!, haspending,
+    supports_websocket, supports_tls, supports_streaming,
+    terminal_for
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. FFI Layer (C constants, structs, bindings)
@@ -138,6 +139,21 @@ end
         get!(app, "/") do r; json(Dict("ok" => true)) end
         post!(app, "/data") do r; text("ok") end
         error_response(app.errors, req, 500)
+
+        # --- Frozen-router dispatch (compiled table + terminals) ---
+        frozen = Router()
+        route!(frozen, :get, "/fixed", req -> Response(200, Pair{String,String}[], "f"))
+        route!(frozen, :get, "/users/:id::Int", (req, id) -> Response(200, Pair{String,String}[], "u"))
+        route!(frozen, :get, "/files/*path", (req, path) -> Response(200, Pair{String,String}[], "w"))
+        freeze!(frozen)
+        dispatch_route(frozen, :get, "/fixed")
+        dispatch_route(frozen, :get, "/users/1")
+        dispatch_route(frozen, :get, "/files/a/b")
+        invoke_request(frozen, AbstractMiddleware[], Dict{Int,Union{Response,Function}}(),
+            NamedTuple(), req)
+        invoke_request(frozen, AbstractMiddleware[], Dict{Int,Union{Response,Function}}(),
+            NamedTuple(),
+            Request(:get, "/users/7", Dict{String,String}(), Pair{String,String}[], ""))
 
         # --- Event dispatch ---
         is_handled_event(MG_EV_HTTP_MSG)
