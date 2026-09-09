@@ -49,7 +49,7 @@ function (client::FakeTransport)(method::Symbol, path::String;
     uri = if isempty(query)
         path
     else
-        params = join(["$k=$(HTTP_encode(v))" for (k, v) in query], "&")
+        params = join(["$k=$(_url_encode(v))" for (k, v) in query], "&")
         "$path?$params"
     end
 
@@ -92,7 +92,7 @@ function (client::FakeTransport)(method::Symbol, path::String, json_body;
 end
 
 # Simple URL encoding for test client query params
-function HTTP_encode(s::String)::String
+function _url_encode(s::String)::String
     io = IOBuffer()
     for c in s
         if c == ' '

@@ -10,7 +10,7 @@ export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamRespo
     start!, shutdown!, route!, use!, serve!, onerror!, onstart!, onstop!,
     context, Cookie, Headers, bake, cookies, form, header,
     ws!, Message,
-    cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, negotiate,
+    cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress,
     RouteError, ServerError, BindError,
     TLSConfig,
     service!, service, background!,

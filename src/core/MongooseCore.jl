@@ -47,7 +47,6 @@ include("health.jl")
 include("metrics.jl")
 include("security.jl")
 include("compress.jl")
-include("negotiate.jl")
 
 export AbstractRequest, Request, Headers, context, form, header, query, body,
     multipart, MultipartFile,
@@ -65,8 +64,8 @@ export AbstractRequest, Request, Headers, context, form, header, query, body,
     AbstractExecutor, SyncExecutor, submit!, start!, stop!,
     AbstractTransport, supports_websocket, supports_tls, supports_streaming,
     Cors, Bearer, ApiKey, BasicAuth, RateLimit, Compress, Logger, Health,
-    PrometheusMetrics, SecurityHeaders, Negotiate,
-    cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, negotiate,
+    PrometheusMetrics, SecurityHeaders,
+    cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress,
     parse_query, strip_query, format_headers, sanitize_header_value, to_lower, url_decode
 
 end # module MongooseCore

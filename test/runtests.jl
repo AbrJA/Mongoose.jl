@@ -57,7 +57,6 @@ using Mongoose
         include("middleware/health.jl")
         include("middleware/metrics.jl")
         include("middleware/security.jl")
-        include("middleware/negotiate.jl")
         include("middleware/pipeline.jl")
         include("middleware/path.jl")
         include("middleware/edge.jl")

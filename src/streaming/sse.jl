@@ -67,6 +67,5 @@ function sse(producer::Function;
     return StreamResponse(wrapped, 200; content_type="text/event-stream", headers=headers)
 end
 
-# Accept req as first arg (ignored, kept for symmetry with other helpers)
-sse(::Request, producer::Function; kwargs...) = sse(producer; kwargs...)
+# do-block form: `sse(req) do writer … end` splices the producer first.
 sse(producer::Function, ::Request; kwargs...) = sse(producer; kwargs...)

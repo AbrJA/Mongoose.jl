@@ -105,7 +105,6 @@ health
 metrics
 security
 compress
-negotiate
 AbstractMiddleware
 FunctionMiddleware
 Logger
@@ -117,8 +116,6 @@ Bearer
 ApiKey
 BasicAuth
 RateLimit
-Compress
-Negotiate
 ```
 
 ## Server-Sent Events

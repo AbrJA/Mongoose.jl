@@ -1,7 +1,7 @@
 """
     Request validation — automatic parsing and validation of request bodies.
 
-    Provides `@validate` macro and `validate` function for type-safe request parsing.
+    Provides `validate` for type-safe request parsing.
     Works with any struct that has a constructor accepting keyword arguments or a Dict.
 
     # Usage Patterns

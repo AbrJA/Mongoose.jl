@@ -40,20 +40,6 @@ function with_server(f::Function, server; host::String="127.0.0.1", timeout::Flo
     end
 end
 
-function greet(request)
-    body = "{\"message\":\"Hello World from Julia!\"}"
-    Response(Json, body)
-end
-
-function echo(request, name)
-    body = "Hello $name from Julia!"
-    Response(Plain, body)
-end
-
-function error_handler(request, args...)
-    error("Something went wrong!")
-end
-
 # Wait until the server is actually accepting connections.
 function wait_for_server(url; timeout=10.0, interval=0.05, kwargs...)
     deadline = time() + timeout

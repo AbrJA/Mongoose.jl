@@ -47,7 +47,6 @@ const FILES = String[
     "middleware/health.jl",
     "middleware/metrics.jl",
     "middleware/security.jl",
-    "middleware/negotiate.jl",
     "middleware/pipeline.jl",
     "middleware/path.jl",
     "middleware/edge.jl",
