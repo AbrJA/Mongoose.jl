@@ -1,5 +1,13 @@
-"""
-    CORS (Cross-Origin Resource Sharing) middleware.
+struct Cors <: AbstractMiddleware
+    origins::Vector{String}
+    allow_credentials::Bool
+    allow_methods::String
+    allow_headers::String
+    max_age::Int
+end
+
+@doc """
+    Cors — CORS (Cross-Origin Resource Sharing) middleware.
 
     Handles preflight OPTIONS requests and attaches CORS headers to responses:
 
@@ -9,15 +17,7 @@
       (`"*"` + credentials is not emitted, per the spec).
     - preflight validation: requested method and request headers are checked
       against the allowlists; mismatches get a 403 instead of a blanket 204.
-"""
-
-struct Cors <: AbstractMiddleware
-    origins::Vector{String}
-    allow_credentials::Bool
-    allow_methods::String
-    allow_headers::String
-    max_age::Int
-end
+""" Cors
 
 @inline function _origin_allowed(mw::Cors, origin::AbstractString)
     return "*" in mw.origins || origin in mw.origins

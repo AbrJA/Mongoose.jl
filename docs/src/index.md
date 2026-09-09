@@ -10,7 +10,9 @@
 - **Unified `App` type** — sync (`SyncExecutor`) or async worker pool (`AsyncExecutor`)
 - **Built-in JSON** via JSON — `json(req)` for parsing, `json(...)` for responses
 - **Typed routing** — exact `Dict` lookup + ordered parametric patterns,
-  typed path parameters (`:id::Int`) as typed tuples, wildcards, route groups
+  typed path parameters (`:id::Int`) as typed tuples, wildcards, route groups;
+  `freeze!` compiles a closed route table into statically-typed dispatch
+  (the AOT/`--trim=safe` profile)
 - **Full middleware stack** — CORS, rate limiting, auth, logging, metrics, health, security, compression
 - **WebSocket** — same port, frame limits, idle timeout, origin allowlist, upgrade rejection, ping/pong
 - **SSE** — Server-Sent Events with `sse()` / `emit()`
@@ -68,6 +70,9 @@ Mongoose.jl is layered so each boundary is a replacement point:
 ```
 
 - **Router** registers `Endpoint`s (handler + scoped middleware + metadata) and resolves matches; it never runs handlers.
+  After `freeze!` it compiles the closed table: per-route terminals are pre-baked
+  (handler + scoped middleware fused, handler type captured) and parametric
+  matching runs through a statically-typed chain with no per-request path split.
 - **App** composes a router, an executor, middleware, and lifecycle.
 - **SyncExecutor** runs jobs inline; **AsyncExecutor** is a bounded worker pool.
 - The request→response seam (`invoke_request`) lives in `MongooseCore` and works with no server and no FFI.

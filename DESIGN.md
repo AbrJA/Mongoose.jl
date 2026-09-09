@@ -17,6 +17,17 @@ code. Items not yet done remain marked *target*.
   `RouteMatch{P}` with typed param tuples; middleware accepts plain
   callables (`FunctionMiddleware`); the onion chain runs via a single
   closure + cursor (no per-layer closure allocation).
+- **Compiled frozen-route dispatch** (the real `--trim=safe` profile):
+  `freeze!` now *compiles* the closed table into a `CompiledDispatch`
+  (`core/compiled.jl`). Each fixed route and parametric route gets pre-baked
+  terminals (handler + scoped middleware fused; the handler's concrete type
+  is captured at bake time), parametric matching runs through a statically-
+  typed heterogeneous ops chain with index-walking (no `Vector{String}`
+  split), and the pipeline resolves requests via the optional
+  `terminal_for(router, req)` capability with no per-request closure or
+  `[global; scoped]` concat. Semantics (fixed-first, registration order,
+  `"*"` fallback, 405, auto-HEAD, scoped ordering, error remap) are tested
+  for exact parity against the generic path.
 - G4 execution: `AbstractExecutor` + `SyncExecutor`/`AsyncExecutor`; App
   always holds an executor; timeouts applied at job build time.
 - Transport seam: `AbstractTransport` + capability traits
@@ -33,13 +44,13 @@ code. Items not yet done remain marked *target*.
 
 ## Remaining *target* items
 
+- Composed-tuple middleware (immutable App + builder): the *pipeline* side of
+  codegen. The compiled path already fuses each route's scoped stack once at
+  freeze time; app-global middleware is still concatenated/wrapped per
+  request via `execute_pipeline`.
 - Full written transport contract (`init!/listen!/poll!/send!`) behind the
   C adapter — `AbstractTransport` + traits exist; the C event loop is not
   yet rewired through them.
-- Composed-tuple middleware (immutable App + builder) and a compiled
-  frozen-route dispatch table (the actual `--trim=safe` profile; `freeze!`
-  provides the closed-table guarantee but dispatch is not yet code-
-  generated).
 - Registry GC-rooting redesign — deliberately shelved (current per-event
   SpinLock lookup is uncontended and GC-safe).
 

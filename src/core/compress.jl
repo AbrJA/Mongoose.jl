@@ -1,12 +1,14 @@
-"""
-    GZip compression middleware.
-    Compresses response bodies when the client supports it (Accept-Encoding: gzip).
-    Skips already-compressed, streaming, or small responses.
-"""
-
 struct Compress <: AbstractMiddleware
     min_size::Int  # Minimum body size to compress (bytes)
 end
+
+@doc """
+    Compress — GZip compression middleware.
+
+    Compresses response bodies when the client supports it
+    (Accept-Encoding: gzip). Skips already-compressed, streaming, or small
+    responses.
+""" Compress
 
 const _COMPRESSIBLE_TYPES = Set([
     "text/plain", "text/html", "text/css", "text/xml",

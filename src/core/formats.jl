@@ -6,12 +6,32 @@
 """
 abstract type AbstractFormat end
 
+"""
+    Plain — `text/plain; charset=utf-8` content format.
+
+    Built-in format marker types (all subtypes of `AbstractFormat`) are
+    dispatched by the type system for zero-cost content-type resolution. New
+    formats are added by subtyping `AbstractFormat` and defining `mime` /
+    `encode` / `decode`.
+"""
 struct Plain <: AbstractFormat end
+
+"""`text/html; charset=utf-8` content format. See [`Plain`](@ref)."""
 struct Html <: AbstractFormat end
+
+"""`text/css; charset=utf-8` content format. See [`Plain`](@ref)."""
 struct Css <: AbstractFormat end
+
+"""`application/javascript; charset=utf-8` content format. See [`Plain`](@ref)."""
 struct Js <: AbstractFormat end
+
+"""`application/json; charset=utf-8` content format. See [`Plain`](@ref)."""
 struct Json <: AbstractFormat end
+
+"""`application/xml; charset=utf-8` content format. See [`Plain`](@ref)."""
 struct Xml <: AbstractFormat end
+
+"""`application/octet-stream` content format. See [`Plain`](@ref)."""
 struct Binary <: AbstractFormat end
 
 # --- MIME type resolution (extensible via dispatch) ---

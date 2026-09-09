@@ -41,6 +41,17 @@ struct PrometheusMetrics <: AbstractMiddleware
     path::String
 end
 
+@doc """
+    PrometheusMetrics — Prometheus-compatible metrics middleware.
+
+    Intercepts every request, records latency and status, and exposes the
+    configured `/metrics` endpoint in Prometheus text exposition format.
+
+    Metrics exposed:
+    - `http_requests_total{method,status}` — counter
+    - `http_request_duration_seconds{le}` — histogram (11 finite buckets)
+""" PrometheusMetrics
+
 @inline function _shard(mw::PrometheusMetrics)
     return mw.shards[mod1(hash(objectid(current_task())), _METRICS_SHARDS)]
 end

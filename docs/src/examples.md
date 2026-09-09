@@ -54,6 +54,34 @@ app = App(; router=router, workers=4)
 start!(app; port=8080)
 ```
 
+## Frozen Router (Compiled Dispatch)
+
+Once all routes are registered, `freeze!(router)` closes the table and
+compiles it: each route's terminal (handler + scoped middleware) is pre-baked
+with the handler's concrete type captured, and parametric matching walks the
+raw path with byte indices — no per-request path split, no closure/concat
+allocation. Dispatch semantics stay identical; only registration is locked.
+
+```julia
+using Mongoose
+
+router = Router()
+
+get!(router, "/users/:id::Int", (req, id) -> json(Dict("id" => id)))
+post!(router, "/users", req -> json(Dict("created" => true); status=201))
+get!(router, "/files/*path", (req, path) -> text("Requested: $path"))
+
+freeze!(router)   # route!/ws! throw RouteError from here on
+
+app = App(; router=router, workers=4)
+start!(app; port=8080)
+```
+
+Freezing also provides the closed-table guarantee required by AOT builds
+(`juliac --trim=safe`): with no runtime registration, the route table can be
+compiled once and pruned. Call `freeze!` after the last registration and
+before starting the app.
+
 ## Query Parameters
 
 Use the `query()` helper for type-safe access with automatic parsing:
@@ -229,7 +257,7 @@ route!(router, :get, "/", req -> html("""
     <script>
     const ws = new WebSocket("ws://localhost:8080/ws");
     ws.onmessage = e => console.log(e.data);
-    ws.onopen = () => ws.send("hello");
+    ws.on_open = () => ws.send("hello");
     </script>
     <p>Check console</p>
 """))

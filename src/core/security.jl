@@ -1,11 +1,13 @@
-"""
-    Security headers middleware — adds standard security headers to all responses.
-    Protects against common web vulnerabilities (XSS, clickjacking, MIME sniffing).
-"""
-
 struct SecurityHeaders <: AbstractMiddleware
     headers::Vector{Pair{String,String}}
 end
+
+@doc """
+    SecurityHeaders — adds standard security headers to all responses.
+
+    Protects against common web vulnerabilities (XSS, clickjacking, MIME
+    sniffing).
+""" SecurityHeaders
 
 function after(mw::SecurityHeaders, ::Request, response)
     response isa Response || return response

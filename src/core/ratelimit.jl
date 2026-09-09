@@ -28,6 +28,19 @@ struct RateLimit <: AbstractMiddleware
     trust_proxies::Bool
 end
 
+@doc """
+    RateLimit — fixed-window rate limiting middleware with sharded locks.
+
+    Tracks requests per bucket key with automatic cleanup, using N shards
+    (each with its own lock) to reduce contention under high concurrency.
+
+    Buckets are keyed by a user-supplied `key_fn(request) -> String`, or by a
+    default that optionally trusts `X-Forwarded-For`/`X-Real-IP` when the app
+    sits behind a proxy. Trusting proxy headers is a spoofing vector when
+    exposed directly to clients, so it must be enabled explicitly for
+    deployments you control the headers of.
+""" RateLimit
+
 @inline function _shard(mw::RateLimit, key::String)
     return mw.shards[mod1(hash(key), length(mw.shards))]
 end

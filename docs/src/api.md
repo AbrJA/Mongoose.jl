@@ -18,9 +18,32 @@ shutdown!
 Router
 route!
 ws!
+freeze!
+isfrozen
 RouteGroup
 group
+group!
 mount!
+dispatch_route
+match_route_exact
+get_handler
+get_endpoint
+RouteMatch
+MethodMap
+post!
+patch!
+options!
+head!
+```
+
+## Request Processing
+
+```@docs
+invoke_request
+terminal_for
+error_response
+execute_pipeline
+AbstractRequest
 ```
 
 ## Request & Response
@@ -55,7 +78,17 @@ cookies
 form
 header
 service
-json
+```
+
+## URI & String Utilities
+
+```@docs
+parse_query
+strip_query
+format_headers
+sanitize_header_value
+url_decode
+status_reason
 ```
 
 ## Middleware
@@ -66,12 +99,26 @@ cors
 ratelimit
 bearer
 apikey
+basicauth
 logger
 health
 metrics
 security
 compress
+negotiate
 AbstractMiddleware
+FunctionMiddleware
+Logger
+Health
+PrometheusMetrics
+SecurityHeaders
+Cors
+Bearer
+ApiKey
+BasicAuth
+RateLimit
+Compress
+Negotiate
 ```
 
 ## Server-Sent Events
@@ -88,12 +135,6 @@ sse
 Message
 ```
 
-## Configuration
-
-```@docs
-TLSConfig
-```
-
 ## Lifecycle
 
 ```@docs
@@ -105,15 +146,24 @@ background!
 serve!
 ```
 
+## Configuration
+
+```@docs
+ServerConfig
+TLSConfig
+```
+
 ## Extensibility
 
 ```@docs
 AbstractRouter
 Endpoint
 AbstractExecutor
+SyncExecutor
 AsyncExecutor
 AbstractTransport
 FakeTransport
+TestClient
 validate
 ValidationError
 ```
@@ -128,6 +178,14 @@ Css
 Js
 Xml
 Binary
+encode
+decode
+```
+
+## Module
+
+```@docs
+Mongoose.MongooseCore
 ```
 
 ## Errors

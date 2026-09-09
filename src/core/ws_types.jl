@@ -13,6 +13,13 @@ end
 
 # --- Message ---
 
+"""
+    Message — one WebSocket frame.
+
+    `data` is either the UTF-8 text of a text frame or the raw bytes of a
+    binary frame. WebSocket handlers receive a `Message` and may return a
+    `Message` to reply (or `nothing` for no reply).
+"""
 struct Message
     data::Union{String,Vector{UInt8}}
 end

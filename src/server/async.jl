@@ -1,4 +1,13 @@
-"""
+mutable struct AsyncExecutor <: AbstractExecutor
+    workers::Int
+    queuesize::Int
+    worker_tasks::Vector{Task}
+    calls::Channel{Function}
+    replies::Channel{Tagged{Union{Response,StreamResponse,Message}}}
+    inflight::Threads.Atomic{Int}
+end
+
+@doc """
     AsyncExecutor — bounded worker pool with a reply queue.
 
     Architecture:
@@ -11,16 +20,7 @@
     The executor never interprets requests/responses; it only runs jobs and
     ships the replies they produce. Timeout policy is applied by the transport
     when it builds a job.
-"""
-
-mutable struct AsyncExecutor <: AbstractExecutor
-    workers::Int
-    queuesize::Int
-    worker_tasks::Vector{Task}
-    calls::Channel{Function}
-    replies::Channel{Tagged{Union{Response,StreamResponse,Message}}}
-    inflight::Threads.Atomic{Int}
-end
+""" AsyncExecutor
 
 function AsyncExecutor(workers::Int, queuesize::Int)
     return AsyncExecutor(workers, queuesize, Task[],
@@ -60,7 +60,7 @@ function stop!(exec::AsyncExecutor)
     return exec
 end
 
-has_pending(exec::AsyncExecutor) =
+haspending(exec::AsyncExecutor) =
     isready(exec.calls) || isready(exec.replies) || exec.inflight[] > 0
 
 # --- Submission ---
@@ -118,7 +118,7 @@ function init_server!(app::App)
     empty!(app.ws_clients)
 end
 
-has_pending(app::App) = app.executor isa AsyncExecutor ? has_pending(app.executor) : false
+haspending(app::App) = app.executor isa AsyncExecutor ? haspending(app.executor) : false
 
 function drain_poll!(app::App)
     mg_mgr_poll(app.manager.ptr, 10)

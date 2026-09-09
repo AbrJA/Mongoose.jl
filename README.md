@@ -25,7 +25,7 @@
 | **Performance** | Sub-100ms TTFR via precompilation. C-level static file serving with Range, ETag, gzip. |
 | **Architecture** | Modular core: `Router`, `Executor`, and `Transport` are replaceable components behind small protocols. Sync (`workers=0`) or bounded async worker pool. Backpressure and per-request timeouts. |
 | **HTTPS/TLS** | Native TLS via `TLSConfig` — cert, key, CA as files, PEM strings, or raw bytes. |
-| **Routing** | Exact-match `Dict` + ordered parametric patterns. Typed path parameters (`:id::Int`) delivered as typed tuples. Wildcards (`*path`). Route groups with scoped middleware as metadata. |
+| **Routing** | Exact-match `Dict` + ordered parametric patterns. Typed path parameters (`:id::Int`) delivered as typed tuples. Wildcards (`*path`). Route groups with scoped middleware as metadata. `freeze!` closes and compiles the route table for statically-typed dispatch (AOT/`--trim=safe` profile). |
 | **WebSocket** | Same port as HTTP. Frame size limits. Idle timeout. Origin allowlist. Upgrade rejection. Ping/pong (RFC 6455). |
 | **Middleware** | CORS, rate limiting, bearer/API key auth, structured logging, Prometheus metrics, health checks, security headers, GZip compression. Plain closures work as middleware. |
 | **JSON** | Built-in JSON via JSON. `json(req)` for parsing, `json(...)` for responses. Struct validation with `validate(req, T)`. |
@@ -140,6 +140,41 @@ You can also scope middleware to a single route:
 ```julia
 route!(router, :get, "/admin/panel", admin_panel; middleware=[bearer(t -> t == "admin-token")])
 ```
+
+### Compiled Dispatch (`freeze!`)
+
+For production startups, close the route table with `freeze!`. Everything
+must be registered before you freeze — afterwards, `route!`/`ws!` throw
+`RouteError`. This is the contract that makes an app amenable to AOT builds
+(`juliac --trim=safe`): the table can be compiled once and pruned.
+
+```julia
+router = Router()
+get!(router, "/users/:id::Int", get_user)
+post!(router, "/users", create_user)
+get!(router, "/files/*path", serve_file)
+
+freeze!(router)                    # closes registration AND compiles dispatch
+
+app = App(; router=router, workers=4)
+start!(app; port=8080)
+```
+
+Freezing **compiles** the closed table (`CompiledDispatch`):
+
+- Every route gets a pre-baked terminal — handler + scoped middleware fused
+  once, with the handler's concrete type captured, so the call is statically
+  typed.
+- Parametric matching walks the raw path with byte indices — no per-request
+  `Vector{String}` split, no registration-order re-scan overhead.
+- The pipeline resolves via a pre-built terminal (no per-request closure or
+  `[global; scoped]` concat allocation).
+
+Dispatch semantics are unchanged (fixed-first, registration order, `"*"`
+fallback, auto-HEAD, 405/404). On the warm path this is roughly 2–3× faster
+than the generic dispatch with fewer allocations — e.g. a fixed route goes
+from ~250ns to ~100ns per request, a two-parameter route from ~1.2µs to
+~400ns.
 
 ---
 
@@ -302,7 +337,7 @@ use!(app, bearer(token -> token == ENV["API_TOKEN"]); paths=["/api"])
 use!(app, apikey(header_name="x-api-key", keys=Set(["key-abc", "key-xyz"])))
 
 # HTTP Basic auth
-use!(app, basic_auth("admin", ENV["ADMIN_PASSWORD"]))
+use!(app, basicauth("admin", ENV["ADMIN_PASSWORD"]))
 
 # Rate limiting (private-keyed; trust proxy headers only behind your proxy)
 use!(app, ratelimit(max_requests=100, window_seconds=60; trust_proxies=false))
@@ -480,14 +515,18 @@ required protocol:
 | `get_endpoint(match, method)` | the route's `Endpoint`, or `nothing` |
 | `match_route_exact(r, method, path)` | dispatch without 404-fallback |
 
-Optional capabilities (`has_ws_routes`, `ws_endpoint`, `ws!`, `route_count`)
-have safe "not supported" defaults. Missing required methods fail loudly via
-fallback `MethodError`s.
+Optional capabilities (`has_ws_routes`, `ws_endpoint`, `ws!`, `route_count`,
+`freeze!`, `isfrozen`) have safe "not supported" defaults. Missing required
+methods fail loudly via fallback `MethodError`s. The default `Router` also
+implements the optional compiled-dispatch capability `terminal_for(r, req)`:
+after `freeze!` it returns a pre-built terminal (with scoped middleware and
+auto-HEAD fused) so the pipeline skips per-request dispatch allocations —
+other routers simply fall back to the generic path.
 
 ### Executor
 
 `SyncExecutor` (inline) and `AsyncExecutor` (bound worker pool) implement the
-`submit!/start!/stop!/has_pending` contract. `App(workers=n)` chooses between
+`submit!/start!/stop!/haspending` contract. `App(workers=n)` chooses between
 them; a custom executor can carry its own concurrency policy.
 
 ### Transport
