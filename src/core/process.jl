@@ -1,11 +1,11 @@
 """
     Request processing pipeline — the transport-agnostic request seam.
 
-    `invoke_request(router, middlewares, errors, services, req)` turns a
-    `MongooseCore.Request` into a `Response`. It has no dependency on a server
-    or on FFI types, so it can be exercised standalone (and by `TestClient`),
-    and any transport (the C Mongoose adapter today, or a future pure-Julia
-    one) can simply call it from its event loop.
+    `invoke_request(ctx::RequestContext, req)` turns a `MongooseCore.Request`
+    into a `Response`. It has no dependency on a server or on FFI types, so it
+    can be exercised standalone (and by `TestClient`), and any transport (the C
+    Mongoose adapter today, or a future pure-Julia one) can simply call it from
+    its event loop.
 """
 
 # --- Default error responses (module-level singletons) ---
@@ -43,7 +43,44 @@ end
 @inline error_response(errors::Dict{Int,Union{Response,Function}}, status::Int) =
     error_response(errors, nothing, status)
 
-# --- Handler invocation ---
+"""
+    RequestContext{R,M,E,S,H} — the app-level request-processing bundle.
+
+    Collapses the config that `invoke_request` needs into one object so the
+    pipeline seam has a single argument: the router, the global middleware
+    stack, the status→error-page map, the DI services, and the typed exception
+    handlers.
+
+    Fields are plain references to the contributor's own containers (a `Router`,
+    the app's middleware `Vector`, its `errors`/`exception_handlers` `Dict`s),
+    so mutations made during the build phase (before `start!`) are visible to
+    the seam without rebuilding.
+
+    Standalone use (no server):
+    ```julia
+    ctx = RequestContext(router; errors=errs, services=(db=pool,))
+    resp = invoke_request(ctx, Request(:get, "/", Dict{String,String}(), Pair{String,String}[], ""))
+    ```
+"""
+struct RequestContext{R<:AbstractRouter,
+                      M<:AbstractVector{<:AbstractMiddleware},
+                      E,
+                      S<:NamedTuple,
+                      H<:AbstractDict{DataType,Function}}
+    router::R
+    middlewares::M
+    errors::E
+    services::S
+    exception_handlers::H
+end
+
+function RequestContext(router::AbstractRouter;
+                        middlewares::AbstractVector{<:AbstractMiddleware}=AbstractMiddleware[],
+                        errors::AbstractDict{Int}=Dict{Int,Union{Response,Function}}(),
+                        services::NamedTuple=NamedTuple(),
+                        exception_handlers::AbstractDict{DataType,Function}=Dict{DataType,Function}())
+    return RequestContext(router, middlewares, errors, services, exception_handlers)
+end
 
 # --- Auto-serialization of non-Response handler returns ---
 
@@ -108,18 +145,30 @@ function _resolve_terminal(router::AbstractRouter, request::Request)
     return ((r) -> _call_endpoint(ep, params, r)), ep.middleware
 end
 
+# Built-in mapping for status-carrying exceptions: a custom error page for that
+# status (onerror!(app, status, …)) wins; otherwise reply with the message.
+@inline function _http_error_response(ctx::RequestContext, req::Request,
+                                      status::Int, message::String,
+                                      headers::Headers=Headers())::Response
+    haskey(ctx.errors, status) && return error_response(ctx.errors, req, status)
+    isempty(headers) && push!(headers, "content-type" => "text/plain")
+    return Response(status, headers, message)
+end
+
+@inline _http_error_response(ctx::RequestContext, req::Request, e::HTTPError{status}) where {status} =
+    _http_error_response(ctx, req, status, e.message, e.headers)
+
 """
-    invoke_request(router, middlewares, errors, services, request) → Response
+    invoke_request(ctx::RequestContext, request) → Response
 
 Run the full pipeline: attach services to the request context, dispatch the
-request through any middleware then the router, and apply custom error
-responses for 4xx/5xx results.
+request through any middleware then the router, apply custom error responses
+for 4xx/5xx results, and map thrown exceptions (typed `onerror!` handlers
+first, then the built-in `HTTPError`/`ValidationError` mapping).
 
 # Arguments
-- `router::AbstractRouter` — route table (see the router protocol).
-- `middlewares::AbstractVector{<:AbstractMiddleware}` — app-global middleware stack.
-- `errors` — `Dict{Int,Union{Response,Function}}` of custom error responses.
-- `services::NamedTuple` — dependency-injection services (may be empty).
+- `ctx::RequestContext` — router, middleware stack, error pages, DI services,
+  and typed exception handlers (see `RequestContext`).
 - `request::Request` — the transport-agnostic request.
 
 Middleware is composed with the matched route's scoped `Endpoint` middleware
@@ -127,30 +176,36 @@ Middleware is composed with the matched route's scoped `Endpoint` middleware
 the 404/405/auto-HEAD producers — so interception middleware (CORS, health,
 metrics) observes all requests.
 """
-function invoke_request(router::AbstractRouter, middlewares::AbstractVector{<:AbstractMiddleware},
-                        errors::Dict{Int,Union{Response,Function}},
-                        services::NamedTuple, request::Request)::Union{Response,StreamResponse}
-    if !isempty(services)
-        ctx = context(request)
-        ctx[:_services] = services
+function invoke_request(ctx::RequestContext, request::Request)::Union{Response,StreamResponse}
+    if !isempty(ctx.services)
+        c = context(request)
+        c[:_services] = ctx.services
     end
+    try
+        terminal, scoped = _resolve_terminal(ctx.router, request)
+        result = if isempty(ctx.middlewares) && (scoped === nothing || isempty(scoped))
+            terminal(request)
+        elseif scoped === nothing
+            # Compiled path: scoped middleware is already fused into the terminal,
+            # so global middleware wraps it directly (no per-request concat).
+            execute_pipeline(ctx.middlewares, request, terminal)
+        else
+            execute_pipeline([ctx.middlewares; scoped], request, terminal)
+        end
 
-    terminal, scoped = _resolve_terminal(router, request)
-    result = if isempty(middlewares) && (scoped === nothing || isempty(scoped))
-        terminal(request)
-    elseif scoped === nothing
-        # Compiled path: scoped middleware is already fused into the terminal,
-        # so global middleware wraps it directly (no per-request concat).
-        execute_pipeline(middlewares, request, terminal)
-    else
-        execute_pipeline([middlewares; scoped], request, terminal)
+        # Auto-serialize non-Response returns (String/Dict/bytes/nothing/…).
+        result = format_response(result)
+
+        if result isa Response && haskey(ctx.errors, result.status)
+            return error_response(ctx.errors, request, result.status)
+        end
+        return result
+    catch e
+        for (T, handler) in ctx.exception_handlers
+            e isa T && return handler(request, e)
+        end
+        e isa HTTPError     && return _http_error_response(ctx, request, e)
+        e isa ValidationError && return _http_error_response(ctx, request, 422, e.message)
+        rethrow(e)
     end
-
-    # Auto-serialize non-Response returns (String/Dict/bytes/nothing/…).
-    result = format_response(result)
-
-    if result isa Response && haskey(errors, result.status)
-        return error_response(errors, request, result.status)
-    end
-    return result
 end

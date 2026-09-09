@@ -225,6 +225,9 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
     # ── Execution strategy: SyncExecutor (inline) or AsyncExecutor ───────────
     const executor::AbstractExecutor
 
+    # ── Request-processing seam bundle (mirrors the build-phase containers) ──
+    context::RequestContext
+
     function App(;
                  workers::Integer=0,
                  queuesize::Integer=1024,
@@ -251,18 +254,23 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
         exec = cfg.workers > 0 ? AsyncExecutor(cfg.workers, cfg.queuesize) : SyncExecutor()
         rs = RunState()
         rs.tls = tls   # raw TLSConfig material; normalized at start!
+        ex_handlers = Dict{DataType,Function}()
+        ctx = RequestContext(router; middlewares=AbstractMiddleware[],
+                             errors=errs, services=services,
+                             exception_handlers=ex_handlers)
         return new{R}(
             cfg,
             rs,
             router,
-            AbstractMiddleware[],
+            ctx.middlewares,
             Tuple{String,String}[],
             errs,
-            Dict{DataType,Function}(),
+            ex_handlers,
             ServiceRegistry(services),
             Function[],
             Function[],
-            exec
+            exec,
+            ctx
         )
     end
 end
@@ -332,41 +340,6 @@ onerror!(handler::Function, server::AbstractServer, ::Type{E}) where {E<:Excepti
     onerror!(server, E, handler)
 
 """
-    invoke_guarded(server, req, f)
-
-Run `f()` and route any exception through `onerror!(::Type{E})` handlers. Falls
-back to the automatic `HTTPError` mapping (a thrown `HTTPError{status}` becomes
-a `Response(status, message)`, honoring a registered `onerror!(app, status, …)`
-error page when present), then rethrows so the default 500 path applies for
-unhandled types.
-"""
-function invoke_guarded(server::AbstractServer, req::Request, f::Function)
-    try
-        return f()
-    catch e
-        for (T, handler) in server.exception_handlers
-            e isa T && return handler(req, e)
-        end
-        e isa HTTPError     && return _http_error_response(server, req, e)
-        e isa ValidationError && return _http_error_response(server, req, 422, e.message)
-        rethrow(e)
-    end
-end
-
-# Built-in mapping for status-carrying exceptions: a custom error page for that
-# status (onerror!(app, status, …)) wins; otherwise reply with the message.
-@inline function _http_error_response(server::AbstractServer, req::Request,
-                                      status::Int, message::String,
-                                      headers::Headers=Headers())::Response
-    haskey(server.errors, status) && return error_response(server.errors, req, status)
-    isempty(headers) && push!(headers, "content-type" => "text/plain")
-    return Response(status, headers, message)
-end
-
-@inline _http_error_response(server::AbstractServer, req::Request, e::HTTPError{status}) where {status} =
-    _http_error_response(server, req, status, e.message, e.headers)
-
-"""
     onstart!(app, f)
 
 Register a callback to run after the server starts (before accepting connections).
@@ -402,6 +375,10 @@ function service!(app::App, name::Symbol, value)
     _ensure_registratable(app, "services")
     old = app.services.deps
     app.services = ServiceRegistry((; old..., name => value))
+    # Services changed → refresh the seam's snapshot (build-phase only).
+    app.context = RequestContext(app.router; middlewares=app.middlewares,
+                                 errors=app.errors, services=app.services.deps,
+                                 exception_handlers=app.exception_handlers)
     return app
 end
 

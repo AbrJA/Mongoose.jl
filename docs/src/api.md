@@ -43,6 +43,7 @@ head!
 
 ```@docs
 invoke_request
+RequestContext
 terminal_for
 error_response
 execute_pipeline

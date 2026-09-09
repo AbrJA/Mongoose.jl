@@ -102,8 +102,7 @@ end
     @test Mongoose.match_route(r, :get, "/a") isa Mongoose.Matched
 
     # A frozen router keeps working through the full pipeline.
-    res = Mongoose.invoke_request(r, Mongoose.AbstractMiddleware[],
-        Dict{Int,Union{Response,Function}}(), NamedTuple(),
+    res = Mongoose.invoke_request(Mongoose.RequestContext(r),
         Request(:get, "/a", Dict{String,String}(), Pair{String,String}[], ""))
     @test res.status == 200
     @test res.body == "a"

@@ -3,10 +3,15 @@
 # `terminal_for`).
 
 import Mongoose: AbstractMiddleware, match_route, freeze!, invoke_request,
-    terminal_for, isfrozen, RouteError
+    terminal_for, isfrozen, RouteError, RequestContext
 
 mkreq(method, path) = Request(method, path, Dict{String,String}(),
     Pair{String,String}[], "")
+
+# Seam helper: build a RequestContext over a router for these tests (empty
+# error pages by default; middleware/services overridable).
+mkctx(r; mws=AbstractMiddleware[], errs=ERRORS, svcs=NamedTuple()) =
+    RequestContext(r; middlewares=mws, errors=errs, services=svcs)
 
 # --- Registry of routes and probe requests (mirror routers) ---
 
@@ -84,8 +89,8 @@ const ERRORS = Dict{Int,Union{Response,Function}}()
 
     for (method, path) in probes
         req = mkreq(method, path)
-        rf_resp = invoke_request(rf, AbstractMiddleware[], ERRORS, NamedTuple(), req)
-        rg_resp = invoke_request(rg, AbstractMiddleware[], ERRORS, NamedTuple(), req)
+        rf_resp = invoke_request(mkctx(rf), req)
+        rg_resp = invoke_request(mkctx(rg), req)
         @test rf_resp.status == rg_resp.status
         @test rf_resp.body == rg_resp.body
     end
@@ -127,7 +132,7 @@ end
 
     # Empty frozen router → 404 through the compiled path.
     re = freeze!(Router())
-    resp = invoke_request(re, AbstractMiddleware[], ERRORS, NamedTuple(),
+    resp = invoke_request(mkctx(re),
         mkreq(:get, "/anything"))
     @test resp.status == 404
 
@@ -145,7 +150,7 @@ end
     freeze!(r)
 
     passthrough = _PassMw("global", sink)
-    resp = invoke_request(r, AbstractMiddleware[passthrough], ERRORS, NamedTuple(),
+    resp = invoke_request(mkctx(r; mws=AbstractMiddleware[passthrough]),
         mkreq(:get, "/scop"))
     @test resp.status == 200
     @test resp.body == "ok"
@@ -158,10 +163,10 @@ end
     rgo = _sample_router!(Router())
     for (method, path) in [(:get, "/health"), (:get, "/users/42"),
                            (:head, "/org/julia/repo/mongoose"), (:get, "/nope")]
-        rf_resp = invoke_request(rf, AbstractMiddleware[_PassMw("g", sink)], ERRORS,
-            NamedTuple(), mkreq(method, path))
-        rg_resp = invoke_request(rgo, AbstractMiddleware[_PassMw("g", sink)], ERRORS,
-            NamedTuple(), mkreq(method, path))
+        rf_resp = invoke_request(mkctx(rf; mws=AbstractMiddleware[_PassMw("g", sink)]),
+            mkreq(method, path))
+        rg_resp = invoke_request(mkctx(rgo; mws=AbstractMiddleware[_PassMw("g", sink)]),
+            mkreq(method, path))
         @test rf_resp.status == rg_resp.status
         @test rf_resp.body == rg_resp.body
     end
@@ -171,13 +176,13 @@ end
     r = Router()
     get!(r, "/svc", req -> text(string(service(req, Val(:db)))))
     freeze!(r)
-    resp = invoke_request(r, AbstractMiddleware[], ERRORS, (db=42,),
+    resp = invoke_request(mkctx(r; svcs=(db=42,)),
         mkreq(:get, "/svc"))
     @test String(resp.body) == "42"
 
     errs = Dict{Int,Union{Response,Function}}(
         404 => Response(Plain, "custom 404"; status=404))
-    resp = invoke_request(r, AbstractMiddleware[], errs, NamedTuple(),
+    resp = invoke_request(mkctx(r; errs=errs),
         mkreq(:get, "/missing"))
     @test resp.status == 404
     @test String(resp.body) == "custom 404"

@@ -55,6 +55,15 @@
       `onerror!` handlers and `onerror!(app, status)` pages take precedence);
       unhandled `ValidationError` now defaults to **422** (was 500).
       *commit: `e9d0977`*
+- [x] **T6** `RequestContext` seam — `invoke_request(ctx, req)` collapses the
+      5-arg signature; the context bundles router + middleware stack + error
+      pages + DI services + typed exception handlers. Typed-exception dispatch
+      (`onerror!`), the built-in `HTTPError`/`ValidationError` mapping, and the
+      request-`_services` injection all moved INTO the core seam, so the C
+      transport and `TestClient` share one exact code path (`invoke_guarded`
+      deleted). `App` holds `context::RequestContext` mirroring its live
+      containers; `service!` rebuilds it (services are snapshot-copied).
+      *commit: (T6)*
 
 ### Phase 3 — Modularity & coupling
 
@@ -101,3 +110,13 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
   mapping). Note: `ValidationError <: HTTPError{422}` was IMPOSSIBLE (Julia
   forbids subtyping concrete types) → explicit 422 branch in `invoke_guarded`
   instead. Docs: `HTTPError`/`error_status` added to api.md Errors section.
+- **T6 shipped** (this commit): RequestContext seam. 811 tests + 73 acceptance
+  + Aqua/JET + docs green. `invoke_request(ctx, req)` is the single pipeline
+  seam; typed-exception dispatch + HTTPError/ValidationError mapping moved from
+  the transport into core. `invoke_guarded` DELETED (its logic is now inside
+  `invoke_request`). App gained a `context::RequestContext` field mirroring its
+  live containers (mutable Dict/Vector refs are shared, so `use!`/`onerror!`
+  need no context refresh — only `service!` rebuilds it, since services are a
+  snapshot NamedTuple). Trade-off accepted: `App.context` is abstract-typed →
+  one virtual call per request on the seam (frozen hot path pays ~1 indirect
+  call); kept `App` parametric in `R` only for API stability.

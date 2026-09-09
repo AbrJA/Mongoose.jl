@@ -28,6 +28,7 @@ export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamRespo
     supports_websocket, supports_tls, supports_streaming,
     group, RouteGroup, mount!,
     freeze!, isfrozen,
+    RequestContext, invoke_request,
     SSEWriter, emit, sse,
     json, html, text, redirect,
     post!, patch!, options!, head!,
@@ -159,8 +160,8 @@ end
         get!(thrower, "/gone") do r; throw(NotFoundError("user 7")) end
         req_bad = Request(:get, "/bad", Dict{String,String}(), Pair{String,String}[], "")
         req_gone = Request(:get, "/gone", Dict{String,String}(), Pair{String,String}[], "")
-        invoke_guarded(thrower, req_bad, () -> invoke_http(thrower, req_bad))
-        invoke_guarded(thrower, req_gone, () -> invoke_http(thrower, req_gone))
+        invoke_request(thrower.context, req_bad)
+        invoke_request(thrower.context, req_gone)
 
         # --- Frozen-router dispatch (compiled table + terminals) ---
         frozen = Router()
@@ -171,10 +172,9 @@ end
         match_route(frozen, :get, "/fixed")
         match_route(frozen, :get, "/users/1")
         match_route(frozen, :get, "/files/a/b")
-        invoke_request(frozen, AbstractMiddleware[], Dict{Int,Union{Response,Function}}(),
-            NamedTuple(), req)
-        invoke_request(frozen, AbstractMiddleware[], Dict{Int,Union{Response,Function}}(),
-            NamedTuple(),
+        frozen_ctx = RequestContext(frozen)
+        invoke_request(frozen_ctx, req)
+        invoke_request(frozen_ctx,
             Request(:get, "/users/7", Dict{String,String}(), Pair{String,String}[], ""))
 
         # --- Event dispatch ---

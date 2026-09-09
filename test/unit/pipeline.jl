@@ -3,30 +3,29 @@
     get!(r, "/hi") do req; text("hello") end
     route!(r, :get, "/users/:id::Int", (req, id) -> text("user $id"))
 
-    empty_errors = Dict{Int,Union{Response,Function}}()
-    empty_services = NamedTuple()
-
     req = Request(:get, "/hi", Dict{String,String}(), Pair{String,String}[], "")
-    res = Mongoose.invoke_request(r, Mongoose.AbstractMiddleware[], empty_errors, empty_services, req)
+    ctx = Mongoose.RequestContext(r)
+    res = Mongoose.invoke_request(ctx, req)
     @test res.body == "hello"
 
     # Typed parametric dispatch through the same seam.
     req2 = Request(:get, "/users/7", Dict{String,String}(), Pair{String,String}[], "")
-    res2 = Mongoose.invoke_request(r, Mongoose.AbstractMiddleware[], empty_errors, empty_services, req2)
+    res2 = Mongoose.invoke_request(ctx, req2)
     @test res2.body == "user 7"
 
     # Custom error response + middleware + services all apply without a server.
     errs = Dict{Int,Union{Response,Function}}(404 => req -> Response(404, Pair{String,String}[], "custom 404"))
     svcs = (db="pool",)
     mws = Mongoose.AbstractMiddleware[logger(threshold=0, output=devnull)]
-    res3 = Mongoose.invoke_request(r, mws, errs, svcs,
+    ctx2 = Mongoose.RequestContext(r; middlewares=mws, errors=errs, services=svcs)
+    res3 = Mongoose.invoke_request(ctx2,
         Request(:get, "/nope", Dict{String,String}(), Pair{String,String}[], ""))
     @test res3.status == 404
     @test res3.body == "custom 404"
 
     req4 = Request(:get, "/hi", Dict{String,String}(), Pair{String,String}[], "")
     ctx4 = context(req4)
-    Mongoose.invoke_request(r, mws, errs, svcs, req4)
+    Mongoose.invoke_request(ctx2, req4)
     @test ctx4[:_services].db == "pool"
 end
 
@@ -61,26 +60,26 @@ end
         get!(r, "/raw", req -> "raw text")
         get!(r, "/dict", req -> Dict("k" => 1))
         get!(r, "/nil", req -> nothing)
-        errs = Dict{Int,Union{Response,Function}}()
+        rs = Dict{Int,Union{Response,Function}}()
         mk(p) = Request(:get, p, Dict{String,String}(), Pair{String,String}[], "")
 
-        resp = Mongoose.invoke_request(r, Mongoose.AbstractMiddleware[], errs, NamedTuple(), mk("/raw"))
+        resp = Mongoose.invoke_request(Mongoose.RequestContext(r; errors=rs), mk("/raw"))
         @test resp.status == 200 && String(resp.body) == "raw text"
         @test get(resp.headers, "content-type", "") == "text/plain; charset=utf-8"
 
-        resp = Mongoose.invoke_request(r, Mongoose.AbstractMiddleware[], errs, NamedTuple(), mk("/dict"))
+        resp = Mongoose.invoke_request(Mongoose.RequestContext(r; errors=rs), mk("/dict"))
         @test resp.status == 200 && contains(String(resp.body), "\"k\":1")
 
-        resp = Mongoose.invoke_request(r, Mongoose.AbstractMiddleware[], errs, NamedTuple(), mk("/nil"))
+        resp = Mongoose.invoke_request(Mongoose.RequestContext(r; errors=rs), mk("/nil"))
         @test resp.status == 204 && isempty(resp.body)
     end
 
     @testset "HEAD on a raw-returning route has no body" begin
         r = Router()
         get!(r, "/dict", req -> Dict("k" => 1))
-        errs = Dict{Int,Union{Response,Function}}()
+        rs = Dict{Int,Union{Response,Function}}()
         req = Request(:head, "/dict", Dict{String,String}(), Pair{String,String}[], "")
-        resp = Mongoose.invoke_request(r, Mongoose.AbstractMiddleware[], errs, NamedTuple(), req)
+        resp = Mongoose.invoke_request(Mongoose.RequestContext(r; errors=rs), req)
         @test resp.status == 200
         @test isempty(resp.body)
     end

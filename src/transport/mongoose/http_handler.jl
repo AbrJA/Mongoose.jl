@@ -95,7 +95,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
     if !(server.executor isa AsyncExecutor)
         # Sync path: handle inline
         res = try
-            invoke_guarded(server, req, () -> invoke_http(server, req))
+            invoke_http(server, req)
         catch e
             @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
             error_response(server.errors, req, 500)
@@ -137,7 +137,7 @@ Build the reply for a buffered/streamed HTTP request, adding `X-Request-Id`.
 function _http_job(server::AbstractServer, id::Int, req::Request)
     rid = resolve_request_id(req, server)
     res = try
-        invoke_guarded(server, req, () -> invoke_http(server, req))
+        invoke_http(server, req)
     catch e
         @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
         error_response(server.errors, req, 500)
@@ -168,8 +168,7 @@ end
 # --- HTTP dispatch (thin transport wrapper over the core pipeline) ---
 
 function invoke_http(server::AbstractServer, req::Request)::Union{Response,StreamResponse}
-    return invoke_request(
-        server.router, server.middlewares, server.errors, server.services.deps, req)
+    return invoke_request(server.context, req)
 end
 
 # --- Static File Serving ---
