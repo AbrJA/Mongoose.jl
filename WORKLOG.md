@@ -33,9 +33,9 @@
       commit: (current)
 - [x] **T1** Unify `Headers` type for `Response` (drop raw `Vector{Pair}` splices;
       add `push!`/`append!`/helpers). *commit: `ffaf1e1`*
-- [ ] **T2** Auto-serialize non-`Response` handler returns (`format_response`
+- [x] **T2** Auto-serialize non-`Response` handler returns (`format_response`
       dispatch: Response/StreamResponse passthrough, String→text, bytes→binary,
-      Dict/NamedTuple→JSON, nothing→204). *commit: —*
+      Dict/NamedTuple→JSON, nothing→204). *commit: `94c3b27`*
 - [ ] **T3** `RouteResult` ADT: `Matched`/`NotFound`/`MethodNotAllowed{allowed}`;
       `match_route` replaces `dispatch_route`; 405 `Allow` from a method bitmask
       at match time; auto-HEAD resolved at match; protocol collapsed.
@@ -80,4 +80,6 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
 
 - **Sep 08 — Phase 1 kickoff.** Decisions recorded above.
 - **T1 shipped** (`ffaf1e1`): unified Headers; 763 tests + 71 acceptance +
+  Aqua/JET green.
+- **T2 shipped** (`94c3b27`): auto-serialize; 780 tests + 71 acceptance +
   Aqua/JET green.
