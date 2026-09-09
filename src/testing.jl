@@ -75,7 +75,7 @@ function (client::FakeTransport)(method::Symbol, path::String;
             result.producer(sw)
         catch end
         return Response(result.status,
-            ["Content-Type" => result.content_type; result.headers],
+            Headers(["Content-Type" => result.content_type; copy(result.headers.data)]),
             String(take!(io)))
     end
 

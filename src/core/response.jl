@@ -13,13 +13,17 @@
 """
 struct Response
     status::Int
-    headers::Vector{Pair{String,String}}
+    headers::Headers
     body::Union{String,Vector{UInt8}}
 
-    Response(status::Int, headers::Vector{Pair{String,String}}, body::AbstractString) =
+    Response(status::Int, headers::Headers, body::AbstractString) =
         new(status, headers, String(body))
-    Response(status::Int, headers::Vector{Pair{String,String}}, body::AbstractVector{UInt8}) =
+    Response(status::Int, headers::Headers, body::AbstractVector{UInt8}) =
         new(status, headers, Vector{UInt8}(body))
+    Response(status::Int, headers::Vector{Pair{String,String}}, body::AbstractString) =
+        new(status, Headers(headers), String(body))
+    Response(status::Int, headers::Vector{Pair{String,String}}, body::AbstractVector{UInt8}) =
+        new(status, Headers(headers), Vector{UInt8}(body))
 end
 
 # --- Primary ergonomic constructor: status + body ---
@@ -144,20 +148,20 @@ end
 struct StreamResponse
     status::Int
     content_type::String
-    headers::Vector{Pair{String,String}}
+    headers::Headers
     producer::Function  # (writer::StreamWriter) -> nothing
 end
 
 function StreamResponse(producer::Function, status::Int, content_type::String;
-                        headers::Vector{Pair{String,String}}=Pair{String,String}[])
-    return StreamResponse(status, content_type, headers, producer)
+                        headers::Union{Vector{Pair{String,String}},Headers}=Pair{String,String}[])
+    return StreamResponse(status, content_type, Headers(headers), producer)
 end
 
 # Convenience: StreamResponse(200, "text/event-stream") do writer ... end
 function StreamResponse(producer::Function, status::Int=200;
                         content_type::String="application/octet-stream",
-                        headers::Vector{Pair{String,String}}=Pair{String,String}[])
-    return StreamResponse(status, content_type, headers, producer)
+                        headers::Union{Vector{Pair{String,String}},Headers}=Pair{String,String}[])
+    return StreamResponse(status, content_type, Headers(headers), producer)
 end
 
 # --- Cookie support in responses ---

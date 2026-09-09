@@ -224,3 +224,36 @@ end
         @test decode_path_segment("caf%C3%A9") == "café"
     end
 end
+
+@testset "Headers: mutation + Response integration" begin
+    @testset "push!/append!/copy/getindex" begin
+        h = Headers(["a" => "1"])
+        push!(h, "B" => "2")
+        append!(h, ["C" => "3", "D" => "4"])
+        @test length(h) == 4
+        @test h[2] == ("B" => "2")
+        c = copy(h)
+        @test c isa Headers && length(c) == 4
+    end
+
+    @testset "Response.headers is a Headers value" begin
+        r = Response(200, ["Content-Type" => "text/plain"], "hi")
+        @test r.headers isa Headers
+        @test get(r.headers, "content-type", "") == "text/plain"
+        @test r.headers["Content-Type"] == "text/plain"   # dict-style (case-insensitive)
+        push!(r.headers, "X-Tag" => "v")
+        @test get(r.headers, "x-tag", "") == "v"
+        # vector constructor still works
+        r2 = Response(404, Pair{String,String}["X-A" => "b"], "")
+        @test r2.headers isa Headers
+        @test get(r2.headers, "x-a", "") == "b"
+    end
+
+    @testset "StreamResponse.headers is a Headers value" begin
+        sr = StreamResponse(w -> nothing, 200; content_type="text/event-stream",
+            headers=["Cache-Control" => "no-cache"])
+        @test sr.headers isa Headers
+        @test length(sr.headers) == 1
+        @test get(sr.headers, "cache-control", "") == "no-cache"
+    end
+end

@@ -39,7 +39,7 @@ function (mw::Compress)(request::Request, next::Function)
     if compressible && !already_encoded
         has_vary = any(h -> h.first == "Vary" || h.first == "vary", response.headers)
         if !has_vary
-            response = Response(response.status, [response.headers; "Vary" => "Accept-Encoding"],
+            response = Response(response.status, Headers([copy(response.headers.data); "Vary" => "Accept-Encoding"]),
                                 response.body)
         end
     end
@@ -60,7 +60,7 @@ function (mw::Compress)(request::Request, next::Function)
     # Only use compressed if it's actually smaller
     length(compressed) >= body_size && return response
 
-    new_headers = [response.headers; "Content-Encoding" => "gzip"]
+    new_headers = Headers([copy(response.headers.data); "Content-Encoding" => "gzip"])
     return Response(response.status, new_headers, compressed)
 end
 

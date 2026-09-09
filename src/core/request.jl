@@ -17,15 +17,31 @@ struct Headers
     Headers() = new(Pair{String,String}[])
 end
 
-@inline Base.isempty(h::Headers)  = isempty(h.data)
-@inline Base.length(h::Headers)   = length(h.data)
-@inline Base.iterate(h::Headers)  = iterate(h.data)
+@inline Base.isempty(h::Headers)   = isempty(h.data)
+@inline Base.length(h::Headers)    = length(h.data)
+@inline Base.getindex(h::Headers, i::Int) = h.data[i]
+@inline Base.getindex(h::Headers, key::String) = get(h, key, nothing)
+@inline Base.copy(h::Headers)      = Headers(copy(h.data))
+@inline Base.iterate(h::Headers)   = iterate(h.data)
 @inline Base.iterate(h::Headers, s) = iterate(h.data, s)
+
+# Mutable helpers (used by middleware and the transport when augmenting
+# response headers after construction).
+@inline Base.push!(h::Headers, kv::Pair{String,String}) = (push!(h.data, kv); h)
+@inline Base.append!(h::Headers, kvs::AbstractVector{<:Pair{String,String}}) =
+    (append!(h.data, kvs); h)
+
+format_headers(h::Headers)::String = format_headers(h.data)
 
 function Base.get(h::Headers, key::String, default)
     lkey = is_lowercase_ascii(key) ? key : lowercase(key)
     @inbounds for i in eachindex(h.data)
-        h.data[i].first == lkey && return h.data[i].second
+        k = h.data[i].first
+        if is_lowercase_ascii(k)
+            k == lkey && return h.data[i].second
+        elseif lowercase(k) == lkey
+            return h.data[i].second
+        end
     end
     return default
 end
@@ -33,7 +49,12 @@ end
 function Base.haskey(h::Headers, key::String)::Bool
     lkey = is_lowercase_ascii(key) ? key : lowercase(key)
     @inbounds for i in eachindex(h.data)
-        h.data[i].first == lkey && return true
+        k = h.data[i].first
+        if is_lowercase_ascii(k)
+            k == lkey && return true
+        elseif lowercase(k) == lkey
+            return true
+        end
     end
     return false
 end

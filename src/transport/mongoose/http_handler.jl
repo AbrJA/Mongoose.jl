@@ -34,7 +34,7 @@ end
     return res
 end
 
-@inline _has_conn_header(hs::Vector{Pair{String,String}}) =
+@inline _has_conn_header(hs::Headers) =
     any(p -> lowercase(p.first) == "connection", hs)
 
 
@@ -146,7 +146,7 @@ function _http_job(server::AbstractServer, id::Int, req::Request)
     if res isa StreamResponse
         return Tagged{Union{Response,StreamResponse,Message}}(id, res)
     end
-    resp = Response(res.status, [res.headers; "X-Request-Id" => rid], res.body)
+    resp = Response(res.status, Headers([copy(res.headers.data); "X-Request-Id" => rid]), res.body)
     return Tagged{Union{Response,StreamResponse,Message}}(id, resp)
 end
 

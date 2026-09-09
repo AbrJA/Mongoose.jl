@@ -11,8 +11,7 @@ end
 
 function after(mw::SecurityHeaders, ::Request, response)
     response isa Response || return response
-    merged = [mw.headers; response.headers]
-    return Response(response.status, merged, response.body)
+    return Response(response.status, Headers([mw.headers; copy(response.headers.data)]), response.body)
 end
 
 """
