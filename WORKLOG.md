@@ -54,7 +54,7 @@
       automatic mapping at the FFI boundary in `invoke_guarded` (custom
       `onerror!` handlers and `onerror!(app, status)` pages take precedence);
       unhandled `ValidationError` now defaults to **422** (was 500).
-      *commit: (T5)*
+      *commit: `e9d0977`*
 
 ### Phase 3 — Modularity & coupling
 
@@ -95,7 +95,7 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
   buffer is transient, so laziness can only defer parse/transform steps (not
   copies); memoized `Union` fields violate the type-stability doctrine; body
   copy is bounded anyway. Skipped in favor of T5.
-- **T5 shipped** (this commit): HTTPError hierarchy + ValidationError→422.
+- **T5 shipped** (`e9d0977`): HTTPError hierarchy + ValidationError→422.
   811 tests + 73 acceptance + Aqua/JET + docs green. `invoke_guarded` lost its
   `isempty(exception_handlers)` fast-path (must always catch for the built-in
   mapping). Note: `ValidationError <: HTTPError{422}` was IMPOSSIBLE (Julia
