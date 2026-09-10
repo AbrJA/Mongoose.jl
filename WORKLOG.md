@@ -9,8 +9,8 @@
 1. Confirm scope in WORKLOG.
 2. Implement in `src/`, update tests.
 3. Gates before commit:
-   - `julia --project=test test/runtests_stream.jl` (811 tests)
-   - `julia --project=test test/acceptance/production.jl` (73 checks)
+   - `julia --project=test test/runtests_stream.jl` (875 tests)
+   - `julia --project=test test/acceptance/production.jl` (79 checks)
    - `julia --project=test test/quality/quality.jl` (Aqua + JET)
    - `julia --project=docs docs/make.jl` when public API changes
 4. One commit per task; update WORKLOG; iterate.
@@ -215,3 +215,61 @@ ETag/conditional requests~~ **shipped** · OpenAPI-from-metadata · sessions/CSR
     no hang, body delivered (verified with curl, incl. `--expect100-timeout`
     waiting clients). Legal per RFC 7231 §5.1.1 (server MAY omit). Strikes the
     "explicit reply" Phase-5 item.
+
+## Review pass (Sep 09/10) — full-package audit + P0 remediation
+
+Full honest review delivered to the user (strengths/weaknesses/ergonomics/
+prod-readiness). State saved — **next session starts here:**
+
+### Shipped in this pass
+- **P0-truth** (`e5d877e`): facade export parity + doc-truth + dead-code sweep.
+  - Killed: duplicate dead App docstring block `server/core.jl` (the real one
+    at the struct attaches — verified via `Base.Docs.meta` Binding lookup);
+    orphans `register_group!` (AGENTS.md claimed it was gone — wasn't),
+    `has_any_handler`, `_allow_header`, `adapt_request_minimal`.
+  - Doc rot fixed: `transport.jl` contract text now describes reality (trait
+    seam + real C entry points + T9 deferral); `metrics.jl` example uses
+    `App(workers=4)`; README `headers_get`→`get(req.headers,...)`; README/docs
+    `MongooseTransport` (never existed) removed.
+- **P0-export-correction** (`c7ed60c`): the parity pass over-exported ~45
+  protocol/internal names — **user called it out, rightfully**. Policy now:
+  facade exports = application surface only (pre-existing curated list +
+  `group!` + `AbstractMiddleware`). Extension protocols stay MongooseCore-
+  exported, reachable as `Mongoose.<name>` / `import Mongoose: <name>` (tests
+  and pluggable-router showcase already use this). api.md has a
+  Public-vs-Extension note; `@docs` entries resolve via namespace (docs green).
+
+### Counts after the pass
+- 875 tests (main + streaming), 79 acceptance checks, Aqua+JET clean, docs green.
+
+### Pending (decide tomorrow, in order)
+1. **Protocol getter rename (breaking, ask user)**: unify core router-getter
+   naming — `ws_endpoint`→`get_ws_endpoint`, `route_count`→? (get_handler/
+   get_endpoint/set_handler! are the named pattern; ws_endpoint/route_count
+   break it). 0.5 window allows it; ripples: docs, facade `import` block, tests.
+2. **P1 ergonomics** (from the review):
+   - `merge_headers!`-style helper to kill the 8 × `Headers([copy(h.data); …])`
+     Response-rebuild sites (cors/security/compress×2/etag/handler/testing/
+     response).
+   - `apikey(keys=…)` — currently the only builder with a REQUIRED kwarg.
+   - `shutdown!` waits on `bg_tasks` (bounded by drain_timeout) before teardown
+     (closes the T11-orphan ref-hold); 413/503 early responses get
+     `X-Request-Id` for consistency.
+   - Decide `Headers.getindex(h, key)` → `nothing` semantics (vs KeyError).
+   - Decide `json(req)` parse-vs-serialize overload footgun.
+   - Unit-convention table (ms vs seconds: `window_seconds`/`max_age` vs
+     ServerConfig `*_timeout` ms); `security()` triple-"off" conventions.
+3. **P2 prod-readiness** (larger): CI wiring for acceptance+quality
+   (nothing gates this branch today — runs only on main), OpenAPI-from-
+   metadata (Endpoint.metadata is already plumbed — flagship 1.0 feature),
+   sessions/CSRF, HTTP/2 decision + test, streaming body reads (bodies are
+   fully buffered today), benchmark gate for the frozen-dispatch ns claims
+   (Performance.yml exists, currently empty of benchmarks).
+
+### Verified non-issues (don't re-litigate)
+- Group `ws!` kwargs work — `values(Base.Pairs)` → NamedTuple, splats fine
+  (the explore agent's "K7 bug" was a false positive).
+- `App` does HAVE a docstring (the DESIGN-G4 one); only the duplicate block
+  was dead.
+- `tryput!` does NOT exist in Julia 1.12 Base → `signal(::Channel)` helper in
+  test/helpers.jl.
