@@ -107,7 +107,7 @@
       `FakeStream` per streamed response (writes after delivery raise
       `StreamClosedError`), `close!` cascades over owned streams and rejects
       new requests, producer failures recorded on the stream. Old
-      `StreamWriterBuffer` removed. *commit: (T12)*
+      `StreamWriterBuffer` removed. commit: `e99919f`
 - [ ] **T13** Deterministic test-sync policy for the acceptance suite (no
       `sleep`/`timedwait`; `Channel`/`Event`/`errormonitor`).
 
@@ -170,7 +170,7 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
   `MgAddr` struct directly (verified against mongoose 7.21 headers; live
   loopback probe returns "127.0.0.1"). `TestClient` gained a `remote_addr`
   kwarg (default "127.0.0.1").
-- **T12 shipped** (this commit): FakeExecutor + stateful FakeTransport. 848
+- **T12 shipped** (`e99919f`): FakeExecutor + stateful FakeTransport. 848
   tests + 73 acceptance + Aqua/JET + docs green. `FakeStream` deliberately has
   NO back-reference to its transport (circular struct definition in Julia —
   the registry IS the ownership; `close!` flips each stream's flags directly).
