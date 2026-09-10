@@ -70,6 +70,12 @@
       `SecurityHeaders` used `after` — converted to a call operator; no `before`
       overrides existed). `as_middleware` is the single admission point
       (docstring added). *commit: `50d1c93`*
+- [x] **T8** Baked-tuple global middleware — `RequestContext.middlewares` is now
+      a **tuple snapshot** of the global stack (built at App construct and
+      refreshed by `use!`/`service!`, immutable in the seam), and the generic
+      path walks global + route-scoped middleware with **one cursor over their
+      virtual concatenation** — the per-request `[global; scoped]` array is
+      gone. *commit: (T8)*
 
 ### Phase 3 — Modularity & coupling
 
@@ -131,3 +137,13 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
   `after` user existed (`SecurityHeaders` → call operator); no `before`
   overrides anywhere. `before`/`after` dropped from MongooseCore exports;
   `as_middleware` docstring added (and to api.md).
+- **T8 shipped** (this commit): baked-tuple global middleware. 811 tests + 73
+  acceptance + Aqua/JET + docs green. `RequestContext.middlewares` is a Tuple
+  (baked at construct; `use!`/`service!` re-snapshot). `execute_pipeline` gained
+  a 4-arg form walking globals+scoped with one cursor over the virtual
+  concatenation → the per-request `[global; scoped]` allocation is removed.
+  Kept `App.middlewares::Vector` as the build-phase registration buffer. Scope
+  note: true per-element static dispatch (DESIGN G3 "generated/specialized")
+  would need @generated/structural recursion; the cursor keeps 1 closure
+  per request — deferred as not worth the codegen complexity for ≤6-element
+  stacks.

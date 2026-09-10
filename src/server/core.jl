@@ -255,14 +255,15 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
         rs = RunState()
         rs.tls = tls   # raw TLSConfig material; normalized at start!
         ex_handlers = Dict{DataType,Function}()
-        ctx = RequestContext(router; middlewares=AbstractMiddleware[],
+        used_mw = AbstractMiddleware[]
+        ctx = RequestContext(router; middlewares=used_mw,
                              errors=errs, services=services,
                              exception_handlers=ex_handlers)
         return new{R}(
             cfg,
             rs,
             router,
-            ctx.middlewares,
+            used_mw,
             Tuple{String,String}[],
             errs,
             ex_handlers,
@@ -480,6 +481,11 @@ function use!(server::AbstractServer, @nospecialize(mw); paths::Vector{String}=S
     inner = as_middleware(mw)
     wrapped = isempty(paths) ? inner : PathFilter(inner, paths)
     push!(server.middlewares, wrapped)
+    # Refresh the seam's baked tuple stack (registration is build-phase only).
+    server.context = RequestContext(server.router; middlewares=server.middlewares,
+                                    errors=server.errors,
+                                    services=server.services.deps,
+                                    exception_handlers=server.exception_handlers)
     return server
 end
 

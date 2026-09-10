@@ -47,14 +47,14 @@ end
     RequestContext{R,M,E,S,H} — the app-level request-processing bundle.
 
     Collapses the config that `invoke_request` needs into one object so the
-    pipeline seam has a single argument: the router, the global middleware
+    pipeline seam has a single argument: the router, the app-global middleware
     stack, the status→error-page map, the DI services, and the typed exception
     handlers.
 
-    Fields are plain references to the contributor's own containers (a `Router`,
-    the app's middleware `Vector`, its `errors`/`exception_handlers` `Dict`s),
-    so mutations made during the build phase (before `start!`) are visible to
-    the seam without rebuilding.
+    The global middleware stack is stored as a **baked tuple snapshot** (built
+    once by `App`/`use!` and immutable afterward), so the per-request pipeline
+    never re-grows or re-walks a mutable vector and needs no
+    `[global; scoped]` concatenation.
 
     Standalone use (no server):
     ```julia
@@ -63,7 +63,7 @@ end
     ```
 """
 struct RequestContext{R<:AbstractRouter,
-                      M<:AbstractVector{<:AbstractMiddleware},
+                      M<:Tuple,
                       E,
                       S<:NamedTuple,
                       H<:AbstractDict{DataType,Function}}
@@ -75,11 +75,11 @@ struct RequestContext{R<:AbstractRouter,
 end
 
 function RequestContext(router::AbstractRouter;
-                        middlewares::AbstractVector{<:AbstractMiddleware}=AbstractMiddleware[],
+                        middlewares::Union{AbstractVector{<:AbstractMiddleware},Tuple}=(),
                         errors::AbstractDict{Int}=Dict{Int,Union{Response,Function}}(),
                         services::NamedTuple=NamedTuple(),
                         exception_handlers::AbstractDict{DataType,Function}=Dict{DataType,Function}())
-    return RequestContext(router, middlewares, errors, services, exception_handlers)
+    return RequestContext(router, Tuple(middlewares), errors, services, exception_handlers)
 end
 
 # --- Auto-serialization of non-Response handler returns ---
@@ -183,14 +183,15 @@ function invoke_request(ctx::RequestContext, request::Request)::Union{Response,S
     end
     try
         terminal, scoped = _resolve_terminal(ctx.router, request)
-        result = if isempty(ctx.middlewares) && (scoped === nothing || isempty(scoped))
-            terminal(request)
-        elseif scoped === nothing
+        result = if scoped === nothing
             # Compiled path: scoped middleware is already fused into the terminal,
-            # so global middleware wraps it directly (no per-request concat).
-            execute_pipeline(ctx.middlewares, request, terminal)
+            # so the baked global stack wraps it directly.
+            isempty(ctx.middlewares) ? terminal(request) :
+                execute_pipeline(ctx.middlewares, request, terminal)
         else
-            execute_pipeline([ctx.middlewares; scoped], request, terminal)
+            # Generic path: global stack + route-scoped stack, walked with a
+            # single cursor (no per-request [global; scoped] concatenation).
+            execute_pipeline(ctx.middlewares, scoped, request, terminal)
         end
 
         # Auto-serialize non-Response returns (String/Dict/bytes/nothing/…).

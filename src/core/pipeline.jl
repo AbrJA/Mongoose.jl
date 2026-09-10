@@ -74,19 +74,23 @@ as_middleware(mw) = FunctionMiddleware(mw)
 
 """
     execute_pipeline(middlewares, request, handler) → Response
+    execute_pipeline(globals, scoped, request, handler) → Response
 
 Run the middleware onion around `handler`: each middleware receives
 `(request, next)`; `next` advances to the following middleware and finally the
 handler. Middleware may short-circuit by returning without calling `next`.
 
-The chain is executed with a **single closure** plus a mutable cursor instead
-of one closure per middleware per request (`_build_chain` recursion), keeping
-the per-request allocation constant regardless of stack depth.
+The chain is executed with a **single closure** plus a mutable cursor instead of
+one closure per middleware per request, keeping the per-request allocation
+constant regardless of stack depth. The four-argument form walks the baked
+app-global stack `globals` and the route-scoped stack `scoped` with **one
+cursor over their virtual concatenation** — no `[global; scoped]` array built
+per request.
 
 `handler` may be any 0-arity callable (`Function` or functor) — the compiled
 dispatch path passes pre-baked terminal functors.
 """
-@inline function execute_pipeline(middlewares::Vector{AbstractMiddleware}, req::Request,
+@inline function execute_pipeline(middlewares, req::Request,
                                   handler)
     n = length(middlewares)
     n == 0 && return handler(req)
@@ -95,6 +99,21 @@ dispatch path passes pre-baked terminal functors.
         cell.i += 1
         cell.i <= n || return handler(req)
         middlewares[cell.i](req, next)
+    end
+    return next()
+end
+
+@inline function execute_pipeline(globals, scoped::AbstractVector{<:AbstractMiddleware},
+                                  req::Request, handler)
+    ng, ns = length(globals), length(scoped)
+    total = ng + ns
+    total == 0 && return handler(req)
+    cell = _ChainCursor(0)
+    next = () -> begin
+        cell.i += 1
+        cell.i <= ng && return globals[cell.i](req, next)
+        cell.i <= total || return handler(req)
+        scoped[cell.i - ng](req, next)
     end
     return next()
 end
