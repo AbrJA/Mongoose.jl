@@ -154,13 +154,16 @@ end
     _http_job_timed(server, id, request, timeout) → Tagged
 
 Run `_http_job` under a `request_timeout` deadline; on timeout reply 504 and
-drop the still-running task (its late reply is discarded because the connection
-id is gone from `app.connections`).
+let the still-running task finish in the background. The task is tracked in
+`server.runtime.bg_tasks` so it is not silently dropped (it may still hold
+server/request references); its late reply is discarded because the
+connection id is gone from `app.connections`.
 """
 function _http_job_timed(server::AbstractServer, id::Int, req::Request, timeout::Integer)
     t = Threads.@spawn _http_job(server, id, req)
     r = timedwait(() -> istaskdone(t), timeout / 1000.0; pollint=0.002)
     r === :ok && return fetch(t)
+    push!(server.runtime.bg_tasks, t)
     @log_warn "Request timeout uri=$(req.uri)"
     return Tagged{Union{Response,StreamResponse,Message}}(id, error_response(server.errors, 504))
 end

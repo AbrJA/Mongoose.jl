@@ -89,8 +89,17 @@ end
     end
 
     with_server(app) do port
-        resp = HTTP.get("http://127.0.0.1:$port/slow"; status_exception=false)
+        # retry=false: HTTP.jl would otherwise retry the 504 four times,
+        # doubling up the tracked background tasks.
+        resp = HTTP.get("http://127.0.0.1:$port/slow"; status_exception=false, retry=false)
         @test resp.status == 504
+
+        # The timed-out handler task is tracked, not silently dropped; it
+        # finishes on its own in the background.
+        @test length(app.runtime.bg_tasks) == 1
+        @test !istaskdone(app.runtime.bg_tasks[1])   # still running (sleep 1.0)
+        @test timedwait(() -> istaskdone(app.runtime.bg_tasks[1]), 5.0;
+                       pollint=0.01) == :ok
 
         resp2 = HTTP.get("http://127.0.0.1:$port/fast"; status_exception=false)
         @test resp2.status == 200
