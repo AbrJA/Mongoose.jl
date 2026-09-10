@@ -120,3 +120,71 @@ end
     end
 end
 
+@testset "Stateful FakeTransport (owner checks, one response/stream, close cascade)" begin
+    app = App()
+    get!(app, "/events") do req
+        sse(req) do w
+            emit(w; data="a")
+            emit(w; data="b")
+        end
+    end
+
+    @testset "Streamed response is bound to one registered stream" begin
+        t = FakeTransport(app)
+        resp = t(:get, "/events")
+        @test resp.status == 200
+        @test String(resp.body) == "data: a\n\ndata: b\n\n"
+
+        @test length(t.streams) == 1                      # owned by this transport
+        st = t.streams[1]
+        @test st isa Mongoose.FakeStream
+        @test st.open == false && st.done == true         # delivered → closed
+        @test st.error === nothing
+
+        # A second request is a NEW stream, not a re-response on the old one.
+        t(:get, "/events")
+        @test length(t.streams) == 2
+        @test t.stream_seq == 2
+    end
+
+    @testset "One response per stream: writes after delivery raise" begin
+        t = FakeTransport(app)
+        t(:get, "/events")
+        st = t.streams[1]
+        writer = Mongoose.FakeStreamWriter(st)
+        @test !isopen(writer)
+        @test_throws Mongoose.StreamClosedError write(writer, "late chunk")
+        @test_throws Mongoose.StreamClosedError write(writer, UInt8[1, 2])
+        @test !occursin("late chunk", String(st.io.data))
+    end
+
+    @testset "Close cascade: close! closes owned streams and rejects requests" begin
+        t = FakeTransport(app)
+        t(:get, "/events")
+        st = t.streams[1]
+        cwriter = Mongoose.FakeStreamWriter(st)  # hypothetical in-flight writer
+        close!(t)
+        @test t.closed == true
+        @test !isopen(cwriter)
+        @test_throws Mongoose.StreamClosedError write(cwriter, "after cascade")
+        @test_throws Mongoose.StreamClosedError t(:get, "/events")
+    end
+
+    @testset "Producer exceptions are recorded on the stream, not rethrown" begin
+        s2 = App()
+        get!(s2, "/crash") do req
+            sse(req) do w
+                emit(w; data="before")
+                error("producer blew up")
+            end
+        end
+        t = FakeTransport(s2)
+        resp = t(:get, "/crash")
+        # Partial body is still delivered; the failure is recorded.
+        @test occursin("data: before", String(resp.body))
+        st = t.streams[1]
+        @test st.error isa ErrorException
+        @test st.done == true
+    end
+end
+

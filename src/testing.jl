@@ -1,4 +1,32 @@
 """
+    FakeStream — one in-flight streaming response owned by a `FakeTransport`.
+
+    A stream is created when the transport delivers a `StreamResponse`. Its
+    producer writes into `io` through the `FakeStreamWriter` while `open`; when
+    the response is delivered the stream is marked `done` and further writes
+    raise `StreamClosedError` (one response per stream). `error` records a
+    producer exception, if any. Ownership is the registry on the transport —
+    `close!(transport)` flips `open`/`done` on every owned stream (cascade).
+"""
+mutable struct FakeStream
+    io::IOBuffer
+    open::Bool
+    done::Bool
+    error::Union{Nothing,Exception}
+end
+
+"""
+    StreamClosedError — write attempted on a closed/consumed stream.
+
+    Raised by `FakeStreamWriter` when the owning `FakeTransport` was closed, or
+    when the stream already delivered its one response.
+"""
+struct StreamClosedError <: Exception
+    msg::String
+end
+Base.showerror(io::IO, e::StreamClosedError) = print(io, "StreamClosedError: ", e.msg)
+
+"""
     FakeTransport — reference transport that runs the pipeline with no FFI.
 
     A `TestClient` really is a fake transport: it dispatches requests directly
@@ -7,6 +35,13 @@
     `supports_*` traits (no WebSocket, no TLS, streaming supported), and can
     drive a full request cycle without a running server — including on systems
     where `Mongoose_jll` was never loaded.
+
+    The transport is **stateful**: it owns a registry of in-flight streams
+    (`transport.streams`). A streamed response is bound to exactly one
+    `FakeStream` — after it is delivered (producer completes) the stream is
+    `done`, and any further write raises `StreamClosedError` (one response per
+    stream). `close!(transport)` closes every owned stream (writers become
+    closed) and rejects new requests, modeling the C transport's close cascade.
 
     # Example
     ```julia
@@ -21,9 +56,14 @@
     @assert contains(resp.body, "Hello World")
     ```
 """
-struct FakeTransport <: AbstractTransport
+mutable struct FakeTransport <: AbstractTransport
     app::App
+    stream_seq::Int
+    streams::Dict{Int,FakeStream}
+    closed::Bool
 end
+
+FakeTransport(app::App) = FakeTransport(app, 0, Dict{Int,FakeStream}(), false)
 
 """Backward-compatible name for `FakeTransport`.
 
@@ -35,6 +75,74 @@ const TestClient = FakeTransport
 supports_websocket(::FakeTransport) = false
 supports_tls(::FakeTransport) = false
 supports_streaming(::FakeTransport) = true
+
+# --- Owner-aware stream writer (replaces the old stateless StreamWriterBuffer) ---
+
+"""
+    FakeStreamWriter — IO handed to a streamed response's producer.
+
+    Writes append to the owning `FakeStream.io` while the stream is open;
+    writing after `close!` of the transport or after the stream delivered its
+    response raises `StreamClosedError`.
+"""
+mutable struct FakeStreamWriter <: IO
+    stream::FakeStream
+end
+
+@inline function _ensure_writable(st::FakeStream)
+    (st.open && !st.done) || throw(StreamClosedError("stream is closed (one response per stream)"))
+    return nothing
+end
+
+Base.write(w::FakeStreamWriter, data::UInt8) = (_ensure_writable(w.stream); write(w.stream.io, data); 1)
+Base.write(w::FakeStreamWriter, data::Vector{UInt8}) = (_ensure_writable(w.stream); write(w.stream.io, data); length(data))
+Base.write(w::FakeStreamWriter, data::String) = (_ensure_writable(w.stream); write(w.stream.io, data); ncodeunits(data))
+Base.flush(::FakeStreamWriter) = nothing
+Base.isopen(w::FakeStreamWriter) = w.stream.open && !w.stream.done
+
+function Base.close(w::FakeStreamWriter)
+    st = w.stream
+    st.open = false
+    st.done = true
+    return nothing
+end
+
+# --- Close cascade ---
+
+"""
+    close!(transport::FakeTransport)
+
+Close the transport: every owned stream is closed (its writer becomes closed)
+and further requests raise an error.
+"""
+function close!(transport::FakeTransport)
+    transport.closed = true
+    for st in values(transport.streams)
+        st.open = false
+        st.done = true
+    end
+    return transport
+end
+
+# --- Stream execution: one response, bound to one stream ---
+
+function _run_fake_stream(transport::FakeTransport, resp::StreamResponse)::Response
+    transport.stream_seq += 1
+    id = transport.stream_seq
+    stream = FakeStream(IOBuffer(), true, false, nothing)
+    transport.streams[id] = stream
+    writer = FakeStreamWriter(stream)
+    try
+        resp.producer(writer)
+    catch e
+        stream.error = e
+    finally
+        stream.open = false
+        stream.done = true          # one response per stream, then closed
+    end
+    body = String(take!(stream.io))
+    return Response(resp.status, Headers(["Content-Type" => resp.content_type; copy(resp.headers.data)]), body)
+end
 
 """
     (client::TestClient)(method, path; headers=[], body="", query=Dict(), remote_addr="127.0.0.1") → Response
@@ -48,6 +156,7 @@ function (client::FakeTransport)(method::Symbol, path::String;
                                  body::String="",
                                  query::Dict{String,String}=Dict{String,String}(),
                                  remote_addr::Union{Nothing,String}="127.0.0.1")
+    client.closed && throw(StreamClosedError("transport is closed"))
     # Build URI with query string
     uri = if isempty(query)
         path
@@ -71,15 +180,7 @@ function (client::FakeTransport)(method::Symbol, path::String;
     end
 
     if result isa StreamResponse
-        # Capture stream output
-        io = IOBuffer()
-        sw = StreamWriterBuffer(io)
-        try
-            result.producer(sw)
-        catch end
-        return Response(result.status,
-            Headers(["Content-Type" => result.content_type; copy(result.headers.data)]),
-            String(take!(io)))
+        return _run_fake_stream(client, result)
     end
 
     return result::Response
@@ -110,13 +211,3 @@ function _url_encode(s::String)::String
     end
     return String(take!(io))
 end
-
-# Buffer-based StreamWriter for TestClient (captures output without network)
-struct StreamWriterBuffer <: IO
-    io::IOBuffer
-end
-Base.write(w::StreamWriterBuffer, data::UInt8) = write(w.io, data)
-Base.write(w::StreamWriterBuffer, data::Vector{UInt8}) = write(w.io, data)
-Base.write(w::StreamWriterBuffer, data::String) = write(w.io, data)
-Base.flush(::StreamWriterBuffer) = nothing
-Base.isopen(::StreamWriterBuffer) = true

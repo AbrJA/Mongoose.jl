@@ -37,6 +37,54 @@ submit!(::SyncExecutor, job::Function) = job()::Any
 start!(::SyncExecutor, app) = nothing
 stop!(::SyncExecutor) = nothing
 
+"""
+    FakeExecutor — deterministic, thread-free executor for tests.
+
+    Mirrors the `AsyncExecutor` contract (queued `submit!`, `haspending`,
+    `start!`/`stop!`) but never spawns workers: jobs are queued and only run
+    when the test calls `run!`, inline in submission order. This makes
+    reply-order/backpressure tests deterministic — no threads, no sleeps.
+
+    ```julia
+    fe = FakeExecutor()
+    submit!(fe, () -> "first")
+    submit!(fe, () -> "second")
+    @assert haspending(fe)
+    @assert run!(fe) == ["first", "second"]
+    @assert !haspending(fe)
+    ```
+"""
+mutable struct FakeExecutor <: AbstractExecutor
+    jobs::Vector{Function}
+    results::Vector{Any}
+end
+FakeExecutor() = FakeExecutor(Function[], Any[])
+
+start!(fe::FakeExecutor, app) = fe
+stop!(fe::FakeExecutor) = (empty!(fe.jobs); empty!(fe.results); fe)
+
+haspending(fe::FakeExecutor) = !isempty(fe.jobs)
+
+# Queued jobs are never run implicitly: submit! only enqueues (accepted=true).
+submit!(fe::FakeExecutor, job::Function) = (push!(fe.jobs, job); true)
+
+"""
+    run!(fe::FakeExecutor) → Vector{Any}
+
+Run every queued job inline in submission order, clearing the queue and
+recording each result.
+"""
+function run!(fe::FakeExecutor)
+    ret = Any[]
+    while !isempty(fe.jobs)
+        job = popfirst!(fe.jobs)
+        result = job()
+        push!(fe.results, result)
+        push!(ret, result)
+    end
+    return ret
+end
+
 # --- Contract-by-fallback methods ---
 
 function submit!(executor::AbstractExecutor, job::Function)

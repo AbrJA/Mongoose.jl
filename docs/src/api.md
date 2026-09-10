@@ -165,9 +165,12 @@ Endpoint
 AbstractExecutor
 SyncExecutor
 AsyncExecutor
+FakeExecutor
+run!
 AbstractTransport
 FakeTransport
 TestClient
+close!
 validate
 ValidationError
 ```
