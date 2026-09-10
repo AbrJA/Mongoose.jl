@@ -69,7 +69,7 @@
       default `(mw::AbstractMiddleware)(req, next)` are DELETED (only
       `SecurityHeaders` used `after` — converted to a call operator; no `before`
       overrides existed). `as_middleware` is the single admission point
-      (docstring added). *commit: (T7)*
+      (docstring added). *commit: `50d1c93`*
 
 ### Phase 3 — Modularity & coupling
 
@@ -126,7 +126,7 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
   snapshot NamedTuple). Trade-off accepted: `App.context` is abstract-typed →
   one virtual call per request on the seam (frozen hot path pays ~1 indirect
   call); kept `App` parametric in `R` only for API stability.
-- **T7 shipped** (this commit): middleware = plain callable; `before`/`after`
+- **T7 shipped** (`50d1c93`): middleware = plain callable; `before`/`after`
   protocol deleted. 811 tests + 73 acceptance + Aqua/JET + docs green. Only one
   `after` user existed (`SecurityHeaders` → call operator); no `before`
   overrides anywhere. `before`/`after` dropped from MongooseCore exports;
