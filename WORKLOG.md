@@ -75,7 +75,7 @@
       refreshed by `use!`/`service!`, immutable in the seam), and the generic
       path walks global + route-scoped middleware with **one cursor over their
       virtual concatenation** — the per-request `[global; scoped]` array is
-      gone. *commit: (T8)*
+      gone. *commit: `716e9d4`*
 
 ### Phase 3 — Modularity & coupling
 
@@ -137,7 +137,7 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
   `after` user existed (`SecurityHeaders` → call operator); no `before`
   overrides anywhere. `before`/`after` dropped from MongooseCore exports;
   `as_middleware` docstring added (and to api.md).
-- **T8 shipped** (this commit): baked-tuple global middleware. 811 tests + 73
+- **T8 shipped** (`716e9d4`): baked-tuple global middleware. 811 tests + 73
   acceptance + Aqua/JET + docs green. `RequestContext.middlewares` is a Tuple
   (baked at construct; `use!`/`service!` re-snapshot). `execute_pipeline` gained
   a 4-arg form walking globals+scoped with one cursor over the virtual
