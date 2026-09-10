@@ -224,6 +224,28 @@ const CLOSE = ["Connection" => "close"]
             @test contains(String(r.body), "Alice")
         end
 
+        progress("ETag + conditional requests (wire)")
+        @testset "ETag + conditional requests (wire)" begin
+            r = HTTP.get("$base/api/users"; status_exception=false, headers=AUTH,
+                read_idle_timeout=10, decompress=false)
+            @test r.status == 200
+            etag_v = HTTP.header(r, "ETag")
+            @test startswith(etag_v, "\"")
+
+            r2 = HTTP.get("$base/api/users"; status_exception=false,
+                headers=[AUTH; "If-None-Match" => etag_v],
+                read_idle_timeout=10, decompress=false)
+            @test r2.status == 304
+            @test isempty(r2.body)
+            @test HTTP.header(r2, "ETag") == etag_v
+
+            # A stale tag gets the full 200 again.
+            r3 = HTTP.get("$base/api/users"; status_exception=false,
+                headers=[AUTH; "If-None-Match" => "\"stale\""],
+                read_idle_timeout=10, decompress=false)
+            @test r3.status == 200
+        end
+
         progress("Frozen router guardrails + request id")
         @testset "HTTP semantics: 405 Allow + raw chunked" begin
             # RFC 9110 §15.5.6: 405 must carry the Allow header. (/api/quote is

@@ -110,12 +110,14 @@ health
 metrics
 security
 compress
+etag
 AbstractMiddleware
 FunctionMiddleware
 Logger
 Health
 PrometheusMetrics
 SecurityHeaders
+Etag
 Cors
 Bearer
 ApiKey

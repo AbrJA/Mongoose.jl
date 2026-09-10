@@ -90,8 +90,13 @@
       `App.runtime`/`config` split + `supports_*`/`FakeTransport` traits already
       deliver the replaceability seam. Revisit only if a second transport or a
       2.0 cleanup becomes real work.
-- [ ] **T10** Plugin lifecycle — `install!/configure!/start_plugin!/stop_plugin!`
-      with reverse-stop rollback in `start!`.
+- [ ] ~~**T10** Plugin lifecycle~~ — **DEFERRED (Sep 09)**: `install!/configure!/
+      start_plugin!/stop_plugin!` with reverse-stop rollback. Reviewed with the
+      user: no consumers inside or outside the repo (use!/route!/service! and
+      onstart!/onstop! already compose bundles), the rollback selling point is
+      moot because `start!` treats hook failure as logged-and-continue (no
+      partial-start state to roll back), and API-without-usage is debt — design
+      the plugin API when the first real plugin needs it.
 
 ### Phase 4 — Prod gaps & test hardening
 
@@ -119,8 +124,11 @@
 
 ### Phase 5 — Optional / post-release
 
-`Expect: 100-continue` explicit reply · app-level ETag/conditional requests ·
-OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
+`Expect: 100-continue` explicit reply (VERIFIED: mongoose build omits the
+interim 100 but accepts the request — compliant, no action) · ~~app-level
+ETag/conditional requests~~ **shipped** · OpenAPI-from-metadata · sessions/CSRF
+· HTTP/2 decision · docs build item done (keep building at each API change) ·
+1.0.
 
 ## Changelog
 
@@ -188,3 +196,22 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
   Deliberately deferred: per-file watchdog in `runtests_stream.jl` (killing a
   hung testset task can't be done cleanly — abandoned servers leak into
   subsequent files; the flush-based runner already pinpoints hangs).
+- **Sep 09 — T10 deferred.** Plugin lifecycle is API-without-usage; the
+  rollback rationale doesn't apply because `start!` logs-and-continues on hook
+  failure. Same criteria as T9/T4: defer until a real plugin exists.
+- **Sep 09 — gate-sweep items (proposal batch):**
+  - **Leak fix** (`1dcd040`): `_http_job_timed` now tracks its over-budget task
+    in `server.runtime.bg_tasks` instead of dropping it silently. Test pins it
+    (with `retry=false` — HTTP.jl retries the 504 four times, which was
+    doubling bg_tasks in the earlier probe).
+  - **ETag middleware shipped** (this commit): `etag()` — strong FNV-1a ETags
+    over buffered response bodies (deterministic, no new deps; crypto is not
+    needed for a cache validator) + If-None-Match (304 GET/HEAD, 412 otherwise,
+    weak `W/` comparison, `*`) + If-Match (412, strong). Applies to `Response`
+    only (raw returns are serialized after the pipeline); register outside
+    `compress` so the tag validates what is sent. Acceptance: 73 → 79 checks.
+  - **100-continue verified** (no code): this Mongoose JLL omits the interim
+    `100 Continue` but fully accepts `Expect: 100-continue` requests — no 417,
+    no hang, body delivered (verified with curl, incl. `--expect100-timeout`
+    waiting clients). Legal per RFC 7231 §5.1.1 (server MAY omit). Strikes the
+    "explicit reply" Phase-5 item.

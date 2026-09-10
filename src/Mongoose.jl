@@ -10,7 +10,7 @@ export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamRespo
     start!, shutdown!, route!, use!, serve!, onerror!, onstart!, onstop!,
     context, Cookie, Headers, bake, cookies, form, header,
     ws!, Message,
-    cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress,
+    cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
     RouteError, ServerError, BindError,
     HTTPError, error_status,
     BadRequestError, UnauthorizedError, PaymentRequiredError, ForbiddenError,
@@ -148,6 +148,7 @@ end
         cors(); cors(origins="https://example.com")
         logger(); ratelimit(); bearer(t -> true)
         apikey(keys=Set(["k"])); health(); metrics()
+        etag()
 
         # --- App construction ---
         app = App()
