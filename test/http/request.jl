@@ -39,5 +39,18 @@
             @test String(resp.body) == "1,hello"
         end
     end
+
+    @testset "Remote address from the C connection" begin
+        s = App()
+        get!(s, "/remote") do req
+            addr = req.remote_addr
+            text(isnothing(addr) ? "none" : addr)
+        end
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/remote"; status_exception=false)
+            # Loopback client: the peer IP is the machine's own loopback.
+            @test occursin("127.0.0.1", String(resp.body))
+        end
+    end
 end
 

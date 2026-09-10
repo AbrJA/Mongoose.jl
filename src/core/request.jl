@@ -65,6 +65,10 @@ end
 
     Fields are `const` (immutable after construction) except `context`,
     which is lazily allocated on first access for per-request state.
+
+    `remote_addr` is the transport-provided peer address (the client's IP as a
+    string, or `nothing` when the transport does not supply one — e.g. the
+    standalone pipeline or `TestClient`-constructed requests).
 """
 mutable struct Request <: AbstractRequest
     const method::Symbol
@@ -74,29 +78,34 @@ mutable struct Request <: AbstractRequest
     const headers::Headers
     const body::String
     context::Union{Nothing,Dict{Symbol,Any}}
+    const remote_addr::Union{Nothing,String}
 
     # Primary constructor — all fields explicit
     function Request(method::Symbol, uri::String, path::String,
                      query::Dict{String,String}, headers::Headers,
-                     body::String, context::Union{Nothing,Dict{Symbol,Any}}=nothing)
-        return new(method, uri, path, query, headers, body, context)
+                     body::String,
+                     context::Union{Nothing,Dict{Symbol,Any}}=nothing,
+                     remote_addr::Union{Nothing,String}=nothing)
+        return new(method, uri, path, query, headers, body, context, remote_addr)
     end
 end
 
 # Convenience overload: accept raw Vector and wrap automatically
 function Request(method::Symbol, uri::String, path::String,
                  query::Dict{String,String}, headers::Vector{Pair{String,String}},
-                 body::String, context::Union{Nothing,Dict{Symbol,Any}}=nothing)
-    return Request(method, uri, path, query, Headers(headers), body, context)
+                 body::String, context::Union{Nothing,Dict{Symbol,Any}}=nothing,
+                 remote_addr::Union{Nothing,String}=nothing)
+    return Request(method, uri, path, query, Headers(headers), body, context, remote_addr)
 end
 
 # Convenience: auto-strip query from uri
 function Request(method::Symbol, uri::String,
                  query::Dict{String,String}, headers::Union{Headers,Vector{Pair{String,String}}},
-                 body::String, context::Union{Nothing,Dict{Symbol,Any}}=nothing)
+                 body::String, context::Union{Nothing,Dict{Symbol,Any}}=nothing,
+                 remote_addr::Union{Nothing,String}=nothing)
     path = String(strip_query(uri))
     h = headers isa Headers ? headers : Headers(headers)
-    return Request(method, uri, path, query, h, body, context)
+    return Request(method, uri, path, query, h, body, context, remote_addr)
 end
 
 """

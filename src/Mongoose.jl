@@ -133,6 +133,12 @@ end
             "a=1&b=hello", nothing)
         form(form_req)
 
+        # --- Remote address (field + handler read) ---
+        raddr_req = Request(:get, "/who", Dict{String,String}(), Pair{String,String}[],
+            "", nothing, "10.1.2.3")
+        route!(router, :get, "/who", req -> req.remote_addr)
+        invoke_request(RequestContext(router), raddr_req)
+
         # --- String utilities ---
         sanitize_header_value("abc-123")
         sanitize_header_value("bad\r\nvalue")

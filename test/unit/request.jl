@@ -27,6 +27,14 @@
             "")
         @test req.path == "/search"
     end
+
+    @testset "remote_addr field" begin
+        req = Request(:get, "/", "/", Dict{String,String}(), Headers(), "")
+        @test req.remote_addr === nothing          # default: transport-less
+        req2 = Request(:get, "/", "/", Dict{String,String}(), Headers(), "",
+            nothing, "10.0.0.9")
+        @test req2.remote_addr == "10.0.0.9"
+    end
 end
 
 @testset "Headers" begin

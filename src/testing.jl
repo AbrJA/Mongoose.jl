@@ -37,14 +37,17 @@ supports_tls(::FakeTransport) = false
 supports_streaming(::FakeTransport) = true
 
 """
-    (client::TestClient)(method, path; headers=[], body="", query=Dict()) → Response
+    (client::TestClient)(method, path; headers=[], body="", query=Dict(), remote_addr="127.0.0.1") → Response
 
-Execute a request against the app without network I/O.
+Execute a request against the app without network I/O. `remote_addr` sets the
+request's peer address (defaults to a loopback client; pass `nothing` for a
+transport-less request).
 """
 function (client::FakeTransport)(method::Symbol, path::String;
                                  headers::Vector{Pair{String,String}}=Pair{String,String}[],
                                  body::String="",
-                                 query::Dict{String,String}=Dict{String,String}())
+                                 query::Dict{String,String}=Dict{String,String}(),
+                                 remote_addr::Union{Nothing,String}="127.0.0.1")
     # Build URI with query string
     uri = if isempty(query)
         path
@@ -58,7 +61,7 @@ function (client::FakeTransport)(method::Symbol, path::String;
     merge!(parsed_query, query)
 
     req_path = String(strip_query(uri))
-    req = Request(method, uri, req_path, parsed_query, Headers(headers), body, nothing)
+    req = Request(method, uri, req_path, parsed_query, Headers(headers), body, nothing, remote_addr)
 
     # Run through pipeline exactly as the real server would
     result = try

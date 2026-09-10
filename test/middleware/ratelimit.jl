@@ -52,8 +52,8 @@
     end
 
     @testset "Proxy headers not trusted by default" begin
-        # With trust_proxies=false all clients share one bucket: a spoofed
-        # X-Forwarded-For cannot evade the limit.
+        # With trust_proxies=false the default key is the real remote address:
+        # spoofed X-Forwarded-For headers cannot evade the limit.
         s = App()
         get!(s, "/") do req; text("ok") end
         use!(s, ratelimit(max_requests=2, window_seconds=60))
@@ -64,12 +64,35 @@
                     status_exception=false, retry=false,
                     headers=["X-Forwarded-For" => ip])
             end
-            # Third request (any "IP") is blocked.
+            # Third request (any spoofed "IP") is blocked — all hit the same
+            # real 127.0.0.1 bucket.
             resp = HTTP.get("http://127.0.0.1:$port/";
                 status_exception=false, retry=false,
                 headers=["X-Forwarded-For" => "100.0.0.9"])
             @test resp.status == 429
         end
+    end
+
+    @testset "Default buckets per remote address (no proxies)" begin
+        s = App()
+        get!(s, "/") do req; text("ok") end
+        use!(s, ratelimit(max_requests=2, window_seconds=60))
+        client = Mongoose.TestClient(s)
+
+        r = client(:get, "/"); @test r.status == 200
+        r = client(:get, "/"); @test r.status == 200
+        r = client(:get, "/")
+        @test r.status == 429                      # same IP → limited
+        r = client(:get, "/"; remote_addr="10.0.0.9")
+        @test r.status == 200                      # different IP → independent
+
+        # No address available → shared fallback bucket (never per-client).
+        server = App()
+        get!(server, "/") do req; text("ok") end
+        use!(server, ratelimit(max_requests=1, window_seconds=60))
+        tc = Mongoose.TestClient(server)
+        @test tc(:get, "/"; remote_addr=nothing).status == 200
+        @test tc(:get, "/"; remote_addr=nothing).status == 429
     end
 
     @testset "Custom key_fn buckets by header" begin

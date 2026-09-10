@@ -79,20 +79,28 @@
 
 ### Phase 3 — Modularity & coupling
 
-- [ ] **T6** `RequestContext` seam — collapse `invoke_request(router, middlewares,
-      errors, services, req)` into one context object.
-- [ ] **T7** Middleware simplification — plain callables + one `as_middleware`;
-      retire the dual `before`/`after` hook protocol.
-- [ ] **T8** Composed-tuple global middleware — bake the app-global stack once.
-- [ ] **T9** Transport contract rewiring — route the C event loop through
-      `init!/listen!/poll!/send!` behind `AbstractTransport` (highest risk).
+- [x] **T6** ~~`RequestContext` seam~~ — done (`5d72d9e`), see changelog.
+- [x] **T7** ~~Middleware simplification~~ — done (`50d1c93`), see changelog.
+- [x] **T8** ~~Composed-tuple global middleware~~ — done (`716e9d4`), see changelog.
+- [ ] ~~**T9** Transport contract rewiring~~ — **DEFERRED (Sep 09)**: route the C
+      event loop through `init!/listen!/poll!/send!` behind `AbstractTransport`.
+      Reviewed with the user: single implementation (only the Mongoose C
+      transport exists, no second transport planned), highest-risk refactor of
+      the FFI event loop for zero user-visible value, and the
+      `App.runtime`/`config` split + `supports_*`/`FakeTransport` traits already
+      deliver the replaceability seam. Revisit only if a second transport or a
+      2.0 cleanup becomes real work.
 - [ ] **T10** Plugin lifecycle — `install!/configure!/start_plugin!/stop_plugin!`
       with reverse-stop rollback in `start!`.
 
 ### Phase 4 — Prod gaps & test hardening
 
-- [ ] **T11** `Request` remote address (from C conn) + per-IP ratelimit default
-      key.
+- [x] **T11** `Request` remote address + per-IP ratelimit default — `Request`
+      gained `remote_addr::Union{Nothing,String}` (peer host read from the C
+      connection via the `MgAddr` struct at `mg_connection.rem`, port stripped);
+      the default ratelimit key is now the remote address (per-client host)
+      instead of a shared "unknown" bucket; `X-Forwarded-For`/`X-Real-IP` still
+      need `trust_proxies=true`. *commit: (T11)*
 - [ ] **T12** `FakeExecutor` + stateful `FakeTransport` (owner checks,
       one-response-per-stream, close cascade).
 - [ ] **T13** Deterministic test-sync policy for the acceptance suite (no
@@ -147,3 +155,13 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
   would need @generated/structural recursion; the cursor keeps 1 closure
   per request — deferred as not worth the codegen complexity for ≤6-element
   stacks.
+- **Sep 09 — T9 deferred.** Single-implementation (Mongoose C only) transport
+  abstraction is speculative generality with the highest refactor risk and zero
+  user value; the runtime/config split + `supports_*`/`FakeTransport` traits
+  already provide the replaceability seam. Rationale recorded in the task list.
+- **T11 shipped** (this commit): remote_addr + per-IP ratelimit. 820 tests +
+  73 acceptance + Aqua/JET + docs green. Key detail: this Mongoose_jll (7.21)
+  does NOT export `mg_conn_string` → read `mg_connection.rem` (offset 40) as an
+  `MgAddr` struct directly (verified against mongoose 7.21 headers; live
+  loopback probe returns "127.0.0.1"). `TestClient` gained a `remote_addr`
+  kwarg (default "127.0.0.1").

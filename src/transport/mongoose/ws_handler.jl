@@ -45,7 +45,7 @@ function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
         end
     end
     if endpoint.on_open !== nothing
-        req = adapt_request(msg)
+        req = adapt_request(msg; remote_addr=remote_addr_of(conn))
         accepted = try
             result = endpoint.on_open(req)
             result !== false

@@ -5,10 +5,10 @@
     (each with its own lock) to reduce contention under high concurrency.
 
     Buckets are keyed by a user-supplied `key_fn(request) -> String`, or by a
-    default that optionally trusts `X-Forwarded-For`/`X-Real-IP` when the app
-    sits behind a proxy. Trusting proxy headers is a spoofing vector when
-    exposed directly to clients, so it must be enabled explicitly for
-    deployments you control the headers of.
+    default that keys on the request's transport-provided remote address
+    (per-client host; `X-Forwarded-For`/`X-Real-IP` are only trusted when
+    `trust_proxies=true`, since reading proxy headers directly is a spoofing
+    vector when the app is exposed to clients).
 """
 
 const _RATE_LIMIT_SHARDS = 16
@@ -35,10 +35,10 @@ end
     (each with its own lock) to reduce contention under high concurrency.
 
     Buckets are keyed by a user-supplied `key_fn(request) -> String`, or by a
-    default that optionally trusts `X-Forwarded-For`/`X-Real-IP` when the app
-    sits behind a proxy. Trusting proxy headers is a spoofing vector when
-    exposed directly to clients, so it must be enabled explicitly for
-    deployments you control the headers of.
+    default that keys on the request's transport-provided remote address;
+    `X-Forwarded-For`/`X-Real-IP` are only trusted when `trust_proxies=true`
+    (reading proxy headers directly is a spoofing vector when the app is
+    exposed to clients).
 """ RateLimit
 
 @inline function _shard(mw::RateLimit, key::String)
@@ -46,7 +46,9 @@ end
 end
 
 # Default bucket key: first X-Forwarded-For entry, or X-Real-IP, when proxy
-# headers are trusted; otherwise a shared "unknown" bucket (override with key_fn).
+# headers are trusted (for deployments behind an overwriting proxy); otherwise
+# the request's transport-provided remote address (per-client host). Falls back
+# to a shared "unknown" bucket only when no address is available.
 function _default_key_fn(trust::Bool)
     return function (request)
         if trust
@@ -58,7 +60,9 @@ function _default_key_fn(trust::Bool)
             h2 = get(request.headers, "x-real-ip", nothing)
             h2 !== nothing && return String(strip(h2))
         end
-        return "unknown"
+        addr = request.remote_addr
+        addr === nothing && return "unknown"
+        return addr
     end
 end
 
@@ -130,7 +134,8 @@ Uses $(_RATE_LIMIT_SHARDS) independent shards internally to minimize lock conten
 - `window_seconds::Int`: Time window duration in seconds (default: `60`).
 - `trust_proxies::Bool`: Trust `X-Forwarded-For`/`X-Real-IP` for the default
   bucket key (default: `false`). Enable only behind a proxy that overwrites
-  these headers; otherwise clients can spoof their bucket.
+  these headers; otherwise clients can spoof their bucket. Without it the
+  default key is the request's remote address (per-client host).
 - `key_fn::Function`: Custom bucket key `(Request) -> String`, overriding the
   default IP-based key (e.g. an API key extracted from the request).
 
