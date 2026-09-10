@@ -100,7 +100,7 @@
       connection via the `MgAddr` struct at `mg_connection.rem`, port stripped);
       the default ratelimit key is now the remote address (per-client host)
       instead of a shared "unknown" bucket; `X-Forwarded-For`/`X-Real-IP` still
-      need `trust_proxies=true`. *commit: (T11)*
+      need `trust_proxies=true`. *commit: `53e2ef9`*
 - [ ] **T12** `FakeExecutor` + stateful `FakeTransport` (owner checks,
       one-response-per-stream, close cascade).
 - [ ] **T13** Deterministic test-sync policy for the acceptance suite (no
@@ -159,7 +159,7 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
   abstraction is speculative generality with the highest refactor risk and zero
   user value; the runtime/config split + `supports_*`/`FakeTransport` traits
   already provide the replaceability seam. Rationale recorded in the task list.
-- **T11 shipped** (this commit): remote_addr + per-IP ratelimit. 820 tests +
+- **T11 shipped** (`53e2ef9`): remote_addr + per-IP ratelimit. 820 tests +
   73 acceptance + Aqua/JET + docs green. Key detail: this Mongoose_jll (7.21)
   does NOT export `mg_conn_string` → read `mg_connection.rem` (offset 40) as an
   `MgAddr` struct directly (verified against mongoose 7.21 headers; live
