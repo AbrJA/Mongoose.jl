@@ -17,21 +17,15 @@
             start!(s; host="127.0.0.1", port=port, blocking=false, tls=tls)
 
             try
-                # Wait for TLS server to be ready (skip SSL verification for self-signed)
-                deadline = time() + 10.0
-                ready = false
-                while time() < deadline
-                    try
-                        HTTP.get("https://127.0.0.1:$port/secure";
-                            require_ssl_verification=false,
-                            readtimeout=2,
-                            connect_timeout=2,
-                            status_exception=false)
-                        ready = true
-                        break
-                    catch
-                        sleep(0.1)
-                    end
+                # Wait for TLS server to be ready (skip SSL verification for
+                # self-signed): condition-based, not a fixed sleep.
+                ready = wait_until(timeout=10.0, interval=0.1) do
+                    HTTP.get("https://127.0.0.1:$port/secure";
+                        require_ssl_verification=false,
+                        readtimeout=2,
+                        connect_timeout=2,
+                        status_exception=false)
+                    true
                 end
 
                 if ready
@@ -56,20 +50,13 @@
             start!(s; host="127.0.0.1", port=port, blocking=false, tls=tls)
 
             try
-                deadline = time() + 10.0
-                ready = false
-                while time() < deadline
-                    try
-                        HTTP.get("https://127.0.0.1:$port/data";
-                            require_ssl_verification=false,
-                            readtimeout=2,
-                            connect_timeout=2,
-                            status_exception=false)
-                        ready = true
-                        break
-                    catch
-                        sleep(0.1)
-                    end
+                ready = wait_until(timeout=10.0, interval=0.1) do
+                    HTTP.get("https://127.0.0.1:$port/data";
+                        require_ssl_verification=false,
+                        readtimeout=2,
+                        connect_timeout=2,
+                        status_exception=false)
+                    true
                 end
 
                 if ready

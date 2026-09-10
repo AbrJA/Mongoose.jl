@@ -50,10 +50,17 @@
     @testset "Slow stream does not block the event loop" begin
         # Worst case: sync mode, single poll thread. A producer that sleeps
         # between events must not stall unrelated HTTP requests.
+        #
+        # Deterministic sync: the producer signals a Channel after its FIRST
+        # emitted event, so the test knows the stream is genuinely mid-flight
+        # (no fixed sleep to guess "the stream is halfway done").
         s = App()
+        mid_stream = Channel{Nothing}(1)
         get!(s, "/events") do req
             sse(req) do writer
-                for i in 1:5
+                emit(writer; data="tick 1")
+                signal(mid_stream)   # mid-flight handshake (never blocks)
+                for i in 2:5
                     emit(writer; data="tick $i")
                     sleep(0.3)
                 end
@@ -62,12 +69,16 @@
         get!(s, "/fast") do req; text("ok") end
 
         with_server(s) do port
-            # Warm both routes (JIT) so timing measures the loop, not the compiler.
-            HTTP.get("http://127.0.0.1:$port/events"; status_exception=false)
+            # Warm the measured route (JIT) so timing measures the loop, not
+            # the compiler. The producer is mid-flight when /events runs next.
             HTTP.get("http://127.0.0.1:$port/fast"; status_exception=false)
 
             slow = @async HTTP.get("http://127.0.0.1:$port/events"; status_exception=false)
-            sleep(0.45)  # the slow stream is mid-production (old code: loop blocked)
+
+            # Block until the producer emitted its first event (hang-guard
+            # timedwait; the sync itself is the Channel).
+            got_mid = timedwait(() -> isready(mid_stream), 5.0; pollint=0.005)
+            @test got_mid == :ok   # stream is mid-production, deterministically
 
             t0 = time()
             resp = HTTP.get("http://127.0.0.1:$port/fast"; status_exception=false)

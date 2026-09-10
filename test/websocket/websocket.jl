@@ -32,38 +32,40 @@ end
 
 @testset "WebSocket lifecycle callbacks" begin
     @testset "on_open callback" begin
-        opened = Ref(false)
+        opened = Channel{Nothing}(1)
         s = App(workers=2)
         get!(s, "/") do req; text("ok") end
         ws!(s, "/ws/open";
             on_message=msg -> Message("ok"),
-            on_open=(req) -> (opened[] = true))
+            on_open=(req) -> signal(opened))
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/open") do ws
                 HTTP.WebSockets.send(ws, "ping")
                 HTTP.WebSockets.receive(ws)
             end
-            sleep(0.1)
-            @test opened[] == true
+            # The upgrade handshake is the sync; timedwait is only a hang-guard.
+            @test timedwait(() -> isready(opened), 5.0; pollint=0.005) == :ok
         end
     end
 
     @testset "on_close callback" begin
-        closed = Ref(false)
+        closed = Channel{Nothing}(1)
         s = App(workers=2)
         get!(s, "/") do req; text("ok") end
         ws!(s, "/ws/close";
             on_message=msg -> Message("ok"),
-            on_close=() -> (closed[] = true))
+            on_close=() -> signal(closed))
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/close") do ws
                 HTTP.WebSockets.send(ws, "ping")
                 HTTP.WebSockets.receive(ws)
             end
-            sleep(0.2)
-            @test closed[] == true
+            # Deterministic: wait for the server-side on_close event (the
+            # timedwait is only a hang-guard; the sync is the Channel).
+            got_close = timedwait(() -> isready(closed), 5.0; pollint=0.005)
+            @test got_close == :ok
         end
     end
 end

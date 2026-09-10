@@ -108,8 +108,14 @@
       `StreamClosedError`), `close!` cascades over owned streams and rejects
       new requests, producer failures recorded on the stream. Old
       `StreamWriterBuffer` removed. commit: `e99919f`
-- [ ] **T13** Deterministic test-sync policy for the acceptance suite (no
-      `sleep`/`timedwait`; `Channel`/`Event`/`errormonitor`).
+- [x] **T13** Deterministic test-sync policy — wait on *conditions*, never on
+      fixed wall-clock durations to assert mid-flight state. Shared `wait_until`
+      helper (condition polling; `wait_for_server` rebuilt on it; TLS probe
+      loops deduped), and producer→test `Channel` handshakes replace the
+      timing sleeps: SSE mid-stream (`sleep(0.45)`), WS `on_open`
+      (`sleep(0.1)`), WS `on_close` (`sleep(0.2)`). `timedwait` is only a
+      hang-guard, never the sync. Sleeps that test the SUT's own timing
+      (ratelimit window expiry, per-request timeout) stay. *commit: (T13)*
 
 ### Phase 5 — Optional / post-release
 
@@ -176,3 +182,9 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
   the registry IS the ownership; `close!` flips each stream's flags directly).
   `FakeStreamWriter` replaces `StreamWriterBuffer`. New exports: `FakeExecutor`,
   `run!`, `close!` (all added to api.md).
+- **T13 shipped** (this commit): deterministic test-sync. 849 tests + 73
+  acceptance + Aqua/JET + docs green. Note: `tryput!` does NOT exist in Julia
+  1.12 Base → tiny `signal(::Channel)` helper (non-blocking one-shot put).
+  Deliberately deferred: per-file watchdog in `runtests_stream.jl` (killing a
+  hung testset task can't be done cleanly — abandoned servers leak into
+  subsequent files; the flush-based runner already pinpoints hangs).

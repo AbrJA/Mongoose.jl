@@ -40,18 +40,49 @@ function with_server(f::Function, server; host::String="127.0.0.1", timeout::Flo
     end
 end
 
-# Wait until the server is actually accepting connections.
-function wait_for_server(url; timeout=10.0, interval=0.05, kwargs...)
+"""
+    signal(c::Channel) — non-blocking one-shot event signal.
+
+    Puts `nothing` into `c` only when it is open and empty (never blocks, never
+    throws). Used by tests to handshake from producer/callback code into the
+    test body (SSE producers, WS callbacks).
+"""
+function signal(c::Channel)
+    isopen(c) && !isready(c) && put!(c, nothing)
+    return c
+end
+
+"""
+    wait_until(f; timeout=10.0, interval=0.05) → Bool
+
+Poll `f()` every `interval` seconds until it returns `true` (exceptions while
+the condition is not ready are treated as `false`), or until `timeout`
+elapses. This is the only sanctioned way to wait for transport-level readiness
+(sockets, TLS handshakes): wait on a *condition*, never on a fixed wall-clock
+duration to assert mid-flight state (use `Channel`/`Event` handshakes for that,
+see test/http/streaming.jl).
+"""
+function wait_until(f::Function; timeout::Float64=10.0, interval::Float64=0.05)
     deadline = time() + timeout
-    while time() < deadline
-        try
-            HTTP.get(url; readtimeout=2, connect_timeout=2, status_exception=false, kwargs...)
-            return
+    while true
+        ok = try
+            f()
         catch
-            sleep(interval)
+            false
         end
+        ok && return true
+        time() >= deadline && return false
+        sleep(interval)
     end
-    error("Server at $url did not become ready within $(timeout)s")
+end
+
+# Wait until the server is actually accepting connections.
+function wait_for_server(url; timeout=10.0, kwargs...)
+    ready = wait_until(timeout=Float64(timeout)) do
+        HTTP.get(url; readtimeout=2, connect_timeout=2, status_exception=false, kwargs...)
+        true
+    end
+    ready || error("Server at $url did not become ready within $(timeout)s")
 end
 
 function make_test_certificates(dir::String)
