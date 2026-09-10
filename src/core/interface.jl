@@ -18,9 +18,8 @@
       any `Matched`, including custom routers' matches and `SingleEndpoint`
 
     Custom routers return a `RouteResult` from `match_route`. Returning a
-    `Matched` directly is enough when the route has no auto-HEAD distinction:
-    wrap the endpoint with `SingleEndpoint(ep, method)` as the match's
-    `handlers` value.
+    `Matched` directly is enough: wrap the endpoint with
+    `SingleEndpoint(ep, method)` as the match's `handlers` value.
 
     Optional capabilities (safe defaults are provided):
     - `has_ws_routes(r::R) → Bool`                   (default: `false`)
@@ -53,10 +52,9 @@ abstract type RouteResult end
     Matched{endpoint,handlers,params} <: RouteResult
 
 A successful route match. `endpoint` is the `Endpoint` for the requested
-method — auto-HEAD resolves to the GET endpoint — `handlers` carries the
-route's method information (a `MethodMap`, or `SingleEndpoint` for routers
-with one handler) so the pipeline can tell auto-HEAD from an explicit HEAD,
-and `params` is the typed parameter tuple.
+method, `handlers` carries the route's method information (a `MethodMap`, or
+`SingleEndpoint` for routers with one handler), and `params` is the typed
+parameter tuple.
 """
 struct Matched{E,P,H} <: RouteResult
     endpoint::E

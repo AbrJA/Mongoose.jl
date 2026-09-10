@@ -76,9 +76,9 @@ const ERRORS = Dict{Int,Union{Response,Function}}()
         (:get,    "/foo/bar/baz"),                  # bare catch-all
         (:get,    "/nope"),                         # 404
         (:post,   "/users/42"),                     # 405 (route has other methods)
-        (:head,   "/users/42"),                     # auto-HEAD (no explicit HEAD)
-        (:head,   "/org/julia/repo/mongoose"),      # auto-HEAD, multi param
-        (:head,   "/files/x/y.txt"),                # auto-HEAD on wildcard
+        (:head,   "/users/42"),                     # 405: no auto-HEAD
+        (:head,   "/org/julia/repo/mongoose"),      # 405: no auto-HEAD
+        (:head,   "/files/x/y.txt"),                # 405: no auto-HEAD
         (:get,    "/search?q=hello&page=1"),        # query + fixed
         (:get,    "/scop"),                         # route-scoped middleware
         (:get,    "/health//"),                     # trailing slashes (keepempty)
@@ -214,8 +214,12 @@ end
         resp = HTTP.request("POST", "http://127.0.0.1:$port/users/42"; status_exception=false)
         @test resp.status == 405
 
+        # HEAD is served only by an explicit head! route: /users/42 is GET-only,
+        # so HEAD answers 405 with an Allow header that lists no HEAD.
         resp = HTTP.head("http://127.0.0.1:$port/users/42"; status_exception=false)
-        @test resp.status == 200
-        @test isempty(resp.body)
+        @test resp.status == 405
+        allow = HTTP.header(resp, "Allow")
+        @test occursin("GET", allow)
+        @test !occursin("HEAD", allow)
     end
 end

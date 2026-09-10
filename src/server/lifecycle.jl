@@ -7,7 +7,11 @@
 
 Start the HTTP server. Initializes manager, binds listener, spawns workers (if async), runs event loop.
 
-When `blocking=true` (default), `InterruptException` (Ctrl+C) triggers graceful shutdown.
+When `blocking=true` (default), the caller blocks until shutdown, and a
+delivered `InterruptException` (Ctrl+C) triggers graceful shutdown (drain +
+`onstop!` hooks) before `start!` returns. Graceful shutdown depends on Julia
+delivering SIGINT as an exception to the waiting task; process managers that
+only send SIGTERM bypass it.
 
 # Example
 ```julia
@@ -35,8 +39,15 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
         log_server_start(server, url)
 
         if blocking
+            # Run the loop on its own task and wait on the task from here. The
+            # loop spends most of its time inside the raw `mg_mgr_poll` ccall,
+            # which Julia cannot preempt; driving it from the calling task (as
+            # before) left Ctrl+C undeliverable. Waiting on the task keeps this
+            # thread at a Julia safe point where a received SIGINT can surface
+            # as `InterruptException` and unwind to graceful shutdown.
+            spawn_event_loop!(server)
             try
-                event_loop(server)
+                wait(server.runtime.master)
             catch e
                 e isa InterruptException || rethrow(e)
             finally

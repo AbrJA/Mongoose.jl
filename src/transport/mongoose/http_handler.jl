@@ -171,7 +171,15 @@ end
 # --- HTTP dispatch (thin transport wrapper over the core pipeline) ---
 
 function invoke_http(server::AbstractServer, req::Request)::Union{Response,StreamResponse}
-    return invoke_request(server.context, req)
+    res = invoke_request(server.context, req)
+    # HEAD responses must not carry a body (RFC 9110 §3.1). An explicit HEAD
+    # endpoint may return a body from its handler, which would be sent as-is —
+    # strip it here and let mongoose frame the empty body natively
+    # (Content-Length: 0).
+    if req.method === :head && res isa Response
+        return MongooseCore._apply_head_semantics(res)
+    end
+    return res
 end
 
 # --- Static File Serving ---

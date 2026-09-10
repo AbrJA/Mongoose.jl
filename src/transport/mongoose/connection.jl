@@ -6,15 +6,18 @@
 """
     send_http_response!(conn, response)
 
-Send a buffered HTTP response. Routes through `mg_http_reply` for string bodies
-or raw `mg_send` for binary bodies.
+Send a buffered HTTP response via mongoose's native framing: string bodies go
+through `mg_http_reply` (Content-Length derived by mongoose, keep-alive reuse
+safe), binary bodies are hand-framed with `mg_send` and always advertise
+`Connection: close` — hand-framed frames bypass mongoose's response-framing
+state, so the socket must not be reused (streams follow the same rule).
 """
 function send_http_response!(conn::MgConnection, res::Response)
-    headers_str = format_headers(res.headers)
     if res.body isa Vector{UInt8}
-        _send_binary_response!(conn, res.status, headers_str, res.body)
+        headers = _close_after_raw(format_headers(res.headers), res)
+        _send_binary_response!(conn, res.status, headers, res.body)
     else
-        mg_http_reply(conn, res.status, headers_str, res.body)
+        mg_http_reply(conn, res.status, format_headers(res.headers), res.body)
     end
 end
 
@@ -24,12 +27,19 @@ end
 Send response with X-Request-Id header injected.
 """
 function send_http_response!(conn::MgConnection, res::Response, rid::String)
-    headers_str = string(format_headers(res.headers), "X-Request-Id: ", rid, "\r\n")
+    headers = string(format_headers(res.headers), "X-Request-Id: ", rid, "\r\n")
     if res.body isa Vector{UInt8}
-        _send_binary_response!(conn, res.status, headers_str, res.body)
+        _send_binary_response!(conn, res.status, _close_after_raw(headers, res), res.body)
     else
-        mg_http_reply(conn, res.status, headers_str, res.body)
+        mg_http_reply(conn, res.status, headers, res.body)
     end
+end
+
+# Hand-framed frames leave mongoose without response framing state; a reused
+# connection would wedge. The client must see `Connection: close`.
+@inline function _close_after_raw(header_str::String, res::Response)
+    get(res.headers, "connection", nothing) === nothing || return header_str
+    return string(header_str, "Connection: close\r\n")
 end
 
 """

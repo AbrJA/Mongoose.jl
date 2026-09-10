@@ -77,23 +77,13 @@ end
     return _wrap_scoped((req) -> inner(req), ep.middleware)
 end
 
-# Bake the auto-HEAD action: run the GET terminal, strip the body.
-@inline function _bake_head_action(ep::Endpoint)::Function
-    inner = Terminal{typeof(ep.handler)}(ep.handler)
-    stripped = (req) -> begin
-        resp = format_response(inner(req))
-        resp isa Response ? Response(resp.status, resp.headers, "") : resp
-    end
-    return _wrap_scoped(stripped, ep.middleware)
-end
-
 @inline _bake_slot(::Nothing) = nothing
 @inline _bake_slot(ep::Endpoint) = _bake_action(ep)
 
-# HEAD slot: explicit HEAD endpoint wins; otherwise auto-strip the GET one.
+# HEAD slot: served only by an explicit `head!` route — there is no auto-HEAD
+# fallback, so a GET-only route answers 405 for HEAD.
 @inline _bake_head_slot(ep::Endpoint, ::Any) = _bake_action(ep)
-@inline _bake_head_slot(::Nothing, get_ep::Endpoint) = _bake_head_action(get_ep)
-@inline _bake_head_slot(::Nothing, ::Nothing) = nothing
+@inline _bake_head_slot(::Nothing, ::Any) = nothing
 
 # Bake a parametric action slot. Runs once per route at freeze time: `PC` is
 # the route's concrete call tuple type (dispatched dynamically, e.g.
@@ -110,21 +100,10 @@ end
 end
 @inline _bake_param_slot(::Nothing, ::Type) = nothing
 
-# Auto-HEAD for parametric routes: strip the GET body after binding params.
-@inline function _bake_param_head_slot(ep::Endpoint, ::Type{P})::Function where {P}
-    call = ParamCall{typeof(ep.handler), P}(ep.handler)
-    stripped = (req, p::P) -> begin
-        resp = format_response(call(req, p))
-        resp isa Response ? Response(resp.status, resp.headers, "") : resp
-    end
-    mws = ep.middleware
-    isempty(mws) && return (p::P) -> BoundParams{typeof(stripped), P}(stripped, p)
-    return (p::P) -> BoundParams{ScopedParamCall{P,typeof(stripped)}, P}(
-        ScopedParamCall{P,typeof(stripped)}(mws, stripped), p)
-end
-@inline _bake_param_head_slot(::Nothing, get_ep::Endpoint, ::Type{P}) where {P} =
-    _bake_param_head_slot(get_ep, P)
-@inline _bake_param_head_slot(::Nothing, ::Nothing, ::Type) = nothing
+# Parametric HEAD slot: explicit `head!` routes only (no auto-HEAD fallback).
+@inline _bake_param_head_slot(ep::Endpoint, ::Type{P}) where {P} =
+    _bake_param_slot(ep, P)
+@inline _bake_param_head_slot(::Nothing, ::Any, ::Type) = nothing
 
 # Scoped parametric thunk: runs the route-scoped middleware around the plain
 # terminal at request time (middleware list is pre-built per route).

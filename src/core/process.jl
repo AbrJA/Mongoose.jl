@@ -112,14 +112,14 @@ end
 
 Resolve a request into a `terminal` callable `(Request) → Response` and the
 route's scoped middleware. The terminal is always a short-circuiting
-404/405 (or auto-HEAD) producer when no handler matches, so middleware sees
-every request exactly like the handler path.
+404/405 producer when no handler matches, so middleware sees every request
+exactly like the handler path.
 """
 function _resolve_terminal(router::AbstractRouter, request::Request)
     compiled = terminal_for(router, request)
     if compiled !== nothing
-        # Frozen/compiled router: the terminal already fuses scoped middleware
-        # (and any auto-HEAD stripping); `nothing` marks scoped as baked-in.
+        # Frozen/compiled router: the terminal already fuses scoped middleware;
+        # `nothing` marks scoped as baked-in.
         return compiled, nothing
     end
 
@@ -132,14 +132,6 @@ function _resolve_terminal(router::AbstractRouter, request::Request)
 
     ep = result.endpoint::Endpoint
     params = result.params
-    if request.method === :head && get_endpoint(result.handlers, :head) === nothing
-        # Auto-HEAD: the router resolved the GET endpoint; run it and strip.
-        strip = (r) -> begin
-            resp = format_response(_call_endpoint(ep, params, r))
-            resp isa Response ? Response(resp.status, resp.headers, "") : resp
-        end
-        return strip, ep.middleware
-    end
     return ((r) -> _call_endpoint(ep, params, r)), ep.middleware
 end
 
@@ -156,6 +148,24 @@ end
 @inline _http_error_response(ctx::RequestContext, req::Request, e::HTTPError{status}) where {status} =
     _http_error_response(ctx, req, status, e.message, e.headers)
 
+# --- HEAD body semantics (RFC 9110 §3.1) ---
+
+"""
+    _apply_head_semantics(result)
+
+A `HEAD` response carries no body. If an explicit `HEAD` endpoint returns a
+body from its handler, the transport drops it here before the response reaches
+the wire; the (empty) response is then framed by mongoose's native machinery,
+so no `Content-Length` header is set by this function (hand-writing it would
+duplicate mongoose's own and force a non-native frame). Non-`Response`
+(streaming) results and already bodyless responses pass through unchanged.
+"""
+function _apply_head_semantics(result)::Union{Response,StreamResponse}
+    result isa Response || return result
+    isempty(result.body) && return result
+    return Response(result.status, result.headers, "")
+end
+
 """
     invoke_request(ctx::RequestContext, request) → Response
 
@@ -171,7 +181,7 @@ first, then the built-in `HTTPError`/`ValidationError` mapping).
 
 Middleware is composed with the matched route's scoped `Endpoint` middleware
 (`global → group/route → handler`), and it wraps *every* terminal — including
-the 404/405/auto-HEAD producers — so interception middleware (CORS, health,
+the 404/405 producers — so interception middleware (CORS, health,
 metrics) observes all requests.
 """
 function invoke_request(ctx::RequestContext, request::Request)::Union{Response,StreamResponse}

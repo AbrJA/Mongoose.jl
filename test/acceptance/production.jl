@@ -249,12 +249,12 @@ const CLOSE = ["Connection" => "close"]
         progress("Frozen router guardrails + request id")
         @testset "HTTP semantics: 405 Allow + raw chunked" begin
             # RFC 9110 §15.5.6: 405 must carry the Allow header. (/api/quote is
-            # GET-only; /healthz is intercepted by the health middleware.)
+            # GET-only — with no auto-HEAD fallback, Allow names GET but not HEAD.)
             r = HTTP.request("POST", "$base/api/quote"; status_exception=false,
                 headers=AUTH, read_idle_timeout=10)
             @test r.status == 405
             allow = HTTP.header(r, "Allow")
-            @test occursin("GET", allow) && occursin("HEAD", allow)
+            @test occursin("GET", allow) && !occursin("HEAD", allow)
 
             # RFC 9112 §7.1: chunked request bodies are decoded by the adapter
             # (decode_chunked is unit-tested in test/unit/request.jl). A

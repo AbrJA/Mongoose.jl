@@ -363,11 +363,11 @@ end
     match_route(router, method, path) → RouteResult
 
 Resolve a request to its exhaustive outcome: `Matched(endpoint, handlers,
-params)` when the route serves the method (auto-HEAD resolves to the GET
-endpoint), `NotFound` when the path matches nothing, or
-`MethodNotAllowed{allowed}` carrying the route's method bitmask. Exact
-(static) matches win; parametric routes are scanned in registration order;
-the `"*"` catch-all is the final fallback.
+params)` when the route serves the method, `NotFound` when the path matches
+nothing, or `MethodNotAllowed{allowed}` carrying the route's method bitmask.
+Exact (static) matches win; parametric routes are scanned in registration
+order; the `"*"` catch-all is the final fallback. `HEAD` is served only by an
+explicit `head!` route — there is no auto-HEAD fallback.
 """
 function match_route(router::Router, method::Symbol, path::AbstractString)::RouteResult
     clean = strip_query(path)
@@ -398,6 +398,8 @@ end
 # --- RouteResult helpers ---
 
 # Method bitmask: GET=1, POST=2, PUT=4, DELETE=8, PATCH=16, OPTIONS=32, HEAD=64.
+# `HEAD` is included only when an explicit `head!` route exists (no auto-HEAD
+# fallback), so `Allow` reflects exactly what the route serves.
 @inline function method_bitmask(mm::MethodMap)::UInt8
     mask = UInt8(0)
     mm.get     === nothing || (mask |= 0x01)
@@ -407,8 +409,6 @@ end
     mm.patch   === nothing || (mask |= 0x10)
     mm.options === nothing || (mask |= 0x20)
     mm.head    === nothing || (mask |= 0x40)
-    # HEAD is always served thanks to the auto-HEAD fallback on GET.
-    (mask & 0x40) == 0 && (mask & 0x01) != 0 && (mask |= 0x40)
     return mask
 end
 
@@ -425,16 +425,10 @@ end
     return join(allow, ", ")
 end
 
-# Resolve a method against a route's MethodMap, applying the auto-HEAD rule:
-# HEAD with no explicit HEAD endpoint falls back to the GET endpoint.
+# Resolve a method against a route's MethodMap. No auto-HEAD fallback: HEAD is
+# served only by an explicit `head!` endpoint.
 @inline function resolve_method(mm::MethodMap, method::Symbol)
-    ep = get_endpoint(mm, method)
-    ep !== nothing && return ep
-    if method === :head
-        gep = get_endpoint(mm, :get)
-        gep !== nothing && return gep
-    end
-    return nothing
+    return get_endpoint(mm, method)
 end
 
 @inline function _first_endpoint(mm::MethodMap)

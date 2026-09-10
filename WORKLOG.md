@@ -24,6 +24,29 @@
   Mongoose_jll + PrecompileTools` is already lean).
 - Examples/ stays gitignored/local (acceptance suite remains the CI-gate plan).
 - 0.5 window: breaking changes are fine, no deprecation aliases.
+- **Auto-HEAD REMOVED.** HEAD is served only by an explicit `head!` route;
+  unregistered HEAD answers `405` with `Allow` naming exactly the served
+  methods. Rationale (user decision, Sep 10): mongoose-C offers no
+  binary-length-aware native reply (`mg_http_reply` is printf/`strlen`-based),
+  so a spec-correct HEAD (`Content-Length` equal to the GET representation)
+  requires hand-framing that bypasses mongoose's framing state. Rather than
+  ship a trick, the feature is removed; the transport's only hand-framed
+  responses (binary bodies, streams) always advertise `Connection: close`.
+
+### Reliability hardening (Session: Sep 10 — uncommitted)
+
+- [ ] **R1** Hand-framed responses never rely on keep-alive reuse. Verified:
+      a raw `mg_send` frame wedges the socket for the next pooled request.
+      Binary `Vector{UInt8}` responses (and streams, already) advertise
+      `Connection: close`; string responses stay on native `mg_http_reply`.
+- [ ] **R2** Auto-HEAD removed (see Decisions); route/strip machinery deleted
+      from `router.jl`, `process.jl`, `compiled.jl`; explicit `head!` bodies
+      are stripped by the transport (`invoke_http` → RFC 9110 §3.1).
+- [ ] **R3** Blocking `start!` now runs the event loop on a task and waits on
+      it (Julia-safe point), so a *delivered* `InterruptException` (Ctrl+C)
+      unwinds to graceful shutdown. Caveat verified in-session: this sandbox's
+      Julia segfaults on SIGINT even for a bare `sleep`, so it cannot be
+      demonstrated here; docstring updated to state the dependency.
 
 ## Task list
 

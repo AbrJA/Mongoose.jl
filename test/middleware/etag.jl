@@ -75,6 +75,14 @@ end
     get!(s, "/data") do req
         text("etag me")
     end
+    get!(s, "/get-only") do req
+        text("no head here")
+    end
+    # HEAD must be registered explicitly (no auto-HEAD fallback); mirroring
+    # the GET body means it validates the same representation.
+    head!(s, "/data") do req
+        text("etag me")
+    end
     use!(s, etag())
     with_server(s) do port
         r = HTTP.get("http://127.0.0.1:$port/data"; status_exception=false)
@@ -87,5 +95,48 @@ end
         @test r2.status == 304
         @test isempty(r2.body)
         @test HTTP.header(r2, "ETag") == tag
+
+        # HEAD: same ETag as the GET (identical body), no body on the wire,
+        # mongoose-native Content-Length (0 on a HEAD).
+        r3 = HTTP.head("http://127.0.0.1:$port/data"; status_exception=false)
+        @test r3.status == 200
+        @test isempty(r3.body)
+        @test HTTP.header(r3, "ETag") == tag
+        @test HTTP.header(r3, "Content-Length") == "0"
+
+        # A GET-only route answers 405 on HEAD, with Allow naming GET only.
+        r4 = HTTP.head("http://127.0.0.1:$port/get-only"; status_exception=false)
+        @test r4.status == 405
+        @test occursin("GET", HTTP.header(r4, "Allow"))
+        @test !occursin("HEAD", HTTP.header(r4, "Allow"))
+    end
+end
+
+@testset "HEAD through compress + etag (live; explicit head! route)" begin
+    s = App()
+    get!(s, "/payload") do req
+        text(repeat("All partial functions are structured transformations. ", 20))
+    end
+    head!(s, "/payload") do req
+        text(repeat("All partial functions are structured transformations. ", 20))
+    end
+    use!(s, etag())          # registered outside compress: hashes wire bytes
+    use!(s, compress(min_size=64))
+    with_server(s) do port
+        # Fresh connection per probe (HTTP.jl gzip pooling wedges otherwise).
+        g = HTTP.get("http://127.0.0.1:$port/payload"; status_exception=false,
+                     headers=["Accept-Encoding" => "gzip", "Connection" => "close"],
+                     decompress=false)
+        @test HTTP.header(g, "Content-Encoding") == "gzip"
+        @test HTTP.header(g, "ETag") != ""
+
+        # HEAD with gzip: the representation headers (encoding + etag) survive
+        # the transport's body strip; no body on the wire.
+        h = HTTP.head("http://127.0.0.1:$port/payload"; status_exception=false,
+                      headers=["Accept-Encoding" => "gzip", "Connection" => "close"])
+        @test h.status == 200
+        @test isempty(h.body)
+        @test HTTP.header(h, "Content-Encoding") == "gzip"
+        @test HTTP.header(h, "ETag") == HTTP.header(g, "ETag")
     end
 end

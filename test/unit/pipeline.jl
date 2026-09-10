@@ -74,13 +74,35 @@ end
         @test resp.status == 204 && isempty(resp.body)
     end
 
-    @testset "HEAD on a raw-returning route has no body" begin
+    @testset "HEAD without an explicit route is 405 (generic & frozen)" begin
+        for frozen in (false, true)
+            r = Router()
+            get!(r, "/dict", req -> Dict("k" => 1))
+            frozen && freeze!(r)
+            rs = Dict{Int,Union{Response,Function}}()
+
+            resp = Mongoose.invoke_request(Mongoose.RequestContext(r; errors=rs),
+                Request(:head, "/dict", Dict{String,String}(), Pair{String,String}[], ""))
+            gresp = Mongoose.invoke_request(Mongoose.RequestContext(r; errors=rs),
+                Request(:get, "/dict", Dict{String,String}(), Pair{String,String}[], ""))
+
+            # No auto-HEAD fallback: HEAD on a GET-only route is 405 and the
+            # Allow header names only the methods the route serves.
+            @test gresp.status == 200
+            @test resp.status == 405
+            @test get(resp.headers, "allow", "") == "GET"
+        end
+    end
+
+    @testset "Explicit HEAD route: handler body preserved at the seam" begin
         r = Router()
-        get!(r, "/dict", req -> Dict("k" => 1))
+        head!(r, "/ping", req -> text("pong"))
         rs = Dict{Int,Union{Response,Function}}()
-        req = Request(:head, "/dict", Dict{String,String}(), Pair{String,String}[], "")
-        resp = Mongoose.invoke_request(Mongoose.RequestContext(r; errors=rs), req)
+        resp = Mongoose.invoke_request(Mongoose.RequestContext(r; errors=rs),
+            Request(:head, "/ping", Dict{String,String}(), Pair{String,String}[], ""))
+        # The seam preserves what the handler returned; the transport strips
+        # HEAD bodies before they reach the wire.
         @test resp.status == 200
-        @test isempty(resp.body)
+        @test String(resp.body) == "pong"
     end
 end
