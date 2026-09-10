@@ -29,7 +29,7 @@ include("errors.jl")        # RouteError/ServerError/BindError, HTTPError hierar
 include("ws_types.jl")      # Message, Intent, WsEndpoint, Tagged, WsConn
 include("validation.jl")    # validate(), ValidationError
 
-include("pipeline.jl")      # AbstractMiddleware, before/after, execute_pipeline
+include("pipeline.jl")      # AbstractMiddleware, as_middleware, execute_pipeline
 include("executor.jl")      # AbstractExecutor, SyncExecutor, submit!/start!/stop!
 
 include("interface.jl")     # AbstractRouter protocol
@@ -70,7 +70,7 @@ export AbstractRequest, Request, Headers, context, form, header, query, body,
     get_handler, get_endpoint, set_handler!, has_ws_routes, ws_endpoint, route_count,
     route!, ws!, group, group!, RouteGroup, mount!, post!, patch!, options!, head!,
     Endpoint, error_response, invoke_request, RequestContext, freeze!, isfrozen, terminal_for,
-    AbstractMiddleware, before, after, PathFilter, execute_pipeline, FunctionMiddleware, as_middleware,
+    AbstractMiddleware, PathFilter, execute_pipeline, FunctionMiddleware, as_middleware,
     AbstractExecutor, SyncExecutor, submit!, start!, stop!,
     AbstractTransport, supports_websocket, supports_tls, supports_streaming,
     Cors, Bearer, ApiKey, BasicAuth, RateLimit, Compress, Logger, Health,

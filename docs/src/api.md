@@ -47,6 +47,7 @@ RequestContext
 terminal_for
 error_response
 execute_pipeline
+as_middleware
 AbstractRequest
 ```
 

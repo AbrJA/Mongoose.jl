@@ -1,7 +1,10 @@
 """
     Middleware protocol — composable request/response pipeline.
 
-    Mongoose.jl uses the "onion" model: middleware wraps around the handler.
+    Middleware is a callable `(req, next) → response` that wraps around the
+    handler ("onion" model). `req` is the `Request`, `next` advances to the
+    following middleware (and finally the handler); returning a `Response`
+    without calling `next` short-circuits.
 
     # Implementing Middleware
 
@@ -18,26 +21,11 @@
     end
     ```
 
-    For simple cases, implement `before` and/or `after`:
-
-    ```julia
-    before(mw::MyMiddleware, req::Request) = nothing          # return Response to short-circuit
-    after(mw::MyMiddleware, req::Request, resp) = resp        # transform response
-    ```
+    Plain closures/functions work too: `use!`/`route!` wrap them via
+    `as_middleware` (see `FunctionMiddleware`). The tag type exists so the
+    pipeline can hold a typed stack (`Vector{AbstractMiddleware}`).
 """
 abstract type AbstractMiddleware end
-
-# --- Default invoke via before/after hooks ---
-
-function (mw::AbstractMiddleware)(req::Request, next::Function)
-    result = before(mw, req)
-    result !== nothing && return result
-    response = next()
-    return after(mw, req, response)
-end
-
-before(::AbstractMiddleware, ::Request) = nothing
-after(::AbstractMiddleware, ::Request, response) = response
 
 # --- PathFilter: restricts middleware to specific URI prefixes ---
 
@@ -71,6 +59,14 @@ function (mw::FunctionMiddleware)(req::Request, next::Function)
     return mw.f(req, next)
 end
 
+"""
+    as_middleware(mw) → AbstractMiddleware
+
+Normalize any middleware into an `AbstractMiddleware`: `AbstractMiddleware`
+instances pass through; any other callable `f(req, next)` is wrapped in a
+`FunctionMiddleware`. This is the single admission point used by `use!`, by
+`route!`/`group` `middleware=` metadata, and by `Endpoint`s.
+"""
 as_middleware(mw::AbstractMiddleware) = mw
 as_middleware(mw) = FunctionMiddleware(mw)
 
