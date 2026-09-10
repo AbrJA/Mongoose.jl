@@ -115,7 +115,7 @@
       timing sleeps: SSE mid-stream (`sleep(0.45)`), WS `on_open`
       (`sleep(0.1)`), WS `on_close` (`sleep(0.2)`). `timedwait` is only a
       hang-guard, never the sync. Sleeps that test the SUT's own timing
-      (ratelimit window expiry, per-request timeout) stay. *commit: (T13)*
+      (ratelimit window expiry, per-request timeout) stay. commit: `55c6db5`
 
 ### Phase 5 — Optional / post-release
 
@@ -182,7 +182,7 @@ OpenAPI-from-metadata · sessions/CSRF · HTTP/2 decision · docs build · 1.0.
   the registry IS the ownership; `close!` flips each stream's flags directly).
   `FakeStreamWriter` replaces `StreamWriterBuffer`. New exports: `FakeExecutor`,
   `run!`, `close!` (all added to api.md).
-- **T13 shipped** (this commit): deterministic test-sync. 849 tests + 73
+- **T13 shipped** (`55c6db5`): deterministic test-sync. 849 tests + 73
   acceptance + Aqua/JET + docs green. Note: `tryput!` does NOT exist in Julia
   1.12 Base → tiny `signal(::Channel)` helper (non-blocking one-shot put).
   Deliberately deferred: per-file watchdog in `runtests_stream.jl` (killing a
