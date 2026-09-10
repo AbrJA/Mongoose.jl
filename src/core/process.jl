@@ -99,8 +99,6 @@ end
 
 # --- Allow header for 405 (RFC 9110 §15.5.6) — single source: the bitmask ---
 
-@inline _allow_header(mm::MethodMap) = allow_from_bitmask(method_bitmask(mm))
-
 @inline function _method_not_allowed(mask::UInt8)
     return Response(Plain, "405 Method Not Allowed"; status=405,
         headers=["Allow" => allow_from_bitmask(mask)])

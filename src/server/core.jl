@@ -114,34 +114,6 @@ end
 # --- App — unified server type ---
 
 """
-    App — Mongoose.jl web application.
-
-    Use `workers=0` for sync (default) or `workers=N` for async worker pool.
-
-    # Constructors
-    ```julia
-    app = App()                          # sync, dynamic router
-    app = App(workers=4)                 # async, 4 workers
-    app = App(workers=4, queuesize=2048) # async with larger queue
-    app = App(router=my_router)          # bring-your-own router
-    ```
-
-    # Configuration keyword arguments
-    | Keyword         | Default        | Description                                  |
-    |-----------------|----------------|----------------------------------------------|
-    | `workers`       | `0`            | Worker threads (0 = sync)                    |
-    | `queuesize`     | `1024`         | Max pending requests (async only)            |
-    | `poll_timeout`  | `1`            | Mongoose poll interval (ms)                  |
-    | `max_body`      | `MAX_BODY`     | Max request body size (bytes)                |
-    | `drain_timeout` | `DRAIN_TIMEOUT`| Graceful shutdown drain (ms)                 |
-    | `request_timeout`| `0`           | Per-request timeout ms (0 = disabled)        |
-    | `ws_max_frame`  | `MAX_BODY`     | Max WebSocket frame size (bytes)             |
-    | `ws_idle_timeout`| `0`           | WS idle timeout ms (0 = disabled)            |
-    | `router`        | `Router()`     | Custom router instance                       |
-    | `tls`           | `nothing`      | `TLSConfig` for HTTPS                        |
-"""
-
-"""
     RunState — per-instance mutable runtime, owned by App.
 
     Everything that changes while the server runs lives here: connection

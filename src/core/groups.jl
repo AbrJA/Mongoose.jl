@@ -110,17 +110,6 @@ end
 # --- Registration: flatten groups into a Router ---
 
 """
-    route!(router, group)
-
-Register all routes from a group (and its children) into a router.
-Middleware from groups is composed with any server-level middleware at dispatch time.
-"""
-function register_group!(router, g::RouteGroup, parent_prefix::String="",
-                         parent_middleware::Vector{AbstractMiddleware}=AbstractMiddleware[])
-    mount!(router, g, parent_prefix, parent_middleware)
-end
-
-"""
     mount!(router_or_app, group)
 
 Mount a `RouteGroup` into a router or app, registering all its routes with

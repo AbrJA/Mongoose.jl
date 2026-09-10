@@ -91,12 +91,6 @@ end
 @inline set_handler!(mm::MethodMap, method::Symbol, handler::Function) =
     set_handler!(mm, method, Endpoint(handler))
 
-@inline function has_any_handler(mm::MethodMap)::Bool
-    return mm.get !== nothing || mm.post !== nothing || mm.put !== nothing ||
-           mm.delete !== nothing || mm.patch !== nothing || mm.options !== nothing ||
-           mm.head !== nothing
-end
-
 # --- Fixed Route ---
 
 struct FixedRoute

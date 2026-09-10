@@ -341,7 +341,7 @@ use!(app, basicauth("admin", ENV["ADMIN_PASSWORD"]))
 
 # Rate limiting (private-keyed; trust proxy headers only behind your proxy)
 use!(app, ratelimit(max_requests=100, window_seconds=60; trust_proxies=false))
-use!(app, ratelimit(max_requests=100, key_fn=req -> req.headers_get("x-api-key")))
+use!(app, ratelimit(max_requests=100, key_fn=req -> get(req.headers, "x-api-key", "")))
 
 # CORS: allowlist + credentials, preflight-validated
 use!(app, cors(origins=["https://myapp.com"], allow_credentials=true))
@@ -532,9 +532,9 @@ them; a custom executor can carry its own concurrency policy.
 ### Transport
 
 `AbstractTransport` declares capabilities via trait functions
-(`supports_websocket`, `supports_tls`, `supports_streaming`). The default
-`MongooseTransport` wraps the C library; `FakeTransport` runs everything in
-pure Julia — that is what `TestClient` is.
+(`supports_websocket`, `supports_tls`, `supports_streaming`). The C transport
+(`transport/mongoose`) wraps the Mongoose C library; `FakeTransport` runs
+everything in pure Julia — that is what `TestClient` is.
 
 ---
 

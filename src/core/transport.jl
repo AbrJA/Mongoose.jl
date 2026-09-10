@@ -1,21 +1,25 @@
 """
     AbstractTransport — replaceable I/O transport.
 
-    The transport is the last FFI boundary. It converts external events into
+    The transport is the last FFI boundary: it converts external events into
     `MongooseCore` objects and responses into bytes/frames, and the runtime
     never sees `Ptr{Cvoid}`.
 
-    # Contract (full extraction is a later iteration; these are the seams)
+    Today the transport is a **capability-tagged seam** rather than a callable
+    interface: implementations declare what they can do via the `supports_*`
+    traits, and the server drives the one C implementation
+    (`transport/mongoose`). A reference fake (`FakeTransport`, in
+    `testing.jl`) drives the whole pipeline with no FFI, which is what
+    `TestClient` uses.
 
-    - lifecycle: `init!(transport, app) → transport`, `close!(transport, app)`
-    - listen:    `listen!(transport, app, host, port) → url`
-    - event loop:`poll!(transport, app, timeout_ms)` — a single driver step
-    - sending:   `send_http!(transport, conn, response)`,
-                 `send_ws!(transport, conn, frame)`
-
-    The C implementation lives in `transport/mongoose`. A reference fake
-    (`FakeTransport`, in `testing.jl`) drives the whole pipeline with no FFI,
-    which is what `TestClient` uses.
+    The C transport's concrete lifecycle entry points (used by `start!` /
+    `shutdown!`) are `init_server!`, `bind_server!`,
+    `spawn_event_loop!`/`stop_event_loop!`, and its send path is
+    `send_http_response!`/`send_ws_frame!`/`send_stream_response!` in
+    `transport/mongoose`. Extracting a full `init!/listen!/poll!/send!`
+    interface behind `AbstractTransport` is tracked as deferred work
+    (see WORKLOG, T9): there is a single real implementation today, and the
+    trait seam already delivers the replaceability guarantee.
 
     # Capability traits
 

@@ -189,11 +189,11 @@ minimize lock contention under concurrent load.
 
 # Example
 ```julia
-server = Async(router; nworkers=4)
-use!(server, health())
-use!(server, metrics())   # exposes GET /metrics
+app = App(workers=4)
+use!(app, health())
+use!(app, metrics())   # exposes GET /metrics
 
-start!(server, port=8080)
+start!(app; port=8080)
 ```
 
 Prometheus `scrape_configs`:

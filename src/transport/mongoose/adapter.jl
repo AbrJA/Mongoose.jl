@@ -49,22 +49,6 @@ end
     return occursin("chunked", te) ? decode_chunked(raw) : raw
 end
 
-"""
-    adapt_request_minimal(msg::MgHttpMessage) → Request
-
-Minimal adapter for WebSocket upgrade — only method, URI, query, and headers.
-Skips body parsing (WebSocket upgrade requests have no meaningful body).
-"""
-function adapt_request_minimal(msg::MgHttpMessage)::Request
-    method = parse_method(msg.method)
-    uri = to_string(msg.uri)
-    query_str = to_string(msg.query)
-    query = parse_query(query_str)
-    headers = parse_headers(msg)
-    path = String(strip_query(uri))
-    return Request(method, uri, path, query, headers, "", nothing, nothing)
-end
-
 # --- Remote address (peer IP for per-client rate limiting, logs, …) ---
 
 """

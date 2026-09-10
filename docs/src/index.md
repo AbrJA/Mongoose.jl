@@ -64,7 +64,7 @@ Mongoose.jl is layered so each boundary is a replacement point:
 │  MongooseCore (protocol, router, types)  │
 ├──────────────────────────────────────────┤
 │  Transport (<: AbstractTransport)        │
-│    - MongooseTransport (C FFI, default)  │
+│    - C transport (Mongoose FFI)          │
 │    - FakeTransport (no FFI, for tests)   │
 └──────────────────────────────────────────┘
 ```
