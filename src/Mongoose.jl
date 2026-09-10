@@ -5,16 +5,16 @@ using PrecompileTools
 import JSON
 using CodecZlib
 
-export App, ServerConfig, Router, AbstractRouter, Request, AbstractRequest,
-    Response, StreamResponse,
-    Plain, Html, Json, Css, Js, Xml, Binary, mime, content_type_pair, encode, decode,
-    status_reason,
+# The facade exports the user-facing surface only. Extension protocols (router:
+# match_route/get_handler/…; pipeline: terminal_for/execute_pipeline/…; formats:
+# encode/decode/mime; string utilities) live in MongooseCore — implementers use
+# `import Mongoose: X` or `Mongoose.MongooseCore.X`.
+export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
+    Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, use!, serve!, onerror!, onstart!, onstop!,
     context, Cookie, Headers, bake, cookies, form, header,
     ws!, Message,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
-    Cors, Bearer, ApiKey, BasicAuth, RateLimit, Logger, Health,
-    PrometheusMetrics, SecurityHeaders, Compress, Etag,
     RouteError, ServerError, BindError,
     HTTPError, error_status,
     BadRequestError, UnauthorizedError, PaymentRequiredError, ForbiddenError,
@@ -30,19 +30,14 @@ export App, ServerConfig, Router, AbstractRouter, Request, AbstractRequest,
     AbstractExecutor, SyncExecutor, AsyncExecutor, FakeExecutor, run!, submit!, stop!, haspending,
     AbstractTransport, FakeTransport, TestClient, close!,
     supports_websocket, supports_tls, supports_streaming,
-    AbstractMiddleware, FunctionMiddleware, PathFilter, as_middleware, execute_pipeline,
-    MethodMap, RouteResult, Matched, NotFound, MethodNotAllowed, SingleEndpoint, Endpoint,
-    match_route, match_route_exact, get_handler, get_endpoint, set_handler!,
-    has_ws_routes, ws_endpoint, route_count,
+    AbstractMiddleware,
     group, group!, RouteGroup, mount!,
     freeze!, isfrozen,
-    RequestContext, invoke_request, error_response, terminal_for,
+    RequestContext, invoke_request,
     SSEWriter, emit, sse,
     json, html, text, redirect,
     post!, patch!, options!, head!,
     query, body, multipart, MultipartFile,
-    Intent, WsEndpoint, WsConn, Tagged,
-    parse_query, strip_query, format_headers, sanitize_header_value, to_lower, url_decode,
     validate, ValidationError
 
 # ══════════════════════════════════════════════════════════════════════════════

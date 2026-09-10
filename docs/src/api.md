@@ -4,6 +4,13 @@
 CurrentModule = Mongoose
 ```
 
+> **Public vs extension API.** `using Mongoose` gives the application-facing
+> surface (servers, requests, responses, middleware builders, helpers). The
+> extension protocols below (router protocol, pipeline seam, format encoding,
+> string utilities) are exported by `Mongoose.MongooseCore` and are reachable
+> as `Mongoose.<name>` or via `import Mongoose: <name>` — both work without
+> being re-exported at the top level, keeping the user namespace clean.
+
 ## App
 
 ```@docs
