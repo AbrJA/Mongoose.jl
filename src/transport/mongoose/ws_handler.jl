@@ -22,13 +22,17 @@ end
 # --- Connection tracking ---
 
 @inline function ws_touch!(server::AbstractServer, conn_id::Int)
-    entry = get(server.runtime.ws_clients, conn_id, nothing)
-    entry === nothing && return
-    entry.last_active = time()
+    lock(server.runtime.ws_lock) do
+        entry = get(server.runtime.ws_clients, conn_id, nothing)
+        entry === nothing && return
+        entry.last_active = time()
+    end
 end
 
 @inline function ws_register!(server::AbstractServer, conn_id::Int, uri::String, conn::MgConnection)
-    server.runtime.ws_clients[conn_id] = WsConn(uri, time(), false)
+    lock(server.runtime.ws_lock) do
+        server.runtime.ws_clients[conn_id] = WsConn(uri, time(), false)
+    end
     # Track the connection so idle sweeps can send close frames in sync mode
     # too (async mode also inserts it, but the mapping is mode-agnostic now).
     server.runtime.connections[conn_id] = conn
@@ -90,13 +94,17 @@ function on_ws_message(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
 
     if msg.data.len > server.config.ws_max_frame
         mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
-        entry = get(server.runtime.ws_clients, conn_id, nothing)
-        entry !== nothing && (entry.closing = true)
+        lock(server.runtime.ws_lock) do
+            entry = get(server.runtime.ws_clients, conn_id, nothing)
+            entry !== nothing && (entry.closing = true)
+        end
         return
     end
 
     ws_msg = parse_ws_message(msg)
-    uri = let e = get(server.runtime.ws_clients, conn_id, nothing); e === nothing ? "" : e.uri end
+    uri = lock(server.runtime.ws_lock) do
+        let e = get(server.runtime.ws_clients, conn_id, nothing); e === nothing ? "" : e.uri end
+    end
 
     if server.executor isa AsyncExecutor
         # Async: submit the dispatch as a job to the worker pool
@@ -128,7 +136,9 @@ function on_connection_close(server::AbstractServer, conn::MgConnection, ::Ptr{C
 end
 
 function close_ws!(server::AbstractServer, conn_id::Int)
-    entry = pop!(server.runtime.ws_clients, conn_id, nothing)
+    entry = lock(server.runtime.ws_lock) do
+        pop!(server.runtime.ws_clients, conn_id, nothing)
+    end
     uri = entry === nothing ? nothing : entry.uri
 
     if uri !== nothing
@@ -148,17 +158,44 @@ end
 function ws_idle_sweep!(server::AbstractServer)
     now = time()
     timeout = Float64(server.config.ws_idle_timeout)
-    to_close = Int[]
-    for (id, entry) in server.runtime.ws_clients
-        if (now - entry.last_active) > timeout
-            push!(to_close, id)
+    to_close = lock(server.runtime.ws_lock) do
+        to_close = Int[]
+        for (id, entry) in server.runtime.ws_clients
+            if (now - entry.last_active) > timeout
+                push!(to_close, id)
+            end
         end
+        return to_close
     end
     for id in to_close
         conn = get(server.runtime.connections, id, nothing)
         conn !== nothing && mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
         close_ws!(server, id)
     end
+end
+
+"""
+    ws_send_all(server, path, data)
+
+Server-initiated WebSocket push: enqueue a text frame for every open client of
+`path` (async executors only — the frame is routed through the same reply
+queue the worker pool uses, so it is sent on the poll/callback thread and is
+safe to call from any task). Idle/closed clients are skipped naturally: a stale
+conn id is dropped when drained.
+"""
+function ws_send_all(server::AbstractServer, path::AbstractString, data::AbstractString)
+    exec = server.executor
+    exec isa AsyncExecutor || return nothing
+    isopen(exec.replies) || return nothing
+    ids = lock(server.runtime.ws_lock) do
+        Int[id for (id, e) in server.runtime.ws_clients if e.uri == path]
+    end
+    frame = Message(String(data))
+    for id in ids
+        isopen(exec.replies) || break
+        put!(exec.replies, Tagged{Union{Response,StreamResponse,Message}}(id, frame))
+    end
+    return nothing
 end
 
 # --- WS Dispatch ---

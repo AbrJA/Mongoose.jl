@@ -128,6 +128,7 @@ mutable struct RunState
     manager::Manager
     tls::Union{Nothing,TLSConfig}
     ws_clients::Dict{Int,WsConn}
+    ws_lock::Threads.SpinLock     # guards ws_clients (mutated on the poll thread)
     id_seq::Threads.Atomic{UInt64}       # X-Request-Id sequence
     conn_seq::Threads.Atomic{UInt64}     # Async connection id sequence
     connections::Dict{Int,MgConnection}  # Transport-side in-flight (async): id → conn
@@ -136,7 +137,7 @@ mutable struct RunState
 end
 
 RunState() = RunState(Threads.Atomic{Bool}(false), nothing, Manager(empty=true), nothing,
-    Dict{Int,WsConn}(), Threads.Atomic{UInt64}(0), Threads.Atomic{UInt64}(0),
+    Dict{Int,WsConn}(), Threads.SpinLock(), Threads.Atomic{UInt64}(0), Threads.Atomic{UInt64}(0),
     Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(), Task[])
 
 """
