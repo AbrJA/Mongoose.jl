@@ -1,7 +1,7 @@
 """
     Request processing pipeline — the transport-agnostic request seam.
 
-    `invokerequest(ctx::RequestContext, req)` turns a `Kernel.Request`
+    `process(ctx::RequestContext, req)` turns a `Kernel.Request`
     into a `Response`. It has no dependency on a server or on FFI types, so it
     can be exercised standalone (and by `TestClient`), and any transport (the C
     Mongoose adapter today, or a future pure-Julia one) can simply call it from
@@ -46,7 +46,7 @@ end
 """
     RequestContext{R,M,E,S,H} — the app-level request-processing bundle.
 
-    Collapses the config that `invokerequest` needs into one object so the
+    Collapses the config that `process` needs into one object so the
     pipeline seam has a single argument: the router, the app-global middleware
     stack, the status→error-page map, the DI services, and the typed exception
     handlers.
@@ -59,7 +59,7 @@ end
     Standalone use (no server):
     ```julia
     ctx = RequestContext(router; errors=errs, services=(db=pool,))
-    resp = invokerequest(ctx, Request(:get, "/", Dict{String,String}(), Pair{String,String}[], ""))
+    resp = process(ctx, Request(:get, "/", Dict{String,String}(), Pair{String,String}[], ""))
     ```
 """
 struct RequestContext{R<:AbstractRouter,
@@ -167,7 +167,7 @@ function _apply_head_semantics(result)::Union{Response,StreamResponse}
 end
 
 """
-    invokerequest(ctx::RequestContext, request) → Response
+    process(ctx::RequestContext, request) → Response
 
 Run the full pipeline: attach services to the request context, dispatch the
 request through any middleware then the router, apply custom error responses
@@ -184,7 +184,7 @@ Middleware is composed with the matched route's scoped `Endpoint` middleware
 the 404/405 producers — so interception middleware (CORS, health,
 metrics) observes all requests.
 """
-function invokerequest(ctx::RequestContext, request::Request)::Union{Response,StreamResponse}
+function process(ctx::RequestContext, request::Request)::Union{Response,StreamResponse}
     if !isempty(ctx.services)
         c = context(request)
         c[:_services] = ctx.services
@@ -195,11 +195,11 @@ function invokerequest(ctx::RequestContext, request::Request)::Union{Response,St
             # Compiled path: scoped middleware is already fused into the terminal,
             # so the baked global stack wraps it directly.
             isempty(ctx.middlewares) ? terminal(request) :
-                executepipeline(ctx.middlewares, request, terminal)
+                runpipeline(ctx.middlewares, request, terminal)
         else
             # Generic path: global stack + route-scoped stack, walked with a
             # single cursor (no per-request [global; scoped] concatenation).
-            executepipeline(ctx.middlewares, scoped, request, terminal)
+            runpipeline(ctx.middlewares, scoped, request, terminal)
         end
 
         # Auto-serialize non-Response returns (String/Dict/bytes/nothing/…).

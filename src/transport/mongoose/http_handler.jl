@@ -1,7 +1,7 @@
 """
     HTTP event handler — the hot path from C event → Request → Response → send.
 
-    The dispatch pipeline itself (`invokerequest`, `dispatch_to_handler`,
+    The dispatch pipeline itself (`process`, `dispatch_to_handler`,
     `errorresponse`) lives in `Kernel`; this file binds it to the
     transport/server.
 """
@@ -171,7 +171,7 @@ end
 # --- HTTP dispatch (thin transport wrapper over the core pipeline) ---
 
 function invoke_http(server::AbstractServer, req::Request)::Union{Response,StreamResponse}
-    res = invokerequest(server.context, req)
+    res = process(server.context, req)
     # HEAD responses must not carry a body (RFC 9110 §3.1). An explicit HEAD
     # endpoint may return a body from its handler, which would be sent as-is —
     # strip it here and let mongoose frame the empty body natively

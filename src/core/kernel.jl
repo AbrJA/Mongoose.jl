@@ -11,7 +11,7 @@
 
     The availability of this layer is what makes the transport replaceable —
     anything in `Kernel` can be exercised with pure Julia (see
-    `Kernel.invokerequest` for the request→response seam).
+    `Kernel.process` for the request→response seam).
 """
 module Kernel
 
@@ -29,7 +29,7 @@ include("errors.jl")        # RouteError/ServerError/BindError, HTTPError hierar
 include("ws_types.jl")      # Message, Intent, WsEndpoint, Tagged, WsConn
 include("validation.jl")    # validate(), ValidationError
 
-include("pipeline.jl")      # AbstractMiddleware, asmiddleware, executepipeline
+include("pipeline.jl")      # AbstractMiddleware, asmiddleware, runpipeline
 include("executor.jl")      # AbstractExecutor, SyncExecutor, submit!/start!/stop!
 
 include("interface.jl")     # AbstractRouter protocol
@@ -37,7 +37,7 @@ include("transport.jl")     # AbstractTransport + capability traits
 include("router.jl")        # Default Router (method map + ordered patterns)
 include("groups.jl")        # RouteGroup + mount!
 include("compiled.jl")      # Compiled frozen-route dispatch (freeze! table)
-include("process.jl")       # invokerequest — the transport-agnostic seam
+include("process.jl")       # process — the transport-agnostic seam
 include("streaming.jl")     # SSEWriter/emit/sse — SSE producer over StreamResponse
 
 include("cors.jl")
@@ -71,8 +71,8 @@ export AbstractRequest, Request, Headers, context, form, header, query, body,
     SingleEndpoint, matchroute, hasroute,
     gethandler, getendpoint, sethandler!, haswsroutes, wsendpoint,
     route!, ws!, group, group!, RouteGroup, mount!, post!, patch!, options!, head!,
-    Endpoint, errorresponse, invokerequest, RequestContext, freeze!, isfrozen, terminalfor,
-    AbstractMiddleware, PathFilter, executepipeline, FunctionMiddleware, asmiddleware,
+    Endpoint, errorresponse, process, RequestContext, freeze!, isfrozen, terminalfor,
+    AbstractMiddleware, PathFilter, runpipeline, FunctionMiddleware, asmiddleware,
     AbstractExecutor, SyncExecutor, FakeExecutor, run!, submit!, start!, stop!,
     AbstractTransport, supportsws, supportstls, supportsstream,
     Cors, Bearer, ApiKey, BasicAuth, RateLimit, Compress, Logger, Health,

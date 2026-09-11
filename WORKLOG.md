@@ -88,8 +88,8 @@
         `supportstream` (the file had drifted: exports said `supportsstream`,
         the impl said `supportsstreaming`).
       - Zero-underscore goal reached across both exported surfaces:
-        `invoke_request` → `invokerequest`, `execute_pipeline` →
-        `executepipeline`, `terminal_for` → `terminalfor`, `error_response` →
+        `invoke_request` → `process`, `execute_pipeline` →
+        `runpipeline`, `terminal_for` → `terminalfor`, `error_response` →
         `errorresponse`, `error_status` → `errorstatus`, `status_reason` →
         `statusreason`, `parse_query` → `parsequery`, `strip_query` →
         `stripquery`, `format_headers` → `formatheaders`, `url_decode` →
@@ -134,7 +134,7 @@
       `onerror!` handlers and `onerror!(app, status)` pages take precedence);
       unhandled `ValidationError` now defaults to **422** (was 500).
       *commit: `e9d0977`*
-- [x] **T6** `RequestContext` seam — `invokerequest(ctx, req)` collapses the
+- [x] **T6** `RequestContext` seam — `process(ctx, req)` collapses the
       5-arg signature; the context bundles router + middleware stack + error
       pages + DI services + typed exception handlers. Typed-exception dispatch
       (`onerror!`), the built-in `HTTPError`/`ValidationError` mapping, and the
@@ -229,10 +229,10 @@ ETag/conditional requests~~ **shipped** · OpenAPI-from-metadata · sessions/CSR
   forbids subtyping concrete types) → explicit 422 branch in `invoke_guarded`
   instead. Docs: `HTTPError`/`errorstatus` added to api.md Errors section.
 - **T6 shipped** (`5d72d9e`): RequestContext seam. 811 tests + 73 acceptance
-  + Aqua/JET + docs green. `invokerequest(ctx, req)` is the single pipeline
+  + Aqua/JET + docs green. `process(ctx, req)` is the single pipeline
   seam; typed-exception dispatch + HTTPError/ValidationError mapping moved from
   the transport into core. `invoke_guarded` DELETED (its logic is now inside
-  `invokerequest`). App gained a `context::RequestContext` field mirroring its
+  `process`). App gained a `context::RequestContext` field mirroring its
   live containers (mutable Dict/Vector refs are shared, so `use!`/`onerror!`
   need no context refresh — only `service!` rebuilds it, since services are a
   snapshot NamedTuple). Trade-off accepted: `App.context` is abstract-typed →
@@ -245,7 +245,7 @@ ETag/conditional requests~~ **shipped** · OpenAPI-from-metadata · sessions/CSR
   `asmiddleware` docstring added (and to api.md).
 - **T8 shipped** (`716e9d4`): baked-tuple global middleware. 811 tests + 73
   acceptance + Aqua/JET + docs green. `RequestContext.middlewares` is a Tuple
-  (baked at construct; `use!`/`service!` re-snapshot). `executepipeline` gained
+  (baked at construct; `use!`/`service!` re-snapshot). `runpipeline` gained
   a 4-arg form walking globals+scoped with one cursor over the virtual
   concatenation → the per-request `[global; scoped]` allocation is removed.
   Kept `App.middlewares::Vector` as the build-phase registration buffer. Scope

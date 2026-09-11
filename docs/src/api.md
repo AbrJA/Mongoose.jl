@@ -49,11 +49,11 @@ head!
 ## Request Processing
 
 ```@docs
-invokerequest
+process
 RequestContext
 terminalfor
 errorresponse
-executepipeline
+runpipeline
 asmiddleware
 AbstractRequest
 ```

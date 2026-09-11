@@ -6,7 +6,7 @@ import JSON
 using CodecZlib
 
 # The facade exports the user-facing surface only. Extension protocols (router:
-# matchroute/gethandler/…; pipeline: terminalfor/executepipeline/…; formats:
+# matchroute/gethandler/…; pipeline: terminalfor/runpipeline/…; formats:
 # encode/decode/mime; string utilities) live in Kernel — implementers use
 # `import Mongoose: X` or `Mongoose.Kernel.X`.
 export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
@@ -33,7 +33,7 @@ export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamRespo
     AbstractMiddleware,
     group, group!, RouteGroup, mount!,
     freeze!, isfrozen,
-    RequestContext, invokerequest,
+    RequestContext, process,
     SSEWriter, emit, sse,
     json, html, text, redirect,
     post!, patch!, options!, head!,
@@ -133,7 +133,7 @@ end
         raddr_req = Request(:get, "/who", Dict{String,String}(), Pair{String,String}[],
             "", nothing, "10.1.2.3")
         route!(router, :get, "/who", req -> req.remote_addr)
-        invokerequest(RequestContext(router), raddr_req)
+        process(RequestContext(router), raddr_req)
 
         # --- String utilities ---
         Kernel.sanitize_header_value("abc-123")
@@ -163,8 +163,8 @@ end
         get!(thrower, "/gone") do r; throw(NotFoundError("user 7")) end
         req_bad = Request(:get, "/bad", Dict{String,String}(), Pair{String,String}[], "")
         req_gone = Request(:get, "/gone", Dict{String,String}(), Pair{String,String}[], "")
-        invokerequest(thrower.context, req_bad)
-        invokerequest(thrower.context, req_gone)
+        process(thrower.context, req_bad)
+        process(thrower.context, req_gone)
 
         # --- Frozen-router dispatch (compiled table + terminals) ---
         frozen = Router()
@@ -176,8 +176,8 @@ end
         matchroute(frozen, :get, "/users/1")
         matchroute(frozen, :get, "/files/a/b")
         frozen_ctx = RequestContext(frozen)
-        invokerequest(frozen_ctx, req)
-        invokerequest(frozen_ctx,
+        process(frozen_ctx, req)
+        process(frozen_ctx,
             Request(:get, "/users/7", Dict{String,String}(), Pair{String,String}[], ""))
 
         # --- Event dispatch ---

@@ -2,7 +2,7 @@
 # path, plus the AOT/trim-friendly contract (freeze! → per-route codegen via
 # `terminalfor`).
 
-import Mongoose: AbstractMiddleware, matchroute, freeze!, invokerequest,
+import Mongoose: AbstractMiddleware, matchroute, freeze!, process,
     terminalfor, isfrozen, RouteError, RequestContext
 
 mkreq(method, path) = Request(method, path, Dict{String,String}(),
@@ -89,8 +89,8 @@ const ERRORS = Dict{Int,Union{Response,Function}}()
 
     for (method, path) in probes
         req = mkreq(method, path)
-        rf_resp = invokerequest(mkctx(rf), req)
-        rg_resp = invokerequest(mkctx(rg), req)
+        rf_resp = process(mkctx(rf), req)
+        rg_resp = process(mkctx(rg), req)
         @test rf_resp.status == rg_resp.status
         @test rf_resp.body == rg_resp.body
     end
@@ -107,15 +107,15 @@ end
     post!(r, "/api/orders/:id::Int/cancel") do req, id; text("cancel:$id") end
     freeze!(r)
 
-    resp = invokerequest(mkctx(r), mkreq(:get, "/api/orders/1"))
+    resp = process(mkctx(r), mkreq(:get, "/api/orders/1"))
     @test resp.status == 200
     @test String(resp.body) == "get:1"
 
-    resp = invokerequest(mkctx(r), mkreq(:post, "/api/orders/1/payments"))
+    resp = process(mkctx(r), mkreq(:post, "/api/orders/1/payments"))
     @test resp.status == 200
     @test String(resp.body) == "pay:1"
 
-    resp = invokerequest(mkctx(r), mkreq(:post, "/api/orders/1"))
+    resp = process(mkctx(r), mkreq(:post, "/api/orders/1"))
     @test resp.status == 405
     allow = get(resp.headers, "allow", "")
     @test occursin("GET", allow) && !occursin("POST", allow)
@@ -157,7 +157,7 @@ end
 
     # Empty frozen router → 404 through the compiled path.
     re = freeze!(Router())
-    resp = invokerequest(mkctx(re),
+    resp = process(mkctx(re),
         mkreq(:get, "/anything"))
     @test resp.status == 404
 
@@ -175,7 +175,7 @@ end
     freeze!(r)
 
     passthrough = _PassMw("global", sink)
-    resp = invokerequest(mkctx(r; mws=AbstractMiddleware[passthrough]),
+    resp = process(mkctx(r; mws=AbstractMiddleware[passthrough]),
         mkreq(:get, "/scop"))
     @test resp.status == 200
     @test resp.body == "ok"
@@ -188,9 +188,9 @@ end
     rgo = _sample_router!(Router())
     for (method, path) in [(:get, "/health"), (:get, "/users/42"),
                            (:head, "/org/julia/repo/mongoose"), (:get, "/nope")]
-        rf_resp = invokerequest(mkctx(rf; mws=AbstractMiddleware[_PassMw("g", sink)]),
+        rf_resp = process(mkctx(rf; mws=AbstractMiddleware[_PassMw("g", sink)]),
             mkreq(method, path))
-        rg_resp = invokerequest(mkctx(rgo; mws=AbstractMiddleware[_PassMw("g", sink)]),
+        rg_resp = process(mkctx(rgo; mws=AbstractMiddleware[_PassMw("g", sink)]),
             mkreq(method, path))
         @test rf_resp.status == rg_resp.status
         @test rf_resp.body == rg_resp.body
@@ -201,13 +201,13 @@ end
     r = Router()
     get!(r, "/svc", req -> text(string(service(req, Val(:db)))))
     freeze!(r)
-    resp = invokerequest(mkctx(r; svcs=(db=42,)),
+    resp = process(mkctx(r; svcs=(db=42,)),
         mkreq(:get, "/svc"))
     @test String(resp.body) == "42"
 
     errs = Dict{Int,Union{Response,Function}}(
         404 => Response(Plain, "custom 404"; status=404))
-    resp = invokerequest(mkctx(r; errs=errs),
+    resp = process(mkctx(r; errs=errs),
         mkreq(:get, "/missing"))
     @test resp.status == 404
     @test String(resp.body) == "custom 404"

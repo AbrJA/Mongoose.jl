@@ -30,7 +30,7 @@ Base.showerror(io::IO, e::StreamClosedError) = print(io, "StreamClosedError: ", 
     FakeTransport — reference transport that runs the pipeline with no FFI.
 
     A `TestClient` really is a fake transport: it dispatches requests directly
-    through the middleware pipeline and router (`invokerequest`), bypassing
+    through the middleware pipeline and router (`process`), bypassing
     the C event loop entirely. It declares its capabilities via the ability
     traits (`supportsws`, `supportstls`, `supportsstream`): no WebSocket,
     no TLS, streaming supported. It can

@@ -73,8 +73,8 @@ asmiddleware(mw) = FunctionMiddleware(mw)
 # --- Pipeline execution ---
 
 """
-    executepipeline(middlewares, request, handler) → Response
-    executepipeline(globals, scoped, request, handler) → Response
+    runpipeline(middlewares, request, handler) → Response
+    runpipeline(globals, scoped, request, handler) → Response
 
 Run the middleware onion around `handler`: each middleware receives
 `(request, next)`; `next` advances to the following middleware and finally the
@@ -90,7 +90,7 @@ per request.
 `handler` may be any 0-arity callable (`Function` or functor) — the compiled
 dispatch path passes pre-baked terminal functors.
 """
-@inline function executepipeline(middlewares, req::Request,
+@inline function runpipeline(middlewares, req::Request,
                                   handler)
     n = length(middlewares)
     n == 0 && return handler(req)
@@ -103,7 +103,7 @@ dispatch path passes pre-baked terminal functors.
     return next()
 end
 
-@inline function executepipeline(globals, scoped::AbstractVector{<:AbstractMiddleware},
+@inline function runpipeline(globals, scoped::AbstractVector{<:AbstractMiddleware},
                                   req::Request, handler)
     ng, ns = length(globals), length(scoped)
     total = ng + ns

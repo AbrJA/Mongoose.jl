@@ -68,7 +68,7 @@ end
 # Wrap a 0-arity terminal in its route-scoped middleware (once, at freeze).
 @inline function _wrap_scoped(inner::Function, mws::Vector{AbstractMiddleware})::Function
     isempty(mws) && return inner
-    return (req) -> executepipeline(mws, req, inner)
+    return (req) -> runpipeline(mws, req, inner)
 end
 
 # Bake a fixed-route action: concrete handler type captured in `Terminal`.
@@ -112,7 +112,7 @@ struct ScopedParamCall{P,F}
     plain::F
 end
 (spc::ScopedParamCall{P,F})(req::Request, p::P) where {P,F} =
-    executepipeline(spc.mws, req, BoundParams{typeof(spc.plain), P}(spc.plain, p))
+    runpipeline(spc.mws, req, BoundParams{typeof(spc.plain), P}(spc.plain, p))
 
 # --- Compiled nodes ---
 
