@@ -2,7 +2,7 @@
 # path, plus the AOT/trim-friendly contract (freeze! → per-route codegen via
 # `terminal_for`).
 
-import Mongoose: AbstractMiddleware, match_route, freeze!, invoke_request,
+import Mongoose: AbstractMiddleware, matchroute, freeze!, invoke_request,
     terminal_for, isfrozen, RouteError, RequestContext
 
 mkreq(method, path) = Request(method, path, Dict{String,String}(),
@@ -121,21 +121,21 @@ end
     @test occursin("GET", allow) && !occursin("POST", allow)
 end
 
-@testset "Compiled dispatch: match_route still agrees" begin
+@testset "Compiled dispatch: matchroute still agrees" begin
     rf = freeze!(_sample_router!(Router()))
     rg = _sample_router!(Router())
     for (method, path) in [(:get, "/users/42"), (:get, "/users/alice"),
                            (:get, "/files/a/b.txt"), (:get, "/x/y/z"),
                            (:get, "/missing"), (:get, "/health")]
-        mf = match_route(rf, method, path)
-        mg = match_route(rg, method, path)
-        @test (mf isa Mongoose.NotFound) == (mg isa Mongoose.NotFound)
-        if mf isa Mongoose.NotFound
-            @test mg isa Mongoose.NotFound
+        mf = matchroute(rf, method, path)
+        mg = matchroute(rg, method, path)
+        @test (mf isa Mongoose.NoMatch) == (mg isa Mongoose.NoMatch)
+        if mf isa Mongoose.NoMatch
+            @test mg isa Mongoose.NoMatch
             continue
         end
-        @test (mf isa Mongoose.MethodNotAllowed) == (mg isa Mongoose.MethodNotAllowed)
-        if mf isa Mongoose.MethodNotAllowed
+        @test (mf isa Mongoose.WrongMethod) == (mg isa Mongoose.WrongMethod)
+        if mf isa Mongoose.WrongMethod
             @test mf.allowed == mg.allowed
             continue
         end

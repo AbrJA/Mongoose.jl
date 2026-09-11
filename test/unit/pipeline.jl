@@ -1,4 +1,4 @@
-@testset "Standalone pipeline (no server, MongooseCore seam)" begin
+@testset "Standalone pipeline (no server, Kernel seam)" begin
     r = Router()
     get!(r, "/hi") do req; text("hello") end
     route!(r, :get, "/users/:id::Int", (req, id) -> text("user $id"))
@@ -31,7 +31,7 @@ end
 
 
 @testset "Auto-serialization of handler returns (format_response)" begin
-    import Mongoose.MongooseCore: format_response
+    import Mongoose.Kernel: format_response
 
     @testset "Kinds" begin
         @test format_response(text("t")) == text("t")            # Response passthrough

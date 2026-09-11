@@ -1,5 +1,5 @@
 """
-    MongooseCore — transport-agnostic core of Mongoose.jl.
+    Kernel — transport-agnostic core of Mongoose.jl.
 
     Contains everything that does NOT depend on a server or an FFI transport:
     protocol types (Request, Response, Headers, formats, cookies, WS types,
@@ -7,13 +7,13 @@
     middleware, and the URL/string utilities.
 
     This module is self-contained and can be loaded and tested without the C
-    Mongoose library: `using Mongoose.MongooseCore`.
+    Mongoose library: `using Mongoose.Kernel`.
 
     The availability of this layer is what makes the transport replaceable —
-    anything in `MongooseCore` can be exercised with pure Julia (see
-    `MongooseCore.Pipeline` for the request→response seam).
+    anything in `Kernel` can be exercised with pure Julia (see
+    `Kernel.invoke_request` for the request→response seam).
 """
-module MongooseCore
+module Kernel
 
 import JSON
 using CodecZlib
@@ -66,17 +66,17 @@ export AbstractRequest, Request, Headers, context, form, header, query, body,
     UnavailableForLegalReasonsError, InternalServerError,
     validate, ValidationError,
     Message, Intent, WsEndpoint, WsConn, Tagged,
-    AbstractRouter, Router, MethodMap, RouteResult, Matched, NotFound, MethodNotAllowed,
-    SingleEndpoint, match_route, match_route_exact,
-    get_handler, get_endpoint, set_handler!, has_ws_routes, ws_endpoint, route_count,
+    AbstractRouter, Router, MethodMap, RouteResult, Matched, NoMatch, WrongMethod,
+    SingleEndpoint, matchroute, hasroute,
+    get_handler, get_endpoint, set_handler!, haswsroutes, ws_endpoint,
     route!, ws!, group, group!, RouteGroup, mount!, post!, patch!, options!, head!,
     Endpoint, error_response, invoke_request, RequestContext, freeze!, isfrozen, terminal_for,
     AbstractMiddleware, PathFilter, execute_pipeline, FunctionMiddleware, as_middleware,
     AbstractExecutor, SyncExecutor, FakeExecutor, run!, submit!, start!, stop!,
-    AbstractTransport, supports_websocket, supports_tls, supports_streaming,
+    AbstractTransport, supportsws, supportstls, supportsstream,
     Cors, Bearer, ApiKey, BasicAuth, RateLimit, Compress, Logger, Health,
     PrometheusMetrics, SecurityHeaders, Etag,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
     parse_query, strip_query, format_headers, sanitize_header_value, to_lower, url_decode
 
-end # module MongooseCore
+end # module Kernel

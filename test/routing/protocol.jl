@@ -3,12 +3,12 @@
 
     r = _FallbackRouter()
     # Optional capabilities default to "not supported".
-    @test Mongoose.has_ws_routes(r) == false
+    @test Mongoose.haswsroutes(r) == false
     @test Mongoose.ws_endpoint(r, "/ws") === nothing
-    @test Mongoose.route_count(r) == 0
+    @test Mongoose.length(r) == 0
     # Required protocol throws a clear MethodError when unimplemented.
-    @test_throws MethodError Mongoose.match_route(r, :get, "/")
-    @test_throws MethodError Mongoose.match_route_exact(r, :get, "/")
+    @test_throws MethodError Mongoose.matchroute(r, :get, "/")
+    @test_throws MethodError Mongoose.hasroute(r, "/")
     @test_throws MethodError route!(r, :get, "/x", req -> text(""))
     @test_throws MethodError ws!(r, "/x"; on_message=req -> nothing)
 end
@@ -28,18 +28,18 @@ end
         return r
     end
 
-    function Mongoose.match_route(r::RegexRouter, method::Symbol, path::AbstractString)
+    function Mongoose.matchroute(r::RegexRouter, method::Symbol, path::AbstractString)
         clean = Mongoose.strip_query(path)
         for (re, m, ep) in r.entries
             m === method || continue
             match(re, String(clean)) === nothing && continue
             return Mongoose.Matched(ep, Mongoose.SingleEndpoint(ep, method), ())
         end
-        return Mongoose.NotFound()
+        return Mongoose.NoMatch()
     end
-    function Mongoose.match_route_exact(r::RegexRouter, method::Symbol, path::AbstractString)
-        m = Mongoose.match_route(r, method, path)
-        return m isa Mongoose.Matched ? m : nothing
+    function Mongoose.hasroute(r::RegexRouter, path::AbstractString)
+        clean = Mongoose.strip_query(path)
+        return any(e -> match(e[1], String(clean)) !== nothing, r.entries)
     end
 
     app = App(router=RegexRouter())

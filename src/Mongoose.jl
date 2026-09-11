@@ -6,9 +6,9 @@ import JSON
 using CodecZlib
 
 # The facade exports the user-facing surface only. Extension protocols (router:
-# match_route/get_handler/…; pipeline: terminal_for/execute_pipeline/…; formats:
-# encode/decode/mime; string utilities) live in MongooseCore — implementers use
-# `import Mongoose: X` or `Mongoose.MongooseCore.X`.
+# matchroute/get_handler/…; pipeline: terminal_for/execute_pipeline/…; formats:
+# encode/decode/mime; string utilities) live in Kernel — implementers use
+# `import Mongoose: X` or `Mongoose.Kernel.X`.
 export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, use!, serve!, onerror!, onstart!, onstop!,
@@ -29,7 +29,7 @@ export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamRespo
     service!, service, background!,
     AbstractExecutor, SyncExecutor, AsyncExecutor, FakeExecutor, run!, submit!, stop!, haspending,
     AbstractTransport, FakeTransport, TestClient, close!,
-    supports_websocket, supports_tls, supports_streaming,
+    supportsws, supportstls, supportsstream,
     AbstractMiddleware,
     group, group!, RouteGroup, mount!,
     freeze!, isfrozen,
@@ -43,12 +43,12 @@ export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamRespo
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. Core layer (transport-agnostic; loads standalone, no FFI)
 # ══════════════════════════════════════════════════════════════════════════════
-include("core/MongooseCore.jl")      # nested module: protocol, router, middleware
-using .MongooseCore
+include("core/kernel.jl")      # nested module: protocol, router, middleware
+using .Kernel
 # Server/transport layers extend these core generics; `using` alone is read-only.
-import .MongooseCore: route!, ws!, post!, patch!, options!, head!,
+import .Kernel: route!, ws!, post!, patch!, options!, head!,
     submit!, start!, stop!, haspending,
-    supports_websocket, supports_tls, supports_streaming,
+    supportsws, supportstls, supportsstream,
     terminal_for
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -110,10 +110,10 @@ end
         route!(router, :get,    "/users/:id::Int", (req, id) -> Response(200, Pair{String,String}[], ""))
         route!(router, :post,   "/data",           req -> Response(200, Pair{String,String}[], ""))
 
-        match_route(router, :get,  "/")
-        match_route(router, :get,  "/users/1")
-        match_route(router, :post, "/data")
-        match_route(router, :get,  "/nonexistent")
+        matchroute(router, :get,  "/")
+        matchroute(router, :get,  "/users/1")
+        matchroute(router, :post, "/data")
+        matchroute(router, :get,  "/nonexistent")
 
         # --- Response constructors & helpers ---
         Response(Plain, "ok")
@@ -181,9 +181,9 @@ end
         route!(frozen, :get, "/users/:id::Int", (req, id) -> Response(200, Pair{String,String}[], "u"))
         route!(frozen, :get, "/files/*path", (req, path) -> Response(200, Pair{String,String}[], "w"))
         freeze!(frozen)
-        match_route(frozen, :get, "/fixed")
-        match_route(frozen, :get, "/users/1")
-        match_route(frozen, :get, "/files/a/b")
+        matchroute(frozen, :get, "/fixed")
+        matchroute(frozen, :get, "/users/1")
+        matchroute(frozen, :get, "/files/a/b")
         frozen_ctx = RequestContext(frozen)
         invoke_request(frozen_ctx, req)
         invoke_request(frozen_ctx,

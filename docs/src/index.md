@@ -61,7 +61,7 @@ Mongoose.jl is layered so each boundary is a replacement point:
 ├──────────────────────────────────────────┤
 │  Pipeline (invoke_request) & Middleware  │
 ├──────────────────────────────────────────┤
-│  MongooseCore (protocol, router, types)  │
+│  Kernel (protocol, router, types)  │
 ├──────────────────────────────────────────┤
 │  Transport (<: AbstractTransport)        │
 │    - C transport (Mongoose FFI)          │
@@ -75,7 +75,7 @@ Mongoose.jl is layered so each boundary is a replacement point:
   matching runs through a statically-typed chain with no per-request path split.
 - **App** composes a router, an executor, middleware, and lifecycle.
 - **SyncExecutor** runs jobs inline; **AsyncExecutor** is a bounded worker pool.
-- The request→response seam (`invoke_request`) lives in `MongooseCore` and works with no server and no FFI.
+- The request→response seam (`invoke_request`) lives in `Kernel` and works with no server and no FFI.
 
 ## Next Steps
 

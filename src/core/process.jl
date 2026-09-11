@@ -1,7 +1,7 @@
 """
     Request processing pipeline — the transport-agnostic request seam.
 
-    `invoke_request(ctx::RequestContext, req)` turns a `MongooseCore.Request`
+    `invoke_request(ctx::RequestContext, req)` turns a `Kernel.Request`
     into a `Response`. It has no dependency on a server or on FFI types, so it
     can be exercised standalone (and by `TestClient`), and any transport (the C
     Mongoose adapter today, or a future pure-Julia one) can simply call it from
@@ -123,10 +123,10 @@ function _resolve_terminal(router::AbstractRouter, request::Request)
         return compiled, nothing
     end
 
-    result = match_route(router, request.method, request.uri)
-    if result isa NotFound
+    result = matchroute(router, request.method, request.uri)
+    if result isa NoMatch
         return ((r) -> Response(Plain, "404 Not Found"; status=404)), AbstractMiddleware[]
-    elseif result isa MethodNotAllowed
+    elseif result isa WrongMethod
         return ((r) -> _method_not_allowed(result.allowed)), AbstractMiddleware[]
     end
 

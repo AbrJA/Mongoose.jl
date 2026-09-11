@@ -204,7 +204,7 @@ end
 
 
 @testset "Chunked body decoding (RFC 9112 §7.1)" begin
-    import Mongoose.MongooseCore: decode_chunked, decode_path_segment
+    import Mongoose.Kernel: decode_chunked, decode_path_segment
 
     env = @__MODULE__  # module so struct types resolve below
 

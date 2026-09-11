@@ -7,7 +7,7 @@ CurrentModule = Mongoose
 > **Public vs extension API.** `using Mongoose` gives the application-facing
 > surface (servers, requests, responses, middleware builders, helpers). The
 > extension protocols below (router protocol, pipeline seam, format encoding,
-> string utilities) are exported by `Mongoose.MongooseCore` and are reachable
+> string utilities) are exported by `Mongoose.Kernel` and are reachable
 > as `Mongoose.<name>` or via `import Mongoose: <name>` — both work without
 > being re-exported at the top level, keeping the user namespace clean.
 
@@ -31,13 +31,13 @@ RouteGroup
 group
 group!
 mount!
-match_route
-match_route_exact
+matchroute
+hasroute
 get_handler
 get_endpoint
 Matched
-NotFound
-MethodNotAllowed
+NoMatch
+WrongMethod
 RouteResult
 MethodMap
 post!
@@ -202,7 +202,7 @@ decode
 ## Module
 
 ```@docs
-Mongoose.MongooseCore
+Mongoose.Kernel
 ```
 
 ## Errors

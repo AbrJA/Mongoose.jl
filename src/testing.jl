@@ -31,8 +31,9 @@ Base.showerror(io::IO, e::StreamClosedError) = print(io, "StreamClosedError: ", 
 
     A `TestClient` really is a fake transport: it dispatches requests directly
     through the middleware pipeline and router (`invoke_request`), bypassing
-    the C event loop entirely. It declares its capabilities via the standard
-    `supports_*` traits (no WebSocket, no TLS, streaming supported), and can
+    the C event loop entirely. It declares its capabilities via the ability
+    traits (`supportsws`, `supportstls`, `supportsstreaming`): no WebSocket,
+    no TLS, streaming supported. It can
     drive a full request cycle without a running server — including on systems
     where `Mongoose_jll` was never loaded.
 
@@ -72,9 +73,9 @@ both obvious and familiar.
 """
 const TestClient = FakeTransport
 
-supports_websocket(::FakeTransport) = false
-supports_tls(::FakeTransport) = false
-supports_streaming(::FakeTransport) = true
+supportsws(::FakeTransport) = false
+supportstls(::FakeTransport) = false
+supportsstream(::FakeTransport) = true
 
 # --- Owner-aware stream writer (replaces the old stateless StreamWriterBuffer) ---
 

@@ -176,7 +176,7 @@ Freezing also **compiles** the closed table into a `CompiledDispatch` (see
 terminal (handler + scoped middleware fused, with the handler's concrete type
 captured), and parametric matching runs through a statically-typed chain with
 no per-request path splitting. The pipeline uses the compiled path via
-`terminal_for` when `compiled !== nothing`; `match_route` keeps its
+`terminal_for` when `compiled !== nothing`; `matchroute` keeps its
 generic (correct) implementation.
 """
 function freeze!(r::Router)
@@ -194,12 +194,10 @@ table compiled). Custom `AbstractRouter`s default to `false`.
 """
 @inline isfrozen(r::Router) = r.frozen
 
-@inline has_ws_routes(r::Router) = !isempty(r.ws_routes)
+@inline haswsroutes(r::Router) = !isempty(r.ws_routes)
 @inline ws_endpoint(r::Router, uri::String) = get(r.ws_routes, uri, nothing)
 
-function route_count(r::Router)::Int
-    return length(r.fixed) + length(r.param_routes)
-end
+Base.length(r::Router)::Int = length(r.fixed) + length(r.param_routes)
 
 # --- Supported parameter types (extensible) ---
 
@@ -336,12 +334,12 @@ end
 # --- Route Matching ---
 
 """
-    _match_route(route, parts) → Union{Nothing, <:Tuple}
+    _matchroute(route, parts) → Union{Nothing, <:Tuple}
 
 Match a parametric route pattern against the split path segments. Returns the
 captured parameters as a typed tuple on success, `nothing` on failure.
 """
-function _match_route(route::ParamRoute{P,N}, parts::Vector{String}) where {P,N}
+function _matchroute(route::ParamRoute{P,N}, parts::Vector{String}) where {P,N}
     nseg = length(route.segments)
     n = length(parts)
     if route.is_wildcard
@@ -360,39 +358,35 @@ function _match_route(route::ParamRoute{P,N}, parts::Vector{String}) where {P,N}
 end
 
 """
-    match_route(router, method, path) → RouteResult
+    matchroute(router, method, path) → RouteResult
 
 Resolve a request to its exhaustive outcome: `Matched(endpoint, handlers,
-params)` when the route serves the method, `NotFound` when the path matches
-nothing, or `MethodNotAllowed{allowed}` carrying the route's method bitmask.
+params)` when the route serves the method, `NoMatch` when the path matches
+nothing, or `WrongMethod{allowed}` carrying the route's method bitmask.
 Exact (static) matches win; parametric routes are scanned in registration
 order; the `"*"` catch-all is the final fallback. `HEAD` is served only by an
 explicit `head!` route — there is no auto-HEAD fallback.
 """
-function match_route(router::Router, method::Symbol, path::AbstractString)::RouteResult
+function matchroute(router::Router, method::Symbol, path::AbstractString)::RouteResult
     clean = strip_query(path)
     found = _find_route(router, clean)
-    found === nothing && return NotFound()
+    found === nothing && return NoMatch()
     mm, params = found
     ep = resolve_method(mm, method)
-    ep === nothing && return MethodNotAllowed(method_bitmask(mm))
+    ep === nothing && return WrongMethod(method_bitmask(mm))
     return Matched(ep, mm, params)
 end
 
 """
-    match_route_exact(router, method, path) → Union{Nothing, Matched}
+    hasroute(router, path) → Bool
 
-Match without the `"*"` fallback (used by static file serving to check route
-ownership). Path ownership is method-independent.
+`true` when a concrete (non-catch-all) route owns the path, regardless of
+method — used by static file serving to avoid shadowing registered routes
+(the previous `match_route_exact` semantic).
 """
-function match_route_exact(router::Router, method::Symbol, path::AbstractString)::Union{Nothing,Matched}
+function hasroute(router::Router, path::AbstractString)::Bool
     clean = strip_query(path)
-    found = _find_route_no_wildcard(router, clean)
-    found === nothing && return nothing
-    mm, params = found
-    ep = resolve_method(mm, method)
-    ep === nothing && (ep = _first_endpoint(mm))
-    return Matched(ep, mm, params)
+    return _find_route_no_wildcard(router, clean) !== nothing
 end
 
 # --- RouteResult helpers ---
@@ -449,7 +443,7 @@ end
     if !isempty(router.param_routes)
         parts = String[String(seg) for seg in eachsplit(clean, '/'; keepempty=false)]
         for route in router.param_routes
-            params = _match_route(route, parts)
+            params = _matchroute(route, parts)
             params === nothing || return (route.handlers, params)
         end
     end
@@ -464,7 +458,7 @@ end
     if !isempty(router.param_routes)
         parts = String[String(seg) for seg in eachsplit(clean, '/'; keepempty=false)]
         for route in router.param_routes
-            params = _match_route(route, parts)
+            params = _matchroute(route, parts)
             params === nothing || return (route.handlers, params)
         end
     end

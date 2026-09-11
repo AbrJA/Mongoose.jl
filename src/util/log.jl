@@ -57,7 +57,7 @@ end
 # ── Lifecycle banners ────────────────────────────────────────────────────────
 
 function log_server_start(server, url::String)
-    s_routes  = string(route_count(server.router))
+    s_routes  = string(length(server.router))
     s_mw      = string(length(server.middlewares))
     s_mounts  = string(length(server.mounts))
     s_workers = server.config.workers > 0 ? string(server.config.workers) : "0"

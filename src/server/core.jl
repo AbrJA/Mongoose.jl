@@ -299,8 +299,8 @@ tried in registration order; unhandled exceptions fall through to the default
 
 # Example
 ```julia
-struct NotFound <: Exception end
-onerror!(app, NotFound) do req, e
+struct NoMatch <: Exception end
+onerror!(app, NoMatch) do req, e
     json(Dict("error" => "not found"); status=404)
 end
 ```
@@ -426,13 +426,13 @@ end
 
 function Base.show(io::IO, app::App)
     mode = app.config.workers == 0 ? "sync" : "async($(app.config.workers) workers)"
-    routes = route_count(app.router)
+    routes = length(app.router)
     print(io, "App($mode, $routes routes, $(length(app.middlewares)) middleware)")
 end
 
 # --- use! (add middleware to an app) ---
 # The middleware protocol (AbstractMiddleware, before/after) lives in
-# MongooseCore; this server-layer method wires it onto an App.
+# Kernel; this server-layer method wires it onto an App.
 
 """
     use!(app, middleware; paths=[])

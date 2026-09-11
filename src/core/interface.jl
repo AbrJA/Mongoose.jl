@@ -9,23 +9,23 @@
     - `route!(r::R, method, path, handler; middleware=[], metadata=nothing) → r`
       (register an HTTP route; the router stores the handler inside an
       `Endpoint` and never interprets it)
-    - `match_route(r::R, method, path)`                → a `RouteResult`
-      (`Matched` / `NotFound` / `MethodNotAllowed{allowed}` — 404/405 and the
+    - `matchroute(r::R, method, path)`                → a `RouteResult`
+      (`Matched` / `NoMatch` / `WrongMethod{allowed}` — 404/405 and the
       `Allow` set are resolved by the router at match time)
-    - `match_route_exact(r::R, method, path)`          → `nothing` or a `Matched`
+    - `hasroute(r::R, path)`                  → `Bool` (path owned, catch-all excluded)
       (no `"*"` fallback — route ownership check for static serving)
     - `get_handler(match, method)` / `get_endpoint(match, method)` — work on
       any `Matched`, including custom routers' matches and `SingleEndpoint`
 
-    Custom routers return a `RouteResult` from `match_route`. Returning a
+    Custom routers return a `RouteResult` from `matchroute`. Returning a
     `Matched` directly is enough: wrap the endpoint with
     `SingleEndpoint(ep, method)` as the match's `handlers` value.
 
     Optional capabilities (safe defaults are provided):
-    - `has_ws_routes(r::R) → Bool`                   (default: `false`)
+    - `haswsroutes(r::R) → Bool`                   (default: `false`)
     - `ws!(r::R, path; ...)`                         (no default)
     - `ws_endpoint(r::R, uri)`                       (default: `nothing`)
-    - `route_count(r::R)`                            (default: `0`)
+    - `length(r::R)`                            (default: `0`)
 
     The default implementation is `Router` in `router.jl`.
 
@@ -42,8 +42,8 @@ abstract type AbstractRouter end
 # ── RouteResult — the exhaustive router match (Ciro/Keel-style ADT) ──────────
 
 """
-    RouteResult — outcome of `match_route`: `Matched`, `NotFound`, or
-    `MethodNotAllowed{allowed}` (the last carries the route's method bitmask,
+    RouteResult — outcome of `matchroute`: `Matched`, `NoMatch`, or
+    `WrongMethod{allowed}` (the last carries the route's method bitmask,
     so 405 `Allow` needs no secondary lookup).
 """
 abstract type RouteResult end
@@ -63,16 +63,16 @@ struct Matched{E,P,H} <: RouteResult
 end
 
 """No route matched the path."""
-struct NotFound <: RouteResult end
+struct NoMatch <: RouteResult end
 
 """
-    MethodNotAllowed{allowed::UInt8} <: RouteResult
+    WrongMethod{allowed::UInt8} <: RouteResult
 
 The path matched but the method isn't registered; `allowed` is a bitmask of
 served methods (HEAD is implied by GET). Serialize with
 `allow_from_bitmask` for the RFC 9110 §15.5.6 `Allow` header.
 """
-struct MethodNotAllowed <: RouteResult
+struct WrongMethod <: RouteResult
     allowed::UInt8
 end
 
@@ -96,12 +96,12 @@ function route!(router::AbstractRouter, method::Symbol, path::AbstractString,
     throw(MethodError(route!, (router, method, path, handler)))
 end
 
-function match_route(router::AbstractRouter, method::Symbol, path::AbstractString)
-    throw(MethodError(match_route, (router, method, path)))
+function matchroute(router::AbstractRouter, method::Symbol, path::AbstractString)
+    throw(MethodError(matchroute, (router, method, path)))
 end
 
-function match_route_exact(router::AbstractRouter, method::Symbol, path::AbstractString)
-    throw(MethodError(match_route_exact, (router, method, path)))
+function hasroute(router::AbstractRouter, path::AbstractString)
+    throw(MethodError(hasroute, (router, path)))
 end
 
 function get_handler(matched, method::Symbol)
@@ -118,7 +118,7 @@ end
 
 # --- Optional capabilities: safe defaults ---
 
-has_ws_routes(::AbstractRouter) = false
+haswsroutes(::AbstractRouter) = false
 
 function ws!(router::AbstractRouter, path::AbstractString; kwargs...)
     throw(MethodError(ws!, (router, path)))
@@ -126,7 +126,7 @@ end
 
 ws_endpoint(::AbstractRouter, ::AbstractString) = nothing
 
-route_count(::AbstractRouter) = 0
+Base.length(::AbstractRouter) = 0
 
 # Closed-route profile (AOT/trim): optional; defaults to "always open".
 function freeze!(router::AbstractRouter)

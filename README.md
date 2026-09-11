@@ -232,7 +232,7 @@ end
 
 post!(app, "/users") do req
     user = validate(req, CreateUser)                 # → CreateUser
-    json(Dict("name" => user.name, "age" => user.age)); 
+    json(Dict("name" => user.name, "age" => user.age));
 end
 ```
 
@@ -301,9 +301,9 @@ onerror!(app, 413, json(Dict("error" => "Request body too large"); status=413))
 Route handler/middleware exceptions by *type*:
 
 ```julia
-struct NotFound <: Exception end
+struct AccountGone <: Exception end
 
-onerror!(app, NotFound) do req, e
+onerror!(app, AccountGone) do req, e
     json(Dict("error" => "not found"); status=404)
 end
 ```
@@ -536,12 +536,12 @@ required protocol:
 | Function | Role |
 |---|---|
 | `route!(r, method, path, handler; middleware, metadata)` | register an `Endpoint` |
-| `match_route(r, method, path)` | return a `RouteResult` (`Matched`/`NotFound`/`MethodNotAllowed`) |
+| `matchroute(r, method, path)` | return a `RouteResult` (`Matched`/`NoMatch`/`WrongMethod`) |
 | `get_handler(match, method)` | handler for that method, or `nothing` |
 | `get_endpoint(match, method)` | the route's `Endpoint`, or `nothing` |
-| `match_route_exact(r, method, path)` | dispatch without 404-fallback |
+| `hasroute(r, path)` | path owned by a concrete route (catch-all excluded) — static-serving shadow check |
 
-Optional capabilities (`has_ws_routes`, `ws_endpoint`, `ws!`, `route_count`,
+Optional capabilities (`length(router)`, `haswsroutes`, `ws_endpoint`, `ws!`,
 `freeze!`, `isfrozen`) have safe "not supported" defaults. Missing required
 methods fail loudly via fallback `MethodError`s. The default `Router` also
 implements the optional compiled-dispatch capability `terminal_for(r, req)`:
@@ -558,7 +558,7 @@ them; a custom executor can carry its own concurrency policy.
 ### Transport
 
 `AbstractTransport` declares capabilities via trait functions
-(`supports_websocket`, `supports_tls`, `supports_streaming`). The C transport
+(`supportsws`, `supportstls`, `supportsstreaming`). The C transport
 (`transport/mongoose`) wraps the Mongoose C library; `FakeTransport` runs
 everything in pure Julia — that is what `TestClient` is.
 

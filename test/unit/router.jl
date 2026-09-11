@@ -67,11 +67,11 @@ end
     route!(r, :get, "/u/:id::Int/:name", (req, id, name) -> text("$id/$name"))
     route!(r, :get, "/fixed", req -> text("f"))
 
-    m = Mongoose.match_route(r, :get, "/u/7/alice")
+    m = Mongoose.matchroute(r, :get, "/u/7/alice")
     @test m isa Mongoose.Matched
     @test m isa Mongoose.Matched && (m.params == (7, "alice") && m.params isa Tuple{Int,String})
 
-    mf = Mongoose.match_route(r, :get, "/fixed")
+    mf = Mongoose.matchroute(r, :get, "/fixed")
     @test mf isa Mongoose.Matched && mf.params == ()
 end
 
@@ -99,7 +99,7 @@ end
     @test_throws RouteError route!(r, :get, "/b", req -> text("b"))
     @test_throws RouteError get!(r, "/b", req -> text("b"))
     @test_throws RouteError ws!(r, "/ws"; on_message=req -> nothing)
-    @test Mongoose.match_route(r, :get, "/a") isa Mongoose.Matched
+    @test Mongoose.matchroute(r, :get, "/a") isa Mongoose.Matched
 
     # A frozen router keeps working through the full pipeline.
     res = Mongoose.invoke_request(Mongoose.RequestContext(r),

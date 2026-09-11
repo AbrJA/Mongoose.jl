@@ -1,9 +1,9 @@
 @testset "Transport capability traits + FakeTransport (FFI-free)" begin
     # Router capability via the trait spelling.
     r = Router()
-    @test Mongoose.supports_websocket(r) == false
+    @test Mongoose.supportsws(r) == false
     ws!(r, "/ws"; on_message=req -> nothing)
-    @test Mongoose.supports_websocket(r) == true
+    @test Mongoose.supportsws(r) == true
 
     # A full request cycle with a fake transport, no server started.
     app = App()
@@ -14,9 +14,9 @@
 
     client = FakeTransport(app)
     @test client isa AbstractTransport
-    @test Mongoose.supports_websocket(client) == false
-    @test Mongoose.supports_tls(client) == false
-    @test Mongoose.supports_streaming(client) == true
+    @test Mongoose.supportsws(client) == false
+    @test Mongoose.supportstls(client) == false
+    @test Mongoose.supportsstream(client) == true
 
     resp = client(:get, "/hi")
     @test resp.status == 200

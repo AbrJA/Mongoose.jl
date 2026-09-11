@@ -18,8 +18,8 @@
 ## Decisions (user-confirmed)
 
 - Auto-serialize handler returns: **always-on**; `nothing` → `204 No Content`.
-- Router result ADT: **breaking** — `dispatch_route` is replaced by `match_route`
-  returning an exhaustive `RouteResult` (`Matched`/`NotFound`/`MethodNotAllowed`).
+- Router result ADT: **breaking** — `dispatch_route` is replaced by `matchroute`
+  returning an exhaustive `RouteResult` (`Matched`/`NoMatch`/`WrongMethod`).
 - No new dependencies (audit conclusion: current `Base64 + CodecZlib + JSON +
   Mongoose_jll + PrecompileTools` is already lean).
 - Examples/ stays gitignored/local (acceptance suite remains the CI-gate plan).
@@ -62,6 +62,22 @@
       inventory console. Demo-only endpoints (echo/formats/meta/legacy/teapot/
       chat) removed; dashboard updated; money math unit-checked
       (2×420 + 499 + 8% → 1406).
+- [ ] **R5 Naming pass (breaking, 0.5 window)** — collisions + consistency:
+      - Router ADT vs HTTP-error collision resolved: `NotFound` → `NoMatch`,
+        `MethodNotAllowed` → `WrongMethod` (the HTTP errors keep `*Error`
+        names).
+      - De-underscored protocol names: `match_route` → `matchroute`,
+        `match_route_exact` → `hasroute(router, path)::Bool` (ownership check,
+        catch-all excluded), `route_count` → `Base.length(router)`,
+        `has_ws_routes` → `haswsroutes`, `supports_websocket` → `supportsws`,
+        `supports_tls` → `supportstls`, `supports_streaming` →
+        `supportsstreaming`; `to_lower` unexported (internal only).
+      - `MongooseCore` → `Kernel` (`Core` would shadow the Julia language
+        core — e.g. `Core.stdout` in `util/log.jl`; `Kernel` is
+        collision-free).
+      - Gotcha: on Julia 1.13 an unqualified `function length(...)` in a
+        module creates a FRESH binding shadowing `Base.length` — router
+        extensions must be written `Base.length(r::Router)`.
 
 ## Task list
 
@@ -74,8 +90,8 @@
 - [x] **T2** Auto-serialize non-`Response` handler returns (`format_response`
       dispatch: Response/StreamResponse passthrough, String→text, bytes→binary,
       Dict/NamedTuple→JSON, nothing→204). *commit: `94c3b27`*
-- [x] **T3** `RouteResult` ADT: `Matched`/`NotFound`/`MethodNotAllowed{allowed}`;
-      `match_route` replaces `dispatch_route`; 405 `Allow` from a method bitmask
+- [x] **T3** `RouteResult` ADT: `Matched`/`NoMatch`/`WrongMethod{allowed}`;
+      `matchroute` replaces `dispatch_route`; 405 `Allow` from a method bitmask
       at match time; auto-HEAD resolved at match; protocol collapsed.
       *commit: `165fffc`*
 
@@ -175,7 +191,7 @@ ETag/conditional requests~~ **shipped** · OpenAPI-from-metadata · sessions/CSR
   Aqua/JET green.
 - **T2 shipped** (`94c3b27`): auto-serialize; 780 tests + 71 acceptance +
   Aqua/JET green.
-- **T3 shipped** (`165fffc`): RouteResult ADT / match_route; 787 tests + 71
+- **T3 shipped** (`165fffc`): RouteResult ADT / matchroute; 787 tests + 71
   acceptance + Aqua/JET + docs green. Phase 1 complete.
 - **Sep 09 — T4 deferred.** Reviewed `LazyRequest` with the user: the C message
   buffer is transient, so laziness can only defer parse/transform steps (not
@@ -282,8 +298,8 @@ prod-readiness). State saved — **next session starts here:**
 
 ### Pending (decide tomorrow, in order)
 1. **Protocol getter rename (breaking, ask user)**: unify core router-getter
-   naming — `ws_endpoint`→`get_ws_endpoint`, `route_count`→? (get_handler/
-   get_endpoint/set_handler! are the named pattern; ws_endpoint/route_count
+   naming — `ws_endpoint`→`get_ws_endpoint`, `length`→? (get_handler/
+   get_endpoint/set_handler! are the named pattern; ws_endpoint/length
    break it). 0.5 window allows it; ripples: docs, facade `import` block, tests.
 2. **P1 ergonomics** (from the review):
    - `merge_headers!`-style helper to kill the 8 × `Headers([copy(h.data); …])`

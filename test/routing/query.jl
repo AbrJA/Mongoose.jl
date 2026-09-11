@@ -26,20 +26,18 @@ function Mongoose.route!(r::DictRouter, method::Symbol, path::AbstractString, @n
     return r
 end
 
-function Mongoose.match_route(r::DictRouter, method::Symbol, path::AbstractString)
+function Mongoose.matchroute(r::DictRouter, method::Symbol, path::AbstractString)
     m = get(r.routes, String(path), nothing)
-    m === nothing && return Mongoose.NotFound()
+    m === nothing && return Mongoose.NoMatch()
     ep = Mongoose.get_endpoint(m, method)
-    ep === nothing && return Mongoose.MethodNotAllowed(Mongoose.method_bitmask(m))
+    ep === nothing && return Mongoose.WrongMethod(Mongoose.method_bitmask(m))
     return Mongoose.Matched(ep, m, ())
 end
 
-function Mongoose.match_route_exact(r::DictRouter, method::Symbol, path::AbstractString)
-    m = get(r.routes, String(path), nothing)
-    m === nothing && return nothing
-    return Mongoose.Matched(Mongoose.get_endpoint(m, method), m, ())
+function Mongoose.hasroute(r::DictRouter, path::AbstractString)
+    return haskey(r.routes, String(Mongoose.strip_query(path)))
 end
 
-Mongoose.has_ws_routes(::DictRouter) = false
-Mongoose.route_count(r::DictRouter) = length(r.routes)
+Mongoose.haswsroutes(::DictRouter) = false
+Mongoose.length(r::DictRouter) = length(r.routes)
 

@@ -2,7 +2,7 @@
     HTTP event handler — the hot path from C event → Request → Response → send.
 
     The dispatch pipeline itself (`invoke_request`, `dispatch_to_handler`,
-    `error_response`) lives in `MongooseCore`; this file binds it to the
+    `error_response`) lives in `Kernel`; this file binds it to the
     transport/server.
 """
 
@@ -63,7 +63,7 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
     uri = to_string(msg.uri)
 
     # 1. WebSocket upgrade check
-    if has_ws_routes(server.router)
+    if haswsroutes(server.router)
         endpoint = ws_endpoint(server.router, uri)
         if endpoint !== nothing
             ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
@@ -177,7 +177,7 @@ function invoke_http(server::AbstractServer, req::Request)::Union{Response,Strea
     # strip it here and let mongoose frame the empty body natively
     # (Content-Length: 0).
     if req.method === :head && res isa Response
-        return MongooseCore._apply_head_semantics(res)
+        return Kernel._apply_head_semantics(res)
     end
     return res
 end
@@ -187,7 +187,7 @@ end
 @inline function serve_static!(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid},
                                method::Symbol, uri::String)::Bool
     isempty(server.mounts) && return false
-    match_route_exact(server.router, method, uri) !== nothing && return false
+    hasroute(server.router, uri) && return false
 
     for (dir, prefix) in server.mounts
         static_file_exists(dir, prefix, uri) || continue

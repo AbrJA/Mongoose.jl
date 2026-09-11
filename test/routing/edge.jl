@@ -92,11 +92,11 @@
         route!(r, :get, "/users/:id::Int", (req, id) -> text("int:$id"))
         route!(r, :get, "/users/:name", (req, name) -> text("str:$name"))
         # Typed route wins when the segment parses; otherwise the string route.
-        m1 = Mongoose.match_route(r, :get, "/users/42")
+        m1 = Mongoose.matchroute(r, :get, "/users/42")
         @test m1 !== nothing
         @test Mongoose.get_handler(m1, :get)(nothing, 42).body == "int:42"
-        @test Mongoose.match_route(r, :get, "/users/abc") isa Mongoose.Matched
-        m2 = Mongoose.match_route(r, :get, "/users/abc")
+        @test Mongoose.matchroute(r, :get, "/users/abc") isa Mongoose.Matched
+        m2 = Mongoose.matchroute(r, :get, "/users/abc")
         @test m2 !== nothing
         @test Mongoose.get_handler(m2, :get)(nothing, "abc").body == "str:abc"
     end
@@ -105,7 +105,7 @@
         r = Router()
         route!(r, :get, "/users/:name", (req, name) -> text("param:$name"))
         route!(r, :get, "/users/me", req -> text("static"))
-        m = Mongoose.match_route(r, :get, "/users/me")
+        m = Mongoose.matchroute(r, :get, "/users/me")
         @test m !== nothing
         @test Mongoose.get_handler(m, :get)(nothing).body == "static"
     end
