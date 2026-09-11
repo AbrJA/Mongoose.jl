@@ -277,6 +277,36 @@ app = App(; router=router, workers=4, ws_idle_timeout=60_000)
 start!(app; port=8080)
 ```
 
+## WebSocket Server Push (`ws_send_all`)
+
+WebSockets can also be *pushed* to: send a frame to every open client of a
+path from any task (background housekeeping, event relays, request handlers).
+Frames route through the same thread-safe reply queue the worker pool uses
+and are actually sent on the poll thread, so no C connection is ever touched
+from another thread.
+
+```julia
+using Mongoose
+import JSON
+
+router = Router()
+
+# Clients subscribe to stock updates
+ws!(router, "/stock";
+    on_message = msg -> Message("pong: $(msg.data)"),
+)
+
+app = App(; router=router, workers=4)
+
+# Broadcast a stock event to everyone currently connected to /stock
+ws_send_all(app, "/stock", JSON.json(Dict("event" => "low", "sku" => "SHOP-MUG-6")))
+
+start!(app; port=8080)
+```
+
+Requires an async executor (`workers > 0`); stale/closed connections are
+dropped silently.
+
 ## Server-Sent Events (SSE)
 
 ```julia

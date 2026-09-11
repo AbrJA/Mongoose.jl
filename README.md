@@ -82,7 +82,10 @@ delete!(router, "/items/:id",(req, id) -> ...)
 route!(router, :get, "/search", req -> ...)
 ```
 
-GET routes automatically handle HEAD requests (body stripped, headers preserved).
+HEAD is served only by an explicit `head!` route — there is **no auto-HEAD
+fallback**, so a GET-only route answers `405` with an exact `Allow` header.
+(The C backend has no native way to mirror a GET's `Content-Length` on HEAD,
+so the library does not fake it.)
 
 ### Typed Path Parameters
 
@@ -171,7 +174,7 @@ Freezing **compiles** the closed table (`CompiledDispatch`):
   `[global; scoped]` concat allocation).
 
 Dispatch semantics are unchanged (fixed-first, registration order, `"*"`
-fallback, auto-HEAD, 405/404). On the warm path this is roughly 2–3× faster
+fallback, 405/404). On the warm path this is roughly 2–3× faster
 than the generic dispatch with fewer allocations — e.g. a fixed route goes
 from ~250ns to ~100ns per request, a two-parameter route from ~1.2µs to
 ~400ns.
@@ -244,6 +247,12 @@ end
 | `Css` | `text/css; charset=utf-8` |
 | `Js` | `application/javascript; charset=utf-8` |
 | `Binary` | `application/octet-stream` |
+
+**Framing note.** String/JSON responses go through the backend's native
+framing (keep-alive safe). Raw binary bodies and streaming responses are
+hand-framed on the wire, which bypasses the C backend's framing state — so
+they always advertise `Connection: close` rather than risk a reused
+connection wedge.
 
 ---
 
@@ -405,6 +414,23 @@ ws!(app, "/chat";
 | `on_message` | `(msg) → Message \| nothing` | Called per frame. Return `nothing` for no reply. |
 | `on_close` | `() → Any` | Connection already gone. Optional. |
 
+#### Server-initiated push (`ws_send_all`)
+
+Send a frame to every open client of a path — from any task — via the same
+thread-safe reply queue the worker pool uses:
+
+```julia
+ws!(app, "/stock"; on_message = msg -> Message("pong"))
+
+# broadcast to everyone currently connected to /stock (async executors)
+ws_send_all(app, "/stock", JSON.json(Dict("event" => "low", "sku" => "SHOP-MUG-6")))
+```
+
+Frames are sent on the poll/callback thread, so this is safe to call from
+background tasks, event relays, or request handlers. Stale connections are
+dropped naturally. (The Shop API example uses it to push every stock-change
+event onto its WebSocket inventory console.)
+
 ---
 
 ## Server-Sent Events (SSE)
@@ -519,8 +545,8 @@ Optional capabilities (`has_ws_routes`, `ws_endpoint`, `ws!`, `route_count`,
 `freeze!`, `isfrozen`) have safe "not supported" defaults. Missing required
 methods fail loudly via fallback `MethodError`s. The default `Router` also
 implements the optional compiled-dispatch capability `terminal_for(r, req)`:
-after `freeze!` it returns a pre-built terminal (with scoped middleware and
-auto-HEAD fused) so the pipeline skips per-request dispatch allocations —
+after `freeze!` it returns a pre-built terminal (with scoped middleware fused)
+so the pipeline skips per-request dispatch allocations —
 other routers simply fall back to the generic path.
 
 ### Executor

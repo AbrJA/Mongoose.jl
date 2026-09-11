@@ -145,6 +145,7 @@ sse
 
 ```@docs
 Message
+ws_send_all
 ```
 
 ## Lifecycle
