@@ -22,11 +22,11 @@
 
 | Category | Highlights |
 |---|---|
-| **Performance** | Sub-100ms TTFR via precompilation. C-level static file serving with Range, ETag, gzip. |
-| **Architecture** | Modular core: `Router`, `Executor`, and `Transport` are replaceable components behind small protocols. Sync (`workers=0`) or bounded async worker pool. Backpressure and per-request timeouts. |
+| **Performance** | Fast cold start (sub-100ms to first response, via precompilation) and warm paths under a microsecond per request with the frozen compiled dispatch. C-level static file serving with Range, ETag, gzip. |
+| **Architecture** | Modular: `Router`, `Executor`, and `Transport` are replaceable components behind small protocols — plus a transport-agnostic core (`Mongoose.Kernel`) with **no FFI dependencies**, loadable and testable without the C library. Sync (`workers=0`) or bounded async worker pool. Backpressure and per-request timeouts. |
 | **HTTPS/TLS** | Native TLS via `TLSConfig` — cert, key, CA as files, PEM strings, or raw bytes. |
 | **Routing** | Exact-match `Dict` + ordered parametric patterns. Typed path parameters (`:id::Int`) delivered as typed tuples. Wildcards (`*path`). Route groups with scoped middleware as metadata. `freeze!` closes and compiles the route table for statically-typed dispatch (AOT/`--trim=safe` profile). |
-| **WebSocket** | Same port as HTTP. Frame size limits. Idle timeout. Origin allowlist. Upgrade rejection. Ping/pong (RFC 6455). |
+| **WebSocket** | Same port as HTTP. Frame size limits. Idle timeout. Origin allowlist. Upgrade rejection. Ping/pong (RFC 6455). Server-initiated push to open clients (`ws_send_all`). |
 | **Middleware** | CORS, rate limiting, bearer/API key auth, structured logging, Prometheus metrics, health checks, security headers, GZip compression. Plain closures work as middleware. |
 | **JSON** | Built-in JSON via JSON. `json(req)` for parsing, `json(...)` for responses. Struct validation with `validate(req, T)`. |
 | **Testing** | `FakeTransport` (aka `TestClient`) runs the whole pipeline with **no server and no FFI**. |
