@@ -96,6 +96,31 @@ const ERRORS = Dict{Int,Union{Response,Function}}()
     end
 end
 
+@testset "Compiled dispatch: trailing literal cannot match an exhausted path" begin
+    # Regression: a request whose path ends before a route's trailing literal
+    # segment must NOT alias that route. Before the fix, `/api/orders/1` (GET)
+    # was mis-matched by the earlier `/api/orders/:id::Int/payments` (POST)
+    # node, answering 405 instead of the GET endpoint.
+    r = Router()
+    post!(r, "/api/orders/:id::Int/payments") do req, id; text("pay:$id") end
+    get!(r, "/api/orders/:id::Int") do req, id; text("get:$id") end
+    post!(r, "/api/orders/:id::Int/cancel") do req, id; text("cancel:$id") end
+    freeze!(r)
+
+    resp = invoke_request(mkctx(r), mkreq(:get, "/api/orders/1"))
+    @test resp.status == 200
+    @test String(resp.body) == "get:1"
+
+    resp = invoke_request(mkctx(r), mkreq(:post, "/api/orders/1/payments"))
+    @test resp.status == 200
+    @test String(resp.body) == "pay:1"
+
+    resp = invoke_request(mkctx(r), mkreq(:post, "/api/orders/1"))
+    @test resp.status == 405
+    allow = get(resp.headers, "allow", "")
+    @test occursin("GET", allow) && !occursin("POST", allow)
+end
+
 @testset "Compiled dispatch: match_route still agrees" begin
     rf = freeze!(_sample_router!(Router()))
     rg = _sample_router!(Router())

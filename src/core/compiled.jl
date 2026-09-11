@@ -340,7 +340,11 @@ end
     rest = Base.tail(ops)
     if op isa LitOp
         j0, j1, ni = _next_seg(s, i)
-        (j0 == 0 || _bytes_eq(s, j0, j1, op.text)) || return nothing
+        # A j0 == 0 here means the path is exhausted: a literal segment must
+        # match a real segment, never the end of the string (otherwise a
+        # shorter request could alias a longer route, e.g. `/api/orders/1`
+        # matching `/api/orders/:id::Int/payments`).
+        (j0 != 0 && _bytes_eq(s, j0, j1, op.text)) || return nothing
         return _walk_ops(rest, s, ni, out)
     elseif op isa CaptureOp
         j0, j1, ni = _next_seg(s, i)
