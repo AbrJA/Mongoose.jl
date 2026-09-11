@@ -47,6 +47,21 @@
       unwinds to graceful shutdown. Caveat verified in-session: this sandbox's
       Julia segfaults on SIGINT even for a bare `sleep`, so it cannot be
       demonstrated here; docstring updated to state the dependency.
+- [ ] **R4 (framework bug)** Frozen/compiled param dispatch matched a shorter
+      request against a longer route: `_walk_ops`'s `LitOp` accepted a zero-
+      length segment (`j0 == 0` treated as a match), so `GET /api/orders/1`
+      aliased `POST /api/orders/:id::Int/payments` → 405. Fixed in
+      `src/core/compiled.jl` (literal must match a real segment); regression
+      test added. Found while validating the rewritten Shop API example.
+- [ ] **E1** Production example rewritten to a realistic surface (local-only,
+      gitignored): magic-link customer auth + sessions, real product catalog
+      with reviews + moderation, stock-enforced carts, checkout with
+      subtotal/shipping/tax (integer cents), card-payment step, order state
+      machine with fulfilment, admin report/review/inventory consoles, partner
+      SKU feed, ops maintenance switch, SSE order/stock/review events, WS
+      inventory console. Demo-only endpoints (echo/formats/meta/legacy/teapot/
+      chat) removed; dashboard updated; money math unit-checked
+      (2×420 + 499 + 8% → 1406).
 
 ## Task list
 
