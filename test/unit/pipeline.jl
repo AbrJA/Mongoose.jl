@@ -5,12 +5,12 @@
 
     req = Request(:get, "/hi", Dict{String,String}(), Pair{String,String}[], "")
     ctx = Mongoose.RequestContext(r)
-    res = Mongoose.invoke_request(ctx, req)
+    res = Mongoose.invokerequest(ctx, req)
     @test res.body == "hello"
 
     # Typed parametric dispatch through the same seam.
     req2 = Request(:get, "/users/7", Dict{String,String}(), Pair{String,String}[], "")
-    res2 = Mongoose.invoke_request(ctx, req2)
+    res2 = Mongoose.invokerequest(ctx, req2)
     @test res2.body == "user 7"
 
     # Custom error response + middleware + services all apply without a server.
@@ -18,14 +18,14 @@
     svcs = (db="pool",)
     mws = Mongoose.AbstractMiddleware[logger(threshold=0, output=devnull)]
     ctx2 = Mongoose.RequestContext(r; middlewares=mws, errors=errs, services=svcs)
-    res3 = Mongoose.invoke_request(ctx2,
+    res3 = Mongoose.invokerequest(ctx2,
         Request(:get, "/nope", Dict{String,String}(), Pair{String,String}[], ""))
     @test res3.status == 404
     @test res3.body == "custom 404"
 
     req4 = Request(:get, "/hi", Dict{String,String}(), Pair{String,String}[], "")
     ctx4 = context(req4)
-    Mongoose.invoke_request(ctx2, req4)
+    Mongoose.invokerequest(ctx2, req4)
     @test ctx4[:_services].db == "pool"
 end
 
@@ -63,14 +63,14 @@ end
         rs = Dict{Int,Union{Response,Function}}()
         mk(p) = Request(:get, p, Dict{String,String}(), Pair{String,String}[], "")
 
-        resp = Mongoose.invoke_request(Mongoose.RequestContext(r; errors=rs), mk("/raw"))
+        resp = Mongoose.invokerequest(Mongoose.RequestContext(r; errors=rs), mk("/raw"))
         @test resp.status == 200 && String(resp.body) == "raw text"
         @test get(resp.headers, "content-type", "") == "text/plain; charset=utf-8"
 
-        resp = Mongoose.invoke_request(Mongoose.RequestContext(r; errors=rs), mk("/dict"))
+        resp = Mongoose.invokerequest(Mongoose.RequestContext(r; errors=rs), mk("/dict"))
         @test resp.status == 200 && contains(String(resp.body), "\"k\":1")
 
-        resp = Mongoose.invoke_request(Mongoose.RequestContext(r; errors=rs), mk("/nil"))
+        resp = Mongoose.invokerequest(Mongoose.RequestContext(r; errors=rs), mk("/nil"))
         @test resp.status == 204 && isempty(resp.body)
     end
 
@@ -81,9 +81,9 @@ end
             frozen && freeze!(r)
             rs = Dict{Int,Union{Response,Function}}()
 
-            resp = Mongoose.invoke_request(Mongoose.RequestContext(r; errors=rs),
+            resp = Mongoose.invokerequest(Mongoose.RequestContext(r; errors=rs),
                 Request(:head, "/dict", Dict{String,String}(), Pair{String,String}[], ""))
-            gresp = Mongoose.invoke_request(Mongoose.RequestContext(r; errors=rs),
+            gresp = Mongoose.invokerequest(Mongoose.RequestContext(r; errors=rs),
                 Request(:get, "/dict", Dict{String,String}(), Pair{String,String}[], ""))
 
             # No auto-HEAD fallback: HEAD on a GET-only route is 405 and the
@@ -98,7 +98,7 @@ end
         r = Router()
         head!(r, "/ping", req -> text("pong"))
         rs = Dict{Int,Union{Response,Function}}()
-        resp = Mongoose.invoke_request(Mongoose.RequestContext(r; errors=rs),
+        resp = Mongoose.invokerequest(Mongoose.RequestContext(r; errors=rs),
             Request(:head, "/ping", Dict{String,String}(), Pair{String,String}[], ""))
         # The seam preserves what the handler returned; the transport strips
         # HEAD bodies before they reach the wire.

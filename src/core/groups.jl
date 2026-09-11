@@ -38,7 +38,7 @@ end
 function group(f::Function, prefix::String; middleware::AbstractVector=AbstractMiddleware[])
     g = RouteGroup(
         rstrip(prefix, '/'),
-        AbstractMiddleware[as_middleware(m) for m in middleware],
+        AbstractMiddleware[asmiddleware(m) for m in middleware],
         Tuple{Symbol,String,Function}[],
         Tuple{String,NamedTuple}[],
         RouteGroup[]
@@ -51,7 +51,7 @@ end
 function group(prefix::String; middleware::AbstractVector=AbstractMiddleware[])
     return RouteGroup(
         rstrip(prefix, '/'),
-        AbstractMiddleware[as_middleware(m) for m in middleware],
+        AbstractMiddleware[asmiddleware(m) for m in middleware],
         Tuple{Symbol,String,Function}[],
         Tuple{String,NamedTuple}[],
         RouteGroup[]

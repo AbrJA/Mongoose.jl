@@ -7,7 +7,7 @@
 
     Today the transport is a **capability-tagged seam** rather than a callable
     interface: implementations declare what they can do via the ability
-    traits (`supportsws`, `supportstls`, `supportsstreaming`), and the server
+    traits (`supportsws`, `supportstls`, `supportsstream`), and the server
     drives the one C implementation
     (`transport/mongoose`). A reference fake (`FakeTransport`, in
     `testing.jl`) drives the whole pipeline with no FFI, which is what

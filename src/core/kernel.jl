@@ -11,7 +11,7 @@
 
     The availability of this layer is what makes the transport replaceable —
     anything in `Kernel` can be exercised with pure Julia (see
-    `Kernel.invoke_request` for the request→response seam).
+    `Kernel.invokerequest` for the request→response seam).
 """
 module Kernel
 
@@ -22,14 +22,14 @@ using Base64
 include("base.jl")          # AbstractRequest
 include("strings.jl")       # URL/query/header utilities
 include("formats.jl")       # AbstractFormat + MIME + encode/decode
-include("status.jl")        # status_reason
+include("status.jl")        # statusreason
 include("request.jl")       # Request, Headers, form/multipart/query helpers
 include("response.jl")      # Response, StreamResponse, Cookie
 include("errors.jl")        # RouteError/ServerError/BindError, HTTPError hierarchy
 include("ws_types.jl")      # Message, Intent, WsEndpoint, Tagged, WsConn
 include("validation.jl")    # validate(), ValidationError
 
-include("pipeline.jl")      # AbstractMiddleware, as_middleware, execute_pipeline
+include("pipeline.jl")      # AbstractMiddleware, asmiddleware, executepipeline
 include("executor.jl")      # AbstractExecutor, SyncExecutor, submit!/start!/stop!
 
 include("interface.jl")     # AbstractRouter protocol
@@ -37,7 +37,8 @@ include("transport.jl")     # AbstractTransport + capability traits
 include("router.jl")        # Default Router (method map + ordered patterns)
 include("groups.jl")        # RouteGroup + mount!
 include("compiled.jl")      # Compiled frozen-route dispatch (freeze! table)
-include("process.jl")       # invoke_request — the transport-agnostic seam
+include("process.jl")       # invokerequest — the transport-agnostic seam
+include("streaming.jl")     # SSEWriter/emit/sse — SSE producer over StreamResponse
 
 include("cors.jl")
 include("ratelimit.jl")
@@ -52,10 +53,10 @@ include("etag.jl")
 export AbstractRequest, Request, Headers, context, form, header, query, body,
     multipart, MultipartFile,
     Response, StreamResponse, Cookie, bake, cookies, json, html, text, redirect,
-    Plain, Html, Css, Js, Json, Xml, Binary, mime, content_type_pair, encode, decode,
-    status_reason,
+    Plain, Html, Css, Js, Json, Xml, Binary, mime, contenttypepair, encode, decode,
+    statusreason,
     RouteError, ServerError, BindError,
-    HTTPError, error_status,
+    HTTPError, errorstatus,
     BadRequestError, UnauthorizedError, PaymentRequiredError, ForbiddenError,
     NotFoundError, MethodNotAllowedError, NotAcceptableError, RequestTimeoutError,
     ConflictError, GoneError, LengthRequiredError, PreconditionFailedError,
@@ -68,15 +69,16 @@ export AbstractRequest, Request, Headers, context, form, header, query, body,
     Message, Intent, WsEndpoint, WsConn, Tagged,
     AbstractRouter, Router, MethodMap, RouteResult, Matched, NoMatch, WrongMethod,
     SingleEndpoint, matchroute, hasroute,
-    get_handler, get_endpoint, set_handler!, haswsroutes, ws_endpoint,
+    gethandler, getendpoint, sethandler!, haswsroutes, wsendpoint,
     route!, ws!, group, group!, RouteGroup, mount!, post!, patch!, options!, head!,
-    Endpoint, error_response, invoke_request, RequestContext, freeze!, isfrozen, terminal_for,
-    AbstractMiddleware, PathFilter, execute_pipeline, FunctionMiddleware, as_middleware,
+    Endpoint, errorresponse, invokerequest, RequestContext, freeze!, isfrozen, terminalfor,
+    AbstractMiddleware, PathFilter, executepipeline, FunctionMiddleware, asmiddleware,
     AbstractExecutor, SyncExecutor, FakeExecutor, run!, submit!, start!, stop!,
     AbstractTransport, supportsws, supportstls, supportsstream,
     Cors, Bearer, ApiKey, BasicAuth, RateLimit, Compress, Logger, Health,
     PrometheusMetrics, SecurityHeaders, Etag,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
-    parse_query, strip_query, format_headers, sanitize_header_value, to_lower, url_decode
+    parsequery, stripquery, formatheaders, urldecode,
+    SSEWriter, emit, sse
 
 end # module Kernel

@@ -1,8 +1,8 @@
 """
     HTTP event handler — the hot path from C event → Request → Response → send.
 
-    The dispatch pipeline itself (`invoke_request`, `dispatch_to_handler`,
-    `error_response`) lives in `Kernel`; this file binds it to the
+    The dispatch pipeline itself (`invokerequest`, `dispatch_to_handler`,
+    `errorresponse`) lives in `Kernel`; this file binds it to the
     transport/server.
 """
 
@@ -11,7 +11,7 @@
 @inline function resolve_request_id(req::Request, server::AbstractServer)::String
     h = get(req.headers, "x-request-id", nothing)
     if h !== nothing
-        safe = sanitize_header_value(h)
+        safe = Kernel.sanitize_header_value(h)
         !isempty(safe) && return safe
     end
     return string(Threads.atomic_add!(server.runtime.id_seq, UInt64(1)) + UInt64(1))
@@ -64,7 +64,7 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
 
     # 1. WebSocket upgrade check
     if haswsroutes(server.router)
-        endpoint = ws_endpoint(server.router, uri)
+        endpoint = wsendpoint(server.router, uri)
         if endpoint !== nothing
             ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
             return nothing
@@ -73,7 +73,7 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
 
 # 2. Body size enforcement
     if msg.body.len > server.config.max_body
-        send_http_response!(conn, _echo_conn_close_error!(error_response(server.errors, 413), msg))
+        send_http_response!(conn, _echo_conn_close_error!(errorresponse(server.errors, 413), msg))
         return nothing
     end
 
@@ -98,7 +98,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
             invoke_http(server, req)
         catch e
             @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
-            error_response(server.errors, req, 500)
+            errorresponse(server.errors, req, 500)
         end
         _echo_conn_close!(res, req)
         rid = resolve_request_id(req, server)
@@ -121,7 +121,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         end
         if !submit!(exec, job)
             delete!(server.runtime.connections, id)
-            res = _echo_conn_close!(error_response(server.errors, 503), req)
+            res = _echo_conn_close!(errorresponse(server.errors, 503), req)
             send_http_response!(conn, res)
         end
     end
@@ -140,7 +140,7 @@ function _http_job(server::AbstractServer, id::Int, req::Request)
         invoke_http(server, req)
     catch e
         @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
-        error_response(server.errors, req, 500)
+        errorresponse(server.errors, req, 500)
     end
     _echo_conn_close!(res, req)
     if res isa StreamResponse
@@ -165,13 +165,13 @@ function _http_job_timed(server::AbstractServer, id::Int, req::Request, timeout:
     r === :ok && return fetch(t)
     push!(server.runtime.bg_tasks, t)
     @log_warn "Request timeout uri=$(req.uri)"
-    return Tagged{Union{Response,StreamResponse,Message}}(id, error_response(server.errors, 504))
+    return Tagged{Union{Response,StreamResponse,Message}}(id, errorresponse(server.errors, 504))
 end
 
 # --- HTTP dispatch (thin transport wrapper over the core pipeline) ---
 
 function invoke_http(server::AbstractServer, req::Request)::Union{Response,StreamResponse}
-    res = invoke_request(server.context, req)
+    res = invokerequest(server.context, req)
     # HEAD responses must not carry a body (RFC 9110 §3.1). An explicit HEAD
     # endpoint may return a body from its handler, which would be sent as-is —
     # strip it here and let mongoose frame the empty body natively

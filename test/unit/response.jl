@@ -147,8 +147,8 @@ end
         @test Mongoose.mime(Binary) == "application/octet-stream"
     end
 
-    @testset "content_type_pair" begin
-        p = Mongoose.content_type_pair(Plain)
+    @testset "contenttypepair" begin
+        p = Mongoose.contenttypepair(Plain)
         @test p isa Pair{String,String}
         @test contains(p.second, "text/plain")
     end
@@ -197,19 +197,19 @@ end
     end
 end
 
-@testset "status_reason" begin
-    @test Mongoose.status_reason(200) == "OK"
-    @test Mongoose.status_reason(201) == "Created"
-    @test Mongoose.status_reason(204) == "No Content"
-    @test Mongoose.status_reason(301) == "Moved Permanently"
-    @test Mongoose.status_reason(400) == "Bad Request"
-    @test Mongoose.status_reason(401) == "Unauthorized"
-    @test Mongoose.status_reason(403) == "Forbidden"
-    @test Mongoose.status_reason(404) == "Not Found"
-    @test Mongoose.status_reason(405) == "Method Not Allowed"
-    @test Mongoose.status_reason(429) == "Too Many Requests"
-    @test Mongoose.status_reason(500) == "Internal Server Error"
-    @test Mongoose.status_reason(503) == "Service Unavailable"
-    @test Mongoose.status_reason(999) == ""
+@testset "statusreason" begin
+    @test Mongoose.statusreason(200) == "OK"
+    @test Mongoose.statusreason(201) == "Created"
+    @test Mongoose.statusreason(204) == "No Content"
+    @test Mongoose.statusreason(301) == "Moved Permanently"
+    @test Mongoose.statusreason(400) == "Bad Request"
+    @test Mongoose.statusreason(401) == "Unauthorized"
+    @test Mongoose.statusreason(403) == "Forbidden"
+    @test Mongoose.statusreason(404) == "Not Found"
+    @test Mongoose.statusreason(405) == "Method Not Allowed"
+    @test Mongoose.statusreason(429) == "Too Many Requests"
+    @test Mongoose.statusreason(500) == "Internal Server Error"
+    @test Mongoose.statusreason(503) == "Service Unavailable"
+    @test Mongoose.statusreason(999) == ""
 end
 

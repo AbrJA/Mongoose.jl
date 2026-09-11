@@ -46,7 +46,7 @@ end
 
     # Global ball then route-scoped middleware compose: g → route → handler.
     global_mw = _RecordMw("global", sink)
-    res = Mongoose.invoke_request(Mongoose.RequestContext(r; middlewares=[_RecordMw("global", sink)]),
+    res = Mongoose.invokerequest(Mongoose.RequestContext(r; middlewares=[_RecordMw("global", sink)]),
         Request(:get, "/s", Dict{String,String}(), Pair{String,String}[], ""))
     @test res.status == 200
     @test sink == ["global", "route", "handler", "route:after", "global:after"]
@@ -64,7 +64,7 @@ end
     @test length(ep.middleware) == 1
     @test ep.middleware[1].label == "grp"
 
-    res = Mongoose.invoke_request(Mongoose.RequestContext(r),
+    res = Mongoose.invokerequest(Mongoose.RequestContext(r),
         Request(:get, "/api/x", Dict{String,String}(), Pair{String,String}[], ""))
     @test res.status == 200
     @test sink == ["grp", "handler", "grp:after"]
@@ -83,7 +83,7 @@ end
     end
     @test app.middlewares[1] isa Mongoose.FunctionMiddleware
 
-    res = Mongoose.invoke_request(Mongoose.RequestContext(r; middlewares=app.middlewares),
+    res = Mongoose.invokerequest(Mongoose.RequestContext(r; middlewares=app.middlewares),
         Request(:get, "/c", Dict{String,String}(), Pair{String,String}[], ""))
     @test res.status == 200
     @test hang == ["mw", "handler"]

@@ -94,11 +94,11 @@
         # Typed route wins when the segment parses; otherwise the string route.
         m1 = Mongoose.matchroute(r, :get, "/users/42")
         @test m1 !== nothing
-        @test Mongoose.get_handler(m1, :get)(nothing, 42).body == "int:42"
+        @test Mongoose.gethandler(m1, :get)(nothing, 42).body == "int:42"
         @test Mongoose.matchroute(r, :get, "/users/abc") isa Mongoose.Matched
         m2 = Mongoose.matchroute(r, :get, "/users/abc")
         @test m2 !== nothing
-        @test Mongoose.get_handler(m2, :get)(nothing, "abc").body == "str:abc"
+        @test Mongoose.gethandler(m2, :get)(nothing, "abc").body == "str:abc"
     end
 
     @testset "Static routes take precedence over parametric" begin
@@ -107,7 +107,7 @@
         route!(r, :get, "/users/me", req -> text("static"))
         m = Mongoose.matchroute(r, :get, "/users/me")
         @test m !== nothing
-        @test Mongoose.get_handler(m, :get)(nothing).body == "static"
+        @test Mongoose.gethandler(m, :get)(nothing).body == "static"
     end
 
     @testset "All HTTP methods on App" begin

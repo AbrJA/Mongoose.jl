@@ -6,13 +6,13 @@
 # --- URL Decoding ---
 
 """
-    url_decode(bytes, start_i, end_i; plus=true) → String
+    urldecode(bytes, start_i, end_i; plus=true) → String
 
 Decode a URL-encoded byte range. Handles `+` → space (form semantics) and
 `%XX` hex escapes. Pass `plus=false` for path segments, where `+` is a
 literal character (RFC 3986 §2.3).
 """
-function url_decode(bytes::AbstractVector{<:UInt8}, start_i::Int, end_i::Int;
+function urldecode(bytes::AbstractVector{<:UInt8}, start_i::Int, end_i::Int;
                     plus::Bool=true)
     out = IOBuffer(sizehint=end_i - start_i + 1)
     i = start_i
@@ -44,11 +44,11 @@ end
 # --- Query String Parsing ---
 
 """
-    parse_query(query::AbstractString) → Dict{String,String}
+    parsequery(query::AbstractString) → Dict{String,String}
 
 Single-pass query string parser. Pre-sized for typical query parameter counts.
 """
-function parse_query(query::AbstractString)::Dict{String,String}
+function parsequery(query::AbstractString)::Dict{String,String}
     isempty(query) && return Dict{String,String}()
     bytes = codeunits(query)
     len = length(bytes)
@@ -61,11 +61,11 @@ function parse_query(query::AbstractString)::Dict{String,String}
         eq_idx = findnext(==(UInt8('=')), bytes, i)
 
         if isnothing(eq_idx) || eq_idx > pair_end
-            k_str = url_decode(bytes, i, pair_end)
+            k_str = urldecode(bytes, i, pair_end)
             !isempty(k_str) && (params[k_str] = "")
         else
-            k_str = url_decode(bytes, i, eq_idx - 1)
-            v_str = url_decode(bytes, eq_idx + 1, pair_end)
+            k_str = urldecode(bytes, i, eq_idx - 1)
+            v_str = urldecode(bytes, eq_idx + 1, pair_end)
             !isempty(k_str) && (params[k_str] = v_str)
         end
         isnothing(amp_idx) && break
@@ -77,11 +77,11 @@ end
 # --- URI Path Stripping ---
 
 """
-    strip_query(uri) → SubString
+    stripquery(uri) → SubString
 
 Return the URI path without the query string. Zero-allocation (returns a view).
 """
-@inline function strip_query(uri::AbstractString)::SubString{String}
+@inline function stripquery(uri::AbstractString)::SubString{String}
     len = ncodeunits(uri)
     @inbounds for i in 1:len
         codeunit(uri, i) == UInt8('?') && return SubString(uri, 1, i - 1)
@@ -92,11 +92,11 @@ end
 # --- Header Formatting ---
 
 """
-    format_headers(headers) → String
+    formatheaders(headers) → String
 
 Serialize headers into Mongoose C library format: `"Key: Value\\r\\n"`.
 """
-function format_headers(headers::Vector{Pair{String,String}})::String
+function formatheaders(headers::Vector{Pair{String,String}})::String
     isempty(headers) && return ""
     io = IOBuffer(sizehint=length(headers) * 40)
     for (k, v) in headers
@@ -171,7 +171,7 @@ end
 
 @inline function decode_path_segment(bytes::AbstractVector{<:UInt8}, s::Int, e::Int)::String
     _has_pct(bytes, s, e) || return String(view(bytes, s:e))
-    return url_decode(bytes, s, e; plus=false)
+    return urldecode(bytes, s, e; plus=false)
 end
 
 @inline decode_path_segment(s::String) = decode_path_segment(codeunits(s), 1, ncodeunits(s))

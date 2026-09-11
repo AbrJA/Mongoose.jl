@@ -14,7 +14,7 @@
       `Allow` set are resolved by the router at match time)
     - `hasroute(r::R, path)`                  → `Bool` (path owned, catch-all excluded)
       (no `"*"` fallback — route ownership check for static serving)
-    - `get_handler(match, method)` / `get_endpoint(match, method)` — work on
+    - `gethandler(match, method)` / `getendpoint(match, method)` — work on
       any `Matched`, including custom routers' matches and `SingleEndpoint`
 
     Custom routers return a `RouteResult` from `matchroute`. Returning a
@@ -24,7 +24,7 @@
     Optional capabilities (safe defaults are provided):
     - `haswsroutes(r::R) → Bool`                   (default: `false`)
     - `ws!(r::R, path; ...)`                         (no default)
-    - `ws_endpoint(r::R, uri)`                       (default: `nothing`)
+    - `wsendpoint(r::R, uri)`                       (default: `nothing`)
     - `length(r::R)`                            (default: `0`)
 
     The default implementation is `Router` in `router.jl`.
@@ -78,15 +78,15 @@ end
 
 """
     SingleEndpoint — minimal "handlers" carrier for custom routers that don't
-    track per-method maps. `get_handler`/`get_endpoint` answer for exactly the
+    track per-method maps. `gethandler`/`getendpoint` answer for exactly the
     one method the endpoint serves.
 """
 struct SingleEndpoint{E,S}
     endpoint::E
     method::S
 end
-get_endpoint(se::SingleEndpoint, m::Symbol) = m == se.method ? se.endpoint : nothing
-get_handler(se::SingleEndpoint, m::Symbol) =
+getendpoint(se::SingleEndpoint, m::Symbol) = m == se.method ? se.endpoint : nothing
+gethandler(se::SingleEndpoint, m::Symbol) =
     m == se.method ? se.endpoint.handler : nothing
 
 # --- Required protocol: throwing fallbacks ---
@@ -104,17 +104,17 @@ function hasroute(router::AbstractRouter, path::AbstractString)
     throw(MethodError(hasroute, (router, path)))
 end
 
-function get_handler(matched, method::Symbol)
-    throw(MethodError(get_handler, (matched, method)))
+function gethandler(matched, method::Symbol)
+    throw(MethodError(gethandler, (matched, method)))
 end
 
-function get_endpoint(matched, method::Symbol)
-    throw(MethodError(get_endpoint, (matched, method)))
+function getendpoint(matched, method::Symbol)
+    throw(MethodError(getendpoint, (matched, method)))
 end
 
 # Matched exposes the handlers accessors too (introspection + tests).
-@inline get_handler(m::Matched, method::Symbol) = get_handler(m.handlers, method)
-@inline get_endpoint(m::Matched, method::Symbol) = get_endpoint(m.handlers, method)
+@inline gethandler(m::Matched, method::Symbol) = gethandler(m.handlers, method)
+@inline getendpoint(m::Matched, method::Symbol) = getendpoint(m.handlers, method)
 
 # --- Optional capabilities: safe defaults ---
 
@@ -124,7 +124,7 @@ function ws!(router::AbstractRouter, path::AbstractString; kwargs...)
     throw(MethodError(ws!, (router, path)))
 end
 
-ws_endpoint(::AbstractRouter, ::AbstractString) = nothing
+wsendpoint(::AbstractRouter, ::AbstractString) = nothing
 
 Base.length(::AbstractRouter) = 0
 
@@ -137,7 +137,7 @@ isfrozen(::AbstractRouter) = false
 # ── Compiled-dispatch capability (optional) ──────────────────────────────
 
 """
-    terminal_for(router, request) → Union{Nothing,Function}
+    terminalfor(router, request) → Union{Nothing,Function}
 
 Optional compiled-dispatch capability. A frozen `Router` that compiled its
 route table returns a **pre-built terminal** `(req) → Response` for the
@@ -148,4 +148,4 @@ This is the contract-by-fallback seam that lets the pipeline skip the
 per-request closure/concat allocation when the router is compiled, without
 forcing every router implementation to understand compilation.
 """
-terminal_for(::AbstractRouter, ::Request) = nothing
+terminalfor(::AbstractRouter, ::Request) = nothing

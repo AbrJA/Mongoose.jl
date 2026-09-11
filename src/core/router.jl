@@ -37,7 +37,7 @@ end
 function Endpoint(handler::Function;
                   middleware::AbstractVector=AbstractMiddleware[],
                   metadata=nothing)
-    mws = AbstractMiddleware[as_middleware(m) for m in middleware]
+    mws = AbstractMiddleware[asmiddleware(m) for m in middleware]
     return Endpoint(handler, mws, metadata)
 end
 
@@ -69,27 +69,27 @@ end
 end
 
 """
-    get_endpoint(mm, method) → Union{Nothing, Endpoint}
+    getendpoint(mm, method) → Union{Nothing, Endpoint}
 """
-@inline function get_endpoint(mm::MethodMap, method::Symbol)::Union{Nothing,Endpoint}
+@inline function getendpoint(mm::MethodMap, method::Symbol)::Union{Nothing,Endpoint}
     return getfield(mm, _method_slot(mm, method))
 end
 
 """
-    get_handler(mm, method) → Union{Nothing, Function}
+    gethandler(mm, method) → Union{Nothing, Function}
 """
-@inline function get_handler(mm::MethodMap, method::Symbol)::Union{Nothing,Function}
+@inline function gethandler(mm::MethodMap, method::Symbol)::Union{Nothing,Function}
     ep = getfield(mm, _method_slot(mm, method))
     return ep === nothing ? nothing : ep.handler
 end
 
-function set_handler!(mm::MethodMap, method::Symbol, ep::Endpoint)
+function sethandler!(mm::MethodMap, method::Symbol, ep::Endpoint)
     setfield!(mm, _method_slot(mm, method), ep)
     return
 end
 
-@inline set_handler!(mm::MethodMap, method::Symbol, handler::Function) =
-    set_handler!(mm, method, Endpoint(handler))
+@inline sethandler!(mm::MethodMap, method::Symbol, handler::Function) =
+    sethandler!(mm, method, Endpoint(handler))
 
 # --- Fixed Route ---
 
@@ -176,7 +176,7 @@ Freezing also **compiles** the closed table into a `CompiledDispatch` (see
 terminal (handler + scoped middleware fused, with the handler's concrete type
 captured), and parametric matching runs through a statically-typed chain with
 no per-request path splitting. The pipeline uses the compiled path via
-`terminal_for` when `compiled !== nothing`; `matchroute` keeps its
+`terminalfor` when `compiled !== nothing`; `matchroute` keeps its
 generic (correct) implementation.
 """
 function freeze!(r::Router)
@@ -195,7 +195,7 @@ table compiled). Custom `AbstractRouter`s default to `false`.
 @inline isfrozen(r::Router) = r.frozen
 
 @inline haswsroutes(r::Router) = !isempty(r.ws_routes)
-@inline ws_endpoint(r::Router, uri::String) = get(r.ws_routes, uri, nothing)
+@inline wsendpoint(r::Router, uri::String) = get(r.ws_routes, uri, nothing)
 
 Base.length(r::Router)::Int = length(r.fixed) + length(r.param_routes)
 
@@ -247,13 +247,13 @@ end
 function _register_route!(router::Router, method::Symbol, path::String, endpoint::Endpoint)
     if path == "*"
         entry = get!(() -> FixedRoute(), router.fixed, "*")
-        set_handler!(entry.handlers, method, endpoint)
+        sethandler!(entry.handlers, method, endpoint)
         return
     end
 
     if !occursin(':', path) && !occursin('*', path)
         entry = get!(() -> FixedRoute(), router.fixed, path)
-        set_handler!(entry.handlers, method, endpoint)
+        sethandler!(entry.handlers, method, endpoint)
         return
     end
 
@@ -286,9 +286,9 @@ function _register_route!(router::Router, method::Symbol, path::String, endpoint
         param_route = ParamRoute(segments, MethodMap(), is_wildcard,
                                  (pos...,), (types...,))
         push!(router.param_routes, param_route)
-        set_handler!(router.param_routes[end].handlers, method, endpoint)
+        sethandler!(router.param_routes[end].handlers, method, endpoint)
     else
-        set_handler!(router.param_routes[route].handlers, method, endpoint)
+        sethandler!(router.param_routes[route].handlers, method, endpoint)
     end
 end
 
@@ -368,7 +368,7 @@ order; the `"*"` catch-all is the final fallback. `HEAD` is served only by an
 explicit `head!` route — there is no auto-HEAD fallback.
 """
 function matchroute(router::Router, method::Symbol, path::AbstractString)::RouteResult
-    clean = strip_query(path)
+    clean = stripquery(path)
     found = _find_route(router, clean)
     found === nothing && return NoMatch()
     mm, params = found
@@ -385,7 +385,7 @@ method — used by static file serving to avoid shadowing registered routes
 (the previous `match_route_exact` semantic).
 """
 function hasroute(router::Router, path::AbstractString)::Bool
-    clean = strip_query(path)
+    clean = stripquery(path)
     return _find_route_no_wildcard(router, clean) !== nothing
 end
 
@@ -422,7 +422,7 @@ end
 # Resolve a method against a route's MethodMap. No auto-HEAD fallback: HEAD is
 # served only by an explicit `head!` endpoint.
 @inline function resolve_method(mm::MethodMap, method::Symbol)
-    return get_endpoint(mm, method)
+    return getendpoint(mm, method)
 end
 
 @inline function _first_endpoint(mm::MethodMap)

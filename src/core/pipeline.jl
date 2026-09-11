@@ -22,7 +22,7 @@
     ```
 
     Plain closures/functions work too: `use!`/`route!` wrap them via
-    `as_middleware` (see `FunctionMiddleware`). The tag type exists so the
+    `asmiddleware` (see `FunctionMiddleware`). The tag type exists so the
     pipeline can hold a typed stack (`Vector{AbstractMiddleware}`).
 """
 abstract type AbstractMiddleware end
@@ -60,21 +60,21 @@ function (mw::FunctionMiddleware)(req::Request, next::Function)
 end
 
 """
-    as_middleware(mw) → AbstractMiddleware
+    asmiddleware(mw) → AbstractMiddleware
 
 Normalize any middleware into an `AbstractMiddleware`: `AbstractMiddleware`
 instances pass through; any other callable `f(req, next)` is wrapped in a
 `FunctionMiddleware`. This is the single admission point used by `use!`, by
 `route!`/`group` `middleware=` metadata, and by `Endpoint`s.
 """
-as_middleware(mw::AbstractMiddleware) = mw
-as_middleware(mw) = FunctionMiddleware(mw)
+asmiddleware(mw::AbstractMiddleware) = mw
+asmiddleware(mw) = FunctionMiddleware(mw)
 
 # --- Pipeline execution ---
 
 """
-    execute_pipeline(middlewares, request, handler) → Response
-    execute_pipeline(globals, scoped, request, handler) → Response
+    executepipeline(middlewares, request, handler) → Response
+    executepipeline(globals, scoped, request, handler) → Response
 
 Run the middleware onion around `handler`: each middleware receives
 `(request, next)`; `next` advances to the following middleware and finally the
@@ -90,7 +90,7 @@ per request.
 `handler` may be any 0-arity callable (`Function` or functor) — the compiled
 dispatch path passes pre-baked terminal functors.
 """
-@inline function execute_pipeline(middlewares, req::Request,
+@inline function executepipeline(middlewares, req::Request,
                                   handler)
     n = length(middlewares)
     n == 0 && return handler(req)
@@ -103,7 +103,7 @@ dispatch path passes pre-baked terminal functors.
     return next()
 end
 
-@inline function execute_pipeline(globals, scoped::AbstractVector{<:AbstractMiddleware},
+@inline function executepipeline(globals, scoped::AbstractVector{<:AbstractMiddleware},
                                   req::Request, handler)
     ng, ns = length(globals), length(scoped)
     total = ng + ns

@@ -32,7 +32,7 @@ end
 @inline Base.append!(h::Headers, kvs::AbstractVector{<:Pair{String,String}}) =
     (append!(h.data, kvs); h)
 
-format_headers(h::Headers)::String = format_headers(h.data)
+formatheaders(h::Headers)::String = formatheaders(h.data)
 
 function Base.get(h::Headers, key::String, default)
     lkey = is_lowercase_ascii(key) ? key : lowercase(key)
@@ -103,7 +103,7 @@ function Request(method::Symbol, uri::String,
                  query::Dict{String,String}, headers::Union{Headers,Vector{Pair{String,String}}},
                  body::String, context::Union{Nothing,Dict{Symbol,Any}}=nothing,
                  remote_addr::Union{Nothing,String}=nothing)
-    path = String(strip_query(uri))
+    path = String(stripquery(uri))
     h = headers isa Headers ? headers : Headers(headers)
     return Request(method, uri, path, query, h, body, context, remote_addr)
 end
@@ -136,7 +136,7 @@ function form(req::Request)::Dict{String,String}
     ct = get(req.headers, "content-type", "")
     startswith(ct, "application/x-www-form-urlencoded") ||
         throw(ArgumentError("form() requires Content-Type: application/x-www-form-urlencoded, got \"$ct\""))
-    return parse_query(req.body)
+    return parsequery(req.body)
 end
 
 """

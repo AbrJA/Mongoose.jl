@@ -14,10 +14,10 @@ state, so the socket must not be reused (streams follow the same rule).
 """
 function send_http_response!(conn::MgConnection, res::Response)
     if res.body isa Vector{UInt8}
-        headers = _close_after_raw(format_headers(res.headers), res)
+        headers = _close_after_raw(formatheaders(res.headers), res)
         _send_binary_response!(conn, res.status, headers, res.body)
     else
-        mg_http_reply(conn, res.status, format_headers(res.headers), res.body)
+        mg_http_reply(conn, res.status, formatheaders(res.headers), res.body)
     end
 end
 
@@ -27,7 +27,7 @@ end
 Send response with X-Request-Id header injected.
 """
 function send_http_response!(conn::MgConnection, res::Response, rid::String)
-    headers = string(format_headers(res.headers), "X-Request-Id: ", rid, "\r\n")
+    headers = string(formatheaders(res.headers), "X-Request-Id: ", rid, "\r\n")
     if res.body isa Vector{UInt8}
         _send_binary_response!(conn, res.status, _close_after_raw(headers, res), res.body)
     else
@@ -55,7 +55,7 @@ send_ws_frame!(conn::MgConnection, msg::Message) = send_ws_frame!(conn, msg.data
 
 
 function _send_binary_response!(conn::MgConnection, status::Int, headers::String, body::Vector{UInt8})
-    status_text = status_reason(status)
+    status_text = statusreason(status)
     head = string("HTTP/1.1 ", status, " ", status_text, "\r\n",
                   headers, "Content-Length: ", length(body), "\r\n\r\n")
     hlen = ncodeunits(head)
@@ -140,11 +140,11 @@ function send_stream_response!(server::AbstractServer, conn::MgConnection, resp:
     # own connection) to keep the server safe and predictable.
     headers = string(
         content_type_header_raw(resp.content_type),
-        format_headers(resp.headers),
+        formatheaders(resp.headers),
         "Transfer-Encoding: chunked\r\n",
         "Connection: close\r\n"
     )
-    head = string("HTTP/1.1 ", resp.status, " ", status_reason(resp.status), "\r\n",
+    head = string("HTTP/1.1 ", resp.status, " ", statusreason(resp.status), "\r\n",
                   headers, "\r\n")
     mg_send(conn, Vector{UInt8}(codeunits(head)))
 

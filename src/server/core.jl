@@ -451,7 +451,7 @@ use!(app, (req, next) -> (req.headers ...; next()))
 """
 function use!(server::AbstractServer, @nospecialize(mw); paths::Vector{String}=String[])
     _ensure_registratable(server, "middleware")
-    inner = as_middleware(mw)
+    inner = asmiddleware(mw)
     wrapped = isempty(paths) ? inner : PathFilter(inner, paths)
     push!(server.middlewares, wrapped)
     # Refresh the seam's baked tuple stack (registration is build-phase only).

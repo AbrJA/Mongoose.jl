@@ -22,20 +22,20 @@ function Mongoose.route!(r::DictRouter, method::Symbol, path::AbstractString, @n
                          middleware::Vector{<:Mongoose.AbstractMiddleware}=Mongoose.AbstractMiddleware[],
                          metadata=nothing)
     m = get!(() -> Mongoose.MethodMap(), r.routes, String(path))
-    Mongoose.set_handler!(m, method, handler)
+    Mongoose.sethandler!(m, method, handler)
     return r
 end
 
 function Mongoose.matchroute(r::DictRouter, method::Symbol, path::AbstractString)
     m = get(r.routes, String(path), nothing)
     m === nothing && return Mongoose.NoMatch()
-    ep = Mongoose.get_endpoint(m, method)
+    ep = Mongoose.getendpoint(m, method)
     ep === nothing && return Mongoose.WrongMethod(Mongoose.method_bitmask(m))
     return Mongoose.Matched(ep, m, ())
 end
 
 function Mongoose.hasroute(r::DictRouter, path::AbstractString)
-    return haskey(r.routes, String(Mongoose.strip_query(path)))
+    return haskey(r.routes, String(Mongoose.stripquery(path)))
 end
 
 Mongoose.haswsroutes(::DictRouter) = false

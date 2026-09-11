@@ -4,7 +4,7 @@
     r = _FallbackRouter()
     # Optional capabilities default to "not supported".
     @test Mongoose.haswsroutes(r) == false
-    @test Mongoose.ws_endpoint(r, "/ws") === nothing
+    @test Mongoose.wsendpoint(r, "/ws") === nothing
     @test Mongoose.length(r) == 0
     # Required protocol throws a clear MethodError when unimplemented.
     @test_throws MethodError Mongoose.matchroute(r, :get, "/")
@@ -29,7 +29,7 @@ end
     end
 
     function Mongoose.matchroute(r::RegexRouter, method::Symbol, path::AbstractString)
-        clean = Mongoose.strip_query(path)
+        clean = Mongoose.stripquery(path)
         for (re, m, ep) in r.entries
             m === method || continue
             match(re, String(clean)) === nothing && continue
@@ -38,7 +38,7 @@ end
         return Mongoose.NoMatch()
     end
     function Mongoose.hasroute(r::RegexRouter, path::AbstractString)
-        clean = Mongoose.strip_query(path)
+        clean = Mongoose.stripquery(path)
         return any(e -> match(e[1], String(clean)) !== nothing, r.entries)
     end
 

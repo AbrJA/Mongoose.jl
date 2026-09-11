@@ -63,7 +63,7 @@ Response(Html, "<h1>Hello</h1>"; status=200)
 function Response(::Type{T}, body; status::Int=200,
                   headers::Vector{Pair{String,String}}=Pair{String,String}[]) where {T<:AbstractFormat}
     rendered = body isa String ? body : encode(T, body)
-    all_headers = isempty(headers) ? Pair{String,String}[content_type_pair(T)] : [content_type_pair(T); headers]
+    all_headers = isempty(headers) ? Pair{String,String}[contenttypepair(T)] : [contenttypepair(T); headers]
     return Response(status, all_headers, rendered)
 end
 

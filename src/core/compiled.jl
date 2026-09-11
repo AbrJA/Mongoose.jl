@@ -3,7 +3,7 @@
 
     `freeze!(router)` compiles the closed route table into a
     `CompiledDispatch`. The pipeline then resolves a request through
-    `terminal_for` (see `interface.jl`) instead of the generic
+    `terminalfor` (see `interface.jl`) instead of the generic
     `matchroute`/pipeline path, so the hot path:
 
     - never allocates a per-request closure or `[global; scoped]` concat,
@@ -68,7 +68,7 @@ end
 # Wrap a 0-arity terminal in its route-scoped middleware (once, at freeze).
 @inline function _wrap_scoped(inner::Function, mws::Vector{AbstractMiddleware})::Function
     isempty(mws) && return inner
-    return (req) -> execute_pipeline(mws, req, inner)
+    return (req) -> executepipeline(mws, req, inner)
 end
 
 # Bake a fixed-route action: concrete handler type captured in `Terminal`.
@@ -112,7 +112,7 @@ struct ScopedParamCall{P,F}
     plain::F
 end
 (spc::ScopedParamCall{P,F})(req::Request, p::P) where {P,F} =
-    execute_pipeline(spc.mws, req, BoundParams{typeof(spc.plain), P}(spc.plain, p))
+    executepipeline(spc.mws, req, BoundParams{typeof(spc.plain), P}(spc.plain, p))
 
 # --- Compiled nodes ---
 
@@ -419,8 +419,8 @@ end
 
 # --- Pipeline entry point ---
 
-function terminal_for(r::Router, req::Request)
+function terminalfor(r::Router, req::Request)
     c = r.compiled
     c === nothing && return nothing
-    return _compiled_terminal(c, req.method, strip_query(req.uri))
+    return _compiled_terminal(c, req.method, stripquery(req.uri))
 end

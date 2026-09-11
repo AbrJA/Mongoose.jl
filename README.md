@@ -537,14 +537,14 @@ required protocol:
 |---|---|
 | `route!(r, method, path, handler; middleware, metadata)` | register an `Endpoint` |
 | `matchroute(r, method, path)` | return a `RouteResult` (`Matched`/`NoMatch`/`WrongMethod`) |
-| `get_handler(match, method)` | handler for that method, or `nothing` |
-| `get_endpoint(match, method)` | the route's `Endpoint`, or `nothing` |
+| `gethandler(match, method)` | handler for that method, or `nothing` |
+| `getendpoint(match, method)` | the route's `Endpoint`, or `nothing` |
 | `hasroute(r, path)` | path owned by a concrete route (catch-all excluded) — static-serving shadow check |
 
-Optional capabilities (`length(router)`, `haswsroutes`, `ws_endpoint`, `ws!`,
+Optional capabilities (`length(router)`, `haswsroutes`, `wsendpoint`, `ws!`,
 `freeze!`, `isfrozen`) have safe "not supported" defaults. Missing required
 methods fail loudly via fallback `MethodError`s. The default `Router` also
-implements the optional compiled-dispatch capability `terminal_for(r, req)`:
+implements the optional compiled-dispatch capability `terminalfor(r, req)`:
 after `freeze!` it returns a pre-built terminal (with scoped middleware fused)
 so the pipeline skips per-request dispatch allocations —
 other routers simply fall back to the generic path.
@@ -558,7 +558,7 @@ them; a custom executor can carry its own concurrency policy.
 ### Transport
 
 `AbstractTransport` declares capabilities via trait functions
-(`supportsws`, `supportstls`, `supportsstreaming`). The C transport
+(`supportsws`, `supportstls`, `supportsstream`). The C transport
 (`transport/mongoose`) wraps the Mongoose C library; `FakeTransport` runs
 everything in pure Julia — that is what `TestClient` is.
 

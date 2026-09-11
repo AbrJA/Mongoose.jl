@@ -30,9 +30,9 @@ Base.showerror(io::IO, e::StreamClosedError) = print(io, "StreamClosedError: ", 
     FakeTransport — reference transport that runs the pipeline with no FFI.
 
     A `TestClient` really is a fake transport: it dispatches requests directly
-    through the middleware pipeline and router (`invoke_request`), bypassing
+    through the middleware pipeline and router (`invokerequest`), bypassing
     the C event loop entirely. It declares its capabilities via the ability
-    traits (`supportsws`, `supportstls`, `supportsstreaming`): no WebSocket,
+    traits (`supportsws`, `supportstls`, `supportsstream`): no WebSocket,
     no TLS, streaming supported. It can
     drive a full request cycle without a running server — including on systems
     where `Mongoose_jll` was never loaded.
@@ -167,17 +167,17 @@ function (client::FakeTransport)(method::Symbol, path::String;
     end
 
     # Merge query from path if present
-    parsed_query = parse_query(strip_query(uri) == uri ? "" : String(uri[length(strip_query(uri))+2:end]))
+    parsed_query = parsequery(stripquery(uri) == uri ? "" : String(uri[length(stripquery(uri))+2:end]))
     merge!(parsed_query, query)
 
-    req_path = String(strip_query(uri))
+    req_path = String(stripquery(uri))
     req = Request(method, uri, req_path, parsed_query, Headers(headers), body, nothing, remote_addr)
 
     # Run through pipeline exactly as the real server would
     result = try
         invoke_http(client.app, req)
     catch e
-        error_response(client.app.errors, req, 500)
+        errorresponse(client.app.errors, req, 500)
     end
 
     if result isa StreamResponse

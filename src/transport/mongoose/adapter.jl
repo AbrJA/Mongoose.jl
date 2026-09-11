@@ -16,10 +16,10 @@ function adapt_request(msg::MgHttpMessage;
     method = parse_method(msg.method)
     uri = to_string(msg.uri)
     query_str = to_string(msg.query)
-    query = parse_query(query_str)
+    query = parsequery(query_str)
     headers = parse_headers(msg)
     body = body_of(msg, headers)
-    path = strip_query(uri)
+    path = stripquery(uri)
     return Request(method, uri, String(path), query, headers, body, nothing, remote_addr)
 end
 
@@ -31,10 +31,10 @@ Fast-path adapter reusing pre-extracted method and URI (avoids redundant C→Jul
 function adapt_request(msg::MgHttpMessage, method::Symbol, uri::String;
                        remote_addr::Union{Nothing,String}=nothing)::Request
     query_str = to_string(msg.query)
-    query = parse_query(query_str)
+    query = parsequery(query_str)
     headers = parse_headers(msg)
     body = body_of(msg, headers)
-    path = String(strip_query(uri))
+    path = String(stripquery(uri))
     return Request(method, uri, path, query, headers, body, nothing, remote_addr)
 end
 
@@ -137,7 +137,7 @@ of `lowercase(unsafe_string(...))`.
     buf = Vector{UInt8}(undef, len)
     src = str.buf
     @inbounds for i in 1:len
-        buf[i] = to_lower(unsafe_load(src, i))
+        buf[i] = Kernel.to_lower(unsafe_load(src, i))
     end
     return String(buf)
 end

@@ -1,7 +1,7 @@
 """
     Request processing pipeline — the transport-agnostic request seam.
 
-    `invoke_request(ctx::RequestContext, req)` turns a `Kernel.Request`
+    `invokerequest(ctx::RequestContext, req)` turns a `Kernel.Request`
     into a `Response`. It has no dependency on a server or on FFI types, so it
     can be exercised standalone (and by `TestClient`), and any transport (the C
     Mongoose adapter today, or a future pure-Julia one) can simply call it from
@@ -16,37 +16,37 @@ const DEFAULT_503 = Response(Plain, "503 Service Unavailable"; status=503)
 const DEFAULT_504 = Response(Plain, "504 Gateway Timeout"; status=504)
 
 """
-    error_response(errors, status) → Response
+    errorresponse(errors, status) → Response
 
 Look up a custom error response, falling back to module defaults.
 `errors` maps HTTP status codes to a static `Response` or `Function(req)`.
 """
-@inline function error_response(errors::Dict{Int,Union{Response,Function}},
+@inline function errorresponse(errors::Dict{Int,Union{Response,Function}},
                                 req::Union{Request,Nothing}, status::Int)::Response
     custom = get(errors, status, nothing)
     if custom !== nothing
         custom isa Response && return custom
         custom isa Function && req !== nothing && return try
             result = custom(req)
-            result isa Response ? result : Response(Plain, "$status $(status_reason(status))"; status=status)
+            result isa Response ? result : Response(Plain, "$status $(statusreason(status))"; status=status)
         catch
-            Response(Plain, "$status $(status_reason(status))"; status=status)
+            Response(Plain, "$status $(statusreason(status))"; status=status)
         end
     end
     status == 500 && return DEFAULT_500
     status == 413 && return DEFAULT_413
     status == 503 && return DEFAULT_503
     status == 504 && return DEFAULT_504
-    return Response(Plain, "$status $(status_reason(status))"; status=status)
+    return Response(Plain, "$status $(statusreason(status))"; status=status)
 end
 
-@inline error_response(errors::Dict{Int,Union{Response,Function}}, status::Int) =
-    error_response(errors, nothing, status)
+@inline errorresponse(errors::Dict{Int,Union{Response,Function}}, status::Int) =
+    errorresponse(errors, nothing, status)
 
 """
     RequestContext{R,M,E,S,H} — the app-level request-processing bundle.
 
-    Collapses the config that `invoke_request` needs into one object so the
+    Collapses the config that `invokerequest` needs into one object so the
     pipeline seam has a single argument: the router, the app-global middleware
     stack, the status→error-page map, the DI services, and the typed exception
     handlers.
@@ -59,7 +59,7 @@ end
     Standalone use (no server):
     ```julia
     ctx = RequestContext(router; errors=errs, services=(db=pool,))
-    resp = invoke_request(ctx, Request(:get, "/", Dict{String,String}(), Pair{String,String}[], ""))
+    resp = invokerequest(ctx, Request(:get, "/", Dict{String,String}(), Pair{String,String}[], ""))
     ```
 """
 struct RequestContext{R<:AbstractRouter,
@@ -116,7 +116,7 @@ route's scoped middleware. The terminal is always a short-circuiting
 exactly like the handler path.
 """
 function _resolve_terminal(router::AbstractRouter, request::Request)
-    compiled = terminal_for(router, request)
+    compiled = terminalfor(router, request)
     if compiled !== nothing
         # Frozen/compiled router: the terminal already fuses scoped middleware;
         # `nothing` marks scoped as baked-in.
@@ -140,7 +140,7 @@ end
 @inline function _http_error_response(ctx::RequestContext, req::Request,
                                       status::Int, message::String,
                                       headers::Headers=Headers())::Response
-    haskey(ctx.errors, status) && return error_response(ctx.errors, req, status)
+    haskey(ctx.errors, status) && return errorresponse(ctx.errors, req, status)
     isempty(headers) && push!(headers, "content-type" => "text/plain")
     return Response(status, headers, message)
 end
@@ -167,7 +167,7 @@ function _apply_head_semantics(result)::Union{Response,StreamResponse}
 end
 
 """
-    invoke_request(ctx::RequestContext, request) → Response
+    invokerequest(ctx::RequestContext, request) → Response
 
 Run the full pipeline: attach services to the request context, dispatch the
 request through any middleware then the router, apply custom error responses
@@ -184,7 +184,7 @@ Middleware is composed with the matched route's scoped `Endpoint` middleware
 the 404/405 producers — so interception middleware (CORS, health,
 metrics) observes all requests.
 """
-function invoke_request(ctx::RequestContext, request::Request)::Union{Response,StreamResponse}
+function invokerequest(ctx::RequestContext, request::Request)::Union{Response,StreamResponse}
     if !isempty(ctx.services)
         c = context(request)
         c[:_services] = ctx.services
@@ -195,18 +195,18 @@ function invoke_request(ctx::RequestContext, request::Request)::Union{Response,S
             # Compiled path: scoped middleware is already fused into the terminal,
             # so the baked global stack wraps it directly.
             isempty(ctx.middlewares) ? terminal(request) :
-                execute_pipeline(ctx.middlewares, request, terminal)
+                executepipeline(ctx.middlewares, request, terminal)
         else
             # Generic path: global stack + route-scoped stack, walked with a
             # single cursor (no per-request [global; scoped] concatenation).
-            execute_pipeline(ctx.middlewares, scoped, request, terminal)
+            executepipeline(ctx.middlewares, scoped, request, terminal)
         end
 
         # Auto-serialize non-Response returns (String/Dict/bytes/nothing/…).
         result = format_response(result)
 
         if result isa Response && haskey(ctx.errors, result.status)
-            return error_response(ctx.errors, request, result.status)
+            return errorresponse(ctx.errors, request, result.status)
         end
         return result
     catch e

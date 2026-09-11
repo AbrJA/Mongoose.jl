@@ -71,13 +71,38 @@
         catch-all excluded), `route_count` → `Base.length(router)`,
         `has_ws_routes` → `haswsroutes`, `supports_websocket` → `supportsws`,
         `supports_tls` → `supportstls`, `supports_streaming` →
-        `supportsstreaming`; `to_lower` unexported (internal only).
+        `supportsstream`; `to_lower` unexported (internal only).
       - `MongooseCore` → `Kernel` (`Core` would shadow the Julia language
         core — e.g. `Core.stdout` in `util/log.jl`; `Kernel` is
         collision-free).
       - Gotcha: on Julia 1.13 an unqualified `function length(...)` in a
         module creates a FRESH binding shadowing `Base.length` — router
         extensions must be written `Base.length(r::Router)`.
+- [ ] **R6 Structure + surface finalization**:
+      - Files relocated by dependency: `streaming/sse.jl` → `core/streaming.jl`
+        (FFI-free, Kernel-ownable), `testing.jl` → `transport/fake.jl`
+        (FakeTransport is App-coupled — it is the reference TRANSPORT layer,
+        not core), `protocol/base.jl` → `server/base.jl` (1-file dir
+        dissolved). Root now holds only the facade.
+      - Capability traits standardized on NOUNS: `supportsws`, `supportstls`,
+        `supportstream` (the file had drifted: exports said `supportsstream`,
+        the impl said `supportsstreaming`).
+      - Zero-underscore goal reached across both exported surfaces:
+        `invoke_request` → `invokerequest`, `execute_pipeline` →
+        `executepipeline`, `terminal_for` → `terminalfor`, `error_response` →
+        `errorresponse`, `error_status` → `errorstatus`, `status_reason` →
+        `statusreason`, `parse_query` → `parsequery`, `strip_query` →
+        `stripquery`, `format_headers` → `formatheaders`, `url_decode` →
+        `urldecode`, `content_type_pair` → `contenttypepair`, `get_handler` →
+        `gethandler`, `get_endpoint` → `getendpoint`, `set_handler!` →
+        `sethandler!`, `ws_endpoint` → `wsendpoint`, `as_middleware` →
+        `asmiddleware`. `to_lower` and `sanitize_header_value` unexported
+        (internal, qualified `Kernel.` at call sites).
+      - Facade trimmed of test-double internals: `FakeExecutor`/`run!` remain
+        extension-surface in Kernel (documented in api.md), no longer
+        `using Mongoose` visible.
+      - Regex gotcha: `\b` after `!` never matches (`!`+`(` are both
+        non-word) — plain `.replace` for `!`-terminated names.
 
 ## Task list
 
@@ -103,13 +128,13 @@
       can only defer parse steps, not copies; union-typed fields clash with the
       type-stability doctrine; the body copy is unavoidable anyway.)*
 - [x] **T5** Typed `HTTPError` hierarchy — parametric `HTTPError{status}`
-      (compile-time status, `error_status(e)` free) + named 4xx/5xx aliases
+      (compile-time status, `errorstatus(e)` free) + named 4xx/5xx aliases
       (`NotFoundError`, `ConflictError`, `ImATeapotError`, …) + `showerror`;
       automatic mapping at the FFI boundary in `invoke_guarded` (custom
       `onerror!` handlers and `onerror!(app, status)` pages take precedence);
       unhandled `ValidationError` now defaults to **422** (was 500).
       *commit: `e9d0977`*
-- [x] **T6** `RequestContext` seam — `invoke_request(ctx, req)` collapses the
+- [x] **T6** `RequestContext` seam — `invokerequest(ctx, req)` collapses the
       5-arg signature; the context bundles router + middleware stack + error
       pages + DI services + typed exception handlers. Typed-exception dispatch
       (`onerror!`), the built-in `HTTPError`/`ValidationError` mapping, and the
@@ -122,7 +147,7 @@
       `(req, next) → response`; the dual `before`/`after` hook protocol and the
       default `(mw::AbstractMiddleware)(req, next)` are DELETED (only
       `SecurityHeaders` used `after` — converted to a call operator; no `before`
-      overrides existed). `as_middleware` is the single admission point
+      overrides existed). `asmiddleware` is the single admission point
       (docstring added). *commit: `50d1c93`*
 - [x] **T8** Baked-tuple global middleware — `RequestContext.middlewares` is now
       a **tuple snapshot** of the global stack (built at App construct and
@@ -202,12 +227,12 @@ ETag/conditional requests~~ **shipped** · OpenAPI-from-metadata · sessions/CSR
   `isempty(exception_handlers)` fast-path (must always catch for the built-in
   mapping). Note: `ValidationError <: HTTPError{422}` was IMPOSSIBLE (Julia
   forbids subtyping concrete types) → explicit 422 branch in `invoke_guarded`
-  instead. Docs: `HTTPError`/`error_status` added to api.md Errors section.
+  instead. Docs: `HTTPError`/`errorstatus` added to api.md Errors section.
 - **T6 shipped** (`5d72d9e`): RequestContext seam. 811 tests + 73 acceptance
-  + Aqua/JET + docs green. `invoke_request(ctx, req)` is the single pipeline
+  + Aqua/JET + docs green. `invokerequest(ctx, req)` is the single pipeline
   seam; typed-exception dispatch + HTTPError/ValidationError mapping moved from
   the transport into core. `invoke_guarded` DELETED (its logic is now inside
-  `invoke_request`). App gained a `context::RequestContext` field mirroring its
+  `invokerequest`). App gained a `context::RequestContext` field mirroring its
   live containers (mutable Dict/Vector refs are shared, so `use!`/`onerror!`
   need no context refresh — only `service!` rebuilds it, since services are a
   snapshot NamedTuple). Trade-off accepted: `App.context` is abstract-typed →
@@ -217,10 +242,10 @@ ETag/conditional requests~~ **shipped** · OpenAPI-from-metadata · sessions/CSR
   protocol deleted. 811 tests + 73 acceptance + Aqua/JET + docs green. Only one
   `after` user existed (`SecurityHeaders` → call operator); no `before`
   overrides anywhere. `before`/`after` dropped from MongooseCore exports;
-  `as_middleware` docstring added (and to api.md).
+  `asmiddleware` docstring added (and to api.md).
 - **T8 shipped** (`716e9d4`): baked-tuple global middleware. 811 tests + 73
   acceptance + Aqua/JET + docs green. `RequestContext.middlewares` is a Tuple
-  (baked at construct; `use!`/`service!` re-snapshot). `execute_pipeline` gained
+  (baked at construct; `use!`/`service!` re-snapshot). `executepipeline` gained
   a 4-arg form walking globals+scoped with one cursor over the virtual
   concatenation → the per-request `[global; scoped]` allocation is removed.
   Kept `App.middlewares::Vector` as the build-phase registration buffer. Scope
@@ -298,8 +323,8 @@ prod-readiness). State saved — **next session starts here:**
 
 ### Pending (decide tomorrow, in order)
 1. **Protocol getter rename (breaking, ask user)**: unify core router-getter
-   naming — `ws_endpoint`→`get_ws_endpoint`, `length`→? (get_handler/
-   get_endpoint/set_handler! are the named pattern; ws_endpoint/length
+   naming — `wsendpoint`→`get_ws_endpoint`, `length`→? (gethandler/
+   getendpoint/sethandler! are the named pattern; wsendpoint/length
    break it). 0.5 window allows it; ripples: docs, facade `import` block, tests.
 2. **P1 ergonomics** (from the review):
    - `merge_headers!`-style helper to kill the 8 × `Headers([copy(h.data); …])`

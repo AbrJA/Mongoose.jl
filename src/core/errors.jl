@@ -40,7 +40,7 @@ Base.showerror(io::IO, e::BindError) = print(io, "BindError: ", e.msg)
     HTTPError{status} <: Exception
 
 Exception that maps to an HTTP error response. The status code is a
-compile-time constant type parameter, so `error_status(e)` is free and
+compile-time constant type parameter, so `errorstatus(e)` is free and
 `onerror!(app, NotFoundError)` (or `onerror!(app, HTTPError{404})`) registers a
 handler for exactly that status.
 
@@ -73,17 +73,17 @@ end
 HTTPError{status}(message::AbstractString) where {status} =
     HTTPError{status}(String(message), Headers())
 HTTPError{status}() where {status} =
-    HTTPError{status}(status_reason(status), Headers())
+    HTTPError{status}(statusreason(status), Headers())
 
 """
-    error_status(e::HTTPError) → Int
+    errorstatus(e::HTTPError) → Int
 
 The HTTP status code carried by `e` (the compile-time type parameter).
 """
-@inline error_status(::HTTPError{status}) where {status} = status
+@inline errorstatus(::HTTPError{status}) where {status} = status
 
 function Base.showerror(io::IO, e::HTTPError{status}) where {status}
-    reason = status_reason(status)
+    reason = statusreason(status)
     if isempty(reason)
         print(io, "HTTPError ", status, ": ", e.message)
     else

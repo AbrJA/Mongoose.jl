@@ -33,8 +33,8 @@ group!
 mount!
 matchroute
 hasroute
-get_handler
-get_endpoint
+gethandler
+getendpoint
 Matched
 NoMatch
 WrongMethod
@@ -49,12 +49,12 @@ head!
 ## Request Processing
 
 ```@docs
-invoke_request
+invokerequest
 RequestContext
-terminal_for
-error_response
-execute_pipeline
-as_middleware
+terminalfor
+errorresponse
+executepipeline
+asmiddleware
 AbstractRequest
 ```
 
@@ -95,12 +95,11 @@ service
 ## URI & String Utilities
 
 ```@docs
-parse_query
-strip_query
-format_headers
-sanitize_header_value
-url_decode
-status_reason
+parsequery
+stripquery
+formatheaders
+urldecode
+statusreason
 ```
 
 ## Middleware
@@ -209,7 +208,7 @@ Mongoose.Kernel
 
 ```@docs
 HTTPError
-error_status
+errorstatus
 RouteError
 ServerError
 BindError

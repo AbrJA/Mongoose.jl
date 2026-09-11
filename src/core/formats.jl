@@ -57,7 +57,7 @@ const _CONTENT_PAIRS = Dict{DataType,Pair{String,String}}(
     Binary => "Content-Type" => "application/octet-stream",
 )
 
-@inline function content_type_pair(::Type{T})::Pair{String,String} where {T<:AbstractFormat}
+@inline function contenttypepair(::Type{T})::Pair{String,String} where {T<:AbstractFormat}
     return get(_CONTENT_PAIRS, T) do
         "Content-Type" => mime(T)
     end

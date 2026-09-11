@@ -2,7 +2,7 @@
     HTTP status code → reason phrase mapping.
     Inlined chain for hot-path status codes.
 """
-@inline function status_reason(code::Int)::String
+@inline function statusreason(code::Int)::String
     code == 200 && return "OK"
     code == 201 && return "Created"
     code == 202 && return "Accepted"

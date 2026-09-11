@@ -77,9 +77,9 @@ end
 
     client = Mongoose.TestClient(app)
 
-    @testset "error_status / showerror on the types" begin
+    @testset "errorstatus / showerror on the types" begin
         e = NotFoundError("user 7 missing")
-        @test Mongoose.error_status(e) == 404
+        @test Mongoose.errorstatus(e) == 404
         @test e isa Mongoose.HTTPError
         @test occursin("Not Found (404): user 7 missing", sprint(showerror, e))
         @test BadRequestError === HTTPError{400}
