@@ -181,8 +181,8 @@ Replace the single `App` with:
 
 ```julia
 struct ServerConfig          # ↔ today's ServerConfig, promoted to public, immutable (DONE shape)
-    poll_timeout::Int
-    max_body::Int
+    poll_timeout_ms::Int
+    max_body_bytes::Int
     ...
     services::NTuple/...     # typed: see §5
 end

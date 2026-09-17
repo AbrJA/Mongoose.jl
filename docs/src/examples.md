@@ -159,7 +159,7 @@ route!(router, :post, "/upload", req -> begin
     json(Dict("files" => [file.filename], "size" => length(file.data)); status=201)
 end)
 
-app = App(; router=router, workers=4, max_body=10_000_000)  # 10MB limit
+app = App(; router=router, workers=4, max_body_bytes=10_000_000)  # 10MB limit
 start!(app; port=8080)
 ```
 
@@ -179,7 +179,7 @@ use!(app, security())                                        # Security headers
 use!(app, health())                                          # /healthz, /readyz, /livez
 use!(app, metrics())                                         # GET /metrics
 use!(app, cors(origins="*"))                                 # CORS headers
-use!(app, compress(min_size=1024))                           # GZip compression
+use!(app, compress(min_size_bytes=1024))                           # GZip compression
 use!(app, logger())                                          # Access logs
 use!(app, ratelimit(max_requests=100, window_seconds=60))    # Rate limiting
 use!(app, bearer(t -> t == "secret"); paths=["/api"])        # Auth on /api only
@@ -273,7 +273,7 @@ ws!(router, "/ws";
     on_close = () -> @info "WS disconnected"
 )
 
-app = App(; router=router, workers=4, ws_idle_timeout=60_000)
+app = App(; router=router, workers=4, ws_idle_timeout_ms=60_000)
 start!(app; port=8080)
 ```
 
@@ -474,7 +474,7 @@ end)
 app = App(; router=router, workers=4)
 
 # Compress responses larger than 1KB when client accepts gzip
-use!(app, compress(min_size=1024))
+use!(app, compress(min_size_bytes=1024))
 
 start!(app; port=8080)
 ```
@@ -530,11 +530,11 @@ router = Router()
 app = App(;
     router          = router,
     workers         = parse(Int, get(ENV, "WORKERS", "4")),
-    queuesize       = 2048,
-    max_body        = 4_000_000,       # 4MB
-    request_timeout = 30_000,          # 30s
-    drain_timeout   = 10_000,          # 10s graceful shutdown
-    ws_idle_timeout = 120_000,         # 2min WS idle
+    queue_size       = 2048,
+    max_body_bytes        = 4_000_000,       # 4MB
+    request_timeout_ms = 30_000,          # 30s
+    drain_timeout_ms   = 10_000,          # 10s graceful shutdown
+    ws_idle_timeout_ms = 120_000,         # 2min WS idle
 )
 
 # Full middleware stack
@@ -542,7 +542,7 @@ use!(app, security())
 use!(app, health(ready_check = () -> true))
 use!(app, metrics())
 use!(app, cors(origins=get(ENV, "CORS_ORIGINS", "*")))
-use!(app, compress(min_size=1024))
+use!(app, compress(min_size_bytes=1024))
 use!(app, logger())
 
 # Error responses

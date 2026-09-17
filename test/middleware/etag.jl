@@ -121,7 +121,7 @@ end
         text(repeat("All partial functions are structured transformations. ", 20))
     end
     use!(s, etag())          # registered outside compress: hashes wire bytes
-    use!(s, compress(min_size=64))
+    use!(s, compress(min_size_bytes=64))
     with_server(s) do port
         # Fresh connection per probe (HTTP.jl gzip pooling wedges otherwise).
         g = HTTP.get("http://127.0.0.1:$port/payload"; status_exception=false,

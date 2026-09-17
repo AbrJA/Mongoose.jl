@@ -1,5 +1,5 @@
 struct Compress <: AbstractMiddleware
-    min_size::Int  # Minimum body size to compress (bytes)
+    min_size_bytes::Int  # Minimum body size to compress (bytes)
 end
 
 @doc """
@@ -46,7 +46,7 @@ function (mw::Compress)(request::Request, next::Function)
     # Skip small responses
     body_data = response.body
     body_size = body_data isa String ? ncodeunits(body_data) : length(body_data)
-    body_size < mw.min_size && return response
+    body_size < mw.min_size_bytes && return response
 
     # Check if client accepts gzip
     accept_enc = get(request.headers, "accept-encoding", "")
@@ -73,18 +73,18 @@ end
 end
 
 """
-    compress(; min_size=1024) → Compress
+    compress(; min_size_bytes=1024) → Compress
 
-Create a GZip compression middleware. Only compresses responses larger than `min_size` bytes
+Create a GZip compression middleware. Only compresses responses larger than `min_size_bytes` bytes
 when the client sends `Accept-Encoding: gzip`.
 
 # Keyword Arguments
-- `min_size::Int`: Minimum response body size to compress (default: `1024` bytes).
+- `min_size_bytes::Int`: Minimum response body size to compress (default: `1024` bytes).
 
 # Example
 ```julia
 use!(app, compress())
-use!(app, compress(min_size=256))  # More aggressive compression
+use!(app, compress(min_size_bytes=256))  # More aggressive compression
 ```
 """
-compress(; min_size::Int=1024) = Compress(min_size)
+compress(; min_size_bytes::Int=1024) = Compress(min_size_bytes)

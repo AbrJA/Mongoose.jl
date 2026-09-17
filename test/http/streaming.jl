@@ -27,7 +27,7 @@
         s = App()
         get!(s, "/events") do req
             sse(req) do writer
-                emit(writer; data="line1\nline2", event="evt", id="7", retry=1000)
+                emit(writer; data="line1\nline2", event="evt", id="7", retry_ms=1000)
                 emit(writer; data="third")
             end
         end

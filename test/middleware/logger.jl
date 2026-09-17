@@ -35,7 +35,7 @@
         io = IOBuffer()
         s = App()
         get!(s, "/fast") do req; text("ok") end
-        use!(s, logger(output=io, threshold=10000))  # 10 seconds — nothing logged
+        use!(s, logger(output=io, threshold_ms=10000))  # 10 seconds — nothing logged
 
         with_server(s) do port
             HTTP.get("http://127.0.0.1:$port/fast"; status_exception=false)

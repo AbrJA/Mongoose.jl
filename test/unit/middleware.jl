@@ -1,5 +1,5 @@
 @testset "Compression middleware (unit)" begin
-    mw = compress(min_size=10)
+    mw = compress(min_size_bytes=10)
     @test mw isa Mongoose.Compress
 
     @testset "Skips small responses" begin
@@ -96,7 +96,7 @@ end
 
 
 @testset "Compression sets Vary even when skipped" begin
-    mw = compress(min_size=10_000)
+    mw = compress(min_size_bytes=10_000)
     req = Request(:get, "/", "/", Dict{String,String}(),
         Headers(["accept-encoding" => "gzip"]), "")
     handler = () -> Response(Json, "small")   # too small to compress
@@ -107,7 +107,7 @@ end
 end
 
 @testset "Logger includes request id" begin
-    mw = logger(threshold=0, output=IOBuffer())
+    mw = logger(threshold_ms=0, output=IOBuffer())
     req = Request(:get, "/", "/", Dict{String,String}(), Headers(), "")
     handler = () -> Response(200, Pair{String,String}["X-Request-Id" => "abc123"], "ok")
     resp = mw(req, handler)

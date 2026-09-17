@@ -15,14 +15,14 @@ This roadmap is designed for maximum impact with minimum risk. Each phase builds
 ```julia
 # Configuration (immutable after construction)
 struct AppConfig
-    poll_timeout::Int
-    max_body::Int
-    drain_timeout::Int
-    request_timeout::Int
-    ws_max_frame::Int
-    ws_idle_timeout::Int
+    poll_timeout_ms::Int
+    max_body_bytes::Int
+    drain_timeout_ms::Int
+    request_timeout_ms::Int
+    ws_max_frame_bytes::Int
+    ws_idle_timeout_ms::Int
     workers::Int
-    queuesize::Int
+    queue_size::Int
 end
 
 # Runtime state (mutable, managed internally)

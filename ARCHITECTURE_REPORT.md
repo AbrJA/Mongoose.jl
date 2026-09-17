@@ -18,7 +18,7 @@ Mongoose.jl is a Julia HTTP/WebSocket framework wrapping the Mongoose C library.
 - Dependency injection (services)
 - Lifecycle hooks (hooks_start, hooks_stop, bg_tasks)
 - Tuning parameters (6 timeout/size fields)
-- Async worker pool (workers, queuesize, worker_tasks, calls, replies, connections, inflight)
+- Async worker pool (workers, queue_size, worker_tasks, calls, replies, connections, inflight)
 
 **Impact:**
 - Impossible to test components in isolation
@@ -329,8 +329,8 @@ end
 | Category | Status | Notes |
 |----------|--------|-------|
 | CRLF injection prevention | ✅ `sanitize_header_value()` | Good |
-| Body size limits | ✅ `max_body` enforcement | Good |
-| WS frame size limits | ✅ `ws_max_frame` | Good |
+| Body size limits | ✅ `max_body_bytes` enforcement | Good |
+| WS frame size limits | ✅ `ws_max_frame_bytes` | Good |
 | Path traversal (static) | ⚠️ Delegated to C lib | Should validate in Julia |
 | SQL injection | N/A | No DB layer |
 | XSS in error pages | ⚠️ Plain text bodies | Could be HTML if extended |

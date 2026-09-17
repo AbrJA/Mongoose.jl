@@ -80,34 +80,34 @@ end
     configuration (set once) vs what changes during execution.
 """
 struct ServerConfig
-    poll_timeout::Int
-    max_body::Int
-    drain_timeout::Int
-    request_timeout::Int
-    ws_max_frame::Int
-    ws_idle_timeout::Int
+    poll_timeout_ms::Int
+    max_body_bytes::Int
+    drain_timeout_ms::Int
+    request_timeout_ms::Int
+    ws_max_frame_bytes::Int
+    ws_idle_timeout_ms::Int
     workers::Int
-    queuesize::Int
+    queue_size::Int
 
     function ServerConfig(;
-                          poll_timeout::Integer=1,
-                          max_body::Integer=MAX_BODY,
-                          drain_timeout::Integer=DRAIN_TIMEOUT,
-                          request_timeout::Integer=0,
-                          ws_max_frame::Integer=MAX_BODY,
-                          ws_idle_timeout::Integer=0,
+                          poll_timeout_ms::Integer=1,
+                          max_body_bytes::Integer=MAX_BODY_BYTES,
+                          drain_timeout_ms::Integer=DRAIN_TIMEOUT_MS,
+                          request_timeout_ms::Integer=0,
+                          ws_max_frame_bytes::Integer=MAX_BODY_BYTES,
+                          ws_idle_timeout_ms::Integer=0,
                           workers::Integer=0,
-                          queuesize::Integer=1024)
-        max_body > 0 || throw(ServerError("max_body must be > 0"))
-        poll_timeout >= 0 || throw(ServerError("poll_timeout must be >= 0"))
-        drain_timeout >= 0 || throw(ServerError("drain_timeout must be >= 0"))
-        ws_max_frame > 0 || throw(ServerError("ws_max_frame must be > 0"))
+                          queue_size::Integer=1024)
+        max_body_bytes > 0 || throw(ServerError("max_body_bytes must be > 0"))
+        poll_timeout_ms >= 0 || throw(ServerError("poll_timeout_ms must be >= 0"))
+        drain_timeout_ms >= 0 || throw(ServerError("drain_timeout_ms must be >= 0"))
+        ws_max_frame_bytes > 0 || throw(ServerError("ws_max_frame_bytes must be > 0"))
         workers >= 0 || throw(ServerError("workers must be >= 0"))
-        workers > 0 && queuesize > 0 || workers == 0 ||
-            throw(ServerError("queuesize must be > 0 when workers > 0"))
-        new(Int(poll_timeout), Int(max_body), Int(drain_timeout),
-            Int(request_timeout), Int(ws_max_frame), Int(ws_idle_timeout),
-            Int(workers), Int(queuesize))
+        workers > 0 && queue_size > 0 || workers == 0 ||
+            throw(ServerError("queue_size must be > 0 when workers > 0"))
+        new(Int(poll_timeout_ms), Int(max_body_bytes), Int(drain_timeout_ms),
+            Int(request_timeout_ms), Int(ws_max_frame_bytes), Int(ws_idle_timeout_ms),
+            Int(workers), Int(queue_size))
     end
 end
 
@@ -149,23 +149,23 @@ RunState() = RunState(Threads.Atomic{Bool}(false), nothing, Manager(empty=true),
     ```julia
     app = App()                          # sync, dynamic router
     app = App(workers=4)                 # async, 4 workers
-    app = App(workers=4, queuesize=2048) # async with larger queue
+    app = App(workers=4, queue_size=2048) # async with larger queue
     app = App(router=my_router)          # bring-your-own router
     ```
 
     # Configuration keyword arguments
-    | Keyword         | Default        | Description                                  |
-    |-----------------|----------------|----------------------------------------------|
-    | `workers`       | `0`            | Worker threads (0 = sync)                    |
-    | `queuesize`     | `1024`         | Max pending requests (async only)            |
-    | `poll_timeout`  | `1`            | Mongoose poll interval (ms)                  |
-    | `max_body`      | `MAX_BODY`     | Max request body size (bytes)                |
-    | `drain_timeout` | `DRAIN_TIMEOUT`| Graceful shutdown drain (ms)                 |
-    | `request_timeout`| `0`           | Per-request timeout ms (0 = disabled)        |
-    | `ws_max_frame`  | `MAX_BODY`     | Max WebSocket frame size (bytes)             |
-    | `ws_idle_timeout`| `0`           | WS idle timeout ms (0 = disabled)            |
-    | `router`        | `Router()`     | Custom router instance                       |
-    | `tls`           | `nothing`      | `TLSConfig` for HTTPS                        |
+    | Keyword                | Default            | Description                            |
+    |------------------------|--------------------|----------------------------------------|
+    | `workers`              | `0`                | Worker threads (0 = sync)              |
+    | `queue_size`           | `1024`             | Max pending requests (async only)      |
+    | `poll_timeout_ms`      | `1`                | Mongoose poll interval                 |
+    | `max_body_bytes`       | `MAX_BODY_BYTES`   | Max request body size                  |
+    | `drain_timeout_ms`     | `DRAIN_TIMEOUT_MS` | Graceful shutdown drain                |
+    | `request_timeout_ms`   | `0`                | Per-request timeout (0 = disabled)     |
+    | `ws_max_frame_bytes`   | `MAX_BODY_BYTES`   | Max WebSocket frame size               |
+    | `ws_idle_timeout_ms`   | `0`                | WS idle timeout (0 = disabled)         |
+    | `router`               | `Router()`         | Custom router instance                 |
+    | `tls`                  | `nothing`          | `TLSConfig` for HTTPS                  |
 
     # Structure (DESIGN G4)
     - `app.config` — immutable `ServerConfig`.
@@ -203,28 +203,28 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
 
     function App(;
                  workers::Integer=0,
-                 queuesize::Integer=1024,
-                 poll_timeout::Integer=1,
-                 max_body::Integer=MAX_BODY,
-                 drain_timeout::Integer=DRAIN_TIMEOUT,
-                 request_timeout::Integer=0,
-                 ws_max_frame::Integer=MAX_BODY,
-                 ws_idle_timeout::Integer=0,
+                 queue_size::Integer=1024,
+                 poll_timeout_ms::Integer=1,
+                 max_body_bytes::Integer=MAX_BODY_BYTES,
+                 drain_timeout_ms::Integer=DRAIN_TIMEOUT_MS,
+                 request_timeout_ms::Integer=0,
+                 ws_max_frame_bytes::Integer=MAX_BODY_BYTES,
+                 ws_idle_timeout_ms::Integer=0,
                  router::R=Router(),
                  tls::Union{Nothing,TLSConfig}=nothing,
                  errors::Dict{Int,<:Any}=Dict{Int,Union{Response,Function}}(),
                  services::NamedTuple=NamedTuple()) where {R<:AbstractRouter}
 
         cfg = ServerConfig(;
-            poll_timeout, max_body, drain_timeout, request_timeout,
-            ws_max_frame, ws_idle_timeout, workers, queuesize)
+            poll_timeout_ms, max_body_bytes, drain_timeout_ms, request_timeout_ms,
+            ws_max_frame_bytes, ws_idle_timeout_ms, workers, queue_size)
 
         errs = Dict{Int,Union{Response,Function}}(k => v for (k, v) in errors)
         for code in keys(errs)
             (100 <= code <= 599) || throw(ServerError("Error status code must be in [100,599], got $code"))
         end
 
-        exec = cfg.workers > 0 ? AsyncExecutor(cfg.workers, cfg.queuesize) : SyncExecutor()
+        exec = cfg.workers > 0 ? AsyncExecutor(cfg.workers, cfg.queue_size) : SyncExecutor()
         rs = RunState()
         rs.tls = tls   # raw TLSConfig material; normalized at start!
         ex_handlers = Dict{DataType,Function}()

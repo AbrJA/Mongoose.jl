@@ -138,7 +138,7 @@ function buildapp(; token::String="test-token", workers::Integer=2)
     use!(app, metrics())
     use!(app, cors(origins="*"))
     use!(app, etag())                       # before compress: validates what is sent
-    use!(app, compress(min_size=64))
+    use!(app, compress(min_size_bytes=64))
     use!(app, logger())
     use!(app, ratelimit(max_requests=100_000, window_seconds=60))
     use!(app, bearer(t -> t == token); paths=["/api"])

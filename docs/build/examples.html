@@ -104,7 +104,7 @@ route!(router, :post, &quot;/upload&quot;, req -&gt; begin
     json(Dict(&quot;files&quot; =&gt; [file.filename], &quot;size&quot; =&gt; length(file.data)); status=201)
 end)
 
-app = App(; router=router, workers=4, max_body=10_000_000)  # 10MB limit
+app = App(; router=router, workers=4, max_body_bytes=10_000_000)  # 10MB limit
 start!(app; port=8080)</code></pre><h2 id="Middleware-Stack"><a class="docs-heading-anchor" href="#Middleware-Stack">Middleware Stack</a><a id="Middleware-Stack-1"></a><a class="docs-heading-anchor-permalink" href="#Middleware-Stack" title="Permalink"></a></h2><pre><code class="language-julia hljs">using Mongoose
 
 router = Router()
@@ -118,7 +118,7 @@ use!(app, security())                                        # Security headers
 use!(app, health())                                          # /healthz, /readyz, /livez
 use!(app, metrics())                                         # GET /metrics
 use!(app, cors(origins=&quot;*&quot;))                                 # CORS headers
-use!(app, compress(min_size=1024))                           # GZip compression
+use!(app, compress(min_size_bytes=1024))                           # GZip compression
 use!(app, logger())                                          # Access logs
 use!(app, ratelimit(max_requests=100, window_seconds=60))    # Rate limiting
 use!(app, bearer(t -&gt; t == &quot;secret&quot;); paths=[&quot;/api&quot;])        # Auth on /api only
@@ -194,7 +194,7 @@ ws!(router, &quot;/ws&quot;;
     on_close = () -&gt; @info &quot;WS disconnected&quot;
 )
 
-app = App(; router=router, workers=4, ws_idle_timeout=60_000)
+app = App(; router=router, workers=4, ws_idle_timeout_ms=60_000)
 start!(app; port=8080)</code></pre><h2 id="WebSocket-Server-Push-(ws_send_all)"><a class="docs-heading-anchor" href="#WebSocket-Server-Push-(ws_send_all)">WebSocket Server Push (<code>ws_send_all</code>)</a><a id="WebSocket-Server-Push-(ws_send_all)-1"></a><a class="docs-heading-anchor-permalink" href="#WebSocket-Server-Push-(ws_send_all)" title="Permalink"></a></h2><p>WebSockets can also be <em>pushed</em> to: send a frame to every open client of a path from any task (background housekeeping, event relays, request handlers). Frames route through the same thread-safe reply queue the worker pool uses and are actually sent on the poll thread, so no C connection is ever touched from another thread.</p><pre><code class="language-julia hljs">using Mongoose
 import JSON
 
@@ -338,7 +338,7 @@ end)
 app = App(; router=router, workers=4)
 
 # Compress responses larger than 1KB when client accepts gzip
-use!(app, compress(min_size=1024))
+use!(app, compress(min_size_bytes=1024))
 
 start!(app; port=8080)</code></pre><h2 id="Testing-with-FakeTransport-(FakeTransport)"><a class="docs-heading-anchor" href="#Testing-with-FakeTransport-(FakeTransport)">Testing with FakeTransport (FakeTransport)</a><a id="Testing-with-FakeTransport-(FakeTransport)-1"></a><a class="docs-heading-anchor-permalink" href="#Testing-with-FakeTransport-(FakeTransport)" title="Permalink"></a></h2><p><code>FakeTransport</code> is the FFI-free reference transport: it dispatches requests through the full pipeline with <strong>no server and no <code>Mongoose_jll</code></strong>, so tests never bind a port.</p><pre><code class="language-julia hljs">using Test, Mongoose
 
@@ -378,11 +378,11 @@ router = Router()
 app = App(;
     router          = router,
     workers         = parse(Int, get(ENV, &quot;WORKERS&quot;, &quot;4&quot;)),
-    queuesize       = 2048,
-    max_body        = 4_000_000,       # 4MB
-    request_timeout = 30_000,          # 30s
-    drain_timeout   = 10_000,          # 10s graceful shutdown
-    ws_idle_timeout = 120_000,         # 2min WS idle
+    queue_size       = 2048,
+    max_body_bytes        = 4_000_000,       # 4MB
+    request_timeout_ms = 30_000,          # 30s
+    drain_timeout_ms   = 10_000,          # 10s graceful shutdown
+    ws_idle_timeout_ms = 120_000,         # 2min WS idle
 )
 
 # Full middleware stack
@@ -390,7 +390,7 @@ use!(app, security())
 use!(app, health(ready_check = () -&gt; true))
 use!(app, metrics())
 use!(app, cors(origins=get(ENV, &quot;CORS_ORIGINS&quot;, &quot;*&quot;)))
-use!(app, compress(min_size=1024))
+use!(app, compress(min_size_bytes=1024))
 use!(app, logger())
 
 # Error responses
@@ -404,4 +404,4 @@ service!(app, :env, get(ENV, &quot;APP_ENV&quot;, &quot;production&quot;))
 # Static assets
 serve!(app, &quot;public&quot;; uri_prefix=&quot;/static&quot;)
 
-start!(app; host=&quot;0.0.0.0&quot;, port=parse(Int, get(ENV, &quot;PORT&quot;, &quot;8080&quot;)))</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="index.html">« Introduction</a><a class="docs-footer-nextpage" href="api.html">API »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Thursday 17 September 2026 12:53">Thursday 17 September 2026</span>. Using Julia version 1.13.0.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+start!(app; host=&quot;0.0.0.0&quot;, port=parse(Int, get(ENV, &quot;PORT&quot;, &quot;8080&quot;)))</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="index.html">« Introduction</a><a class="docs-footer-nextpage" href="api.html">API »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Thursday 17 September 2026 13:00">Thursday 17 September 2026</span>. Using Julia version 1.13.0.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

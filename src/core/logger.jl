@@ -93,20 +93,22 @@ function (mw::Logger)(request::Request, next::Function)
 end
 
 """
-    logger(; threshold=0, output=stderr, structured=false)
+    logger(; threshold_ms=0, output=stderr, structured=false)
 
 Create a request-logging middleware.
 
 # Keyword Arguments
-- `threshold::Int`: Only log requests slower than this (default: `0` = log all) ms.
+- `threshold_ms::Int`: Only log requests slower than this (default: `0` = log
+  all) in milliseconds.
 - `output::IO`: IO stream for log output (default: `stderr`).
 - `structured::Bool`: If `true`, emit one JSON object per line (default: `false`).
 
 # Example
 ```julia
 use!(server, logger())                         # plain text, all requests
-use!(server, logger(threshold=100))         # only slow requests
+use!(server, logger(threshold_ms=100))         # only slow requests
 use!(server, logger(structured=true))          # JSON structured logs
 ```
 """
-logger(; threshold::Int=0, output::IO=stderr, structured::Bool=false) = Logger(threshold * 1_000_000, output, structured)
+logger(; threshold_ms::Int=0, output::IO=stderr, structured::Bool=false) =
+    Logger(threshold_ms * 1_000_000, output, structured)

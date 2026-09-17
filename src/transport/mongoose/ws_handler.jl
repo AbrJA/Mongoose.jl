@@ -92,7 +92,7 @@ function on_ws_message(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
     conn_id = Int(conn)
     ws_touch!(server, conn_id)
 
-    if msg.data.len > server.config.ws_max_frame
+    if msg.data.len > server.config.ws_max_frame_bytes
         mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
         lock(server.runtime.ws_lock) do
             entry = get(server.runtime.ws_clients, conn_id, nothing)
@@ -157,7 +157,7 @@ end
 
 function ws_idle_sweep!(server::AbstractServer)
     now = time()
-    timeout = Float64(server.config.ws_idle_timeout)
+    timeout = Float64(server.config.ws_idle_timeout_ms)
     to_close = lock(server.runtime.ws_lock) do
         to_close = Int[]
         for (id, entry) in server.runtime.ws_clients

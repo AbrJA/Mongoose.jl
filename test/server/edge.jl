@@ -46,9 +46,9 @@
     end
 
     @testset "App validation" begin
-        @test_throws ServerError App(max_body=0)
-        @test_throws ServerError App(max_body=-1)
-        @test_throws ServerError App(poll_timeout=-1)
+        @test_throws ServerError App(max_body_bytes=0)
+        @test_throws ServerError App(max_body_bytes=-1)
+        @test_throws ServerError App(poll_timeout_ms=-1)
         @test_throws ServerError App(workers=-1)
     end
 

@@ -38,7 +38,7 @@
     @testset "Preflight validates method and headers" begin
         s = App()
         get!(s, "/api") do req; text("data") end
-        use!(s, cors(methods="GET, POST", headers="X-Custom, Content-Type", max_age=3600))
+        use!(s, cors(allow_methods="GET, POST", allow_headers="X-Custom, Content-Type", max_age_seconds=3600))
 
         with_server(s) do port
             # Allowed method + headers

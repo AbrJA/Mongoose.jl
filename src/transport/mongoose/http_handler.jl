@@ -75,7 +75,7 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
     end
 
 # 2. Body size enforcement
-    if msg.body.len > server.config.max_body
+    if msg.body.len > server.config.max_body_bytes
         rid = resolve_request_id(server, get(parse_headers(msg), "x-request-id", nothing))
         send_http_response!(conn, _echo_conn_close_error!(errorresponse(server.errors, 413), msg), rid)
         return nothing
@@ -117,7 +117,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         id = Int(Threads.atomic_add!(server.runtime.conn_seq, UInt64(1)) + UInt64(1))
         server.runtime.connections[id] = conn
 
-        timeout = server.config.request_timeout
+        timeout = server.config.request_timeout_ms
         job = if timeout > 0
             () -> _http_job_timed(server, id, req, timeout)
         else
@@ -157,7 +157,7 @@ end
 """
     _http_job_timed(server, id, request, timeout) → Tagged
 
-Run `_http_job` under a `request_timeout` deadline; on timeout reply 504 and
+Run `_http_job` under a `request_timeout_ms` deadline; on timeout reply 504 and
 let the still-running task finish in the background. The task is tracked in
 `server.runtime.bg_tasks` so it is not silently dropped (it may still hold
 server/request references); its late reply is discarded because the

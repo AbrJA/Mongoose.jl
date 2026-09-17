@@ -16,7 +16,7 @@
     # Custom error response + middleware + services all apply without a server.
     errs = Dict{Int,Union{Response,Function}}(404 => req -> Response(404, Pair{String,String}[], "custom 404"))
     svcs = (db="pool",)
-    mws = Mongoose.AbstractMiddleware[logger(threshold=0, output=devnull)]
+    mws = Mongoose.AbstractMiddleware[logger(threshold_ms=0, output=devnull)]
     ctx2 = Mongoose.RequestContext(r; middlewares=mws, errors=errs, services=svcs)
     res3 = Mongoose.process(ctx2,
         Request(:get, "/nope", Dict{String,String}(), Pair{String,String}[], ""))

@@ -25,19 +25,19 @@ struct SSEWriter
 end
 
 """
-    emit(sse; data, event="", id="", retry=nothing)
+    emit(sse; data, event="", id="", retry_ms=nothing)
 
 Send a single SSE event to the client. Fields:
 - `data::String` — event payload (required). Multi-line data is handled correctly.
 - `event::String` — event type/name (optional).
 - `id::String` — event ID for reconnection (optional).
-- `retry::Union{Nothing,Int}` — reconnection interval in ms (optional).
+- `retry_ms::Union{Nothing,Int}` — reconnection interval in ms (optional).
 """
-function emit(sse::SSEWriter; data::String, event::String="", id::String="", retry::Union{Nothing,Int}=nothing)
+function emit(sse::SSEWriter; data::String, event::String="", id::String="", retry_ms::Union{Nothing,Int}=nothing)
     io = IOBuffer(sizehint=64 + ncodeunits(data))
     !isempty(id) && (print(io, "id: ", id, "\n"))
     !isempty(event) && (print(io, "event: ", event, "\n"))
-    retry !== nothing && (print(io, "retry: ", retry, "\n"))
+    retry_ms !== nothing && (print(io, "retry: ", retry_ms, "\n"))
     for line in eachsplit(data, '\n')
         print(io, "data: ", line, "\n")
     end

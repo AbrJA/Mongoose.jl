@@ -1,6 +1,6 @@
 mutable struct AsyncExecutor <: AbstractExecutor
     workers::Int
-    queuesize::Int
+    queue_size::Int
     worker_tasks::Vector{Task}
     calls::Channel{Function}
     replies::Channel{Tagged{Union{Response,StreamResponse,Message}}}
@@ -22,18 +22,18 @@ end
     when it builds a job.
 """ AsyncExecutor
 
-function AsyncExecutor(workers::Int, queuesize::Int)
-    return AsyncExecutor(workers, queuesize, Task[],
-        Channel{Function}(queuesize),
-        Channel{Tagged{Union{Response,StreamResponse,Message}}}(queuesize),
+function AsyncExecutor(workers::Int, queue_size::Int)
+    return AsyncExecutor(workers, queue_size, Task[],
+        Channel{Function}(queue_size),
+        Channel{Tagged{Union{Response,StreamResponse,Message}}}(queue_size),
         Threads.Atomic{Int}(0))
 end
 
 # --- Lifecycle ---
 
 function init_executor!(exec::AsyncExecutor)
-    exec.calls = Channel{Function}(exec.queuesize)
-    exec.replies = Channel{Tagged{Union{Response,StreamResponse,Message}}}(exec.queuesize)
+    exec.calls = Channel{Function}(exec.queue_size)
+    exec.replies = Channel{Tagged{Union{Response,StreamResponse,Message}}}(exec.queue_size)
     empty!(exec.worker_tasks)
     return exec
 end
@@ -67,7 +67,7 @@ haspending(exec::AsyncExecutor) =
 
 @inline function submit!(exec::AsyncExecutor, job::Function)
     isopen(exec.calls) || return false
-    Base.n_avail(exec.calls) >= exec.queuesize && return false
+    Base.n_avail(exec.calls) >= exec.queue_size && return false
     try
         put!(exec.calls, job)
     catch e

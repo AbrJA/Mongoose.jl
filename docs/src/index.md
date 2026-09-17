@@ -18,7 +18,7 @@
 - **SSE** — Server-Sent Events with `sse()` / `emit()`
 - **Native TLS** — HTTPS via `TLSConfig`
 - **Production-ready** — graceful shutdown, backpressure, custom + typed errors, DI, background tasks
-- **Testable without FFI** — `FakeTransport` (aka `FakeTransport`) runs the whole pipeline without `Mongoose_jll`
+- **Testable without FFI** — `FakeTransport` runs the whole pipeline without `Mongoose_jll`
 
 ## Installation
 
@@ -76,6 +76,15 @@ Mongoose.jl is layered so each boundary is a replacement point:
 - **App** composes a router, an executor, middleware, and lifecycle.
 - **SyncExecutor** runs jobs inline; **AsyncExecutor** is a bounded worker pool.
 - The request→response seam (`process`) lives in `Kernel` and works with no server and no FFI.
+
+## Units
+
+Quantities carry their unit in the name: `_ms` for timeouts (`request_timeout_ms`,
+`logger(threshold_ms=…)`), `_seconds` for protocol durations (`window_seconds`,
+`cors(max_age_seconds=…)`), `_bytes` for sizes (`max_body_bytes`,
+`compress(min_size_bytes=…)`). Standard protocol fields keep their spec names
+(`Cookie(; max_age=…)` is `Max-Age` in seconds). Optional headers/values are
+turned off with `nothing`.
 
 ## Next Steps
 

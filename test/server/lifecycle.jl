@@ -12,23 +12,23 @@
         @test app isa App
         @test app.runtime.running[] == false
         @test app.config.workers == 4
-        @test app.config.queuesize == 1024
+        @test app.config.queue_size == 1024
         @test app.executor isa AsyncExecutor
         @test app.executor.workers == 4
-        @test app.executor.queuesize == 1024
+        @test app.executor.queue_size == 1024
     end
 
     @testset "App with custom options" begin
-        app = App(workers=2, queuesize=512, poll_timeout=2, max_body=2048)
+        app = App(workers=2, queue_size=512, poll_timeout_ms=2, max_body_bytes=2048)
         @test app.config.workers == 2
-        @test app.config.queuesize == 512
-        @test app.config.poll_timeout == 2
-        @test app.config.max_body == 2048
+        @test app.config.queue_size == 512
+        @test app.config.poll_timeout_ms == 2
+        @test app.config.max_body_bytes == 2048
     end
 
     @testset "App with invalid options" begin
-        @test_throws ServerError App(max_body=0)
-        @test_throws ServerError App(poll_timeout=-1)
+        @test_throws ServerError App(max_body_bytes=0)
+        @test_throws ServerError App(poll_timeout_ms=-1)
     end
 end
 
@@ -101,7 +101,7 @@ end
 end
 
 @testset "Per-request timeout (async)" begin
-    app = App(workers=1, request_timeout=150)
+    app = App(workers=1, request_timeout_ms=150)
     get!(app, "/slow") do req
         sleep(1.0)
         text("late")
@@ -129,7 +129,7 @@ end
     end
 end
 
-@testset "shutdown! drains background tasks (bounded by drain_timeout)" begin
+@testset "shutdown! drains background tasks (bounded by drain_timeout_ms)" begin
     @testset "short task is awaited and pruned" begin
         finished = Ref(false)
         app = App()
@@ -149,7 +149,7 @@ end
     end
 
     @testset "never-ending task is not joined" begin
-        app = App(drain_timeout=100)
+        app = App(drain_timeout_ms=100)
         get!(app, "/") do req; text("ok") end
         background!(app) do
             sleep(60.0)
@@ -166,7 +166,7 @@ end
 end
 
 @testset "Queue-full 503 carries X-Request-Id" begin
-    app = App(workers=1, queuesize=1, drain_timeout=200)
+    app = App(workers=1, queue_size=1, drain_timeout_ms=200)
     started = Channel{Nothing}(1)
     gate = Channel{Nothing}(1)
     blocked = Ref(false)

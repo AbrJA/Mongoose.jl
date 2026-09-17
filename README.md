@@ -260,17 +260,34 @@ connection wedge.
 
 ```julia
 app = App(;
-    workers          = 4,          # Worker threads (0 = sync mode)
-    queuesize        = 1024,       # Max pending requests (async)
-    max_body         = 1_048_576,  # 1 MB max request body
-    request_timeout  = 5000,       # 5s per-request timeout (0 = disabled)
-    drain_timeout    = 5000,       # Graceful shutdown drain (ms)
-    ws_max_frame     = 1_048_576,  # Max WebSocket frame size
-    ws_idle_timeout  = 60_000,     # WS idle timeout (ms, 0 = disabled)
-    router           = Router(),   # any AbstractRouter
-    tls              = nothing,    # TLSConfig for HTTPS
+    workers             = 4,          # Worker threads (0 = sync mode)
+    queue_size          = 1024,       # Max pending requests (async)
+    max_body_bytes      = 1_048_576,  # 1 MB max request body
+    request_timeout_ms  = 5000,       # 5s per-request timeout (0 = disabled)
+    drain_timeout_ms    = 5000,       # Graceful shutdown drain
+    ws_max_frame_bytes  = 1_048_576,  # Max WebSocket frame size
+    ws_idle_timeout_ms  = 60_000,     # WS idle timeout (0 = disabled)
+    poll_timeout_ms     = 1,          # Mongoose poll interval
+    router              = Router(),   # any AbstractRouter
+    tls                 = nothing,    # TLSConfig for HTTPS
 )
 ```
+
+### Unit conventions
+
+Every quantity carries its unit — as a suffix on Python-style kwargs and
+builder arguments, and as values in the documented tables:
+
+| Kind | Suffix | Examples |
+|------|--------|----------|
+| Timeouts / waits | `_ms` (milliseconds) | `request_timeout_ms`, `drain_timeout_ms`, `ws_idle_timeout_ms`, `poll_timeout_ms`, `logger(threshold_ms=…)`, `emit(…; retry_ms=…)` |
+| Protocol durations in seconds | `_seconds` | `ratelimit(window_seconds=…)`, `cors(max_age_seconds=…)`, `security(hsts_max_age_seconds=…)` |
+| Body / frame / compression sizes | `_bytes` | `max_body_bytes`, `ws_max_frame_bytes`, `compress(min_size_bytes=…)` |
+| Standard protocol parameters keep their spec names | — | `Cookie(…; max_age=…)` is `Max-Age` in seconds; HTTP header names (`Retry-After`, …) are RFC-defined |
+
+"Off" is uniform: pass `nothing` to omit an optional header/value
+(e.g. `security(csp=nothing)`, `security(hsts_max_age_seconds=nothing)`);
+`0` disables timeouts where documented.
 
 ### HTTPS / TLS
 
@@ -328,10 +345,10 @@ use!(app, health())
 use!(app, metrics())
 
 # CORS
-use!(app, cors(origins="https://myapp.com", methods="GET, POST, PUT, DELETE"))
+use!(app, cors(origins="https://myapp.com", allow_methods="GET, POST, PUT, DELETE"))
 
 # GZip compression (responses > 1KB)
-use!(app, compress(min_size=1024))
+use!(app, compress(min_size_bytes=1024))
 
 # Structured JSON access logs
 use!(app, logger())
@@ -597,7 +614,7 @@ resp = client(:post, "/users";
 ```julia
 using Mongoose
 
-app = App(; workers=4, request_timeout=10_000, ws_idle_timeout=60_000)
+app = App(; workers=4, request_timeout_ms=10_000, ws_idle_timeout_ms=60_000)
 
 # Health
 get!(app, "/health") do req; text("ok") end
@@ -634,7 +651,7 @@ use!(app, security())
 use!(app, health())
 use!(app, metrics())
 use!(app, cors(origins="*"))
-use!(app, compress(min_size=1024))
+use!(app, compress(min_size_bytes=1024))
 use!(app, logger())
 use!(app, bearer(t -> t == "secret"); paths=["/api"])
 

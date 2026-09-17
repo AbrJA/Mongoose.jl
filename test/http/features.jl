@@ -184,7 +184,7 @@ end
     end
 
     @testset "Large body" begin
-        s = App(max_body=2*1024*1024)
+        s = App(max_body_bytes=2*1024*1024)
         post!(s, "/large") do req; text("size=$(length(req.body))") end
         with_server(s) do port
             large_body = "x" ^ (64 * 1024)  # 64KB

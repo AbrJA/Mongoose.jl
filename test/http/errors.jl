@@ -18,7 +18,7 @@
     end
 
     @testset "413 early response carries X-Request-Id" begin
-        s = App(max_body=1024)
+        s = App(max_body_bytes=1024)
         post!(s, "/echo") do req; text(req.body) end
         with_server(s) do port
             resp = HTTP.post("http://127.0.0.1:$port/echo";
