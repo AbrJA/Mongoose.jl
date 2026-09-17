@@ -70,6 +70,18 @@ instances pass through; any other callable `f(req, next)` is wrapped in a
 asmiddleware(mw::AbstractMiddleware) = mw
 asmiddleware(mw) = FunctionMiddleware(mw)
 
+"""
+    asmiddlewares(input) → Vector{AbstractMiddleware}
+
+Normalize middleware input into a `Vector{AbstractMiddleware}`: `nothing` →
+empty, a single middleware (or plain callable) → one entry, a vector/tuple →
+one entry per element. Each element goes through [`asmiddleware`](@ref).
+"""
+asmiddlewares(::Nothing) = AbstractMiddleware[]
+asmiddlewares(mws::AbstractVector) = AbstractMiddleware[asmiddleware(m) for m in mws]
+asmiddlewares(mws::Tuple) = AbstractMiddleware[asmiddleware(m) for m in mws]
+asmiddlewares(mw) = AbstractMiddleware[asmiddleware(mw)]
+
 # --- Pipeline execution ---
 
 """

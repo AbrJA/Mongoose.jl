@@ -35,10 +35,10 @@ api = group("/api/v1", middleware=[bearer(validate_token)]) do g
 end
 ```
 """
-function group(f::Function, prefix::String; middleware::AbstractVector=AbstractMiddleware[])
+function group(f::Function, prefix::String; middleware=nothing)
     g = RouteGroup(
         rstrip(prefix, '/'),
-        AbstractMiddleware[asmiddleware(m) for m in middleware],
+        asmiddlewares(middleware),
         Tuple{Symbol,String,Function}[],
         Tuple{String,NamedTuple}[],
         RouteGroup[]
@@ -48,10 +48,10 @@ function group(f::Function, prefix::String; middleware::AbstractVector=AbstractM
 end
 
 # Non-block version
-function group(prefix::String; middleware::AbstractVector=AbstractMiddleware[])
+function group(prefix::String; middleware=nothing)
     return RouteGroup(
         rstrip(prefix, '/'),
-        AbstractMiddleware[asmiddleware(m) for m in middleware],
+        asmiddlewares(middleware),
         Tuple{Symbol,String,Function}[],
         Tuple{String,NamedTuple}[],
         RouteGroup[]
@@ -101,7 +101,7 @@ head!(f::Function, g::RouteGroup, path::AbstractString) = head!(g, path, f)
 Add a nested group to a parent group.
 """
 function group!(f::Function, parent::RouteGroup, prefix::String;
-                middleware::AbstractVector=AbstractMiddleware[])
+                middleware=nothing)
     child = group(f, prefix; middleware=middleware)
     push!(parent.children, child)
     return parent
@@ -144,4 +144,6 @@ function mount!(router, g::RouteGroup, parent_prefix::String="",
     for child in g.children
         mount!(router, child, full_prefix, combined_mw)
     end
+
+    return router
 end

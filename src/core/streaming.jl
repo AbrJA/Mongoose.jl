@@ -59,10 +59,8 @@ end
 ```
 """
 function sse(producer::Function;
-             headers::Vector{Pair{String,String}}=Pair{String,String}[
-                 "Cache-Control"     => "no-cache",
-                 "X-Accel-Buffering" => "no",
-             ])
+             headers=[ "Cache-Control"     => "no-cache",
+                       "X-Accel-Buffering" => "no" ])
     wrapped = (stream_writer) -> producer(SSEWriter(stream_writer))
     return StreamResponse(wrapped, 200; content_type="text/event-stream", headers=headers)
 end

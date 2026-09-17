@@ -83,8 +83,8 @@ Response(404, "Not Found"; headers=["X-Custom" => "value"])
 ```
 """
 function Response(status::Int, body::Union{String,Vector{UInt8}};
-                  headers::Vector{Pair{String,String}}=Pair{String,String}[])
-    return Response(status, headers, body)
+                  headers=Headers())
+    return Response(status, asheaders(headers), body)
 end
 
 # --- Typed format constructors ---
@@ -101,14 +101,14 @@ Response(Html, "<h1>Hello</h1>"; status=200)
 ```
 """
 function Response(::Type{T}, body; status::Int=200,
-                  headers::Vector{Pair{String,String}}=Pair{String,String}[]) where {T<:AbstractFormat}
+                  headers=Headers()) where {T<:AbstractFormat}
     rendered = body isa String ? body : encode(T, body)
-    all_headers = isempty(headers) ? Pair{String,String}[contenttypepair(T)] : [contenttypepair(T); headers]
-    return Response(status, all_headers, rendered)
+    merged = mergeheaders(asheaders(headers), [contenttypepair(T)]; prepend=true)
+    return Response(status, merged, rendered)
 end
 
 # Plain-text shorthand: Response("hello") or Response("hello"; status=200)
-Response(body::AbstractString; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) =
+Response(body::AbstractString; status::Int=200, headers=Headers()) =
     Response(Plain, body; status=status, headers=headers)
 
 # --- Response Helpers (FastAPI-style) ---
@@ -125,7 +125,7 @@ json((id=1, name="Alice"))  # NamedTuple
 json(Dict("error" => "Not Found"); status=404)
 ```
 """
-function json(data; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[])
+function json(data; status::Int=200, headers=Headers())
     return Response(Json, data; status=status, headers=headers)
 end
 
@@ -141,13 +141,13 @@ end
 """
     html(content; status=200, headers=[]) → Response
 """
-html(content; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) =
+html(content; status::Int=200, headers=Headers()) =
     Response(Html, content; status=status, headers=headers)
 
 """
     text(content; status=200, headers=[]) → Response
 """
-text(content; status::Int=200, headers::Vector{Pair{String,String}}=Pair{String,String}[]) =
+text(content; status::Int=200, headers=Headers()) =
     Response(Plain, content; status=status, headers=headers)
 
 """
@@ -161,8 +161,8 @@ redirect("/login")
 redirect("https://example.com"; status=301)
 ```
 """
-function redirect(url::AbstractString; status::Int=302, headers::Vector{Pair{String,String}}=Pair{String,String}[])
-    return Response(status, [headers; Pair{String,String}["Location" => String(url)]], "")
+function redirect(url::AbstractString; status::Int=302, headers=Headers())
+    return Response(status, mergeheaders(asheaders(headers), ["Location" => String(url)]), "")
 end
 
 # --- Streaming Response ---
@@ -196,15 +196,15 @@ struct StreamResponse
 end
 
 function StreamResponse(producer::Function, status::Int, content_type::String;
-                        headers::Union{Vector{Pair{String,String}},Headers}=Pair{String,String}[])
-    return StreamResponse(status, content_type, Headers(headers), producer)
+                        headers=Headers())
+    return StreamResponse(status, content_type, asheaders(headers), producer)
 end
 
 # Convenience: StreamResponse(200, "text/event-stream") do writer ... end
 function StreamResponse(producer::Function, status::Int=200;
                         content_type::String="application/octet-stream",
-                        headers::Union{Vector{Pair{String,String}},Headers}=Pair{String,String}[])
-    return StreamResponse(status, content_type, Headers(headers), producer)
+                        headers=Headers())
+    return StreamResponse(status, content_type, asheaders(headers), producer)
 end
 
 # --- Cookie support in responses ---

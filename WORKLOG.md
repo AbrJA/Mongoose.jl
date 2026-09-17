@@ -9,7 +9,7 @@
 1. Confirm scope in WORKLOG.
 2. Implement in `src/`, update tests.
 3. Gates before commit:
-   - `julia --project=test test/runtests_stream.jl` (939 tests)
+   - `julia --project=test test/runtests_stream.jl` (1015 tests)
    - `julia --project=test test/acceptance/production.jl` (80 checks)
    - `julia --project=test test/quality/quality.jl` (Aqua + JET)
    - `julia --project=docs docs/make.jl` when public API changes
@@ -211,6 +211,17 @@ ETag/conditional requests~~ **shipped** · OpenAPI-from-metadata · sessions/CSR
 
 ## Changelog
 
+- **Sep 17 — Batch 1 (input normalization) shipped**: new Kernel normalizers
+  `asheaders` / `asstrings` / `asmiddlewares` (+ `Headers(pair)`/`Headers(tuple)`/
+  `Headers([])`). `headers=` now accepts `Headers`/pair/tuple/vector in
+  `Response`, typed-format `Response`, `json`/`html`/`text`/`redirect`,
+  `StreamResponse`, `sse`, `Request`, and `TestClient`; `middleware=` accepts
+  nothing/single/tuple/vector in `route!`, `Endpoint`, `group`, `group!`;
+  `paths=` and `allowed_origins=` accept single/vector/tuple/SubString;
+  `cors(origins=…)` likewise. `route!`/`matchroute` normalize method case
+  (`:GET`, `"GeT"`), and `mount!`/`start!` return the server. 1015 tests + 80
+  acceptance + Aqua/JET + docs green. Audit batches 2–5 (registration order,
+  naming decisions, units table, App-level router introspection) still pending.
 - **Sep 17 — P1 ergonomics batch shipped** (`f52b763`, `9440686`, `a622c83`):
   `mergeheaders` (non-mutating header merge, 7 rebuild sites deleted),
   `apikey` positional/collection builder, `shutdown!` drains `bg_tasks`

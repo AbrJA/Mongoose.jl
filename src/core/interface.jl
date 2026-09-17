@@ -6,9 +6,11 @@
     this protocol; they never inspect internal fields.
 
     Required protocol for HTTP dispatch:
-    - `route!(r::R, method, path, handler; middleware=[], metadata=nothing) → r`
+    - `route!(r::R, method, path, handler; middleware=AbstractMiddleware[], metadata=nothing) → r`
       (register an HTTP route; the router stores the handler inside an
-      `Endpoint` and never interprets it)
+      `Endpoint` and never interprets it. The `App` layer normalizes
+      `middleware` to a vector before delegating, so a router may assume an
+      `AbstractVector`)
     - `matchroute(r::R, method, path)`                → a `RouteResult`
       (`Matched` / `NoMatch` / `WrongMethod{allowed}` — 404/405 and the
       `Allow` set are resolved by the router at match time)
@@ -99,6 +101,11 @@ end
 function matchroute(router::AbstractRouter, method::Symbol, path::AbstractString)
     throw(MethodError(matchroute, (router, method, path)))
 end
+
+# Convenience: methods are lowercase Symbols in the protocol; accept the
+# upper/mixed-case String spelling at the (cold) call surface.
+matchroute(router::AbstractRouter, method::AbstractString, path::AbstractString) =
+    matchroute(router, Symbol(lowercase(String(method))), path)
 
 function hasroute(router::AbstractRouter, path::AbstractString)
     throw(MethodError(hasroute, (router, path)))

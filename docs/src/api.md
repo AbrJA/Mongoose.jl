@@ -55,6 +55,7 @@ terminalfor
 errorresponse
 runpipeline
 asmiddleware
+asmiddlewares
 AbstractRequest
 ```
 
@@ -65,6 +66,7 @@ Request
 Response
 StreamResponse
 Headers
+asheaders
 mergeheaders
 Cookie
 ```
@@ -100,6 +102,7 @@ parsequery
 stripquery
 formatheaders
 urldecode
+asstrings
 statusreason
 ```
 

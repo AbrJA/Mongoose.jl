@@ -155,7 +155,7 @@ request's peer address (defaults to a loopback client; pass `nothing` for a
 transport-less request).
 """
 function (client::FakeTransport)(method::Symbol, path::String;
-                                 headers::Vector{Pair{String,String}}=Pair{String,String}[],
+                                 headers=nothing,
                                  body::String="",
                                  query::Dict{String,String}=Dict{String,String}(),
                                  remote_addr::Union{Nothing,String}="127.0.0.1")
@@ -173,7 +173,7 @@ function (client::FakeTransport)(method::Symbol, path::String;
     merge!(parsed_query, query)
 
     req_path = String(stripquery(uri))
-    req = Request(method, uri, req_path, parsed_query, Headers(headers), body, nothing, remote_addr)
+    req = Request(method, uri, req_path, parsed_query, asheaders(headers), body, nothing, remote_addr)
 
     # Run through pipeline exactly as the real server would
     result = try
@@ -191,10 +191,10 @@ end
 
 # Convenience methods
 function (client::FakeTransport)(method::Symbol, path::String, json_body;
-                                 headers::Vector{Pair{String,String}}=Pair{String,String}[],
+                                 headers=nothing,
                                  query::Dict{String,String}=Dict{String,String}())
     body = JSON.json(json_body)
-    all_headers = ["content-type" => "application/json"; headers]
+    all_headers = mergeheaders(asheaders(headers), ["content-type" => "application/json"]; prepend=true)
     return client(method, path; headers=all_headers, body=body, query=query)
 end
 

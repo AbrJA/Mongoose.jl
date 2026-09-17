@@ -449,10 +449,11 @@ use!(app, bearer(validate_token); paths=["/api"])
 use!(app, (req, next) -> (req.headers ...; next()))
 ```
 """
-function use!(server::AbstractServer, @nospecialize(mw); paths::Vector{String}=String[])
+function use!(server::AbstractServer, @nospecialize(mw); paths=nothing)
     _ensure_registratable(server, "middleware")
     inner = asmiddleware(mw)
-    wrapped = isempty(paths) ? inner : PathFilter(inner, paths)
+    prefixes = asstrings(paths)
+    wrapped = isempty(prefixes) ? inner : PathFilter(inner, prefixes)
     push!(server.middlewares, wrapped)
     # Refresh the seam's baked tuple stack (registration is build-phase only).
     server.context = RequestContext(server.router; middlewares=server.middlewares,
@@ -463,5 +464,5 @@ function use!(server::AbstractServer, @nospecialize(mw); paths::Vector{String}=S
 end
 
 # Do-block convenience: use!(app) do req, next ... end
-use!(f::Function, server::AbstractServer; paths::Vector{String}=String[]) =
+use!(f::Function, server::AbstractServer; paths=nothing) =
     use!(server, f; paths=paths)

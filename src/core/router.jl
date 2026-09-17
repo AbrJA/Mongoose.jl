@@ -35,10 +35,9 @@ struct Endpoint
 end
 
 function Endpoint(handler::Function;
-                  middleware::AbstractVector=AbstractMiddleware[],
+                  middleware=nothing,
                   metadata=nothing)
-    mws = AbstractMiddleware[asmiddleware(m) for m in middleware]
-    return Endpoint(handler, mws, metadata)
+    return Endpoint(handler, asmiddlewares(middleware), metadata)
 end
 
 # --- Method Dispatch (struct fields instead of Dict for zero-allocation dispatch) ---
@@ -212,7 +211,7 @@ const PARAM_TYPES = Dict{String,Type}(
 # --- Route Registration ---
 
 """
-    route!(router, method, path, handler; middleware=[], metadata=nothing) → router
+    route!(router, method, path, handler; middleware=nothing, metadata=nothing) → router
 
 Register an HTTP route. Supports:
 - Static: `/health`
@@ -221,27 +220,37 @@ Register an HTTP route. Supports:
 - Wildcard: `/*path` (must be last segment)
 
 `middleware` is scoped to this route (composed with app-global middleware at
-dispatch time); `metadata` is opaque and available for future OpenAPI-style
-tooling.
+dispatch time); it accepts `nothing`, a single middleware/callable, or a
+vector/tuple of them. `metadata` is opaque and available for future
+OpenAPI-style tooling.
 
 Overlapping parametric routes resolve first-registered-first at dispatch;
 static routes always take precedence over parametric ones.
 """
 function route!(router::Router, method::Symbol, path::AbstractString, @nospecialize(handler::Function);
-                middleware::AbstractVector=AbstractMiddleware[],
+                middleware=nothing,
                 metadata=nothing)
-    method in VALID_METHODS || throw(RouteError("Invalid HTTP method: $method"))
+    m = _normalize_method(method)
     router.frozen && throw(RouteError("router is frozen: registration is closed"))
-    _register_route!(router, method, String(path),
+    _register_route!(router, m, String(path),
                      Endpoint(handler; middleware=middleware, metadata=metadata))
     return router
 end
 
 function route!(router::Router, method::AbstractString, path::AbstractString, @nospecialize(handler::Function);
-                middleware::AbstractVector=AbstractMiddleware[],
+                middleware=nothing,
                 metadata=nothing)
-    route!(router, Symbol(lowercase(method)), path, handler;
+    route!(router, _normalize_method(Symbol(method)), path, handler;
            middleware=middleware, metadata=metadata)
+end
+
+# Registration is cold: accept `:GET`/`:Get` by lowering once. Valid lowercase
+# methods (the hot-path protocol form) pass through the tuple scan untouched.
+@inline function _normalize_method(method::Symbol)::Symbol
+    method in VALID_METHODS && return method
+    lowered = Symbol(lowercase(String(method)))
+    lowered in VALID_METHODS || throw(RouteError("Invalid HTTP method: $method"))
+    return lowered
 end
 
 function _register_route!(router::Router, method::Symbol, path::String, endpoint::Endpoint)
@@ -368,11 +377,12 @@ order; the `"*"` catch-all is the final fallback. `HEAD` is served only by an
 explicit `head!` route — there is no auto-HEAD fallback.
 """
 function matchroute(router::Router, method::Symbol, path::AbstractString)::RouteResult
+    m = _normalize_method(method)
     clean = stripquery(path)
     found = _find_route(router, clean)
     found === nothing && return NoMatch()
     mm, params = found
-    ep = resolve_method(mm, method)
+    ep = resolve_method(mm, m)
     ep === nothing && return WrongMethod(method_bitmask(mm))
     return Matched(ep, mm, params)
 end
@@ -471,10 +481,10 @@ function ws!(router::Router, path::AbstractString;
              on_message::Function,
              on_open::Union{Function,Nothing}=nothing,
              on_close::Union{Function,Nothing}=nothing,
-             allowed_origins::Vector{String}=String[])
+             allowed_origins=nothing)
     router.frozen && throw(RouteError("router is frozen: registration is closed"))
     router.ws_routes[String(path)] = WsEndpoint(on_message=on_message, on_open=on_open,
-        on_close=on_close, allowed_origins=allowed_origins)
+        on_close=on_close, allowed_origins=asstrings(allowed_origins))
     return router
 end
 

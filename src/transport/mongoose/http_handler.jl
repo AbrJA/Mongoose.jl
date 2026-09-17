@@ -230,18 +230,18 @@ end
 # --- Routing convenience on server/app ---
 
 function route!(server::AbstractServer, method::Symbol, path::AbstractString, @nospecialize(handler::Function);
-                middleware::AbstractVector=AbstractMiddleware[],
+                middleware=nothing,
                 metadata=nothing)
     _ensure_registratable(server, "routes")
-    route!(server.router, method, path, handler; middleware=middleware, metadata=metadata)
+    route!(server.router, method, path, handler; middleware=asmiddlewares(middleware), metadata=metadata)
     return server
 end
 
 function route!(server::AbstractServer, method::AbstractString, path::AbstractString, @nospecialize(handler::Function);
-                middleware::AbstractVector=AbstractMiddleware[],
+                middleware=nothing,
                 metadata=nothing)
     route!(server.router, Symbol(lowercase(method)), path, handler;
-           middleware=middleware, metadata=metadata)
+           middleware=asmiddlewares(middleware), metadata=metadata)
     return server
 end
 

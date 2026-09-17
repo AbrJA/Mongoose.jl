@@ -17,3 +17,16 @@
         @test resp3.status == 200
     end
 end
+
+@testset "use! paths= input forms" begin
+    for paths in ("/admin", ("/admin",), ["/admin"], [SubString("/admin/x", 1, 6)])
+        app = App()
+        get!(app, "/public") do req; text("public") end
+        get!(app, "/admin/panel") do req; text("admin") end
+        use!(app, bearer(t -> t == "secret"); paths=paths)
+        client = Mongoose.TestClient(app)
+        @test client(:get, "/public").status == 200
+        @test client(:get, "/admin/panel").status == 401
+        @test client(:get, "/admin/panel"; headers=["Authorization" => "Bearer secret"]).status == 200
+    end
+end

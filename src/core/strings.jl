@@ -194,3 +194,15 @@ Prevents CRLF injection, control characters, and excessive length.
     end
     return s
 end
+
+"""
+    asstrings(input) → Vector{String}
+
+Normalize string-ish input into a `Vector{String}`: `nothing` → empty, a single
+`AbstractString` → one-element vector, a vector/tuple → `String`ed entries.
+Used for `paths=`, `allowed_origins=`, and similar collection kwargs.
+"""
+asstrings(::Nothing) = String[]
+asstrings(s::AbstractString) = String[String(s)]
+asstrings(v::AbstractVector) = String[String(s) for s in v]
+asstrings(t::Tuple) = String[String(s) for s in t]

@@ -95,6 +95,42 @@ end
     end
 end
 
+@testset "Header input normalization" begin
+    @testset "Response/json/text accept Headers and tuples" begin
+        r = Response(200, "x"; headers=Headers(["A" => "1"]))
+        @test r.headers.data == ["A" => "1"]
+
+        r2 = Response(200, "x"; headers=("A" => "1",))
+        @test r2.headers.data == ["A" => "1"]
+
+        r3 = Response(Json, Dict("a" => 1); headers=Headers(["X" => "1"]))
+        @test r3.headers[1].first == "Content-Type"
+        @test r3.headers[2] == ("X" => "1")
+
+        t = text("hi"; headers=("X" => "1",))
+        @test any(==("X" => "1"), t.headers)
+
+        j = json(Dict("a" => 1); headers=Headers(["X" => "1"]))
+        @test any(==("X" => "1"), j.headers)
+        @test any(p -> p.first == "Content-Type", j.headers)
+    end
+
+    @testset "redirect keeps Location alongside inputs" begin
+        rd = redirect("/next"; headers=Headers(["X" => "1"]))
+        @test any(==("Location" => "/next"), rd.headers)
+        @test any(==("X" => "1"), rd.headers)
+    end
+
+    @testset "StreamResponse/sse accept Headers" begin
+        sr = StreamResponse(w -> nothing; headers=("Cache-Control" => "no-cache",))
+        @test sr.headers.data == ["Cache-Control" => "no-cache"]
+
+        resp = sse(w -> nothing; headers=Headers(["Cache-Control" => "no-cache"]))
+        @test resp.content_type == "text/event-stream"
+        @test resp.headers.data == ["Cache-Control" => "no-cache"]
+    end
+end
+
 @testset "Cookie" begin
     @testset "Basic cookie" begin
         c = Mongoose.Cookie("name", "value")

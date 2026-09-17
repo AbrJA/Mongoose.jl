@@ -62,6 +62,14 @@ end
         app = App()
         shutdown!(app)
     end
+
+    @testset "start! returns the server" begin
+        app = App()
+        get!(app, "/") do req; text("ok") end
+        @test start!(app; port=fresh_port(), blocking=false) === app
+        @test start!(app; port=fresh_port(), blocking=false) === app  # already running
+        shutdown!(app)
+    end
 end
 
 @testset "onstart! / onstop! hooks" begin

@@ -98,12 +98,11 @@ use!(app, cors(origins=["https://myapp.com", "https://admin.myapp.com"],
 ```
 """
 function cors(;
-    origins::Union{String,AbstractVector{String}}="*",
+    origins="*",
     methods::String="GET, POST, PUT, PATCH, DELETE, OPTIONS",
     headers::String="Content-Type, Authorization",
     max_age::Int=86400,
     allow_credentials::Bool=false
 )
-    origins_list = origins isa String ? String[origins] : String[origins...]
-    return Cors(origins_list, allow_credentials, methods, headers, max_age)
+    return Cors(asstrings(origins), allow_credentials, methods, headers, max_age)
 end

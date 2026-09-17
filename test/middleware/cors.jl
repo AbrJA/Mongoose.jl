@@ -99,3 +99,19 @@
         end
     end
 end
+
+@testset "cors origins= input forms" begin
+    for origins in ("https://a.test", ("https://a.test",), ["https://a.test"],
+                    [SubString("https://a.test/x", 1, 14)])
+        app = App()
+        use!(app, cors(origins=origins))
+        get!(app, "/") do req; text("ok") end
+        client = Mongoose.TestClient(app)
+
+        ok = client(:get, "/"; headers=["Origin" => "https://a.test"])
+        @test get(ok.headers, "access-control-allow-origin", nothing) == "https://a.test"
+
+        denied = client(:get, "/"; headers=["Origin" => "https://b.test"])
+        @test get(denied.headers, "access-control-allow-origin", nothing) === nothing
+    end
+end

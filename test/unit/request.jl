@@ -71,6 +71,33 @@ end
     end
 end
 
+@testset "Header normalization (asheaders + Headers constructors)" begin
+    h = Headers(["a" => "1"])
+    @test Mongoose.asheaders(h) === h
+    @test Mongoose.asheaders("a" => "1").data == ["a" => "1"]
+    @test Mongoose.asheaders(("a" => "1", "b" => "2")).data == ["a" => "1", "b" => "2"]
+    @test Mongoose.asheaders([("a" => "1")]).data == ["a" => "1"]
+    @test isempty(Mongoose.asheaders(String[]).data)
+    @test isempty(Mongoose.asheaders(nothing).data)
+
+    # String-ish pair entries are converted, not rejected.
+    ss = SubString("abc", 1, 1)
+    @test Mongoose.asheaders([ss => ss]).data == ["a" => "a"]
+    @test_throws ArgumentError Mongoose.asheaders(["not a pair"])
+
+    # Constructors: pair / tuple / empty-untyped vector.
+    @test Headers("a" => "1").data == ["a" => "1"]
+    @test Headers(("a" => "1", "b" => "2")).data == ["a" => "1", "b" => "2"]
+    @test isempty(Headers([]))
+end
+
+@testset "Request header inputs" begin
+    req = Request(:get, "/", "/", Dict{String,String}(), ("x-a" => "1",), "")
+    @test get(req.headers, "x-a", "") == "1"
+    req2 = Request(:get, "/", Dict{String,String}(), Headers(["x-b" => "2"]), "")
+    @test get(req2.headers, "x-b", "") == "2"
+end
+
 @testset "Context" begin
     @testset "context() creates dict lazily" begin
         req = Request(:get, "/", "/", Dict{String,String}(), Headers(), "")

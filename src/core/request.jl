@@ -17,6 +17,36 @@ struct Headers
     Headers() = new(Pair{String,String}[])
 end
 
+# Any of these normalize to `Headers` (see `asheaders`); the plain-vector
+# method above stays the zero-copy fast path.
+Headers(p::Pair) = asheaders(p)
+Headers(kvs::AbstractVector) = asheaders(kvs)
+Headers(kvs::Tuple) = asheaders(kvs)
+
+"""
+    asheaders(input) → Headers
+
+Normalize accepted header inputs into `Headers`: a `Headers` passes through, a
+single `Pair` or a vector/tuple of pairs is converted (string keys/values are
+`String`ed; anything else throws `ArgumentError`).
+"""
+asheaders(h::Headers)::Headers = h
+asheaders(::Nothing)::Headers = Headers()
+asheaders(kvs::Vector{Pair{String,String}})::Headers = Headers(kvs)
+asheaders(p::Pair)::Headers = Headers(Pair{String,String}[_headerpair(p)])
+
+function asheaders(kvs::Union{AbstractVector,Tuple})::Headers
+    out = Vector{Pair{String,String}}()
+    sizehint!(out, length(kvs))
+    for k in kvs
+        push!(out, _headerpair(k))
+    end
+    return Headers(out)
+end
+
+_headerpair(p::Pair{<:AbstractString,<:AbstractString}) = String(p.first) => String(p.second)
+_headerpair(p) = throw(ArgumentError("headers must be Pairs of strings, got $(typeof(p))"))
+
 @inline Base.:(==)(a::Headers, b::Headers) = a.data == b.data
 @inline Base.isempty(h::Headers)   = isempty(h.data)
 @inline Base.length(h::Headers)    = length(h.data)
@@ -90,22 +120,21 @@ mutable struct Request <: AbstractRequest
     end
 end
 
-# Convenience overload: accept raw Vector and wrap automatically
+# Convenience overload: accept raw pair vectors/tuples and normalize
 function Request(method::Symbol, uri::String, path::String,
-                 query::Dict{String,String}, headers::Vector{Pair{String,String}},
+                 query::Dict{String,String}, headers,
                  body::String, context::Union{Nothing,Dict{Symbol,Any}}=nothing,
                  remote_addr::Union{Nothing,String}=nothing)
-    return Request(method, uri, path, query, Headers(headers), body, context, remote_addr)
+    return Request(method, uri, path, query, asheaders(headers), body, context, remote_addr)
 end
 
 # Convenience: auto-strip query from uri
 function Request(method::Symbol, uri::String,
-                 query::Dict{String,String}, headers::Union{Headers,Vector{Pair{String,String}}},
+                 query::Dict{String,String}, headers,
                  body::String, context::Union{Nothing,Dict{Symbol,Any}}=nothing,
                  remote_addr::Union{Nothing,String}=nothing)
     path = String(stripquery(uri))
-    h = headers isa Headers ? headers : Headers(headers)
-    return Request(method, uri, path, query, h, body, context, remote_addr)
+    return Request(method, uri, path, query, asheaders(headers), body, context, remote_addr)
 end
 
 """

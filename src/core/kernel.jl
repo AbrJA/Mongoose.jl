@@ -50,7 +50,7 @@ include("security.jl")
 include("compress.jl")
 include("etag.jl")
 
-export AbstractRequest, Request, Headers, mergeheaders, context, form, header, query, body,
+export AbstractRequest, Request, Headers, asheaders, mergeheaders, context, form, header, query, body,
     multipart, MultipartFile,
     Response, StreamResponse, Cookie, bake, cookies, json, html, text, redirect,
     Plain, Html, Css, Js, Json, Xml, Binary, mime, contenttypepair, encode, decode,
@@ -72,13 +72,13 @@ export AbstractRequest, Request, Headers, mergeheaders, context, form, header, q
     gethandler, getendpoint, sethandler!, haswsroutes, wsendpoint,
     route!, ws!, group, group!, RouteGroup, mount!, post!, patch!, options!, head!,
     Endpoint, errorresponse, process, RequestContext, freeze!, isfrozen, terminalfor,
-    AbstractMiddleware, PathFilter, runpipeline, FunctionMiddleware, asmiddleware,
+    AbstractMiddleware, PathFilter, runpipeline, FunctionMiddleware, asmiddleware, asmiddlewares,
     AbstractExecutor, SyncExecutor, FakeExecutor, run!, submit!, start!, stop!,
     AbstractTransport, supportsws, supportstls, supportsstream,
     Cors, Bearer, ApiKey, BasicAuth, RateLimit, Compress, Logger, Health,
     PrometheusMetrics, SecurityHeaders, Etag,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
-    parsequery, stripquery, formatheaders, urldecode,
+    parsequery, stripquery, formatheaders, urldecode, asstrings,
     SSEWriter, emit, sse
 
 end # module Kernel

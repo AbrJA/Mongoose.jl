@@ -147,6 +147,10 @@ end
         apikey(keys=Set(["k"])); apikey("k"); health(); metrics()
         etag()
 
+        # --- Input normalization ---
+        asheaders("x" => "1"); asheaders(Headers())
+        asstrings(("/api",)); asmiddlewares((cors(),))
+
         # --- App construction ---
         app = App()
         use!(app, cors())

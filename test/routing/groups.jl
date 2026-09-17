@@ -27,7 +27,7 @@ end
         grp = group("/api/v1")
         get!(grp, "/users") do req; text("users list") end
         get!(grp, "/items") do req; text("items list") end
-        mount!(app, grp)
+        @test mount!(app, grp) === app
 
         with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/api/v1/users"; status_exception=false)
@@ -37,6 +37,18 @@ end
             resp2 = HTTP.get("http://127.0.0.1:$port/api/v1/items"; status_exception=false)
             @test resp2.status == 200
             @test String(resp2.body) == "items list"
+        end
+    end
+
+    @testset "group middleware= input forms" begin
+        for mws in (cors(), (cors(),), [cors()])
+            app = App()
+            grp = group("/api"; middleware=mws) do g
+                get!(g, "/x", req -> text("x"))
+            end
+            @test mount!(app, grp) === app
+            resp = Mongoose.TestClient(app)(:get, "/api/x"; headers=["Origin" => "https://a.test"])
+            @test get(resp.headers, "access-control-allow-origin", nothing) == "*"
         end
     end
 end

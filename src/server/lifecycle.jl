@@ -22,7 +22,7 @@ start!(app; port=8080)
 """
 function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::Integer=8080,
                 blocking::Bool=true, tls::Union{Nothing,TLSConfig}=nothing)
-    Threads.atomic_xchg!(server.runtime.running, true) && return
+    Threads.atomic_xchg!(server.runtime.running, true) && return server
 
     try
         server.runtime.tls = normalize_tls(tls)
@@ -60,6 +60,8 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
         server.runtime.running[] && shutdown!(server)
         e isa InterruptException || rethrow(e)
     end
+
+    return server
 end
 
 """

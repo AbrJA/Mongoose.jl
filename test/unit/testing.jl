@@ -188,3 +188,19 @@ end
     end
 end
 
+@testset "TestClient header input forms" begin
+    app = App()
+    get!(app, "/h") do req; text(get(req.headers, "x-a", "none")) end
+    post!(app, "/j") do req; text(get(req.headers, "content-type", "none")) end
+    client = Mongoose.TestClient(app)
+
+    @test String(client(:get, "/h"; headers=Headers(["x-a" => "1"])).body) == "1"
+    @test String(client(:get, "/h"; headers=("x-a" => "1",)).body) == "1"
+    @test String(client(:get, "/h"; headers=["x-a" => "1"]).body) == "1"
+    @test String(client(:get, "/h").body) == "none"
+
+    # The JSON convenience still injects Content-Type alongside extra headers.
+    resp = client(:post, "/j", Dict("a" => 1); headers=("x-a" => "1",))
+    @test occursin("application/json", String(resp.body))
+end
+
