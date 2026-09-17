@@ -55,8 +55,7 @@ function (mw::Etag)(request::Request, next::Function)
         end
     end
 
-    headers = Headers([copy(response.headers.data); "etag" => tag])
-    return Response(response.status, headers, response.body)
+    return mergeheaders(response, ["etag" => tag])
 end
 
 # --- ETag derivation (FNV-1a 64-bit, deterministic across restarts) ---

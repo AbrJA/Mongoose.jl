@@ -29,6 +29,46 @@ end
 Base.:(==)(a::Response, b::Response) =
     a.status == b.status && a.headers == b.headers && a.body == b.body
 
+# --- Non-mutating header merging ---
+
+"""
+    mergeheaders(headers::Headers, extra; prepend=false) → Headers
+    mergeheaders(response::Response, extra; prepend=false) → Response
+
+Return a new headers list (or a new `Response` carrying it) with `extra`
+merged in; the original is left untouched. `extra` may be a single pair or a
+vector of pairs.
+
+This is a concatenation, not a dictionary merge: existing pairs are preserved
+(including duplicates and order). `extra` is appended after them by default;
+`prepend=true` places `extra` first so `get`/`haskey` find those values before
+any same-named pair the original carried.
+"""
+@inline function mergeheaders(h::Headers, extra::Pair{String,String};
+                              prepend::Bool=false)
+    return mergeheaders(h, [extra]; prepend=prepend)
+end
+
+@inline function mergeheaders(h::Headers, extra::AbstractVector{<:Pair{String,String}};
+                              prepend::Bool=false)
+    n, m = length(h.data), length(extra)
+    merged = Vector{Pair{String,String}}(undef, n + m)
+    if prepend
+        copyto!(merged, 1, extra, 1, m)
+        copyto!(merged, m + 1, h.data, 1, n)
+    else
+        copyto!(merged, 1, h.data, 1, n)
+        copyto!(merged, n + 1, extra, 1, m)
+    end
+    return Headers(merged)
+end
+
+@inline function mergeheaders(res::Response,
+                              extra::Union{Pair{String,String},AbstractVector{<:Pair{String,String}}};
+                              prepend::Bool=false)
+    return Response(res.status, mergeheaders(res.headers, extra; prepend=prepend), res.body)
+end
+
 # --- Primary ergonomic constructor: status + body ---
 
 """

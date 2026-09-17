@@ -12,7 +12,7 @@ end
 function (mw::SecurityHeaders)(request::Request, next::Function)
     response = next()
     response isa Response || return response
-    return Response(response.status, Headers([mw.headers; copy(response.headers.data)]), response.body)
+    return mergeheaders(response, mw.headers; prepend=true)
 end
 
 """

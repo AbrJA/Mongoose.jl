@@ -60,6 +60,41 @@
     end
 end
 
+@testset "mergeheaders" begin
+    r = Response(200, Pair{String,String}["A" => "1"], "ok")
+
+    @testset "append (default)" begin
+        r2 = Mongoose.mergeheaders(r, ["B" => "2"])
+        @test r2.status == 200 && r2.body == "ok"
+        @test r2.headers.data == ["A" => "1", "B" => "2"]
+        @test r.headers.data == ["A" => "1"]          # original untouched
+    end
+
+    @testset "prepend" begin
+        r2 = Mongoose.mergeheaders(r, ["B" => "2"]; prepend=true)
+        @test r2.headers.data == ["B" => "2", "A" => "1"]
+    end
+
+    @testset "duplicates preserved, first match wins" begin
+        r2 = Mongoose.mergeheaders(r, ["A" => "override"]; prepend=true)
+        @test r2.headers.data == ["A" => "override", "A" => "1"]
+        @test get(r2.headers, "a", nothing) == "override"
+    end
+
+    @testset "Headers-level + vector form" begin
+        h = Headers(["A" => "1"])
+        h2 = Mongoose.mergeheaders(h, ["B" => "2", "C" => "3"])
+        @test h2.data == ["A" => "1", "B" => "2", "C" => "3"]
+        @test h.data == ["A" => "1"]
+    end
+
+    @testset "binary body preserved" begin
+        r2 = Mongoose.mergeheaders(Response(200, Pair{String,String}[], UInt8[1, 2, 3]), ["A" => "1"])
+        @test r2.body == UInt8[1, 2, 3]
+        @test r2.headers.data == ["A" => "1"]
+    end
+end
+
 @testset "Cookie" begin
     @testset "Basic cookie" begin
         c = Mongoose.Cookie("name", "value")

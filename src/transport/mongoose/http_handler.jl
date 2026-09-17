@@ -146,7 +146,7 @@ function _http_job(server::AbstractServer, id::Int, req::Request)
     if res isa StreamResponse
         return Tagged{Union{Response,StreamResponse,Message}}(id, res)
     end
-    resp = Response(res.status, Headers([copy(res.headers.data); "X-Request-Id" => rid]), res.body)
+    resp = mergeheaders(res, ["X-Request-Id" => rid])
     return Tagged{Union{Response,StreamResponse,Message}}(id, resp)
 end
 

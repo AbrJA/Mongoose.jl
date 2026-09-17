@@ -112,6 +112,7 @@ end
         Response(Html, "<p>ok</p>")
         Response(404, Pair{String,String}[], "")
         Response(500, Pair{String,String}[], "")
+        mergeheaders(Response(200, Pair{String,String}[], ""), ["x" => "1"])
         json("{\"ok\":true}")
         html("<b>ok</b>")
         text("hello")

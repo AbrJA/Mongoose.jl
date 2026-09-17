@@ -142,7 +142,9 @@ function _run_fake_stream(transport::FakeTransport, resp::StreamResponse)::Respo
         stream.done = true          # one response per stream, then closed
     end
     body = String(take!(stream.io))
-    return Response(resp.status, Headers(["Content-Type" => resp.content_type; copy(resp.headers.data)]), body)
+    return Response(resp.status,
+                    mergeheaders(resp.headers, ["Content-Type" => resp.content_type]; prepend=true),
+                    body)
 end
 
 """

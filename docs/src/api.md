@@ -65,6 +65,7 @@ Request
 Response
 StreamResponse
 Headers
+mergeheaders
 Cookie
 ```
 

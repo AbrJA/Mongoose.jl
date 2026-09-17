@@ -73,7 +73,7 @@ function (mw::Cors)(request::Request, next::Function)
             "Vary"                        => "Origin",
         ]
         mw.allow_credentials && push!(headers, "Access-Control-Allow-Credentials" => "true")
-        return Response(response.status, Headers([headers; copy(response.headers.data)]), response.body)
+        return mergeheaders(response, headers; prepend=true)
     end
     return response
 end

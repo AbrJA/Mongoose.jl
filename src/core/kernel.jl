@@ -50,7 +50,7 @@ include("security.jl")
 include("compress.jl")
 include("etag.jl")
 
-export AbstractRequest, Request, Headers, context, form, header, query, body,
+export AbstractRequest, Request, Headers, mergeheaders, context, form, header, query, body,
     multipart, MultipartFile,
     Response, StreamResponse, Cookie, bake, cookies, json, html, text, redirect,
     Plain, Html, Css, Js, Json, Xml, Binary, mime, contenttypepair, encode, decode,
