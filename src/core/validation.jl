@@ -19,7 +19,7 @@
     ```julia
     post!(app, "/users") do req
         data = validate(req, CreateUser) do err
-            json((error=err,); status=422)
+            json((error=err.message, field=err.field); status=422)
         end
         json((id=1, name=data.name))
     end
@@ -49,14 +49,15 @@ function Base.showerror(io::IO, e::ValidationError)
 end
 
 """
-    validate(req, ::Type{T}) → T
-    validate(error_handler, req, ::Type{T}) → Union{T, Response}
+    validate(req, ::Type{T}; on_error=nothing) → T | Response
 
 Parse and validate the JSON request body into type T.
 T must be a struct with a keyword constructor or accept a Dict.
 
-Returns the parsed struct, or throws `ValidationError` if parsing fails.
-When called with an error handler function, returns the handler's response on failure.
+Returns the parsed struct, or throws `ValidationError` if parsing fails. With
+`on_error`, a callback `(e::ValidationError) → Response` is called with the
+error instead of throwing; the do-block form `validate(req, T) do e … end` is
+sugar for `on_error=e`.
 
 # Example
 ```julia
@@ -67,12 +68,28 @@ struct CreateUser
 end
 
 post!(app, "/users") do req
-    user = validate(req, CreateUser)
+    user = validate(req, CreateUser) do e
+        json((error=e.message, field=e.field); status=422)
+    end
     json((id=1, name=user.name))
 end
 ```
 """
-function validate(req::Request, ::Type{T})::T where {T}
+function validate(req::Request, ::Type{T}; on_error::Union{Nothing,Function}=nothing) where {T}
+    try
+        return _validate_body(req, T)
+    catch e
+        e isa ValidationError || rethrow(e)
+        on_error === nothing && rethrow(e)
+        return on_error(e)
+    end
+end
+
+# do-block sugar: validate(req, T) do e … end → validate(e -> …, req, T)
+validate(f::Function, req::Request, ::Type{T}) where {T} =
+    validate(req, T; on_error=f)
+
+function _validate_body(req::Request, ::Type{T})::T where {T}
     body_str = req.body
     isempty(body_str) && throw(ValidationError("Request body is empty"))
 
@@ -85,15 +102,6 @@ function validate(req::Request, ::Type{T})::T where {T}
     data isa Dict || throw(ValidationError("Expected JSON object, got $(typeof(data))"))
 
     return _construct_from_dict(T, data)
-end
-
-function validate(on_error::Function, req::Request, ::Type{T}) where {T}
-    try
-        return validate(req, T)
-    catch e
-        e isa ValidationError || rethrow(e)
-        return on_error(e.message)
-    end
 end
 
 """

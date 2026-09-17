@@ -12,7 +12,7 @@
         @testset "Serves HTML file" begin
             s = App()
             get!(s, "/api") do req; text("api") end
-            serve!(s, "/", dir)
+            serve!(s, dir)
 
             with_server(s) do port
                 resp = HTTP.get("http://127.0.0.1:$port/index.html"; status_exception=false)
@@ -23,7 +23,7 @@
 
         @testset "Serves CSS file" begin
             s = App()
-            serve!(s, "/", dir)
+            serve!(s, dir)
 
             with_server(s) do port
                 resp = HTTP.get("http://127.0.0.1:$port/style.css"; status_exception=false)
@@ -34,7 +34,7 @@
 
         @testset "Serves JS file" begin
             s = App()
-            serve!(s, "/", dir)
+            serve!(s, dir)
 
             with_server(s) do port
                 resp = HTTP.get("http://127.0.0.1:$port/app.js"; status_exception=false)
@@ -45,7 +45,7 @@
 
         @testset "Serves nested files" begin
             s = App()
-            serve!(s, "/", dir)
+            serve!(s, dir)
 
             with_server(s) do port
                 resp = HTTP.get("http://127.0.0.1:$port/sub/nested.html"; status_exception=false)
@@ -56,7 +56,7 @@
 
         @testset "Returns 404 for missing file" begin
             s = App()
-            serve!(s, "/", dir)
+            serve!(s, dir)
 
             with_server(s) do port
                 resp = HTTP.get("http://127.0.0.1:$port/nonexistent.txt"; status_exception=false)
@@ -67,7 +67,7 @@
         @testset "API routes coexist with static files" begin
             s = App()
             get!(s, "/api/data") do req; json("""{"api":true}""") end
-            serve!(s, "/", dir)
+            serve!(s, dir)
 
             with_server(s) do port
                 resp = HTTP.get("http://127.0.0.1:$port/api/data"; status_exception=false)
@@ -82,7 +82,7 @@
 
         @testset "serve! with custom prefix" begin
             s = App()
-            serve!(s, "/static", dir)
+            serve!(s, dir; uri_prefix="/static")
 
             with_server(s) do port
                 resp = HTTP.get("http://127.0.0.1:$port/static/index.html"; status_exception=false)
@@ -94,7 +94,9 @@
 end
 
 @testset "serve! validation" begin
-    @test_throws ArgumentError serve!(App(), "/", "/nonexistent/path/xyz")
+    @test_throws ArgumentError serve!(App(), "/nonexistent/path/xyz")
+    # The old 3-arg (prefix, dir) ordering is gone: the prefix is keyword-only.
+    @test_throws MethodError serve!(App(), "/static", "/tmp")
 end
 
 @testset "Binary file serving" begin
@@ -103,7 +105,7 @@ end
         write(joinpath(dir, "image.png"), binary_data)
 
         s = App()
-        serve!(s, "/", dir)
+        serve!(s, dir)
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/image.png"; status_exception=false)

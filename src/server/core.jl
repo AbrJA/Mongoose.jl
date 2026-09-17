@@ -270,9 +270,12 @@ end
 
 """
     onerror!(app, status, handler)
+    onerror!(handler, app, status)
 
 Register a custom error handler for a specific HTTP status code.
 `handler` may be a `Response` (static) or `Function(req) → Response` (dynamic).
+Both argument orders are accepted; the `(handler, app, status)` form exists so
+a do-block works.
 
 # Example
 ```julia
@@ -281,13 +284,13 @@ onerror!(app, 404) do req
 end
 ```
 """
-function onerror!(app::App, status::Int, handler::Union{Response,Function})
+function onerror!(server::AbstractServer, status::Int, handler::Union{Response,Function})
     (100 <= status <= 599) || throw(ServerError("Status code must be in [100,599]"))
-    _ensure_registratable(app, "error responses")
-    app.errors[status] = handler
-    return app
+    _ensure_registratable(server, "error responses")
+    server.errors[status] = handler
+    return server
 end
-onerror!(f::Function, app::App, status::Int) = onerror!(app, status, f)
+onerror!(f::Function, server::AbstractServer, status::Int) = onerror!(server, status, f)
 
 """
     onerror!(app, ::Type{E}, handler)
@@ -315,25 +318,32 @@ onerror!(handler::Function, server::AbstractServer, ::Type{E}) where {E<:Excepti
 
 """
     onstart!(app, f)
+    onstart!(f, app)
 
-Register a callback to run after the server starts (before accepting connections).
+Register a callback to run after the server starts (before accepting
+connections). Both argument orders are accepted; the `(f, app)` form exists so
+`onstart!(app) do … end` works.
 """
-function onstart!(f::Function, app::App)
-    _ensure_registratable(app, "start hooks")
-    push!(app.hooks_start, f)
-    return app
+function onstart!(server::AbstractServer, f::Function)
+    _ensure_registratable(server, "start hooks")
+    push!(server.hooks_start, f)
+    return server
 end
+onstart!(f::Function, server::AbstractServer) = onstart!(server, f)
 
 """
     onstop!(app, f)
+    onstop!(f, app)
 
-Register a callback to run during graceful shutdown.
+Register a callback to run during graceful shutdown. Both argument orders are
+accepted; the `(f, app)` form exists so `onstop!(app) do … end` works.
 """
-function onstop!(f::Function, app::App)
-    _ensure_registratable(app, "stop hooks")
-    push!(app.hooks_stop, f)
-    return app
+function onstop!(server::AbstractServer, f::Function)
+    _ensure_registratable(server, "stop hooks")
+    push!(server.hooks_stop, f)
+    return server
 end
+onstop!(f::Function, server::AbstractServer) = onstop!(server, f)
 
 """
     service!(app, name, value)
@@ -403,9 +413,11 @@ end
 
 """
     background!(app, f)
+    background!(f, app)
 
 Schedule a background task to be spawned when `start!` is called.
-`f` should be a zero-argument function.
+`f` should be a zero-argument function. Both argument orders are accepted; the
+`(f, app)` form exists so `background!(app) do … end` works.
 
 ```julia
 background!(app) do
@@ -416,11 +428,12 @@ background!(app) do
 end
 ```
 """
-function background!(f::Function, app::App)
-    _ensure_registratable(app, "background tasks")
-    push!(app.hooks_start, () -> push!(app.runtime.bg_tasks, @async f()))
-    return app
+function background!(server::AbstractServer, f::Function)
+    _ensure_registratable(server, "background tasks")
+    push!(server.hooks_start, () -> push!(server.runtime.bg_tasks, @async f()))
+    return server
 end
+background!(f::Function, server::AbstractServer) = background!(server, f)
 
 # --- Display ---
 

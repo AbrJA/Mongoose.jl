@@ -46,10 +46,22 @@
         req = Request(:post, "/users", "/users",
             Dict{String,String}(), Headers(), "")
         result = validate(req, TestUser) do err
-            json(Dict("error" => err); status=422)
+            @test err isa ValidationError
+            json(Dict("error" => err.message); status=422)
         end
         @test result isa Response
         @test result.status == 422
+    end
+
+    @testset "validate on_error receives the ValidationError" begin
+        req = Request(:post, "/users", "/users",
+            Dict{String,String}(), Headers(),
+            """{"name":"Alice","email":"alice@example.com"}""")  # missing age
+        seen = Ref{Any}(nothing)
+        result = validate(req, TestUser; on_error = e -> (seen[] = e; json(Dict("f" => e.field); status=422)))
+        @test result.status == 422
+        @test seen[] isa ValidationError
+        @test seen[].field == "age"
     end
 
     @testset "validate coerces Float to Int" begin

@@ -86,6 +86,20 @@ end
     @test stopped[] == true
 end
 
+@testset "app-first registration order" begin
+    started = Ref(false)
+    stopped = Ref(false)
+    ran = Ref(false)
+    app = App()
+    get!(app, "/") do req; text("ok") end
+    @test onstart!(app, () -> (started[] = true)) === app
+    @test onstop!(app, () -> (stopped[] = true)) === app
+    @test background!(app, () -> (ran[] = true)) === app
+
+    with_server(app) do port end
+    @test started[] && stopped[] && ran[]
+end
+
 @testset "Per-request timeout (async)" begin
     app = App(workers=1, request_timeout=150)
     get!(app, "/slow") do req

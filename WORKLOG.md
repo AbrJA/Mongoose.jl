@@ -9,7 +9,7 @@
 1. Confirm scope in WORKLOG.
 2. Implement in `src/`, update tests.
 3. Gates before commit:
-   - `julia --project=test test/runtests_stream.jl` (1015 tests)
+   - `julia --project=test test/runtests_stream.jl` (1031 tests)
    - `julia --project=test test/acceptance/production.jl` (80 checks)
    - `julia --project=test test/quality/quality.jl` (Aqua + JET)
    - `julia --project=docs docs/make.jl` when public API changes
@@ -211,6 +211,14 @@ ETag/conditional requests~~ **shipped** · OpenAPI-from-metadata · sessions/CSR
 
 ## Changelog
 
+- **Sep 17 — Batch 2 (registration conventions) shipped**: `onstart!` /
+  `onstop!` / `background!` / `onerror!` are app-first with `(f, app, …)`
+  do-block sugar (loosened to `AbstractServer`); the trap 3-arg
+  `serve!(app, prefix, dir)` is gone (prefix is keyword-only); `ws!` accepts
+  the handler positionally on server/router/group alongside `on_message=`;
+  `validate(req, T; on_error=…)` receives the whole `ValidationError`
+  (do-block sugar kept). 1031 tests + 80 acceptance + Aqua/JET + docs green.
+  Batches 3–5 (naming decisions, units table, App-level introspection) remain.
 - **Sep 17 — Batch 1 (input normalization) shipped**: new Kernel normalizers
   `asheaders` / `asstrings` / `asmiddlewares` (+ `Headers(pair)`/`Headers(tuple)`/
   `Headers([])`). `headers=` now accepts `Headers`/pair/tuple/vector in

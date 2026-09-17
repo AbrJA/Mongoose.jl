@@ -70,11 +70,19 @@ end
 
 """
     ws!(group, path; kwargs...)
+    ws!(group, path, handler; kwargs...)
 
-Add a WebSocket route to a group.
+Add a WebSocket route to a group. The handler may be positional (shorthand
+for `on_message=handler`) or passed as the `on_message` keyword.
 """
-function ws!(g::RouteGroup, path::String; kwargs...)
-    push!(g.ws_routes, (path, values(kwargs)))
+function ws!(g::RouteGroup, path::AbstractString; kwargs...)
+    push!(g.ws_routes, (String(path), values(kwargs)))
+    return g
+end
+
+function ws!(g::RouteGroup, path::AbstractString, handler::Function; kwargs...)
+    nt = (; on_message=handler, kwargs...)
+    push!(g.ws_routes, (String(path), nt))
     return g
 end
 

@@ -251,6 +251,12 @@ function ws!(server::AbstractServer, path::AbstractString; kwargs...)
     return server
 end
 
+function ws!(server::AbstractServer, path::AbstractString, handler::Function; kwargs...)
+    _ensure_registratable(server, "websocket routes")
+    ws!(server.router, path; on_message=handler, kwargs...)
+    return server
+end
+
 # Method-specific helpers for server/app (extend Base where applicable to avoid ambiguity)
 Base.get!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :get, path, h); server)
 post!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :post, path, h); server)
@@ -272,23 +278,11 @@ head!(f::Function, server::AbstractServer, path::AbstractString) = head!(server,
 """
     serve!(server, directory; uri_prefix="/")
 
-Serve static files from `directory`.
+Serve static files from `directory` under `uri_prefix` on the URL. The
+directory is the positional argument; the URL prefix is always the keyword
+(so the two can never be silently swapped).
 """
 function serve!(server::AbstractServer, directory::AbstractString; uri_prefix::AbstractString="/")
-    _ensure_registratable(server, "static mounts")
-    dir = rstrip(abspath(directory), '/')
-    isdir(dir) || throw(ArgumentError("serve!: directory does not exist: $dir"))
-    prefix = "/" * lstrip(rstrip(uri_prefix, '/'), '/')
-    push!(server.mounts, (dir, prefix))
-    return server
-end
-
-"""
-    serve!(server, uri_prefix, directory)
-
-Positional 3-arg form: serve static files from `directory` under `uri_prefix`.
-"""
-function serve!(server::AbstractServer, uri_prefix::AbstractString, directory::AbstractString)
     _ensure_registratable(server, "static mounts")
     dir = rstrip(abspath(directory), '/')
     isdir(dir) || throw(ArgumentError("serve!: directory does not exist: $dir"))
