@@ -65,7 +65,7 @@ Mongoose.jl is a Julia HTTP/WebSocket framework wrapping the Mongoose C library.
 | Response models | ✅ Type-checked | ❌ None | High |
 | Exception handlers | ✅ Typed dispatch | ⚠️ Status-code only | Medium |
 | Lifespan events | ✅ `@asynccontextmanager` | ⚠️ Hooks only | Low |
-| Testing client | ✅ `TestClient` | ❌ Must use HTTP.jl | High |
+| Testing client | ✅ `FakeTransport` | ❌ Must use HTTP.jl | High |
 | WebSocket rooms/broadcasting | ✅ Via Starlette | ❌ Missing | Medium |
 | Request body streaming | ✅ Built-in | ❌ Missing | Medium |
 | GZip compression middleware | ✅ Via middleware | ❌ Missing | Medium |
@@ -242,7 +242,7 @@ The key insight: **Core** should be completely independent of Transport. Router 
 | Current | Proposed | Reason |
 |---------|----------|--------|
 | `ctx!(req)` | `context(req)` | More discoverable |
-| `bake(cookie)` | `serialize(cookie)` or `to_header(cookie)` | Standard naming |
+| `setcookie(cookie)` | `serialize(cookie)` or `to_header(cookie)` | Standard naming |
 | `plug!(server, mw)` | Remove (keep only `use!`) | Duplicate API |
 | `provide!(app, :name, val)` | `service!(app, :name, val)` | Clearer intent |
 | `inject(req, :name)` | `service(req, :name)` | Pairs with above |
@@ -362,7 +362,7 @@ end
 - GZip compression middleware
 - Session middleware
 - WebSocket rooms/broadcasting
-- TestClient for testing without network
+- FakeTransport for testing without network
 
 ### Phase 3: Ecosystem
 - OpenAPI schema generation

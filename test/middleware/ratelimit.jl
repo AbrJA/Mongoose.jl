@@ -77,7 +77,7 @@
         s = App()
         get!(s, "/") do req; text("ok") end
         use!(s, ratelimit(max_requests=2, window_seconds=60))
-        client = Mongoose.TestClient(s)
+        client = Mongoose.FakeTransport(s)
 
         r = client(:get, "/"); @test r.status == 200
         r = client(:get, "/"); @test r.status == 200
@@ -90,7 +90,7 @@
         server = App()
         get!(server, "/") do req; text("ok") end
         use!(server, ratelimit(max_requests=1, window_seconds=60))
-        tc = Mongoose.TestClient(server)
+        tc = Mongoose.FakeTransport(server)
         @test tc(:get, "/"; remote_addr=nothing).status == 200
         @test tc(:get, "/"; remote_addr=nothing).status == 429
     end

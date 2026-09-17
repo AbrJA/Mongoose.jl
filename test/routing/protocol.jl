@@ -4,7 +4,7 @@
     r = _FallbackRouter()
     # Optional capabilities default to "not supported".
     @test Mongoose.haswsroutes(r) == false
-    @test Mongoose.wsendpoint(r, "/ws") === nothing
+    @test Mongoose.getwsendpoint(r, "/ws") === nothing
     @test Mongoose.length(r) == 0
     # Required protocol throws a clear MethodError when unimplemented.
     @test_throws MethodError Mongoose.matchroute(r, :get, "/")

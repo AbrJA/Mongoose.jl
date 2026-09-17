@@ -98,7 +98,7 @@ end
 
     `remote_addr` is the transport-provided peer address (the client's IP as a
     string, or `nothing` when the transport does not supply one — e.g. the
-    standalone pipeline or `TestClient`-constructed requests).
+    standalone pipeline or `FakeTransport`-constructed requests).
 """
 mutable struct Request <: AbstractRequest
     const method::Symbol

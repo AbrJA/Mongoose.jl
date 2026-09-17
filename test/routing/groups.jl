@@ -47,7 +47,7 @@ end
                 get!(g, "/x", req -> text("x"))
             end
             @test mount!(app, grp) === app
-            resp = Mongoose.TestClient(app)(:get, "/api/x"; headers=["Origin" => "https://a.test"])
+            resp = Mongoose.FakeTransport(app)(:get, "/api/x"; headers=["Origin" => "https://a.test"])
             @test get(resp.headers, "access-control-allow-origin", nothing) == "*"
         end
     end

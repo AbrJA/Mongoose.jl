@@ -10,7 +10,7 @@
         Response(200, ["etag" => "\"custom\""], "x")
     end
     use!(app, etag())
-    client = Mongoose.TestClient(app)
+    client = Mongoose.FakeTransport(app)
 
     @testset "ETag generation" begin
         r = client(:get, "/res")

@@ -28,8 +28,8 @@
 | **Routing** | Exact-match `Dict` + ordered parametric patterns. Typed path parameters (`:id::Int`) delivered as typed tuples. Wildcards (`*path`). Route groups with scoped middleware as metadata. `freeze!` closes and compiles the route table for statically-typed dispatch (AOT/`--trim=safe` profile). |
 | **WebSocket** | Same port as HTTP. Frame size limits. Idle timeout. Origin allowlist. Upgrade rejection. Ping/pong (RFC 6455). Server-initiated push to open clients (`ws_send_all`). |
 | **Middleware** | CORS, rate limiting, bearer/API key auth, structured logging, Prometheus metrics, health checks, security headers, GZip compression. Plain closures work as middleware. |
-| **JSON** | Built-in JSON via JSON. `json(req)` for parsing, `json(...)` for responses. Struct validation with `validate(req, T)`. |
-| **Testing** | `FakeTransport` (aka `TestClient`) runs the whole pipeline with **no server and no FFI**. |
+| **JSON** | Built-in JSON via JSON. `parsejson(req)` for parsing, `json(...)` for responses. Struct validation with `validate(req, T)`. |
+| **Testing** | `FakeTransport` (aka `FakeTransport`) runs the whole pipeline with **no server and no FFI**. |
 | **Production** | Graceful shutdown with drain. 503 backpressure on overload. Custom *and* typed exception handlers. Background tasks. Dependency injection. |
 
 ---
@@ -58,7 +58,7 @@ get!(app, "/users/:id::Int") do req, id
 end
 
 post!(app, "/echo") do req
-    data = json(req)                 # parses the JSON request body
+    data = parsejson(req)                 # parses the JSON request body
     json(data; status=201)
 end
 
@@ -188,7 +188,7 @@ from ~250ns to ~100ns per request, a two-parameter route from ~1.2µs to
 | Expression | Returns | Description |
 |---|---|---|
 | `body(req)` | `String` | Raw request body |
-| `json(req)` | `Any` | Parsed JSON body (Dict, Array, …) |
+| `parsejson(req)` | `Any` | Parsed JSON body (Dict, Array, …) |
 | `validate(req, T)` | `T` | Parse + validate JSON into a struct |
 | `query(req, "key")` | `String \| nothing` | Query parameter |
 | `query(req, "key", default)` | `typeof(default)` | Query param with auto-parsing |
@@ -517,7 +517,7 @@ post!(app, "/login") do req
         max_age  = 3600,
         samesite = :strict,
     )
-    text("Logged in"; headers=["Set-Cookie" => bake(c)])
+    text("Logged in"; headers=["Set-Cookie" => setcookie(c)])
 end
 ```
 
@@ -536,12 +536,12 @@ required protocol:
 | Function | Role |
 |---|---|
 | `route!(r, method, path, handler; middleware, metadata)` | register an `Endpoint` |
-| `matchroute(r, method, path)` | return a `RouteResult` (`Matched`/`NoMatch`/`WrongMethod`) |
+| `matchroute(r, method, path)` | return a `RouteResult` (`Matched`/`NoMatch`/`NotAllowed`) |
 | `gethandler(match, method)` | handler for that method, or `nothing` |
 | `getendpoint(match, method)` | the route's `Endpoint`, or `nothing` |
 | `hasroute(r, path)` | path owned by a concrete route (catch-all excluded) — static-serving shadow check |
 
-Optional capabilities (`length(router)`, `haswsroutes`, `wsendpoint`, `ws!`,
+Optional capabilities (`length(router)`, `haswsroutes`, `getwsendpoint`, `ws!`,
 `freeze!`, `isfrozen`) have safe "not supported" defaults. Missing required
 methods fail loudly via fallback `MethodError`s. The default `Router` also
 implements the optional compiled-dispatch capability `terminalfor(r, req)`:
@@ -560,13 +560,13 @@ them; a custom executor can carry its own concurrency policy.
 `AbstractTransport` declares capabilities via trait functions
 (`supportsws`, `supportstls`, `supportsstream`). The C transport
 (`transport/mongoose`) wraps the Mongoose C library; `FakeTransport` runs
-everything in pure Julia — that is what `TestClient` is.
+everything in pure Julia — that is what `FakeTransport` is.
 
 ---
 
 ## Testing
 
-Use `FakeTransport` (alias `TestClient`) for fast, network-free testing:
+Use `FakeTransport` for fast, network-free testing:
 
 ```julia
 using Test, Mongoose
@@ -575,7 +575,7 @@ app = App()
 get!(app, "/hello", req -> json(Dict("msg" => "hi")))
 use!(app, cors())
 
-client = FakeTransport(app)   # or TestClient(app)
+client = FakeTransport(app)   # or FakeTransport(app)
 
 # Make requests without starting a server — no ports, no Mongoose_jll
 resp = client(:get, "/hello")
@@ -608,7 +608,7 @@ get!(app, "/api/users/:id::Int") do req, id
 end
 
 post!(app, "/api/users") do req
-    data = json(req)
+    data = parsejson(req)
     json(Dict("created" => data["name"]); status=201)
 end
 

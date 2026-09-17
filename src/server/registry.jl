@@ -45,17 +45,3 @@ Uses explicit lock/unlock (no closure) to avoid allocation on hot path.
     unlock(REGISTRY_LOCK)
     return server
 end
-
-"""
-    shutdown!()
-
-Gracefully stop ALL registered servers.
-"""
-function shutdown!()
-    servers = lock(REGISTRY_LOCK) do
-        collect(values(REGISTRY))
-    end
-    for s in servers
-        shutdown!(s)
-    end
-end

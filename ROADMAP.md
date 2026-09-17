@@ -58,7 +58,7 @@ Remove dual-mode AOT/JIT logging. Use Julia's standard `@info`/`@warn`/`@error` 
 Add JSON3.jl as a dependency (or make it an extension) to enable:
 ```julia
 json(Dict("key" => "value"))  # Works out of the box
-json(req)                      # Parses request body
+parsejson(req)                      # Parses request body
 ```
 
 ---
@@ -106,12 +106,12 @@ end
 use!(app, compress())  # Auto-gzip responses when Accept-Encoding includes gzip
 ```
 
-### 2.5 TestClient (No Network)
+### 2.5 FakeTransport (No Network)
 
 ```julia
-using Mongoose: TestClient
+using Mongoose: FakeTransport
 
-client = TestClient(app)
+client = FakeTransport(app)
 resp = client.get("/users")
 @test resp.status == 200
 ```
@@ -246,7 +246,7 @@ Full CRUD REST API demonstrating:
 3. ✅ Add multipart form parsing
 4. ✅ Add query parameter helpers
 5. ✅ Add compression middleware
-6. ✅ Add TestClient
+6. ✅ Add FakeTransport
 7. ✅ Comprehensive test suite (>80% coverage)
 8. ✅ Production REST API example
 9. ✅ Updated README (FastAPI-quality)
@@ -263,7 +263,7 @@ src/server/lifecycle.jl  — Remove deprecated aliases
 src/protocol/request.jl  — Add query helpers, multipart
 src/protocol/response.jl — Simplify, add NamedTuple support
 src/middleware/compress.jl — New: GZip middleware
-src/testing.jl           — New: TestClient
+src/testing.jl           — New: FakeTransport
 test/                    — Reorganized, comprehensive coverage
 examples/production/     — Full REST API example
 README.md               — Complete rewrite

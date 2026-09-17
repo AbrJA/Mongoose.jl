@@ -106,7 +106,7 @@ end
         app = App()
         use!(app, cors(origins=origins))
         get!(app, "/") do req; text("ok") end
-        client = Mongoose.TestClient(app)
+        client = Mongoose.FakeTransport(app)
 
         ok = client(:get, "/"; headers=["Origin" => "https://a.test"])
         @test get(ok.headers, "access-control-allow-origin", nothing) == "https://a.test"

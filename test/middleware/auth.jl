@@ -103,7 +103,7 @@ end
         app = App()
         use!(app, mw)
         get!(app, "/") do req; text("ok") end
-        client = Mongoose.TestClient(app)
+        client = Mongoose.FakeTransport(app)
         @test client(:get, "/"; headers=["x-api-key" => "key-123"]).status == 200
         @test client(:get, "/"; headers=["x-api-key" => "wrong"]).status == 401
     end
@@ -112,7 +112,7 @@ end
     app = App()
     use!(app, apikey("key-123"; header_name="X-Api-Token"))
     get!(app, "/") do req; text("ok") end
-    client = Mongoose.TestClient(app)
+    client = Mongoose.FakeTransport(app)
     @test client(:get, "/"; headers=["x-api-token" => "key-123"]).status == 200
     @test client(:get, "/"; headers=["x-api-key" => "key-123"]).status == 401
 end
@@ -123,7 +123,7 @@ end
         use!(app, bearer("secret-token-123"))
         get!(app, "/") do req; text("ok") end
 
-        client = Mongoose.TestClient(app)
+        client = Mongoose.FakeTransport(app)
 
         # Valid token
         resp = client(:get, "/"; headers=["authorization" => "Bearer secret-token-123"])
@@ -143,7 +143,7 @@ end
         use!(app, apikey(keys=Set(["key-abc-123"])))
         get!(app, "/") do req; text("ok") end
 
-        client = Mongoose.TestClient(app)
+        client = Mongoose.FakeTransport(app)
 
         resp = client(:get, "/"; headers=["x-api-key" => "key-abc-123"])
         @test resp.status == 200

@@ -120,7 +120,7 @@ route!(router, :get, "/users/:id::Int", (req, id) ->
 
 # Parse JSON request body with json()
 route!(router, :post, "/users", req -> begin
-    data = json(req)  # returns Dict/Array from JSON
+    data = parsejson(req)  # returns Dict/Array from JSON
     json(Dict("created" => data["name"]); status=201)
 end)
 
@@ -228,7 +228,7 @@ api = group("/api/v1", middleware=[
 
 route!(api, :get, "/users", req -> json(Dict("users" => [])))
 route!(api, :post, "/users", req -> begin
-    data = json(req)
+    data = parsejson(req)
     json(Dict("created" => data["name"]); status=201)
 end)
 route!(api, :get, "/users/:id::Int", (req, id) -> json(Dict("id" => id)))
@@ -368,8 +368,8 @@ route!(router, :post, "/login", req -> begin
         max_age  = 3600,
         samesite = :strict,
     )
-    bake(c)  # serialize to a Set-Cookie header value; add it as a response header:
-    json(Dict("logged_in" => true); headers=["Set-Cookie" => bake(c)])
+    setcookie(c)  # serialize to a Set-Cookie header value; add it as a response header:
+    json(Dict("logged_in" => true); headers=["Set-Cookie" => setcookie(c)])
 end)
 
 route!(router, :get, "/profile", req -> begin
@@ -479,9 +479,9 @@ use!(app, compress(min_size=1024))
 start!(app; port=8080)
 ```
 
-## Testing with FakeTransport (TestClient)
+## Testing with FakeTransport (FakeTransport)
 
-`TestClient` is an alias of `FakeTransport`, the FFI-free reference transport:
+`FakeTransport` is the FFI-free reference transport:
 it dispatches requests through the full pipeline with **no server and no
 `Mongoose_jll`**, so tests never bind a port.
 
@@ -492,14 +492,14 @@ using Test, Mongoose
 router = Router()
 route!(router, :get, "/hello", req -> json(Dict("msg" => "hi")))
 route!(router, :post, "/echo", req -> begin
-    data = json(req)
+    data = parsejson(req)
     json(data; status=201)
 end)
 
 app = App(; router=router)
 use!(app, cors())
 
-client = FakeTransport(app)   # or: TestClient(app)
+client = FakeTransport(app)   # or: FakeTransport(app)
 
 # Test GET
 resp = client(:get, "/hello")

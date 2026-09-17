@@ -12,7 +12,7 @@
       `middleware` to a vector before delegating, so a router may assume an
       `AbstractVector`)
     - `matchroute(r::R, method, path)`                → a `RouteResult`
-      (`Matched` / `NoMatch` / `WrongMethod{allowed}` — 404/405 and the
+      (`Matched` / `NoMatch` / `NotAllowed{allowed}` — 404/405 and the
       `Allow` set are resolved by the router at match time)
     - `hasroute(r::R, path)`                  → `Bool` (path owned, catch-all excluded)
       (no `"*"` fallback — route ownership check for static serving)
@@ -26,7 +26,7 @@
     Optional capabilities (safe defaults are provided):
     - `haswsroutes(r::R) → Bool`                   (default: `false`)
     - `ws!(r::R, path; ...)`                         (no default)
-    - `wsendpoint(r::R, uri)`                       (default: `nothing`)
+    - `getwsendpoint(r::R, uri)`                    (default: `nothing`)
     - `length(r::R)`                            (default: `0`)
 
     The default implementation is `Router` in `router.jl`.
@@ -45,7 +45,7 @@ abstract type AbstractRouter end
 
 """
     RouteResult — outcome of `matchroute`: `Matched`, `NoMatch`, or
-    `WrongMethod{allowed}` (the last carries the route's method bitmask,
+    `NotAllowed{allowed}` (the last carries the route's method bitmask,
     so 405 `Allow` needs no secondary lookup).
 """
 abstract type RouteResult end
@@ -68,13 +68,13 @@ end
 struct NoMatch <: RouteResult end
 
 """
-    WrongMethod{allowed::UInt8} <: RouteResult
+    NotAllowed{allowed::UInt8} <: RouteResult
 
 The path matched but the method isn't registered; `allowed` is a bitmask of
 served methods (HEAD is implied by GET). Serialize with
 `allow_from_bitmask` for the RFC 9110 §15.5.6 `Allow` header.
 """
-struct WrongMethod <: RouteResult
+struct NotAllowed <: RouteResult
     allowed::UInt8
 end
 
@@ -125,6 +125,12 @@ end
 
 # --- Optional capabilities: safe defaults ---
 
+"""
+    haswsroutes(router) → Bool
+
+Whether the router serves any WebSocket endpoints. Defaults to `false`; the
+default `Router` answers `true` once a `ws!` route is registered.
+"""
 haswsroutes(::AbstractRouter) = false
 
 function ws!(router::AbstractRouter, path::AbstractString; kwargs...)
@@ -135,7 +141,13 @@ end
 ws!(router::AbstractRouter, path::AbstractString, handler::Function; kwargs...) =
     ws!(router, path; on_message=handler, kwargs...)
 
-wsendpoint(::AbstractRouter, ::AbstractString) = nothing
+"""
+    getwsendpoint(router, uri) → Union{Nothing,WsEndpoint}
+
+Resolve the WebSocket endpoint registered for `uri`, or `nothing` when the
+router serves no matching WS route. Defaults to `nothing`.
+"""
+getwsendpoint(::AbstractRouter, ::AbstractString) = nothing
 
 Base.length(::AbstractRouter) = 0
 

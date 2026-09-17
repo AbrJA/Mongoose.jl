@@ -1,4 +1,4 @@
-@testset "TestClient" begin
+@testset "FakeTransport" begin
     app = App()
     get!(app, "/hello") do req
         text("Hello World")
@@ -14,7 +14,7 @@
         text("Hello $q")
     end
 
-    client = Mongoose.TestClient(app)
+    client = Mongoose.FakeTransport(app)
 
     @testset "GET text response" begin
         resp = client(:get, "/hello")
@@ -52,7 +52,7 @@
     end
 end
 
-@testset "HTTPError via TestClient" begin
+@testset "HTTPError via FakeTransport" begin
     struct ErrUser
         name::String
         age::Int
@@ -75,7 +75,7 @@ end
         json(validate(req, ErrUser))
     end
 
-    client = Mongoose.TestClient(app)
+    client = Mongoose.FakeTransport(app)
 
     @testset "errorstatus / showerror on the types" begin
         e = NotFoundError("user 7 missing")
@@ -83,6 +83,10 @@ end
         @test e isa Mongoose.HTTPError
         @test occursin("Not Found (404): user 7 missing", sprint(showerror, e))
         @test BadRequestError === HTTPError{400}
+        @test BadGatewayError === HTTPError{502}
+        @test ServiceUnavailableError === HTTPError{503}
+        @test GatewayTimeoutError === HTTPError{504}
+        @test Mongoose.errorstatus(ServiceUnavailableError("down")) == 503
         @test occursin("Too Many Requests (429): slow down", sprint(showerror, TooManyRequestsError("slow down")))
     end
 
@@ -113,7 +117,7 @@ end
         onerror!(ae, NotFoundError) do req, e
             text("custom: $(e.message)"; status=404)
         end
-        c = Mongoose.TestClient(ae)
+        c = Mongoose.FakeTransport(ae)
         r = c(:get, "/g")
         @test r.status == 404
         @test r.body == "custom: boom"
@@ -188,11 +192,11 @@ end
     end
 end
 
-@testset "TestClient header input forms" begin
+@testset "FakeTransport header input forms" begin
     app = App()
     get!(app, "/h") do req; text(get(req.headers, "x-a", "none")) end
     post!(app, "/j") do req; text(get(req.headers, "content-type", "none")) end
-    client = Mongoose.TestClient(app)
+    client = Mongoose.FakeTransport(app)
 
     @test String(client(:get, "/h"; headers=Headers(["x-a" => "1"])).body) == "1"
     @test String(client(:get, "/h"; headers=("x-a" => "1",)).body) == "1"

@@ -67,7 +67,7 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
 
     # 1. WebSocket upgrade check
     if haswsroutes(server.router)
-        endpoint = wsendpoint(server.router, uri)
+        endpoint = getwsendpoint(server.router, uri)
         if endpoint !== nothing
             ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
             return nothing

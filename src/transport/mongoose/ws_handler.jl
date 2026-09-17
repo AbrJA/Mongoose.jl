@@ -142,7 +142,7 @@ function close_ws!(server::AbstractServer, conn_id::Int)
     uri = entry === nothing ? nothing : entry.uri
 
     if uri !== nothing
-        endpoint = wsendpoint(server.router, uri)
+        endpoint = getwsendpoint(server.router, uri)
         if endpoint !== nothing && endpoint.on_close !== nothing
             try
                 endpoint.on_close()
@@ -201,7 +201,7 @@ end
 # --- WS Dispatch ---
 
 function invoke_ws(server::AbstractServer, request::Tagged{Intent})
-    endpoint = wsendpoint(server.router, request.payload.uri)
+    endpoint = getwsendpoint(server.router, request.payload.uri)
     endpoint === nothing && return nothing
     return call_ws_endpoint(endpoint, request)
 end

@@ -260,7 +260,7 @@ end
         s = App()
         get!(s, "/setcookie") do req
             c = Mongoose.Cookie("session", "abc123"; max_age=3600, httponly=true)
-            Response(200, ["Set-Cookie" => bake(c)], "ok")
+            Response(200, ["Set-Cookie" => setcookie(c)], "ok")
         end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/setcookie"; status_exception=false)

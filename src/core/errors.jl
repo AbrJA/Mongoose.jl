@@ -126,3 +126,6 @@ const UnavailableForLegalReasonsError = HTTPError{451}
 # ── Named status aliases (5xx server errors) ────────────────────────────────
 
 const InternalServerError = HTTPError{500}
+const BadGatewayError = HTTPError{502}
+const ServiceUnavailableError = HTTPError{503}
+const GatewayTimeoutError = HTTPError{504}

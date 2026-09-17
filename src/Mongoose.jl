@@ -12,7 +12,7 @@ using CodecZlib
 export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, use!, serve!, onerror!, onstart!, onstop!,
-    context, Cookie, Headers, bake, cookies, form, header,
+    context, Cookie, Headers, setcookie, cookies, form, header,
     ws!, Message,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
     RouteError, ServerError, BindError,
@@ -25,17 +25,18 @@ export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamRespo
     UnprocessableEntityError, LockedError, FailedDependencyError, TooEarlyError,
     UpgradeRequiredError, PreconditionRequiredError, TooManyRequestsError,
     UnavailableForLegalReasonsError, InternalServerError,
+    BadGatewayError, ServiceUnavailableError, GatewayTimeoutError,
     TLSConfig,
     service!, service, background!,
     AbstractExecutor, SyncExecutor, AsyncExecutor, submit!, stop!, haspending,
-    AbstractTransport, FakeTransport, TestClient, close!,
+    AbstractTransport, FakeTransport, close!,
     supportsws, supportstls, supportsstream,
     AbstractMiddleware,
     group, group!, RouteGroup, mount!,
     freeze!, isfrozen,
     RequestContext, process,
     SSEWriter, emit, sse,
-    json, html, text, redirect,
+    json, parsejson, html, text, redirect,
     post!, patch!, options!, head!,
     query, body, multipart, MultipartFile,
     validate, ValidationError
@@ -81,7 +82,7 @@ include("transport/mongoose/connection.jl")    # send_http_response!, send_ws_fr
 include("transport/mongoose/ws_handler.jl")    # WS event handlers (upgrade, message, close)
 include("transport/mongoose/events.jl")        # C callback dispatch
 include("transport/mongoose/http_handler.jl")  # HTTP request processing hot path
-include("transport/fake.jl")                    # FakeTransport/TestClient — reference transport
+include("transport/fake.jl")                    # FakeTransport — reference transport
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Module initialization

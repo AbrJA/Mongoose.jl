@@ -19,14 +19,14 @@ end
     for mws in (cors(), (cors(),), [cors()])
         app = App()
         route!(app, :get, "/x", req -> text("x"); middleware=mws)
-        resp = Mongoose.TestClient(app)(:get, "/x"; headers=["Origin" => "https://a.test"])
+        resp = Mongoose.FakeTransport(app)(:get, "/x"; headers=["Origin" => "https://a.test"])
         @test resp.status == 200
         @test get(resp.headers, "access-control-allow-origin", nothing) == "*"
     end
 
     app = App()
     route!(app, :get, "/x", req -> text("x"); middleware=nothing)
-    resp = Mongoose.TestClient(app)(:get, "/x"; headers=["Origin" => "https://a.test"])
+    resp = Mongoose.FakeTransport(app)(:get, "/x"; headers=["Origin" => "https://a.test"])
     @test get(resp.headers, "access-control-allow-origin", nothing) === nothing
 end
 
@@ -34,7 +34,7 @@ end
     app = App()
     route!(app, :GET, "/a", req -> text("a"))
     route!(app, "GeT", "/b", req -> text("b"))
-    client = Mongoose.TestClient(app)
+    client = Mongoose.FakeTransport(app)
     @test client(:get, "/a").status == 200
     @test client(:get, "/b").status == 200
 

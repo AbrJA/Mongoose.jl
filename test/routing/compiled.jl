@@ -134,8 +134,8 @@ end
             @test mg isa Mongoose.NoMatch
             continue
         end
-        @test (mf isa Mongoose.WrongMethod) == (mg isa Mongoose.WrongMethod)
-        if mf isa Mongoose.WrongMethod
+        @test (mf isa Mongoose.NotAllowed) == (mg isa Mongoose.NotAllowed)
+        if mf isa Mongoose.NotAllowed
             @test mf.allowed == mg.allowed
             continue
         end

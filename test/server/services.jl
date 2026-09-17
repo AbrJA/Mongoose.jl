@@ -45,7 +45,7 @@ end
             text(v)
         end
 
-        client = Mongoose.TestClient(app)
+        client = Mongoose.FakeTransport(app)
         resp = client(:get, "/test")
         @test resp.status == 200
         @test resp.body == "1.0.0"
@@ -59,7 +59,7 @@ end
             service(req, :count, String)  # Wrong type
         end
 
-        client = Mongoose.TestClient(app)
+        client = Mongoose.FakeTransport(app)
         resp = client(:get, "/test")
         @test resp.status == 500  # Handler throws TypeError
     end
@@ -71,7 +71,7 @@ end
             service(req, :missing, String)
         end
 
-        client = Mongoose.TestClient(app)
+        client = Mongoose.FakeTransport(app)
         resp = client(:get, "/test")
         @test resp.status == 500
     end

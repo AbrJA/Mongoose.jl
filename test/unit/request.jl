@@ -187,13 +187,18 @@ end
         @test resp.status == 404
     end
 
-    @testset "json(req) parses body" begin
+    @testset "parsejson(req) parses body" begin
         req = Request(:post, "/", "/",
             Dict{String,String}(),
             Headers(["content-type" => "application/json"]),
             """{"hello":"world"}""")
-        data = json(req)
+        data = parsejson(req)
         @test data["hello"] == "world"
+    end
+
+    @testset "json(req) fails loudly (moved to parsejson)" begin
+        req = Request(:post, "/", "/", Dict{String,String}(), Headers(), "{}")
+        @test_throws ArgumentError json(req)
     end
 end
 

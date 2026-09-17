@@ -24,7 +24,7 @@ end
         get!(app, "/public") do req; text("public") end
         get!(app, "/admin/panel") do req; text("admin") end
         use!(app, bearer(t -> t == "secret"); paths=paths)
-        client = Mongoose.TestClient(app)
+        client = Mongoose.FakeTransport(app)
         @test client(:get, "/public").status == 200
         @test client(:get, "/admin/panel").status == 401
         @test client(:get, "/admin/panel"; headers=["Authorization" => "Bearer secret"]).status == 200

@@ -31,7 +31,7 @@ code. Items not yet done remain marked *target*.
 - G4 execution: `AbstractExecutor` + `SyncExecutor`/`AsyncExecutor`; App
   always holds an executor; timeouts applied at job build time.
 - Transport seam: `AbstractTransport` + capability traits
-  (`supports_websocket/tls/streaming`); `TestClient` is `FakeTransport`.
+  (`supports_websocket/tls/streaming`); `FakeTransport` is `FakeTransport`.
 - Derived type-stability fixes: `App.services` is a typed
   `ServiceRegistry{T<:NamedTuple}` (`service(req, Val(:x))` is stable);
   `parse_method` simplified; streaming producers run off the poll thread
@@ -115,8 +115,8 @@ src/
 ```
 
 Key testability win: `using MongooseCore` gives you `Request`, `Response`, `Router`,
-`Pipeline`, `TestClient`. **`Pipeline` is the seam** — both the C transport (via
-`invoke_http`) and `TestClient` (today) call it; it belongs in Core.
+`Pipeline`, `FakeTransport`. **`Pipeline` is the seam** — both the C transport (via
+`invoke_http`) and `FakeTransport` (today) call it; it belongs in Core.
 
 ---
 
@@ -279,7 +279,7 @@ App(; services=(db=pool, cache=redis))   # named tuple
 ## 7. Migration plan
 
 1. **Extract `MongooseCore`** (no behavior change): move Request/Response/.../Router/
-   Middleware/Pipeline/TestClient into nested module; keep `Mongoose` re-exporting.
+   Middleware/Pipeline/FakeTransport into nested module; keep `Mongoose` re-exporting.
    → tests unchanged, proves feasibility.
 2. **Typed routes** (G3): replace `Vector{Any}` splat dispatch with compiled route calls;
    add benchmark to prove no regression.

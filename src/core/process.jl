@@ -3,7 +3,7 @@
 
     `process(ctx::RequestContext, req)` turns a `Kernel.Request`
     into a `Response`. It has no dependency on a server or on FFI types, so it
-    can be exercised standalone (and by `TestClient`), and any transport (the C
+    can be exercised standalone (and by `FakeTransport`), and any transport (the C
     Mongoose adapter today, or a future pure-Julia one) can simply call it from
     its event loop.
 """
@@ -126,7 +126,7 @@ function _resolve_terminal(router::AbstractRouter, request::Request)
     result = matchroute(router, request.method, request.uri)
     if result isa NoMatch
         return ((r) -> Response(Plain, "404 Not Found"; status=404)), AbstractMiddleware[]
-    elseif result isa WrongMethod
+    elseif result isa NotAllowed
         return ((r) -> _method_not_allowed(result.allowed)), AbstractMiddleware[]
     end
 

@@ -8,7 +8,7 @@
   replaceable components behind small protocols (`AbstractRouter`,
   `AbstractExecutor`, `AbstractTransport`)
 - **Unified `App` type** — sync (`SyncExecutor`) or async worker pool (`AsyncExecutor`)
-- **Built-in JSON** via JSON — `json(req)` for parsing, `json(...)` for responses
+- **Built-in JSON** via JSON — `parsejson(req)` for parsing, `json(...)` for responses
 - **Typed routing** — exact `Dict` lookup + ordered parametric patterns,
   typed path parameters (`:id::Int`) as typed tuples, wildcards, route groups;
   `freeze!` compiles a closed route table into statically-typed dispatch
@@ -18,7 +18,7 @@
 - **SSE** — Server-Sent Events with `sse()` / `emit()`
 - **Native TLS** — HTTPS via `TLSConfig`
 - **Production-ready** — graceful shutdown, backpressure, custom + typed errors, DI, background tasks
-- **Testable without FFI** — `FakeTransport` (aka `TestClient`) runs the whole pipeline without `Mongoose_jll`
+- **Testable without FFI** — `FakeTransport` (aka `FakeTransport`) runs the whole pipeline without `Mongoose_jll`
 
 ## Installation
 
@@ -42,7 +42,7 @@ get!(app, "/users/:id::Int") do req, id
 end
 
 post!(app, "/users") do req
-    data = json(req)
+    data = parsejson(req)
     json(Dict("created" => data["name"]); status=201)
 end
 

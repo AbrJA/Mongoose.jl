@@ -29,7 +29,7 @@ Base.showerror(io::IO, e::StreamClosedError) = print(io, "StreamClosedError: ", 
 """
     FakeTransport — reference transport that runs the pipeline with no FFI.
 
-    A `TestClient` really is a fake transport: it dispatches requests directly
+    A `FakeTransport` really is a fake transport: it dispatches requests directly
     through the middleware pipeline and router (`process`), bypassing
     the C event loop entirely. It declares its capabilities via the ability
     traits (`supportsws`, `supportstls`, `supportsstream`): no WebSocket,
@@ -51,7 +51,7 @@ Base.showerror(io::IO, e::StreamClosedError) = print(io, "StreamClosedError: ", 
         json((message="Hello World",))
     end
 
-    client = FakeTransport(app)      # alias: TestClient(app)
+    client = FakeTransport(app)
     resp = client(:get, "/hello")
     @assert resp.status == 200
     @assert contains(resp.body, "Hello World")
@@ -65,13 +65,6 @@ mutable struct FakeTransport <: AbstractTransport
 end
 
 FakeTransport(app::App) = FakeTransport(app, 0, Dict{Int,FakeStream}(), false)
-
-"""Backward-compatible name for `FakeTransport`.
-
-The old `TestClient` name is kept as an alias so the FFI-free transport is
-both obvious and familiar.
-"""
-const TestClient = FakeTransport
 
 supportsws(::FakeTransport) = false
 supportstls(::FakeTransport) = false
@@ -148,7 +141,7 @@ function _run_fake_stream(transport::FakeTransport, resp::StreamResponse)::Respo
 end
 
 """
-    (client::TestClient)(method, path; headers=[], body="", query=Dict(), remote_addr="127.0.0.1") → Response
+    (client::FakeTransport)(method, path; headers=[], body="", query=Dict(), remote_addr="127.0.0.1") → Response
 
 Execute a request against the app without network I/O. `remote_addr` sets the
 request's peer address (defaults to a loopback client; pass `nothing` for a

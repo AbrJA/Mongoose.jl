@@ -194,7 +194,7 @@ table compiled). Custom `AbstractRouter`s default to `false`.
 @inline isfrozen(r::Router) = r.frozen
 
 @inline haswsroutes(r::Router) = !isempty(r.ws_routes)
-@inline wsendpoint(r::Router, uri::String) = get(r.ws_routes, uri, nothing)
+@inline getwsendpoint(r::Router, uri::String) = get(r.ws_routes, uri, nothing)
 
 Base.length(r::Router)::Int = length(r.fixed) + length(r.param_routes)
 
@@ -371,7 +371,7 @@ end
 
 Resolve a request to its exhaustive outcome: `Matched(endpoint, handlers,
 params)` when the route serves the method, `NoMatch` when the path matches
-nothing, or `WrongMethod{allowed}` carrying the route's method bitmask.
+nothing, or `NotAllowed{allowed}` carrying the route's method bitmask.
 Exact (static) matches win; parametric routes are scanned in registration
 order; the `"*"` catch-all is the final fallback. `HEAD` is served only by an
 explicit `head!` route — there is no auto-HEAD fallback.
@@ -383,7 +383,7 @@ function matchroute(router::Router, method::Symbol, path::AbstractString)::Route
     found === nothing && return NoMatch()
     mm, params = found
     ep = resolve_method(mm, m)
-    ep === nothing && return WrongMethod(method_bitmask(mm))
+    ep === nothing && return NotAllowed(method_bitmask(mm))
     return Matched(ep, mm, params)
 end
 

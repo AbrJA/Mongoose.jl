@@ -31,7 +31,7 @@ using Mongoose
         include("unit/validation.jl")
     end
 
-    @testset "Unit: FakeTransport (TestClient)" begin
+    @testset "Unit: FakeTransport (FakeTransport)" begin
         include("unit/testing.jl")
     end
 

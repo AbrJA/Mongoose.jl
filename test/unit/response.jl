@@ -159,7 +159,7 @@ end
 
     @testset "bake/serialize" begin
         c = Mongoose.Cookie("id", "123"; max_age=600, secure=true, httponly=true, samesite=:strict)
-        s = bake(c)
+        s = setcookie(c)
         @test contains(s, "id=123")
         @test contains(s, "Max-Age=600")
         @test contains(s, "Secure")
@@ -170,7 +170,7 @@ end
 
     @testset "bake session cookie (no max_age)" begin
         c = Mongoose.Cookie("temp", "val")
-        s = bake(c)
+        s = setcookie(c)
         @test contains(s, "temp=val")
         @test !contains(s, "Max-Age")
     end

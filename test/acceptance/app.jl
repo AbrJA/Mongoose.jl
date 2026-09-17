@@ -41,7 +41,7 @@ function buildapp(; token::String="test-token", workers::Integer=2)
         json(Dict("id" => id, "name" => "User $id"))
     end
     post!(router, "/api/users") do req
-        data = json(req)
+        data = parsejson(req)
         json(Dict("created" => data["name"]); status=201)
     end
     delete!(router, "/api/users/:id::Int") do req, id
@@ -84,7 +84,7 @@ function buildapp(; token::String="test-token", workers::Integer=2)
     get!(router, "/api/cookie") do req
         current = get(Mongoose.cookies(req), "session", "none")
         c = Mongoose.Cookie("session", "abc123"; httponly=true, samesite=:lax, max_age=3600)
-        text("cookie=$current"; headers=["Set-Cookie" => Mongoose.bake(c)])
+        text("cookie=$current"; headers=["Set-Cookie" => Mongoose.setcookie(c)])
     end
 
     # --- Typed validation ---

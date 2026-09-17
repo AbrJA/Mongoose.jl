@@ -14,12 +14,12 @@ end
     for origins in ("https://a.test", ("https://a.test",), ["https://a.test"])
         r = Router()
         ws!(r, "/ws"; on_message = m -> nothing, allowed_origins=origins)
-        @test Mongoose.wsendpoint(r, "/ws").allowed_origins == ["https://a.test"]
+        @test Mongoose.getwsendpoint(r, "/ws").allowed_origins == ["https://a.test"]
     end
 
     r = Router()
     ws!(r, "/ws"; on_message = m -> nothing)
-    @test Mongoose.wsendpoint(r, "/ws").allowed_origins == String[]
+    @test Mongoose.getwsendpoint(r, "/ws").allowed_origins == String[]
     @test Mongoose.haswsroutes(r)
 end
 
@@ -27,25 +27,25 @@ end
     # Router, server, and group all accept the HTTP-DSL handler placement.
     r = Router()
     ws!(r, "/ws", m -> Message("pong"))
-    @test Mongoose.wsendpoint(r, "/ws") !== nothing
+    @test Mongoose.getwsendpoint(r, "/ws") !== nothing
 
     ws!(r, "/w2", m -> nothing; allowed_origins=("https://a.test",))
-    @test Mongoose.wsendpoint(r, "/w2").allowed_origins == ["https://a.test"]
+    @test Mongoose.getwsendpoint(r, "/w2").allowed_origins == ["https://a.test"]
 
     app = App()
     @test ws!(app, "/ws", m -> Message("pong")) === app
-    @test Mongoose.wsendpoint(app.router, "/ws") !== nothing
+    @test Mongoose.getwsendpoint(app.router, "/ws") !== nothing
 
     g = group("/g")
     ws!(g, "/ws", m -> Message("pong"))
     @test length(g.ws_routes) == 1
     mount!(app, g)
-    @test Mongoose.wsendpoint(app.router, "/g/ws") !== nothing
+    @test Mongoose.getwsendpoint(app.router, "/g/ws") !== nothing
 
     g2 = group("/g2")
     ws!(g2, "/ws", m -> nothing; allowed_origins=("https://a.test",))
     app2 = App()
     mount!(app2, g2)
-    @test Mongoose.wsendpoint(app2.router, "/g2/ws").allowed_origins == ["https://a.test"]
+    @test Mongoose.getwsendpoint(app2.router, "/g2/ws").allowed_origins == ["https://a.test"]
 end
 

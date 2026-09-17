@@ -11,7 +11,7 @@
     drives the one C implementation
     (`transport/mongoose`). A reference fake (`FakeTransport`, in
     `testing.jl`) drives the whole pipeline with no FFI, which is what
-    `TestClient` uses.
+    `FakeTransport` uses.
 
     The C transport's concrete lifecycle entry points (used by `start!` /
     `shutdown!`) are `init_server!`, `bind_server!`,

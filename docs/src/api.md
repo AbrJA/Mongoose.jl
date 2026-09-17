@@ -35,9 +35,11 @@ matchroute
 hasroute
 gethandler
 getendpoint
+haswsroutes
+getwsendpoint
 Matched
 NoMatch
-WrongMethod
+NotAllowed
 RouteResult
 MethodMap
 post!
@@ -78,7 +80,7 @@ json
 html
 text
 redirect
-bake
+setcookie
 ```
 
 ## Request Helpers
@@ -86,6 +88,7 @@ bake
 ```@docs
 query
 body
+parsejson
 multipart
 MultipartFile
 context
@@ -182,7 +185,6 @@ FakeExecutor
 run!
 AbstractTransport
 FakeTransport
-TestClient
 close!
 validate
 ValidationError

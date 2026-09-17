@@ -130,13 +130,18 @@ function json(data; status::Int=200, headers=Headers())
 end
 
 """
-    json(req) → Any
+    parsejson(req) → Any
 
 Parse the request body as JSON.
 """
-function json(req::Request)
+function parsejson(req::Request)
     return decode(Json, req.body)
 end
+
+# `json(req)` used to parse the body; it now dispatches to the serializer,
+# which would silently produce nonsense. Fail loudly instead.
+json(::Request) = throw(ArgumentError(
+    "json(req) no longer parses request bodies — use parsejson(req) for parsing and json(data) for responses"))
 
 """
     html(content; status=200, headers=[]) → Response
@@ -232,11 +237,11 @@ function Cookie(name::String, value::String;
 end
 
 """
-    bake(cookie) → String
+    setcookie(cookie) → String
 
 Serialize a `Cookie` to a `Set-Cookie` header value string.
 """
-function bake(c::Cookie)::String
+function setcookie(c::Cookie)::String
     io = IOBuffer(sizehint=128)
     print(io, c.name, "=", c.value)
     !isempty(c.path) && print(io, "; Path=", c.path)
