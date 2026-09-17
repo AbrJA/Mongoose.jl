@@ -9,10 +9,14 @@
 1. Confirm scope in WORKLOG.
 2. Implement in `src/`, update tests.
 3. Gates before commit:
-   - `julia --project=test test/runtests_stream.jl` (1031 tests)
+   - `julia --project=test test/runtests.jl` (1035 tests; this is the
+     `Pkg.test`/CI entrypoint — the sanctioned gate)
    - `julia --project=test test/acceptance/production.jl` (80 checks)
    - `julia --project=test test/quality/quality.jl` (Aqua + JET)
    - `julia --project=docs docs/make.jl` when public API changes
+   - `test/runtests_stream.jl` is a *diagnostic* runner (same files, per-file
+     live output, fail-fast); run it only to localize a hang/failure — not as
+     a second gate.
 4. One commit per task; update WORKLOG; iterate.
 
 ## Decisions (user-confirmed)
@@ -211,6 +215,15 @@ ETag/conditional requests~~ **shipped** · OpenAPI-from-metadata · sessions/CSR
 
 ## Changelog
 
+- **Sep 17 — Batch 3 (naming decisions) shipped**: `json(req)` → `parsejson(req)`
+  (the old method throws a migration `ArgumentError`); `WrongMethod` →
+  `NotAllowed`; `wsendpoint` → `getwsendpoint` (+ protocol docstrings for it and
+  `haswsroutes`); `TestClient` alias removed (canonical: `FakeTransport`);
+  `bake` → `setcookie`; zero-arg `shutdown!()` removed (unused kill-switch);
+  added `BadGatewayError`/`ServiceUnavailableError`/`GatewayTimeoutError`.
+  Verb split documented: server `start!`/`shutdown!`, executor
+  `start!`/`stop!`, transport/streams `close!`. 1035 tests + 80 acceptance +
+  Aqua/JET + docs green.
 - **Sep 17 — Batch 2 (registration conventions) shipped**: `onstart!` /
   `onstop!` / `background!` / `onerror!` are app-first with `(f, app, …)`
   do-block sugar (loosened to `AbstractServer`); the trap 3-arg
@@ -347,10 +360,9 @@ prod-readiness). State saved — **next session starts here:**
 - 875 tests (main + streaming), 79 acceptance checks, Aqua+JET clean, docs green.
 
 ### Pending (decide tomorrow, in order)
-1. **Protocol getter rename (breaking, ask user)**: unify core router-getter
-   naming — `wsendpoint`→`get_ws_endpoint`, `length`→? (gethandler/
-   getendpoint/sethandler! are the named pattern; wsendpoint/length
-   break it). 0.5 window allows it; ripples: docs, facade `import` block, tests.
+1. **Protocol getter rename** — DONE in batch 3: `wsendpoint`→`getwsendpoint`
+   (`length(router)` stays as the `Base.length` integration; the rest of the
+   getter family was already `get*`).
 2. **P1 ergonomics** (from the review):
    - [x] `mergeheaders` helper replacing the 7 × `Headers([copy(h.data); …])`
      rebuild sites (cors/security/compress×2/etag/handler/testing) —
@@ -365,8 +377,9 @@ prod-readiness). State saved — **next session starts here:**
      `background!` loops are bounded, not joined); 413/503 early responses
      carry `X-Request-Id` (413 echoes the client id when present). *commit:
      `a622c83`*
+   - [x] Decide `json(req)` parse-vs-serialize overload footgun — batch 3:
+     parsing moved to `parsejson(req)`; `json(req)` throws a migration error.
    - [ ] Decide `Headers.getindex(h, key)` → `nothing` semantics (vs KeyError).
-   - [ ] Decide `json(req)` parse-vs-serialize overload footgun.
    - [ ] Unit-convention table (ms vs seconds: `window_seconds`/`max_age` vs
      ServerConfig `*_timeout` ms); `security()` triple-"off" conventions.
 3. **P2 prod-readiness** (larger): CI wiring for acceptance+quality
