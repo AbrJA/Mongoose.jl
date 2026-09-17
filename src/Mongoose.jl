@@ -144,7 +144,7 @@ end
         # --- Middleware construction ---
         cors(); cors(origins="https://example.com")
         logger(); ratelimit(); bearer(t -> true)
-        apikey(keys=Set(["k"])); health(); metrics()
+        apikey(keys=Set(["k"])); apikey("k"); health(); metrics()
         etag()
 
         # --- App construction ---

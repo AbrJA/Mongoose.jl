@@ -79,20 +79,30 @@ function (mw::ApiKey)(request::Request, next::Function)
 end
 
 """
-    apikey(; header_name, keys)
+    apikey(keys; header_name="X-API-Key")
+    apikey(; header_name="X-API-Key", keys)
 
-Create an API key authentication middleware.
-
-# Keyword Arguments
-- `header_name::String`: Header to read the API key from (default: `"X-API-Key"`).
-- `keys::Set{String}`: Set of valid API keys.
+Create an API key authentication middleware. `keys` may be a single key
+string or a collection of keys (`Set`/`Vector`); it is normalized to a
+`Set{String}` at construction. The positional and keyword forms are
+equivalent.
 
 # Example
 ```julia
-use!(server, apikey(keys=Set(["key-123"])))
+use!(server, apikey("key-123"))
+use!(server, apikey(Set(["key-123", "key-456"])))
+use!(server, apikey(["key-123"]); header_name="x-api-key")
 ```
 """
-apikey(; header_name::String="X-API-Key", keys::Set{String}) = ApiKey(lowercase(header_name), keys)
+apikey(keys::Union{AbstractString,AbstractSet{<:AbstractString},AbstractVector{<:AbstractString}};
+       header_name::String="X-API-Key") = ApiKey(lowercase(header_name), _apikeyset(keys))
+
+apikey(; header_name::String="X-API-Key",
+       keys::Union{AbstractString,AbstractSet{<:AbstractString},AbstractVector{<:AbstractString}}) =
+    apikey(keys; header_name=header_name)
+
+_apikeyset(key::AbstractString) = Set{String}((String(key),))
+_apikeyset(keys) = Set{String}(String(k) for k in keys)
 
 """
     BasicAuth — HTTP Basic authentication middleware.

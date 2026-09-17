@@ -91,6 +91,32 @@ end
     end
 end
 
+@testset "apikey builder forms" begin
+    # Positional and keyword builders are equivalent; keys may be a single
+    # string, a Set, or a Vector (normalized to Set{String}).
+    for mw in (apikey("key-123"),
+               apikey(Set(["key-123"])),
+               apikey(["key-123"]),
+               apikey(keys="key-123"),
+               apikey(keys=Set(["key-123"])),
+               apikey(keys=["key-123"]))
+        app = App()
+        use!(app, mw)
+        get!(app, "/") do req; text("ok") end
+        client = Mongoose.TestClient(app)
+        @test client(:get, "/"; headers=["x-api-key" => "key-123"]).status == 200
+        @test client(:get, "/"; headers=["x-api-key" => "wrong"]).status == 401
+    end
+
+    # Custom header name on the positional form.
+    app = App()
+    use!(app, apikey("key-123"; header_name="X-Api-Token"))
+    get!(app, "/") do req; text("ok") end
+    client = Mongoose.TestClient(app)
+    @test client(:get, "/"; headers=["x-api-token" => "key-123"]).status == 200
+    @test client(:get, "/"; headers=["x-api-key" => "key-123"]).status == 401
+end
+
 @testset "Constant-Time Auth" begin
     @testset "bearer with string uses constant-time comparison" begin
         app = App()
