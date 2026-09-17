@@ -17,6 +17,19 @@
         end
     end
 
+    @testset "413 early response carries X-Request-Id" begin
+        s = App(max_body=1024)
+        post!(s, "/echo") do req; text(req.body) end
+        with_server(s) do port
+            resp = HTTP.post("http://127.0.0.1:$port/echo";
+                body=repeat("x", 4096),
+                headers=["X-Request-Id" => "client-req-42"],
+                status_exception=false, retry=false)
+            @test resp.status == 413
+            @test HTTP.header(resp, "X-Request-Id") == "client-req-42"
+        end
+    end
+
     @testset "Custom error handler via onerror!" begin
         s = App()
         get!(s, "/") do req; text("ok") end

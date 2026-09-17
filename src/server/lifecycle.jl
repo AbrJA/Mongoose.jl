@@ -66,6 +66,10 @@ end
     shutdown!(server)
 
 Gracefully stop the server: drain requests, stop workers, free resources.
+In-flight requests and tracked background tasks (see `background!`, and
+over-budget handlers from `request_timeout`) get one shared grace period of
+`drain_timeout` ms before teardown; tasks still running after it are left
+alone, completed ones are dropped.
 """
 function shutdown!(server::AbstractServer)
     Threads.atomic_xchg!(server.runtime.running, false) || return
@@ -78,6 +82,7 @@ function shutdown!(server::AbstractServer)
 
     drain!(server)
     stop!(server.executor)
+    drain_bg_tasks!(server)
     stop_event_loop!(server)
     unregister_server!(server)
     teardown!(server)
@@ -121,6 +126,24 @@ function drain!(server::AbstractServer)
         drain_poll!(server)
         yield()
     end
+end
+
+# Background tasks get the same one-shot `drain_timeout` budget as streams:
+# a `background!` loop usually never finishes, so the wait is a grace period,
+# not a join. Called after `stop!(executor)` so no worker can push a new
+# timed-out request task while the vector is filtered.
+function drain_bg_tasks!(server::AbstractServer)
+    tasks = server.runtime.bg_tasks
+    isempty(tasks) && return
+    deadline = time() + server.config.drain_timeout / 1000.0
+    for t in tasks
+        istaskdone(t) && continue
+        remaining = deadline - time()
+        remaining <= 0 && break
+        timedwait(() -> istaskdone(t), remaining; pollint=0.01)
+    end
+    filter!(!istaskdone, tasks)
+    return
 end
 
 # Defaults (overridden for async App)

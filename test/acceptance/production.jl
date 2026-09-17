@@ -210,6 +210,7 @@ const CLOSE = ["Connection" => "close"]
             r = HTTP.post("$base/api/echo"; status_exception=false, headers=AUTH,
                 body=repeat("x", 2_000_000))
             @test r.status == 413
+            @test HTTP.hasheader(r, "X-Request-Id")
         end
 
         progress("Static dashboard + route precedence")

@@ -106,3 +106,74 @@ end
         @test String(resp2.body) == "fast"
     end
 end
+
+@testset "shutdown! drains background tasks (bounded by drain_timeout)" begin
+    @testset "short task is awaited and pruned" begin
+        finished = Ref(false)
+        app = App()
+        get!(app, "/") do req; text("ok") end
+        background!(app) do
+            sleep(0.5)
+            finished[] = true
+        end
+
+        with_server(app) do port
+            @test HTTP.get("http://127.0.0.1:$port/"; status_exception=false).status == 200
+        end
+
+        # The drain grace period covered the task's remaining 0.5s.
+        @test finished[]
+        @test isempty(app.runtime.bg_tasks)
+    end
+
+    @testset "never-ending task is not joined" begin
+        app = App(drain_timeout=100)
+        get!(app, "/") do req; text("ok") end
+        background!(app) do
+            sleep(60.0)
+        end
+
+        with_server(app) do port
+            @test HTTP.get("http://127.0.0.1:$port/"; status_exception=false).status == 200
+        end
+
+        # Bounded wait gives up and keeps the still-running task.
+        @test length(app.runtime.bg_tasks) == 1
+        @test !istaskdone(app.runtime.bg_tasks[1])
+    end
+end
+
+@testset "Queue-full 503 carries X-Request-Id" begin
+    app = App(workers=1, queuesize=1, drain_timeout=200)
+    started = Channel{Nothing}(1)
+    gate = Channel{Nothing}(1)
+    blocked = Ref(false)
+    get!(app, "/block") do req
+        if !blocked[]
+            blocked[] = true
+            signal(started)
+            take!(gate)
+        end
+        text("released")
+    end
+
+    with_server(app) do port
+        base = "http://127.0.0.1:$port"
+        blocker = Threads.@spawn HTTP.get("$base/block"; status_exception=false, retry=false)
+        take!(started)                       # the single worker is parked in the handler
+
+        # Worker busy + one queue slot: the burst must overflow into 503s.
+        burst = [Threads.@spawn HTTP.get("$base/block"; status_exception=false, retry=false)
+                 for _ in 1:4]
+        overflowed = wait_until(timeout=5.0) do
+            any(t -> istaskdone(t) && fetch(t).status == 503, burst)
+        end
+        put!(gate, nothing)                  # release the queued request
+        @test overflowed
+
+        responses = fetch.([blocker; burst])
+        rejected = filter(r -> r.status == 503, responses)
+        @test !isempty(rejected)
+        @test all(r -> HTTP.hasheader(r, "X-Request-Id"), rejected)
+    end
+end

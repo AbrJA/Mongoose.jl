@@ -8,14 +8,17 @@
 
 # --- Request ID resolution ---
 
-@inline function resolve_request_id(req::Request, server::AbstractServer)::String
-    h = get(req.headers, "x-request-id", nothing)
-    if h !== nothing
-        safe = Kernel.sanitize_header_value(h)
+@inline function resolve_request_id(server::AbstractServer,
+                                    client_id::Union{Nothing,String})::String
+    if client_id !== nothing
+        safe = Kernel.sanitize_header_value(client_id)
         !isempty(safe) && return safe
     end
     return string(Threads.atomic_add!(server.runtime.id_seq, UInt64(1)) + UInt64(1))
 end
+
+@inline resolve_request_id(req::Request, server::AbstractServer)::String =
+    resolve_request_id(server, get(req.headers, "x-request-id", nothing))
 
 # --- Connection: close echo (RFC 7230 §6.3) ---
 
@@ -73,7 +76,8 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
 
 # 2. Body size enforcement
     if msg.body.len > server.config.max_body
-        send_http_response!(conn, _echo_conn_close_error!(errorresponse(server.errors, 413), msg))
+        rid = resolve_request_id(server, get(parse_headers(msg), "x-request-id", nothing))
+        send_http_response!(conn, _echo_conn_close_error!(errorresponse(server.errors, 413), msg), rid)
         return nothing
     end
 
@@ -122,7 +126,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         if !submit!(exec, job)
             delete!(server.runtime.connections, id)
             res = _echo_conn_close!(errorresponse(server.errors, 503), req)
-            send_http_response!(conn, res)
+            send_http_response!(conn, res::Response, resolve_request_id(req, server))
         end
     end
 end
