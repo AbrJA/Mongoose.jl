@@ -9,7 +9,7 @@
 1. Confirm scope in WORKLOG.
 2. Implement in `src/`, update tests.
 3. Gates before commit:
-   - `julia --project=test test/runtests.jl` (1035 tests; this is the
+   - `julia --project=test test/runtests.jl` (1041 tests; this is the
      `Pkg.test`/CI entrypoint — the sanctioned gate)
    - `julia --project=test test/acceptance/production.jl` (80 checks)
    - `julia --project=test test/quality/quality.jl` (Aqua + JET)
@@ -215,6 +215,18 @@ ETag/conditional requests~~ **shipped** · OpenAPI-from-metadata · sessions/CSR
 
 ## Changelog
 
+- **Sep 17 — Batch 4 (units + kwarg names) shipped**: every quantity carries
+  its unit in the name — `_ms` (`poll_timeout_ms`, `drain_timeout_ms`,
+  `request_timeout_ms`, `ws_idle_timeout_ms`, `logger(threshold_ms=…)`,
+  `emit(…; retry_ms=…)`), `_seconds` (`window_seconds`, `cors(max_age_seconds=…)`,
+  `security(hsts_max_age_seconds=…)`), `_bytes` (`max_body_bytes`,
+  `ws_max_frame_bytes`, `compress(min_size_bytes=…)`); `queuesize` →
+  `queue_size`; constants `MAX_BODY_BYTES`/`DRAIN_TIMEOUT_MS`. `cors(methods=,
+  headers=)` → `allow_methods=`/`allow_headers=`. `security()` "off" is now
+  uniformly `nothing` (was 0/""/false; `csp` defaults to nothing).
+  `Cookie(; max_age=…)` keeps its spec name (documented exception). Unit table
+  added to README + docs index. 1041 tests + 80 acceptance + Aqua/JET + docs
+  green.
 - **Sep 17 — Batch 3 (naming decisions) shipped**: `json(req)` → `parsejson(req)`
   (the old method throws a migration `ArgumentError`); `WrongMethod` →
   `NotAllowed`; `wsendpoint` → `getwsendpoint` (+ protocol docstrings for it and
@@ -379,9 +391,12 @@ prod-readiness). State saved — **next session starts here:**
      `a622c83`*
    - [x] Decide `json(req)` parse-vs-serialize overload footgun — batch 3:
      parsing moved to `parsejson(req)`; `json(req)` throws a migration error.
-   - [ ] Decide `Headers.getindex(h, key)` → `nothing` semantics (vs KeyError).
-   - [ ] Unit-convention table (ms vs seconds: `window_seconds`/`max_age` vs
-     ServerConfig `*_timeout` ms); `security()` triple-"off" conventions.
+   - [x] Decide `Headers.getindex(h, key)` → `nothing` semantics (vs KeyError).
+     **kept silent `nothing`** (header lookup is optional by nature; `get` with a
+     default remains the explicit form).
+   - [x] Unit-convention table (ms vs seconds) + `security()` off-conventions —
+     batch 4: `_ms`/`_seconds`/`_bytes` suffixes applied, off = `nothing`,
+     table in README/docs; `Cookie.max_age` documented as a spec-name exception.
 3. **P2 prod-readiness** (larger): CI wiring for acceptance+quality
    (nothing gates this branch today — runs only on main), OpenAPI-from-
    metadata (Endpoint.metadata is already plumbed — flagship 1.0 feature),
