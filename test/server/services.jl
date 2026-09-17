@@ -1,7 +1,10 @@
 @testset "service!/inject" begin
     @testset "Service retrieved per request" begin
         s = App()
-        service!(s, :version, "1.0.0")
+        @test service!(s, :version, "1.0.0") === s
+        service!(s, :region, "us-east")
+        @test s.services.deps.version == "1.0.0"
+        @test s.services.deps.region == "us-east"
         get!(s, "/version") do req
             v = service(req, :version)
             text("v=$v")

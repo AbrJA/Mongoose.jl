@@ -44,3 +44,23 @@ end
     @test_throws Mongoose.RouteError Mongoose.route!(app, :brew, "/c", req -> text("c"))
 end
 
+@testset "App-level router introspection" begin
+    app = App()
+    get!(app, "/a") do req; text("a") end
+    ws!(app, "/ws", m -> nothing)
+
+    @test length(app) == 1
+    @test Mongoose.hasroute(app, "/a")
+    @test !Mongoose.hasroute(app, "/b")
+    @test Mongoose.matchroute(app, :get, "/a") isa Mongoose.Matched
+    @test Mongoose.matchroute(app, "GET", "/missing") isa Mongoose.NoMatch
+    @test Mongoose.haswsroutes(app)
+    @test Mongoose.getwsendpoint(app, "/ws") !== nothing
+
+    @test !isfrozen(app)
+    @test freeze!(app) === app
+    @test isfrozen(app)
+    @test_throws Mongoose.RouteError route!(app, :get, "/late", req -> text("x"))
+    @test_throws Mongoose.RouteError ws!(app, "/late", m -> nothing)
+end
+

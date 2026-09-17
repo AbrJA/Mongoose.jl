@@ -15,6 +15,7 @@ CurrentModule = Mongoose
 
 ```@docs
 App
+AbstractServer
 start!
 shutdown!
 ```

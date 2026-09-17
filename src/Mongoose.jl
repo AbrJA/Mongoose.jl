@@ -9,7 +9,7 @@ using CodecZlib
 # matchroute/gethandler/…; pipeline: terminalfor/runpipeline/…; formats:
 # encode/decode/mime; string utilities) live in Kernel — implementers use
 # `import Mongoose: X` or `Mongoose.Kernel.X`.
-export App, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
+export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, use!, serve!, onerror!, onstart!, onstop!,
     context, Cookie, Headers, setcookie, cookies, form, header,
@@ -50,6 +50,7 @@ using .Kernel
 import .Kernel: route!, ws!, post!, patch!, options!, head!,
     submit!, start!, stop!, haspending,
     supportsws, supportstls, supportsstream,
+    freeze!, isfrozen, matchroute, hasroute, haswsroutes, getwsendpoint,
     terminalfor
 
 # ══════════════════════════════════════════════════════════════════════════════

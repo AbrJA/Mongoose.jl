@@ -50,12 +50,12 @@ function (mw::Etag)(request::Request, next::Function)
         inm = get(request.headers, "if-none-match", nothing)
         if inm !== nothing && _etag_cmp(tag, inm, true)
             return request.method in (:get, :head) ?
-                Response(304, Headers(["etag" => tag]), "") :
+                Response(304, Headers(["ETag" => tag]), "") :
                 Response(412, Pair{String,String}[], "")
         end
     end
 
-    return mergeheaders(response, ["etag" => tag])
+    return mergeheaders(response, ["ETag" => tag])
 end
 
 # --- ETag derivation (FNV-1a 64-bit, deterministic across restarts) ---

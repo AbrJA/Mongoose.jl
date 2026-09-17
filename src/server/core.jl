@@ -47,12 +47,12 @@ end
 """
     ServiceRegistry — mutable container for typed NamedTuple services.
 
-    `App(services=(db=pool, ...))` stores its services here; `service!` rebuilds
-    the NamedTuple (a cold, pre-start operation). Handlers access services with
+    `App(services=(db=pool, ...))` stores its services here; `service!` mutates
+    `deps` in place (a cold, pre-start operation). Handlers access services with
     `service(req, Val(:db))` for type-stable retrieval.
 """
-mutable struct ServiceRegistry{T<:NamedTuple}
-    deps::T
+mutable struct ServiceRegistry
+    deps::NamedTuple
 end
 ServiceRegistry() = ServiceRegistry(NamedTuple())
 
@@ -189,7 +189,7 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
     # ── Build-phase error handling & DI ───────────────────────────────────────
     const errors::Dict{Int,Union{Response,Function}}
     const exception_handlers::Dict{DataType,Function}
-    services::ServiceRegistry
+    const services::ServiceRegistry
 
     # ── Build-phase lifecycle hooks ───────────────────────────────────────────
     const hooks_start::Vector{Function}
@@ -358,7 +358,7 @@ service(req, :db)      # retrieve inside handler
 function service!(app::App, name::Symbol, value)
     _ensure_registratable(app, "services")
     old = app.services.deps
-    app.services = ServiceRegistry((; old..., name => value))
+    app.services.deps = (; old..., name => value)
     # Services changed → refresh the seam's snapshot (build-phase only).
     app.context = RequestContext(app.router; middlewares=app.middlewares,
                                  errors=app.errors, services=app.services.deps,
@@ -439,8 +439,7 @@ background!(f::Function, server::AbstractServer) = background!(server, f)
 
 function Base.show(io::IO, app::App)
     mode = app.config.workers == 0 ? "sync" : "async($(app.config.workers) workers)"
-    routes = length(app.router)
-    print(io, "App($mode, $routes routes, $(length(app.middlewares)) middleware)")
+    print(io, "App($mode, $(length(app)) routes, $(length(app.middlewares)) middleware)")
 end
 
 # --- use! (add middleware to an app) ---

@@ -141,7 +141,7 @@ end
                                       status::Int, message::String,
                                       headers::Headers=Headers())::Response
     haskey(ctx.errors, status) && return errorresponse(ctx.errors, req, status)
-    isempty(headers) && push!(headers, "content-type" => "text/plain")
+    isempty(headers) && push!(headers, "Content-Type" => "text/plain")
     return Response(status, headers, message)
 end
 

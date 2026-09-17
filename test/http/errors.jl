@@ -63,6 +63,8 @@
             r = HTTP.get("http://127.0.0.1:$port/teapot"; status_exception=false)
             @test r.status == 418
             @test String(r.body) == "short and stout"
+            # Thrown HTTPError default headers use canonical casing.
+            @test any(h -> first(h) == "Content-Type", r.headers)
 
             r = HTTP.get("http://127.0.0.1:$port/missing"; status_exception=false)
             @test r.status == 404

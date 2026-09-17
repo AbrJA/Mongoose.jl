@@ -17,6 +17,8 @@
         @test r.status == 200
         tag = get(r.headers, "etag", "")
         @test startswith(tag, "\"") && endswith(tag, "\"") && length(tag) == 18  # "hex16"
+        # Framework headers go out with canonical casing.
+        @test any(h -> first(h) == "ETag", r.headers)
         # Stable across requests.
         r2 = client(:get, "/res")
         @test get(r2.headers, "etag", "") == tag
