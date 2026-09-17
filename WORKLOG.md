@@ -9,7 +9,7 @@
 1. Confirm scope in WORKLOG.
 2. Implement in `src/`, update tests.
 3. Gates before commit:
-   - `julia --project=test test/runtests.jl` (1041 tests; this is the
+   - `julia --project=test test/runtests.jl` (1058 tests; this is the
      `Pkg.test`/CI entrypoint — the sanctioned gate)
    - `julia --project=test test/acceptance/production.jl` (80 checks)
    - `julia --project=test test/quality/quality.jl` (Aqua + JET)
@@ -215,6 +215,18 @@ ETag/conditional requests~~ **shipped** · OpenAPI-from-metadata · sessions/CSR
 
 ## Changelog
 
+- **Sep 17 — Batch 5 (surface coherence) shipped**: the read-side router
+  protocol now lives on the server too — `freeze!(app)`, `isfrozen(app)`,
+  `length(app)`, `matchroute(app, …)`, `hasroute(app, path)`,
+  `haswsroutes(app)`, `getwsendpoint(app, uri)` delegate to `app.router`
+  (mutation was already server-level); `AbstractServer` is now exported and
+  documented. Framework-emitted headers use canonical casing (`Content-Type`
+  on thrown-HTTPError defaults, `ETag` from the etag middleware; user headers
+  still pass through as given). `Logger` reads `X-Request-Id` through
+  `get(headers, …)`. `ServiceRegistry` is non-parametric and `App.services`
+  is a `const` field (mutated in place by `service!`) — the last non-const
+  build-phase field. 1058 tests + 80 acceptance + Aqua/JET + docs green.
+  All audit batches (1–5) are now shipped.
 - **Sep 17 — Batch 4 (units + kwarg names) shipped**: every quantity carries
   its unit in the name — `_ms` (`poll_timeout_ms`, `drain_timeout_ms`,
   `request_timeout_ms`, `ws_idle_timeout_ms`, `logger(threshold_ms=…)`,
