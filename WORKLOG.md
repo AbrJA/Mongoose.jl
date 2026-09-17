@@ -9,8 +9,8 @@
 1. Confirm scope in WORKLOG.
 2. Implement in `src/`, update tests.
 3. Gates before commit:
-   - `julia --project=test test/runtests_stream.jl` (875 tests)
-   - `julia --project=test test/acceptance/production.jl` (79 checks)
+   - `julia --project=test test/runtests_stream.jl` (939 tests)
+   - `julia --project=test test/acceptance/production.jl` (80 checks)
    - `julia --project=test test/quality/quality.jl` (Aqua + JET)
    - `julia --project=docs docs/make.jl` when public API changes
 4. One commit per task; update WORKLOG; iterate.
@@ -211,6 +211,12 @@ ETag/conditional requests~~ **shipped** · OpenAPI-from-metadata · sessions/CSR
 
 ## Changelog
 
+- **Sep 17 — P1 ergonomics batch shipped** (`f52b763`, `9440686`, `a622c83`):
+  `mergeheaders` (non-mutating header merge, 7 rebuild sites deleted),
+  `apikey` positional/collection builder, `shutdown!` drains `bg_tasks`
+  (bounded + pruned), 413/503 carry `X-Request-Id`. 939 tests + 80
+  acceptance + Aqua/JET + docs green. Remaining P1: the three decisions
+  (Headers.getindex, json(req) overload, unit-convention table).
 - **Sep 08 — Phase 1 kickoff.** Decisions recorded above.
 - **T1 shipped** (`ffaf1e1`): unified Headers; 763 tests + 71 acceptance +
   Aqua/JET green.
@@ -327,16 +333,22 @@ prod-readiness). State saved — **next session starts here:**
    getendpoint/sethandler! are the named pattern; wsendpoint/length
    break it). 0.5 window allows it; ripples: docs, facade `import` block, tests.
 2. **P1 ergonomics** (from the review):
-   - `merge_headers!`-style helper to kill the 8 × `Headers([copy(h.data); …])`
-     Response-rebuild sites (cors/security/compress×2/etag/handler/testing/
-     response).
-   - `apikey(keys=…)` — currently the only builder with a REQUIRED kwarg.
-   - `shutdown!` waits on `bg_tasks` (bounded by drain_timeout) before teardown
-     (closes the T11-orphan ref-hold); 413/503 early responses get
-     `X-Request-Id` for consistency.
-   - Decide `Headers.getindex(h, key)` → `nothing` semantics (vs KeyError).
-   - Decide `json(req)` parse-vs-serialize overload footgun.
-   - Unit-convention table (ms vs seconds: `window_seconds`/`max_age` vs
+   - [x] `mergeheaders` helper replacing the 7 × `Headers([copy(h.data); …])`
+     rebuild sites (cors/security/compress×2/etag/handler/testing) —
+     non-mutating, concatenation semantics (duplicates/order preserved),
+     `prepend=true` for middleware-wins sites. Kernel extension surface,
+     documented + tested. *commit: `f52b763`*
+   - [x] `apikey(keys; header_name=…)` positional builder; accepts a single
+     string, `Set`, or `Vector`, normalized to `Set{String}`; keyword form
+     unchanged. *commit: `9440686`*
+   - [x] `shutdown!` waits on `bg_tasks` (one shared `drain_timeout` grace
+     after `stop!(executor)`, then prunes finished tasks; never-ending
+     `background!` loops are bounded, not joined); 413/503 early responses
+     carry `X-Request-Id` (413 echoes the client id when present). *commit:
+     `a622c83`*
+   - [ ] Decide `Headers.getindex(h, key)` → `nothing` semantics (vs KeyError).
+   - [ ] Decide `json(req)` parse-vs-serialize overload footgun.
+   - [ ] Unit-convention table (ms vs seconds: `window_seconds`/`max_age` vs
      ServerConfig `*_timeout` ms); `security()` triple-"off" conventions.
 3. **P2 prod-readiness** (larger): CI wiring for acceptance+quality
    (nothing gates this branch today — runs only on main), OpenAPI-from-
