@@ -346,6 +346,14 @@ Verification tags from the audit: **[live]** reproduced on a running server,
 
 ## Changelog
 
+- **Sep 17 — SIGTERM mechanism corrected**: the custom C handler added in
+  batch 8 was dead code — Julia blocks SIGTERM process-wide (`SigBlk` bit 15)
+  and handles it in its runtime, which runs `atexit` callbacks. Graceful
+  shutdown on SIGTERM/exit therefore goes through `atexit(_shutdown_registered!)`
+  (drain + `onstop!`); the flag/handler were removed. The acceptance child
+  test now proves the hook with a marker file (the stdout-pipe race caused
+  the macOS CI failure) and no longer asserts a zero exit status, since Julia
+  terminates with the signal status by design.
 - **Sep 17 — Public-name standardization (final naming pass)**: audited the
   whole exported surface and removed the last four underscores
   (`ws_send_all`→`broadcastws`, `with_services`→`withservices`,

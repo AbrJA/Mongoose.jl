@@ -46,32 +46,11 @@ Uses explicit lock/unlock (no closure) to avoid allocation on hot path.
     return server
 end
 
-# --- Termination signals ---
-# A C signal handler may only touch async-signal-safe state, so it flips an
-# atomic flag; the event loop observes it and exits, and the loop task runs
-# the graceful shutdown path (drain + onstop! hooks).
-
-const _SIGTERM_REQUESTED = Threads.Atomic{Bool}(false)
-const _SIGTERM_CB = Ref{Ptr{Cvoid}}(C_NULL)
-
-function _sigterm_handler(::Cint)
-    _SIGTERM_REQUESTED[] = true
-    return nothing
-end
-
-"""
-    install_sigterm_handler!()
-
-Install a SIGTERM handler (POSIX only, idempotent) that requests a graceful
-shutdown. Call is made by `start!`; safe to call repeatedly.
-"""
-function install_sigterm_handler!()
-    Sys.isunix() || return nothing
-    _SIGTERM_CB[] == C_NULL || return nothing
-    _SIGTERM_CB[] = @cfunction(_sigterm_handler, Cvoid, (Cint,))
-    ccall(:signal, Ptr{Cvoid}, (Cint, Ptr{Cvoid}), 15, _SIGTERM_CB[])
-    return nothing
-end
+# --- Process-exit shutdown ---
+# Julia blocks SIGTERM and handles it in its runtime, which runs `atexit`
+# callbacks before terminating; SIGINT is delivered as an exception. A custom
+# C signal handler cannot intercept SIGTERM (the signal is blocked process-
+# wide), so graceful shutdown on SIGTERM/exit goes through this `atexit` hook.
 
 # Best-effort graceful shutdown of every registered server at process exit.
 function _shutdown_registered!()

@@ -200,7 +200,9 @@ end
     end
 end
 
-@testset "SIGTERM flag triggers graceful shutdown" begin
+@testset "process-exit shutdown hook drains registered servers" begin
+    # `atexit(_shutdown_registered!)` is the SIGTERM/exit path (Julia blocks
+    # SIGTERM, so a custom handler cannot run). Exercise the hook directly.
     stopped = Ref(false)
     app = App()
     get!(app, "/") do req; text("ok") end
@@ -209,13 +211,11 @@ end
     port = fresh_port()
     start!(app; host="127.0.0.1", port=port, blocking=false)
     wait_for_server("http://127.0.0.1:$port/")
+    @test isrunning(app)
 
-    Mongoose._SIGTERM_REQUESTED[] = true
-    @test wait_until(timeout=10.0) do
-        !app.runtime.running[]
-    end
+    Mongoose._shutdown_registered!()
+    @test !isrunning(app)
     @test stopped[]
-    Mongoose._SIGTERM_REQUESTED[] = false
 end
 
 @testset "sync mode warns about ignored request_timeout_ms" begin

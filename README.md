@@ -245,7 +245,8 @@ start!(app; port=8443)
 ## 🛡️ Production
 
 - **Graceful shutdown** — SIGINT and SIGTERM drain in-flight requests and SSE
-  streams, run `onstop!` hooks, and stop workers; `atexit` covers normal exits.
+  streams, run `onstop!` hooks, and stop workers (SIGTERM and normal exits go
+  through Julia's `atexit` path; SIGINT is caught while `start!` blocks).
 - **Backpressure** — the async executor bounds its queue and answers `503` when
   full; `max_connections` and `header_timeout_ms` protect against slow clients.
 - **Observability** — `logger()` access logs, `metrics()` (request counters,

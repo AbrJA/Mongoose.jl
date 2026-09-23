@@ -19,7 +19,7 @@
 - **Real-time** — WebSocket (origin allowlist, idle timeout, server push via
   `broadcastws`) and Server-Sent Events (`sse` / `emit`) on the same port
 - **Native TLS** — HTTPS via `TLSConfig`
-- **Production-ready** — graceful shutdown (SIGINT/SIGTERM + atexit),
+- **Production-ready** — graceful shutdown (SIGINT; SIGTERM/exit via `atexit`),
   backpressure, request/header timeouts, connection caps, custom + typed
   errors, dependency injection, background tasks
 - **Testable without FFI** — `FakeTransport` runs the whole pipeline without

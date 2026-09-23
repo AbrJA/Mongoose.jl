@@ -308,17 +308,22 @@ end
 @testset "SIGTERM graceful shutdown (child process)" begin
     Sys.isunix() || return
     port = fresh_port()
+    marker = tempname()
     script = tempname() * ".jl"
     write(script, """
     using Mongoose
     app = App()
     get!(app, "/") do req; text("ok") end
-    onstop!(app) do; println("ONSTOP-RAN") end
+    onstop!(app) do
+        write($(repr(marker)), "ONSTOP-RAN")
+    end
     start!(app; port=$port, blocking=true)
     """)
-    buf = IOBuffer()
+    # A marker file (not stdout) proves the hook ran: reading the child's pipe
+    # races the async reader on slower runners (observed on macOS CI), while a
+    # written file is visible as soon as the hook returns.
     proc = run(pipeline(`$(Base.julia_cmd()) --project=$(Base.active_project()) $script`;
-                        stdout=buf, stderr=buf); wait=false)
+                        stdout=devnull, stderr=devnull); wait=false)
     ready = wait_until(timeout=90.0) do
         try
             HTTP.get("http://127.0.0.1:$port/"; status_exception=false, retry=false).status == 200
@@ -330,9 +335,15 @@ end
         kill(proc, 9)
         @test false
     else
-        kill(proc, 15)          # SIGTERM: must drain and run onstop! hooks
+        kill(proc, 15)          # SIGTERM: Julia runs atexit → drain + onstop!
         wait(proc)
-        @test occursin("ONSTOP-RAN", String(take!(buf)))
+        ran = wait_until(timeout=5.0) do
+            isfile(marker) && read(marker, String) == "ONSTOP-RAN"
+        end
+        @test ran
+        # The process exits with the signal status by design (Julia's runtime
+        # handles SIGTERM after running atexit hooks).
     end
     rm(script; force=true)
+    rm(marker; force=true)
 end
