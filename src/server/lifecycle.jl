@@ -24,6 +24,13 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
                 blocking::Bool=true, tls::Union{Nothing,TLSConfig}=nothing)
     Threads.atomic_xchg!(server.runtime.running, true) && return server
 
+    install_sigterm_handler!()
+    _SIGTERM_REQUESTED[] = false
+    if server.config.workers == 0 && server.config.request_timeout_ms > 0
+        @log_warn "request_timeout_ms is ignored in sync mode (workers=0); " *
+                  "use workers=N for per-request timeouts"
+    end
+
     try
         server.runtime.tls = normalize_tls(tls)
         register_server!(server)
@@ -112,7 +119,13 @@ function spawn_event_loop!(server::AbstractServer)
         catch e
             e isa InterruptException || @log_error "Event loop error" e catch_backtrace()
         finally
-            server.runtime.running[] = false
+            if _SIGTERM_REQUESTED[] && server.runtime.running[]
+                # Signal-initiated shutdown: run the graceful path from the loop
+                # task (stop_event_loop! detects it is the current task).
+                shutdown!(server)
+            else
+                server.runtime.running[] = false
+            end
         end
     end
 end
@@ -120,7 +133,9 @@ end
 function stop_event_loop!(server::AbstractServer)
     master = server.runtime.master
     master === nothing && return
-    try wait(master) catch end
+    # `shutdown!` may be called from the loop task itself (SIGTERM path); never
+    # wait on the current task.
+    current_task() === master || (try wait(master) catch end)
     server.runtime.master = nothing
 end
 

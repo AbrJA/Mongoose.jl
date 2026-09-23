@@ -1,3 +1,5 @@
+using Sockets
+
 @testset "App lifecycle edge cases" begin
     @testset "Double start is no-op" begin
         s = App()
@@ -89,5 +91,60 @@ end
         @test_throws Mongoose.ServerError ws!(s, "/ws"; on_message=req -> nothing)
         # pre-start registration still fine
         @test HTTP.get("http://127.0.0.1:$port/before"; status_exception=false).status == 200
+    end
+end
+
+@testset "max_connections refuses extra connections" begin
+    gate = Channel{Nothing}(2)
+    app = App(workers=2, max_connections=2)
+    get!(app, "/hold") do req
+        sse(req) do w
+            emit(w; data="open")
+            take!(gate)
+        end
+    end
+
+    with_server(app) do port
+        t1 = @async HTTP.get("http://127.0.0.1:$port/hold"; status_exception=false,
+                             retry=false, read_idle_timeout=30)
+        t2 = @async HTTP.get("http://127.0.0.1:$port/hold"; status_exception=false,
+                             retry=false, read_idle_timeout=30)
+        held = wait_until(timeout=5.0) do
+            length(app.runtime.conn_times) >= 2
+        end
+        @test held
+
+        refused = try
+            HTTP.get("http://127.0.0.1:$port/hold"; status_exception=false,
+                     retry=false, read_idle_timeout=3)
+            false
+        catch
+            true
+        end
+        @test refused
+
+        put!(gate, nothing)
+        put!(gate, nothing)
+        for t in (t1, t2)
+            timedwait(() -> istaskdone(t), 10.0; pollint=0.05)
+        end
+    end
+end
+
+@testset "header_timeout closes idle connections" begin
+    app = App(header_timeout_ms=200)
+    get!(app, "/") do req; text("ok") end
+
+    with_server(app) do port
+        sock = Sockets.connect("127.0.0.1", port)
+        opened = wait_until(timeout=3.0) do
+            !isempty(app.runtime.awaiting_headers)
+        end
+        @test opened
+        closed = wait_until(timeout=6.0) do
+            isempty(app.runtime.awaiting_headers)
+        end
+        @test closed
+        close(sock)
     end
 end

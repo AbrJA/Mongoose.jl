@@ -37,3 +37,9 @@ const WS_OP_PONG = Cint(10)
 # Default limits
 const MAX_BODY_BYTES = 1_048_576  # 1 MB default max body size
 const DRAIN_TIMEOUT_MS = 5000    # 5s shutdown drain timeout
+
+# Empirically verified ceiling of the C receive buffer on the current
+# Mongoose_jll build: an 8 MiB body round-trips, a 10 MiB body resets the
+# connection. Configured limits above this are unenforceable (the socket dies
+# before the application-level 413 can be produced).
+const C_RECV_CEILING_BYTES = 8 * 1024 * 1024

@@ -151,6 +151,8 @@ end
 # --- Connection Close ---
 
 function on_connection_close(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
+    delete!(server.runtime.conn_times, conn)
+    delete!(server.runtime.awaiting_headers, conn)
     conn_id = lock(server.runtime.ws_lock) do
         id = get(server.runtime.ws_gen_ids, conn, 0)
         delete!(server.runtime.ws_gen_ids, conn)

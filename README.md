@@ -268,6 +268,8 @@ app = App(;
     ws_max_frame_bytes  = 1_048_576,  # Max WebSocket frame size
     ws_idle_timeout_ms  = 60_000,     # WS idle timeout (0 = disabled)
     poll_timeout_ms     = 1,          # Mongoose poll interval
+    header_timeout_ms   = 0,          # Close conns that stall before a request
+    max_connections     = 0,          # Max open connections (0 = unlimited)
     router              = Router(),   # any AbstractRouter
     tls                 = nothing,    # TLSConfig for HTTPS
 )

@@ -14,16 +14,16 @@ function _event_loop_sync(app::App)
     mgr = app.runtime.manager.ptr
     timeout = app.config.poll_timeout_ms
     last_sweep = time()
-    while app.runtime.running[]
+    while app.runtime.running[] && !_SIGTERM_REQUESTED[]
         mg_mgr_poll(mgr, timeout)
         isempty(app.runtime.ws_clients) || mg_mgr_poll(mgr, 0)
         drain_streams!(app)
-        if app.config.ws_idle_timeout_ms > 0 && !isempty(app.runtime.ws_clients)
-            now = time()
-            if (now - last_sweep) >= 1.0
+        now = time()
+        if (now - last_sweep) >= 1.0
+            app.config.ws_idle_timeout_ms > 0 && !isempty(app.runtime.ws_clients) &&
                 ws_idle_sweep!(app)
-                last_sweep = now
-            end
+            conn_sweep!(app)
+            last_sweep = now
         end
         yield()
     end
@@ -33,7 +33,7 @@ function _event_loop_async(app::App)
     exec = app.executor::AsyncExecutor
     last_sweep = time()
     last_health = time()
-    while app.runtime.running[]
+    while app.runtime.running[] && !_SIGTERM_REQUESTED[]
         mg_mgr_poll(app.runtime.manager.ptr, app.config.poll_timeout_ms)
 
         did_ws = dispatch_replies!(app)
@@ -48,11 +48,11 @@ function _event_loop_async(app::App)
             last_health = now
         end
 
-        if app.config.ws_idle_timeout_ms > 0 && !isempty(app.runtime.ws_clients)
-            if (now - last_sweep) >= 1.0
+        if (now - last_sweep) >= 1.0
+            app.config.ws_idle_timeout_ms > 0 && !isempty(app.runtime.ws_clients) &&
                 ws_idle_sweep!(app)
-                last_sweep = now
-            end
+            conn_sweep!(app)
+            last_sweep = now
         end
         yield()
     end

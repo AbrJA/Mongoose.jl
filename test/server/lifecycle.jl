@@ -199,3 +199,30 @@ end
         @test all(r -> HTTP.hasheader(r, "X-Request-Id"), rejected)
     end
 end
+
+@testset "SIGTERM flag triggers graceful shutdown" begin
+    stopped = Ref(false)
+    app = App()
+    get!(app, "/") do req; text("ok") end
+    onstop!(app) do; stopped[] = true end
+
+    port = fresh_port()
+    start!(app; host="127.0.0.1", port=port, blocking=false)
+    wait_for_server("http://127.0.0.1:$port/")
+
+    Mongoose._SIGTERM_REQUESTED[] = true
+    @test wait_until(timeout=10.0) do
+        !app.runtime.running[]
+    end
+    @test stopped[]
+    Mongoose._SIGTERM_REQUESTED[] = false
+end
+
+@testset "sync mode warns about ignored request_timeout_ms" begin
+    app = App(request_timeout_ms=100)
+    get!(app, "/") do req; text("ok") end
+    @test_logs (:warn, r"request_timeout_ms is ignored in sync mode") match_mode=:any begin
+        start!(app; port=fresh_port(), blocking=false)
+    end
+    shutdown!(app)
+end

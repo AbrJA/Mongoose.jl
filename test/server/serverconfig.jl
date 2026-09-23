@@ -15,3 +15,20 @@
     end
 end
 
+
+@testset "receive-buffer ceiling" begin
+    # Empirically verified on the current Mongoose_jll: 8 MiB round-trips,
+    # 10 MiB resets the connection — so limits above the ceiling are refused
+    # at construction instead of failing mysteriously at runtime.
+    @test_throws Mongoose.ServerError App(max_body_bytes=9 * 1024 * 1024)
+    @test_throws Mongoose.ServerError App(ws_max_frame_bytes=9 * 1024 * 1024)
+    @test App(max_body_bytes=8 * 1024 * 1024).config.max_body_bytes == 8 * 1024 * 1024
+end
+
+@testset "new limit config" begin
+    app = App(header_timeout_ms=500, max_connections=10)
+    @test app.config.header_timeout_ms == 500
+    @test app.config.max_connections == 10
+    @test_throws Mongoose.ServerError App(header_timeout_ms=-1)
+    @test_throws Mongoose.ServerError App(max_connections=-1)
+end

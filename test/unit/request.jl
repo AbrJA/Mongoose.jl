@@ -306,3 +306,35 @@ end
     @test decode_chunked("ffffffffffffffffffff\r\n") == "ffffffffffffffffffff\r\n"
     @test decode_chunked("ffffffffffffffff\r\nx") == "ffffffffffffffff\r\nx"
 end
+
+@testset "parser robustness (fuzz-ish, never throws)" begin
+    import Mongoose.Kernel: decode_chunked, urldecode, parsequery
+    # Deterministic LCG over arbitrary bytes; the untrusted-input parsers must
+    # never throw regardless of the payload.
+    x = UInt64(0x12345678)
+    for _ in 1:400
+        x = x * 6364136223846793005 + 1442695040888963407
+        n = Int(x % 65)
+        bytes = UInt8[]
+        for _ in 1:n
+            x = x * 6364136223846793005 + 1442695040888963407
+            push!(bytes, UInt8((x >> 24) & 0xff))
+        end
+        s = String(copy(bytes))
+        @test parsequery(s) isa Dict{String,String}
+        @test decode_chunked(s) isa String
+        @test urldecode(bytes, 1, length(bytes)) isa String
+        @test Mongoose.Kernel._extract_boundary(s) isa String
+        req = Request(:get, "/", "/", Dict{String,String}(), Headers(["cookie" => s]), "")
+        @test Mongoose.cookies(req) isa Dict{String,String}
+        mreq = Request(:post, "/", "/", Dict{String,String}(),
+            Headers(["content-type" => "multipart/form-data; boundary=$s"]), s)
+        # Empty/unparseable boundaries are a typed 400, never a raw exception.
+        mresult = try
+            Mongoose.multipart(mreq) isa Dict
+        catch e
+            e isa Mongoose.HTTPError
+        end
+        @test mresult
+    end
+end

@@ -70,9 +70,19 @@ end
 
 # --- Default handlers ---
 
-on_accept(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid}) = begin
+function on_accept(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
+    maxc = server.config.max_connections
+    if maxc > 0 && length(server.runtime.conn_times) >= maxc
+        # Refuse the connection before mongoose parses anything from it.
+        mg_close_conn(conn)
+        return nothing
+    end
+    now = time()
+    server.runtime.conn_times[conn] = now
+    server.config.header_timeout_ms > 0 && (server.runtime.awaiting_headers[conn] = now)
     tls = server.runtime.tls
     tls !== nothing && init_tls!(conn, tls)
+    return nothing
 end
 
 # Fallbacks

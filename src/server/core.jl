@@ -86,6 +86,8 @@ struct ServerConfig
     request_timeout_ms::Int
     ws_max_frame_bytes::Int
     ws_idle_timeout_ms::Int
+    header_timeout_ms::Int
+    max_connections::Int
     workers::Int
     queue_size::Int
 
@@ -96,17 +98,27 @@ struct ServerConfig
                           request_timeout_ms::Integer=0,
                           ws_max_frame_bytes::Integer=MAX_BODY_BYTES,
                           ws_idle_timeout_ms::Integer=0,
+                          header_timeout_ms::Integer=0,
+                          max_connections::Integer=0,
                           workers::Integer=0,
                           queue_size::Integer=1024)
         max_body_bytes > 0 || throw(ServerError("max_body_bytes must be > 0"))
+        max_body_bytes <= C_RECV_CEILING_BYTES ||
+            throw(ServerError("max_body_bytes must be <= $C_RECV_CEILING_BYTES bytes " *
+                              "(the C receive buffer resets larger uploads before a 413 can be sent)"))
+        ws_max_frame_bytes > 0 || throw(ServerError("ws_max_frame_bytes must be > 0"))
+        ws_max_frame_bytes <= C_RECV_CEILING_BYTES ||
+            throw(ServerError("ws_max_frame_bytes must be <= $C_RECV_CEILING_BYTES bytes"))
         poll_timeout_ms >= 0 || throw(ServerError("poll_timeout_ms must be >= 0"))
         drain_timeout_ms >= 0 || throw(ServerError("drain_timeout_ms must be >= 0"))
-        ws_max_frame_bytes > 0 || throw(ServerError("ws_max_frame_bytes must be > 0"))
+        header_timeout_ms >= 0 || throw(ServerError("header_timeout_ms must be >= 0"))
+        max_connections >= 0 || throw(ServerError("max_connections must be >= 0"))
         workers >= 0 || throw(ServerError("workers must be >= 0"))
         workers > 0 && queue_size > 0 || workers == 0 ||
             throw(ServerError("queue_size must be > 0 when workers > 0"))
         new(Int(poll_timeout_ms), Int(max_body_bytes), Int(drain_timeout_ms),
             Int(request_timeout_ms), Int(ws_max_frame_bytes), Int(ws_idle_timeout_ms),
+            Int(header_timeout_ms), Int(max_connections),
             Int(workers), Int(queue_size))
     end
 end
@@ -134,6 +146,8 @@ mutable struct RunState
     conn_seq::Threads.Atomic{UInt64}     # Connection id sequence (HTTP async + WS)
     connections::Dict{Int,MgConnection}  # Transport-side in-flight (async): id → conn
     streams::Dict{Int,ActiveStream}      # Streaming responses drained by the loop
+    conn_times::Dict{Ptr{Cvoid},Float64} # accept time per open connection (poll thread)
+    awaiting_headers::Dict{Ptr{Cvoid},Float64}  # conns without a complete request yet
     bg_tasks::Vector{Task}
     bg_lock::Threads.SpinLock            # guards bg_tasks (workers push)
 end
@@ -141,7 +155,9 @@ end
 RunState() = RunState(Threads.Atomic{Bool}(false), nothing, Manager(empty=true), nothing,
     Dict{Int,WsConn}(), Dict{Ptr{Cvoid},Int}(), Threads.SpinLock(),
     Threads.Atomic{UInt64}(0), Threads.Atomic{UInt64}(0),
-    Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(), Task[], Threads.SpinLock())
+    Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(),
+    Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(),
+    Task[], Threads.SpinLock())
 
 # --- Background task tracking ---
 # Workers push timed-out request tasks; the event loop prunes completed ones on
@@ -200,6 +216,8 @@ end
     | `request_timeout_ms`   | `0`                | Per-request timeout (0 = disabled)     |
     | `ws_max_frame_bytes`   | `MAX_BODY_BYTES`   | Max WebSocket frame size               |
     | `ws_idle_timeout_ms`   | `0`                | WS idle timeout (0 = disabled)         |
+    | `header_timeout_ms`    | `0`                | Close conns without a complete request |
+    | `max_connections`      | `0`                | Max open connections (0 = unlimited)   |
     | `router`               | `Router()`         | Custom router instance                 |
     | `tls`                  | `nothing`          | `TLSConfig` for HTTPS                  |
 
@@ -246,6 +264,8 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
                  request_timeout_ms::Integer=0,
                  ws_max_frame_bytes::Integer=MAX_BODY_BYTES,
                  ws_idle_timeout_ms::Integer=0,
+                 header_timeout_ms::Integer=0,
+                 max_connections::Integer=0,
                  router::R=Router(),
                  tls::Union{Nothing,TLSConfig}=nothing,
                  errors::Dict{Int,<:Any}=Dict{Int,Union{Response,Function}}(),
@@ -253,7 +273,8 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
 
         cfg = ServerConfig(;
             poll_timeout_ms, max_body_bytes, drain_timeout_ms, request_timeout_ms,
-            ws_max_frame_bytes, ws_idle_timeout_ms, workers, queue_size)
+            ws_max_frame_bytes, ws_idle_timeout_ms, header_timeout_ms, max_connections,
+            workers, queue_size)
 
         errs = Dict{Int,Union{Response,Function}}(k => v for (k, v) in errors)
         for code in keys(errs)

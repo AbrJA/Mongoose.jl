@@ -39,6 +39,8 @@ jobs:
             ${{ runner.os }}-
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
+      - name: Dev package into the test env
+        run: julia --project=test -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
       - name: Acceptance suite (wire-level)
         run: julia --project=test test/acceptance/production.jl
       - name: Quality gates (Aqua + JET baseline)

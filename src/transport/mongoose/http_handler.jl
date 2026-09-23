@@ -6,6 +6,29 @@
     transport/server.
 """
 
+# --- Connection sweeps (poll thread only) ---
+
+"""
+    conn_sweep!(server)
+
+Close connections that connected but never delivered a complete request
+(slowloris defense). Bounded by `header_timeout_ms`; no-op when disabled.
+"""
+function conn_sweep!(server::AbstractServer)
+    server.config.header_timeout_ms <= 0 && return nothing
+    timeout = server.config.header_timeout_ms / 1000.0
+    now = time()
+    stale = Ptr{Cvoid}[]
+    for (c, t) in server.runtime.awaiting_headers
+        (now - t) > timeout && push!(stale, c)
+    end
+    for c in stale
+        delete!(server.runtime.awaiting_headers, c)
+        mg_close_conn(c)
+    end
+    return nothing
+end
+
 # --- Request ID resolution ---
 
 @inline function resolve_request_id(server::AbstractServer,
@@ -68,6 +91,8 @@ end
 
 function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})::Union{Nothing,Request}
     msg = MgHttpMessage(ev_data)
+    # A complete request arrived: it no longer counts against header_timeout.
+    delete!(server.runtime.awaiting_headers, conn)
     method = parse_method(msg.method)
     uri = to_string(msg.uri)
 

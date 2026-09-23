@@ -280,17 +280,20 @@ end
 function _extract_boundary(ct::String)::String
     idx = findfirst("boundary=", ct)
     idx === nothing && return ""
-    start = last(idx) + 1
-    if start <= length(ct) && ct[start] == '"'
+    # `findfirst` gives byte indices; step on character boundaries so a
+    # multibyte Content-Type cannot throw StringIndexError.
+    start = nextind(ct, last(idx))
+    start > ncodeunits(ct) && return ""
+    if ct[start] == '"'
         # Quoted boundary
-        start += 1
-        end_idx = findnext('"', ct, start)
+        s2 = nextind(ct, start)
+        end_idx = findnext('"', ct, s2)
         end_idx === nothing && return ""
-        return ct[start:end_idx-1]
+        return ct[s2:prevind(ct, end_idx)]
     else
         end_idx = findnext(c -> c == ';' || c == ' ', ct, start)
         end_idx === nothing && return ct[start:end]
-        return ct[start:end_idx-1]
+        return ct[start:prevind(ct, end_idx)]
     end
 end
 
@@ -309,8 +312,8 @@ function _parse_multipart(data::AbstractVector{UInt8}, boundary::String)::Dict{S
         header_end === nothing && (header_end = findfirst("\n\n", part))
         header_end === nothing && continue
 
-        headers_str = part[1:first(header_end)-1]
-        body_content = part[last(header_end)+1:end]
+        headers_str = part[1:prevind(part, first(header_end))]
+        body_content = part[nextind(part, last(header_end)):end]
 
         # Remove trailing \r\n from body
         body_content = rstrip(body_content, ['\r', '\n'])

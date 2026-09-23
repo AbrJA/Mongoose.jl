@@ -139,6 +139,8 @@ function init_server!(app::App)
     empty!(app.runtime.streams)
     empty!(app.runtime.ws_clients)
     empty!(app.runtime.ws_gen_ids)
+    empty!(app.runtime.conn_times)
+    empty!(app.runtime.awaiting_headers)
 end
 
 function haspending(app::App)

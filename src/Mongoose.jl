@@ -90,6 +90,7 @@ include("transport/fake.jl")                    # FakeTransport — reference tr
 # ══════════════════════════════════════════════════════════════════════════════
 function __init__()
     init_tty!()
+    atexit(_shutdown_registered!)
 end
 
 # ══════════════════════════════════════════════════════════════════════════════

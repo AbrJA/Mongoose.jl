@@ -2,8 +2,8 @@
 #
 #     julia --project=test test/acceptance/production.jl
 #
-# Not wired into `test/runtests.jl` yet — becoming the last CI gate before the
-# next release. It doubles as the executable version of the README/docs demo.
+# Wired into CI as the wire-level gate (in addition to the main suite).
+# It doubles as the executable version of the README/docs demo.
 
 using Test
 using HTTP
@@ -304,4 +304,35 @@ const CLOSE = ["Connection" => "close"]
     finally
         shutdown!(app)
     end
+end
+@testset "SIGTERM graceful shutdown (child process)" begin
+    Sys.isunix() || return
+    port = fresh_port()
+    script = tempname() * ".jl"
+    write(script, """
+    using Mongoose
+    app = App()
+    get!(app, "/") do req; text("ok") end
+    onstop!(app) do; println("ONSTOP-RAN") end
+    start!(app; port=$port, blocking=true)
+    """)
+    buf = IOBuffer()
+    proc = run(pipeline(`$(Base.julia_cmd()) --project=$(Base.active_project()) $script`;
+                        stdout=buf, stderr=buf); wait=false)
+    ready = wait_until(timeout=90.0) do
+        try
+            HTTP.get("http://127.0.0.1:$port/"; status_exception=false, retry=false).status == 200
+        catch
+            false
+        end
+    end
+    if !ready
+        kill(proc, 9)
+        @test false
+    else
+        kill(proc, 15)          # SIGTERM: must drain and run onstop! hooks
+        wait(proc)
+        @test occursin("ONSTOP-RAN", String(take!(buf)))
+    end
+    rm(script; force=true)
 end

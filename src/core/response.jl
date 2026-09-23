@@ -296,8 +296,10 @@ function _parse_cookie_string(s::String)::Dict{String,String}
         isempty(stripped) && continue
         eq = findfirst('=', stripped)
         eq === nothing && continue
-        k = strip(stripped[1:eq-1])
-        v = strip(stripped[eq+1:end])
+        # `findfirst` returns a byte index; slice on character boundaries so
+        # multibyte cookie values cannot throw StringIndexError.
+        k = strip(stripped[1:prevind(stripped, eq)])
+        v = strip(stripped[nextind(stripped, eq):end])
         result[String(k)] = String(v)
     end
     return result
