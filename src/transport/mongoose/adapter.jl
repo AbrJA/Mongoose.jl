@@ -18,7 +18,7 @@ function adapt_request(msg::MgHttpMessage;
     query_str = to_string(msg.query)
     query = parsequery(query_str)
     headers = parse_headers(msg)
-    body = body_of(msg, headers)
+    body = body_of(msg)
     path = stripquery(uri)
     return Request(method, uri, String(path), query, headers, body, nothing, remote_addr)
 end
@@ -33,21 +33,19 @@ function adapt_request(msg::MgHttpMessage, method::Symbol, uri::String;
     query_str = to_string(msg.query)
     query = parsequery(query_str)
     headers = parse_headers(msg)
-    body = body_of(msg, headers)
+    body = body_of(msg)
     path = String(stripquery(uri))
     return Request(method, uri, path, query, headers, body, nothing, remote_addr)
 end
 
 # --- Request body extraction ---
 
-# RFC 9112 §7.1: the C layer folds complete bodies into msg.body but leaves
-# `Transfer-Encoding: chunked` bodies un-decoded — decode them here so
-# `body(req)`/`form`/`multipart` see real payload bytes.
-@inline function body_of(msg::MgHttpMessage, headers::Headers)::String
-    raw = to_string(msg.body)
-    te = get(headers, "transfer-encoding", "")
-    return occursin("chunked", te) ? decode_chunked(raw) : raw
-end
+# Mongoose strips chunked framing in place before firing `MG_EV_HTTP_MSG`, so
+# `msg.body` already holds the decoded payload (verified against Mongoose 7.21).
+# Do NOT decode again: a second decode is a parser differential (a payload that
+# itself looks chunked would be decoded twice), and the previous call site was
+# an unbound name that made every chunked request hang.
+@inline body_of(msg::MgHttpMessage)::String = to_string(msg.body)
 
 # --- Remote address (peer IP for per-client rate limiting, logs, …) ---
 

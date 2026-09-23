@@ -52,5 +52,35 @@
             @test occursin("127.0.0.1", String(resp.body))
         end
     end
+
+    @testset "Chunked request body (RFC 9112 §7.1)" begin
+        # Regression: the adapter used to re-decode Mongoose's already-decoded
+        # body via an unbound name, so every chunked request hung.
+        s = App()
+        post!(s, "/chunked") do req
+            text("len=$(length(req.body)):$(req.body)")
+        end
+        with_server(s) do port
+            # An IO body with no Content-Length makes HTTP.jl use chunked TE.
+            resp = HTTP.request("POST", "http://127.0.0.1:$port/chunked";
+                body=IOBuffer("hello chunked"), status_exception=false)
+            @test resp.status == 200
+            @test String(resp.body) == "len=13:hello chunked"
+        end
+    end
+
+    @testset "Chunked payload that looks chunked is not double-decoded" begin
+        s = App()
+        post!(s, "/chunked2") do req
+            text(req.body)
+        end
+        with_server(s) do port
+            payload = "5\r\nhello\r\n0\r\n\r\n"
+            resp = HTTP.request("POST", "http://127.0.0.1:$port/chunked2";
+                body=IOBuffer(payload), status_exception=false)
+            @test resp.status == 200
+            @test String(resp.body) == payload
+        end
+    end
 end
 
