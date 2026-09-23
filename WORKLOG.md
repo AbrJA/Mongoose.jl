@@ -437,6 +437,96 @@ dynamic work happens inside returned closures).
 performance checklist (rules, hot-path map, measured baselines, verification
 commands, trim constraint, anti-patterns) for future sessions.
 
+## Optimization plan (Batch 12) — performance-first redesign
+
+Breaking changes are acceptable (0.5 window). Ordering principle: guardrails
+first, then independent hot-path wins, then type-parameterization (which also
+unblocks `juliac --trim`), then simplification. Every task lands with the
+four gates plus before/after numbers in the commit message.
+
+### Phase A — measurement & guardrails (no API change)
+- [ ] **A1** Track a `bench/` script (was deleted with `Performance.yml`):
+  fixed/param × frozen/generic × middleware on/off, printing B/op and ns/op
+  from warm `@allocated`/`@elapsed` loops. Baselines live in the
+  `julia-performance` skill.
+- [ ] **A2** Allocation assertions in the test suite: `@allocated` ceilings for
+  `process` on a frozen fixed route (target ≤ 384 B), frozen param (≤ 720 B),
+  and the middleware tuple path (≤ 1 KB with cors+etag). Fail on regression.
+- [ ] **A3** `@inferred` tests for the hot helpers (`matchroute`, `terminalfor`,
+  `mergeheaders`, `asheaders`, `parse_method`, `statusreason`) and a JET
+  `report_opt` baseline for `process`/`_resolve_terminal`.
+- [ ] **A4** CI job running A1–A3 with generous thresholds (advisory on macOS,
+  blocking on ubuntu).
+
+### Phase B — hot-path wins (localized, mostly internal)
+- [ ] **B1** `parse_method`: byte lookup table for the 7 methods instead of
+  `lowercase(String)+Symbol`. Target: 272 B → ~0 B, ~200 ns → ~20 ns.
+- [ ] **B2** Query laziness: parse query on first `query()`/`req.query` access
+  instead of eagerly in the adapter (`parsequery` costs 1088 B for 2 params).
+  API: keep `query(req, …)`; make the eager `req.query::Dict` field a computed
+  accessor (`querydict(req)`), or memoize into a `Ref`. Target: −1 KB/op on
+  requests that ignore the query.
+- [ ] **B3** Metrics: replace `Dict{String,Int}` + `string(method,"_",status)`
+  with a fixed-size `Matrix{Int}` (methods × status codes) per shard; keep the
+  histogram as-is. Removes one String + dict growth per request and shrinks the
+  locked section.
+- [ ] **B4** Pipeline: remove the per-request `_ChainCursor` + `next` closure;
+  use a callable `Next` struct (subtype of `Function`) over the tuple stack so
+  the onion is allocation-free. Keep the `(req, next)` middleware contract.
+- [ ] **B5** Transport header assembly with one `IOBuffer` per response
+  (`send_http_response!` rid path, `_close_after_raw`, stream head).
+- [ ] **B6** Per-connection caches in the transport: remote-address string
+  (currently formatted per request) and, if cheap, the request-id; cleared on
+  `MG_EV_CLOSE`.
+- [ ] **B7** `start!` auto-`freeze!`s the router when registration is closed
+  implicitly (registration after `start!` already throws), so production gets
+  compiled dispatch without an extra call. Users can still pre-freeze.
+
+### Phase C — type parameterization (also fixes `juliac --trim`)
+- [ ] **C1** `Endpoint{F}` / `WSEndpoint{F}` (concrete handler/callback types);
+  drop `@nospecialize(handler::Function)` and the `::Function` fields.
+- [ ] **C2** Parametric `App{R,E<:AbstractExecutor}` with executor function
+  barriers (`_executor_start(::E, app)`, `dispatch_replies!(app, ::AsyncExecutor)`)
+  and a typed context bundle; remove the abstract `App.context`/`executor`
+  dynamic calls from the per-request path.
+- [ ] **C3** Typed executor jobs: `submit!(exec, job::F) where F`; the sync
+  path specializes; async keeps one boxing point per job but no `Function`
+  signature erasure. Replace `Tagged{Union{…}}` with concrete reply structs if
+  the union boxing shows up in profiles.
+- [ ] **C4** Typed DI: store services on the `Request` (field set by `process`)
+  instead of eagerly allocating `Dict{Symbol,Any}` (304 B/op); `service` reads
+  the field, `withservices` remains the type-stable barrier; `context(req)`
+  becomes user-data-only.
+- [ ] **C5** Tuple middleware as the only pipeline representation: `use!`
+  builds a builder-style chain (or `App(middleware=(…))`); remove the
+  `Vector{AbstractMiddleware}` per-request path and the `PathFilter` wrapper
+  (fold prefix scoping into the tuple entry).
+- [ ] **C6** `@routes`/`StaticRouter{Routes<:Tuple}` for AOT: compile-time
+  route table with concrete handler types, terminals baked at registration;
+  `freeze!` returns the compiled router (or builds `StaticRouter`), removing
+  runtime `apply_type` (`Terminal{typeof(handler)}`, `ParamRoute{P}`). This is
+  the batch-10 enabler; document the dynamic `Router` as the dev path.
+
+### Phase D — simplification & maintenance
+- [ ] **D1** Delete what the redesign makes redundant: generic/compiled
+  duplication (keep one table representation), `Tagged`/`Intent` from the
+  export list, `MethodMap` dynamic `getfield`/`setfield!`, `PathFilter`,
+  `SingleEndpoint` if `Matched` can carry typed endpoints directly.
+- [ ] **D2** Docs: a "Performance & deployment" page (freeze + tuple
+  middleware + sync/async choice + measured numbers), and update the README
+  feature claims with real numbers from A1.
+- [ ] **D3** Update the `julia-performance` skill baselines after each phase;
+  add the new anti-patterns to the list.
+
+### Acceptance targets
+- Frozen fixed route: ≤ 200 B/op, ≤ 400 ns/op (from 384 B / ~850 ns).
+- Frozen param route: ≤ 400 B/op, ≤ 700 ns/op (from 720 B / ~1300 ns).
+- Frozen + cors+etag: ≤ 800 B/op (from 1440 B).
+- `juliac --trim=safe` builds the AOT example and serves requests (from 62
+  verifier errors / startup crash).
+- No non-const globals, no `@nospecialize` on public registration, no
+  `::Function` fields in stored callables.
+
 ## Changelog
 
 - **Sep 17 — SIGTERM mechanism corrected**: the custom C handler added in
