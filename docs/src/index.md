@@ -13,12 +13,17 @@
   typed path parameters (`:id::Int`) as typed tuples, wildcards, route groups;
   `freeze!` compiles a closed route table into statically-typed dispatch
   (the AOT/`--trim=safe` profile)
-- **Full middleware stack** — CORS, rate limiting, auth, logging, metrics, health, security, compression
-- **WebSocket** — same port, frame limits, idle timeout, origin allowlist, upgrade rejection, ping/pong
-- **SSE** — Server-Sent Events with `sse()` / `emit()`
+- **Full middleware stack** — CORS, rate limiting, bearer/API-key/basic auth,
+  access logs, Prometheus metrics (counters, histogram, live gauges), health
+  checks, security headers, gzip, ETag
+- **Real-time** — WebSocket (origin allowlist, idle timeout, server push via
+  `broadcastws`) and Server-Sent Events (`sse` / `emit`) on the same port
 - **Native TLS** — HTTPS via `TLSConfig`
-- **Production-ready** — graceful shutdown (SIGINT/SIGTERM + atexit), backpressure, header timeouts, connection caps, custom + typed errors, DI, background tasks
-- **Testable without FFI** — `FakeTransport` runs the whole pipeline without `Mongoose_jll`
+- **Production-ready** — graceful shutdown (SIGINT/SIGTERM + atexit),
+  backpressure, request/header timeouts, connection caps, custom + typed
+  errors, dependency injection, background tasks
+- **Testable without FFI** — `FakeTransport` runs the whole pipeline without
+  `Mongoose_jll`
 
 ## Installation
 
@@ -56,12 +61,12 @@ Mongoose.jl is layered so each boundary is a replacement point:
 ```
 ┌──────────────────────────────────────────┐
 │  App (config, lifecycle, services)       │
-│    + Router  <: AbstractRouter           │
+│    + Router   <: AbstractRouter          │
 │    + Executor <: AbstractExecutor        │
 ├──────────────────────────────────────────┤
-│  Pipeline (process) & Middleware  │
+│  Pipeline (process) & Middleware         │
 ├──────────────────────────────────────────┤
-│  Kernel (protocol, router, types)  │
+│  Kernel (protocol, router, types)        │
 ├──────────────────────────────────────────┤
 │  Transport (<: AbstractTransport)        │
 │    - C transport (Mongoose FFI)          │
