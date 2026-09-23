@@ -391,6 +391,52 @@ Julia 1.13:
 Status: **not trim-compatible**; README/docs/CHANGELOG claims corrected to
 "foundation / in progress".
 
+### Batch 11 — performance audit & baselines (Sep 23)
+Measured per-op (Julia 1.13, warm, single thread, `@allocated`/`@elapsed`
+loops): `process` frozen fixed **384 B / ~850 ns**; generic fixed 512 B /
+~1600 ns; frozen param 720 B / ~1300 ns; generic param 896 B / ~2200 ns;
+frozen + `cors()`+`etag()` 1440 B / ~1950 ns. Unit costs: `parse_method`
+**272 B**; `parsequery("a=1&b=2")` **1088 B**; `Request(...)` 224 B;
+`context(req)` 304 B; `mergeheaders` 368 B; `formatheaders` 336 B;
+`asheaders(tuple)` 112 B. JET `report_opt` on `process`/`_resolve_terminal`/
+`matchroute`/`runpipeline` found no reports at the analyzed signatures (the
+dynamic work happens inside returned closures).
+
+**Design flaws / missing patterns found.**
+- [ ] P1 `parse_method` builds `lowercase(String)+Symbol` per request (272 B);
+  a byte lookup table for the 7 methods removes it.
+- [ ] P1 `parsequery` + eager `Request.query::Dict` (1088 B for 2 params);
+  lazy/compact query representation would cut per-request cost.
+- [ ] P1 Metrics: `string(method,"_",status)` key + `Dict{String,Int}` under a
+  SpinLock per request; fixed-size `Matrix{Int}` per shard (or atomics)
+  removes the allocation and most lock traffic.
+- [ ] P1 Pipeline: `_ChainCursor` + `next` closure allocated per request;
+  a tuple-specialized recursive walk (`runpipeline(stack::Tuple, i, …)`)
+  would be allocation-free. Tuple stacks are already supported in
+  `RequestContext`, so the fast path exists — use it.
+- [ ] P2 DI: with services registered, `process` eagerly allocates a
+  `Dict{Symbol,Any}` and boxes the NamedTuple per request (304 B); typed DI
+  via handler wrapping at registration is the clean fix (also the trim fix).
+- [ ] P2 `Endpoint.handler::Function`, `WSEndpoint` callbacks, and
+  `Channel{Function}` jobs force dynamic calls; parameterize (`Endpoint{F}`,
+  `WSEndpoint{F}`, typed jobs) — same change needed for trim.
+- [ ] P2 Per-connection values recomputed per request (`remote_addr_of` IP
+  string, request-id string); cache on the connection record.
+- [ ] P2 Header assembly uses `string(...)` chains (`send_http_response!` rid
+  path, `_close_after_raw`); use one `IOBuffer` per response.
+- [ ] P2 Generic parametric matching allocates `Vector{String}` per request;
+  compiled dispatch avoids it — keep steering production users to `freeze!`
+  and add an allocation assertion so it cannot regress.
+- [ ] P3 `@nospecialize(handler::Function)` at registration guarantees a
+  dynamic call on the generic path; documented trade-off, don't add more.
+- [ ] P3 No allocation/benchmark regression gate: no `@allocated` assertions,
+  no tracked bench script, no CI perf job (Performance.yml was deleted as
+  dead). Add a small `bench/` script + thresholds for the frozen/generic paths.
+
+**Deliverable:** `.opencode/skills/julia-performance/SKILL.md` — the working
+performance checklist (rules, hot-path map, measured baselines, verification
+commands, trim constraint, anti-patterns) for future sessions.
+
 ## Changelog
 
 - **Sep 17 — SIGTERM mechanism corrected**: the custom C handler added in
