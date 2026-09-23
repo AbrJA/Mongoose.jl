@@ -56,6 +56,13 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 
 ### Added
 - `BadGatewayError`, `ServiceUnavailableError`, `GatewayTimeoutError`.
+
+### Known limitations
+- **AOT/`juliac --trim` is not supported yet.** `freeze!` and the compiled
+  route table are the foundation, but a real `--trim=safe` build currently
+  fails the verifier (62 unresolved dynamic calls in startup/registration) and
+  a `--trim=unsafe` build crashes constructing a parametric route. The
+  required design work is tracked in `WORKLOG.md`.
 - `mg_close_conn` binding for force-closing idle WebSocket peers.
 
 ## [0.4.0] and earlier

@@ -77,10 +77,12 @@ app = App(; router=router, workers=4)
 start!(app; port=8080)
 ```
 
-Freezing also provides the closed-table guarantee required by AOT builds
-(`juliac --trim=safe`): with no runtime registration, the route table can be
-compiled once and pruned. Call `freeze!` after the last registration and
-before starting the app.
+Freezing also provides the closed-table guarantee AOT builds need: with no
+runtime registration, the route table can be compiled once and pruned. Note
+that `juliac --trim` compatibility is **not complete yet** — the trim
+verifier still finds dynamic dispatch in startup/registration (see
+`WORKLOG.md`, "AOT / trimming readiness"). Call `freeze!` after the last
+registration and before starting the app.
 
 ## Query Parameters
 

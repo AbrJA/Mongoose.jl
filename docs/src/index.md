@@ -12,7 +12,8 @@
 - **Typed routing** — exact `Dict` lookup + ordered parametric patterns,
   typed path parameters (`:id::Int`) as typed tuples, wildcards, route groups;
   `freeze!` compiles a closed route table into statically-typed dispatch
-  (the AOT/`--trim=safe` profile)
+  (the foundation for AOT builds; `juliac --trim` support is still in
+  progress)
 - **Full middleware stack** — CORS, rate limiting, bearer/API-key/basic auth,
   access logs, Prometheus metrics (counters, histogram, live gauges), health
   checks, security headers, gzip, ETag

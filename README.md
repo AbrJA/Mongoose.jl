@@ -107,7 +107,9 @@ mount!(app, api)
 ```
 
 **Compiled dispatch** — register everything, then `freeze!` to close and compile
-the route table (required for AOT/`--trim=safe`; later registration throws):
+the route table (later registration throws). The closed table is the foundation
+for AOT builds; `juliac --trim` compatibility is still in progress (tracked in
+`WORKLOG.md`):
 
 ```julia
 freeze!(app)     # or freeze!(router) before App(router=router)

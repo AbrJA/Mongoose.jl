@@ -344,6 +344,53 @@ Verification tags from the audit: **[live]** reproduced on a running server,
   Cache-Control, streaming request bodies, HTTP/2, permessage-deflate, FFI
   pin/self-check, optional CodecZlib) — unchanged, out of the 0.5 scope.
 
+### Batch 10 — AOT / `juliac --trim` readiness (verified NOT compatible)
+**Verification (Sep 23).** Built a minimal AOT app (`@main`, frozen router;
+text/JSON/parsejson/typed-param/multipart/SSE/WS routes) with JuliaC on
+Julia 1.13:
+- `--trim=safe --experimental`: **fails the trim verifier with 62 unresolved
+  calls**:
+  - 32× runtime `apply_type` of compiled terminals
+    (`Terminal{typeof(handler)}` built from `Endpoint.handler::Function` while
+    scanning the Dict-based route table in `_bake_action`/`_compile_*`).
+  - Executor lifecycle through the abstract `App.executor::AbstractExecutor`
+    field (`start!`/`stop!`/`dispatch_replies!`/`supervise_workers!`).
+  - Middleware normalization/stack: `asmiddleware(mw::Any)`,
+    `attach!(::AbstractMiddleware, server)`, `PathFilter(...)`,
+    `RequestContext(router, Tuple(vector)::Tuple{Vararg{AbstractMiddleware}}, …)`.
+  - Route registration: `ParamRoute{P}(…, (types...,)::Tuple{Vararg{Type}})`,
+    `_compile_param(::ParamRoute)::CompiledParam{P} where P<:Tuple`.
+  - Closure-typed work: `(::Function)()` executor jobs, `convert(Function, …)`
+    for `Dict{Int,Union{Response,Function}}` error handlers,
+    `dispatch_event(::AbstractServer, …)`.
+- `--trim=unsafe`: builds (2.9 MB exe) but **crashes at startup** —
+  `MethodError: no method matching ParamRoute{P,N}(…)`: the parametric
+  constructor was trimmed away because the call is invisible to the trimmer.
+- `examples/aot/server.jl` (local) is stale: it uses removed
+  `@router`/`fail!`/`context!` APIs.
+
+**Design roadmap (leverage order).**
+1. **Static route table (fundamental).** Put the table in a type parameter —
+   `@routes`/`StaticRouter{Routes<:Tuple}` (macro or generated function) where
+   endpoints carry concrete handler types and terminals are baked at
+   registration instead of scanning a `Dict{String,FixedRoute}` at `freeze!`.
+   Removes all 32 Terminal + both ParamRoute errors.
+2. **Parametric `App`** — `App{R,E<:AbstractExecutor,M<:Tuple}` (or executor
+   function barriers) so `executor::E` is concrete.
+3. **Typed middleware stack** — accept a tuple at construction
+   (`App(middleware=(cors(), compress()))`) baked into a type parameter; make
+   `asmiddleware`/`attach!` generic over the concrete type, not
+   `::Any`/`::AbstractMiddleware`.
+4. **Typed jobs** — `submit!(exec, job::F) where F` + a job type instead of
+   `Channel{Function}`; the SyncExecutor inline path then specializes.
+5. **Error handlers** — replace `Dict{Int,Union{Response,Function}}` with a
+   parametric handler type (or accept dynamic dispatch there explicitly).
+6. **CI truth** — an `aot/` example + CI job that runs `juliac --trim=safe`
+   and curls the binary; keep the README AOT claim only while green.
+
+Status: **not trim-compatible**; README/docs/CHANGELOG claims corrected to
+"foundation / in progress".
+
 ## Changelog
 
 - **Sep 17 — SIGTERM mechanism corrected**: the custom C handler added in
