@@ -275,23 +275,34 @@ Verification tags from the audit: **[live]** reproduced on a running server,
   *commit: `c021fa7`*
 
 ### Batch 8 — CI / ops / release
-- [ ] 8.1 CI runs only the main suite, main branch only; acceptance +
-  quality never gated (`CI.yml:2-8,44-45`); `JET.report_package` cannot fail
-  (`quality.jl:14`) → switch to `JET.test_package` and gate both.
-- [ ] 8.2 SIGTERM not handled (only SIGINT) → no drain under
-  Docker/K8s/systemd (`lifecycle.jl:10-14`); add handler + `atexit`.
-- [ ] 8.3 Sync mode default (`workers=0`) freezes on one slow handler;
-  `request_timeout_ms` async-only; sync has no drain.
-- [ ] 8.4 No slowloris defense: header/read timeout, `max_connections`,
-  431/414 paths missing from `ServerConfig`.
-- [ ] 8.5 `max_body_bytes` above the C receive cap unenforceable; verify the
-  cap empirically and validate/clamp config.
-- [ ] 8.6 Metrics: no route label, no gauges (connections, queue, inflight,
-  WS clients, streams); health checks not wired to drain/startup state.
-- [ ] 8.7 Release hygiene: no CHANGELOG, `0.5.0` vs tag `v0.3.1`, no semver
-  policy, GPL-2 decision, dead `Performance.yml` + untracked `perf/`.
-- [ ] 8.8 Coverage measurement/gate; fuzz/property tests for parsers; TLS
-  matrix; doctests.
+- [x] 8.1 CI now triggers on every push/PR and runs the acceptance + quality
+  gates after `Pkg.test`; `quality.jl` fails when JET findings exceed the
+  pinned baseline (36, JSON ignored) instead of printing an unfailable report.
+  *commit: `809fc79`*
+- [x] 8.2 SIGTERM (POSIX) handler flips an atomic flag; the event loops observe
+  it and the loop task runs the graceful path (no self-deadlock); `atexit`
+  shuts down registered servers. Child-process SIGTERM test in acceptance.
+  *commit: `4f96f0b`*
+- [x] 8.3 Sync mode: `request_timeout_ms` is ignored there — `start!` now warns
+  and the App docs state it. Decision: sync stays the default (documented
+  trade-off) rather than silently switching every app to a worker pool.
+  *commit: `4f96f0b`*
+- [x] 8.4 `header_timeout_ms` (sweep closes conns that never complete a
+  request) + `max_connections` (refuse at accept) with tests.
+  *commit: `4f96f0b`*
+- [x] 8.5 Cap verified empirically: 8 MiB round-trips, 10 MiB resets (the
+  audit's 3 MiB guess was wrong). `max_body_bytes`/`ws_max_frame_bytes` above
+  the ceiling are rejected at construction. *commit: `4f96f0b`*
+- [ ] 8.6 Metrics/health integration — DEFERRED to batch 9: route labels and
+  gauges need a middleware→server attach seam (middleware is constructed
+  before `use!`), and health readiness needs the same server reference.
+- [x] 8.7 `CHANGELOG.md` (Keep a Changelog + explicit 0.x breaking policy);
+  deleted the dead `Performance.yml`. Tagging 0.5.0 and the GPL-2 decision are
+  release-owner decisions, left open. *commit: `809fc79`*
+- [~] 8.8 Parser fuzz-ish test shipped (400 random-byte rounds) and it found
+  three real multibyte-indexing crashes (cookie/multipart/boundary) — fixed.
+  Coverage upload, TLS matrix, and doctests remain open (need repo/CI setup).
+  *commit: `4f96f0b`*
 
 ### Batch 9 — design & docs
 - [ ] 9.1 `ep = result.endpoint::Endpoint` breaks custom routers
@@ -322,6 +333,14 @@ Verification tags from the audit: **[live]** reproduced on a running server,
 
 ## Changelog
 
+- **Sep 17 — Batch 8 (CI / ops / release) shipped**: CI gates acceptance +
+  quality on every branch with a failing JET baseline (`809fc79`); SIGTERM +
+  atexit graceful shutdown, `header_timeout_ms`/`max_connections`, verified
+  8 MiB receive ceiling with config validation, sync-timeout warning, and a
+  parser fuzz test that caught three multibyte indexing crashes (`4f96f0b`).
+  3519 tests + 81 acceptance + Aqua/JET baseline + docs green. Remaining:
+  8.6 (metrics/health attach seam) folded into batch 9; coverage/TLS
+  matrix/doctests open.
 - **Sep 17 — Batch 7 (lifecycle & concurrency) shipped** (`c021fa7`):
   locked + pruned `bg_tasks`; bounded `stop!` that drains replies; streams
   counted in drain with a final flush; `Threads.@spawn` producers; WS
