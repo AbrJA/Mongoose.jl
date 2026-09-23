@@ -53,9 +53,9 @@ end
     end
 end
 
-@testset "Custom endpoint type (invoke_endpoint seam)" begin
+@testset "Custom endpoint type (invokeendpoint seam)" begin
     # A router may carry its own endpoint type as long as it implements
-    # `invoke_endpoint` (and optionally `endpoint_middleware`).
+    # `invokeendpoint` (and optionally `endpointmiddleware`).
     struct MyEndpoint
         handler::Function
     end
@@ -64,7 +64,7 @@ end
     end
     MyRouter() = MyRouter(Tuple{String,Symbol,MyEndpoint}[])
 
-    Mongoose.invoke_endpoint(ep::MyEndpoint, req::Request, params) = ep.handler(req)
+    Mongoose.invokeendpoint(ep::MyEndpoint, req::Request, params) = ep.handler(req)
 
     function Mongoose.route!(r::MyRouter, method::Symbol, path::AbstractString,
                              handler::Function; middleware=nothing, metadata=nothing)
@@ -89,11 +89,11 @@ end
         @test String(resp.body) == "custom endpoint"
     end
 
-    # Without invoke_endpoint, dispatch fails loudly rather than type-erroring.
+    # Without invokeendpoint, dispatch fails loudly rather than type-erroring.
     struct BareEndpoint
         handler::Function
     end
-    @test_throws MethodError Mongoose.invoke_endpoint(
+    @test_throws MethodError Mongoose.invokeendpoint(
         BareEndpoint(req -> text("x")),
         Mongoose.Request(:get, "/", Dict{String,String}(), Pair{String,String}[], ""), ())
 end

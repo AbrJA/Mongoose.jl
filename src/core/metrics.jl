@@ -36,14 +36,14 @@ mutable struct _MetricsShard
     )
 end
 
-mutable struct PrometheusMetrics <: AbstractMiddleware
+mutable struct Metrics <: AbstractMiddleware
     shards::Vector{_MetricsShard}
     path::String
     state::Union{Nothing,Function}   # set by `attach!` (server gauges)
 end
 
 @doc """
-    PrometheusMetrics — Prometheus-compatible metrics middleware.
+    Metrics — Prometheus-compatible metrics middleware.
 
     Intercepts every request, records latency and status, and exposes the
     configured `/metrics` endpoint in Prometheus text exposition format.
@@ -51,9 +51,9 @@ end
     Metrics exposed:
     - `http_requests_total{method,status}` — counter
     - `http_request_duration_seconds{le}` — histogram (11 finite buckets)
-""" PrometheusMetrics
+""" Metrics
 
-@inline function _shard(mw::PrometheusMetrics)
+@inline function _shard(mw::Metrics)
     return mw.shards[mod1(hash(objectid(current_task())), _METRICS_SHARDS)]
 end
 
@@ -69,7 +69,7 @@ Return the raw (non-cumulative) histogram bucket index for a given elapsed time 
     return _N_HIST_BUCKETS
 end
 
-function (mw::PrometheusMetrics)(request::Request, next::Function)
+function (mw::Metrics)(request::Request, next::Function)
     if request.method === :get && request.uri == mw.path
         return _renderstats(mw)
     end
@@ -102,7 +102,7 @@ function (mw::PrometheusMetrics)(request::Request, next::Function)
     return response
 end
 
-function _renderstats(mw::PrometheusMetrics)
+function _renderstats(mw::Metrics)
     # --- Aggregate all shards ---
     agg_counts = Dict{String,Int}()
     agg_raw    = zeros(Int, _N_HIST_BUCKETS)
@@ -203,6 +203,14 @@ minimize lock contention under concurrent load.
 |--------|------|--------|
 | `http_requests_total` | counter | `method`, `status` |
 | `http_request_duration_seconds` | histogram | `le` (11 buckets: 5ms–10s) |
+| `mongoose_connections` | gauge | open connections |
+| `mongoose_ws_clients` | gauge | open WebSocket clients |
+| `mongoose_active_streams` | gauge | in-flight streaming responses |
+| `mongoose_executor_inflight` | gauge | jobs currently executing |
+| `mongoose_executor_queue_depth` | gauge | jobs waiting in the executor queue |
+
+Gauges are emitted once the middleware is registered (`use!` attaches the
+server); before that only the counter and histogram are exposed.
 
 # Example
 ```julia
@@ -223,5 +231,5 @@ Prometheus `scrape_configs`:
 """
 function metrics(; path::String="/metrics")
     shards = [_MetricsShard() for _ in 1:_METRICS_SHARDS]
-    return PrometheusMetrics(shards, path, nothing)
+    return Metrics(shards, path, nothing)
 end

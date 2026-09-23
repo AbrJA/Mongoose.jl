@@ -126,27 +126,27 @@ end
 # --- Endpoint invocation protocol (custom-router seam) ---
 
 """
-    invoke_endpoint(endpoint, request, params) → Response
+    invokeendpoint(endpoint, request, params) → Response
 
 Call the matched endpoint's handler with the route parameters. The built-in
 `Endpoint` dispatches `handler(req, params...)` (or `handler(req)` when there
 are none) — that method lives in `process.jl`, after `Endpoint` is defined.
 
 Custom routers that carry their own endpoint type implement this method (and
-[`endpoint_middleware`](@ref)) instead of forcing their endpoints into
+[`endpointmiddleware`](@ref)) instead of forcing their endpoints into
 `Mongoose.Endpoint`.
 """
-function invoke_endpoint(ep, ::Request, params)
-    throw(MethodError(invoke_endpoint, (ep, params)))
+function invokeendpoint(ep, ::Request, params)
+    throw(MethodError(invokeendpoint, (ep, params)))
 end
 
 """
-    endpoint_middleware(endpoint) → Vector{AbstractMiddleware}
+    endpointmiddleware(endpoint) → Vector{AbstractMiddleware}
 
 Scoped middleware owned by a matched endpoint (empty for custom endpoint
-types). Paired with [`invoke_endpoint`](@ref) for custom routers.
+types). Paired with [`invokeendpoint`](@ref) for custom routers.
 """
-endpoint_middleware(ep) = AbstractMiddleware[]
+endpointmiddleware(ep) = AbstractMiddleware[]
 
 # --- Optional capabilities: safe defaults ---
 
@@ -167,7 +167,7 @@ ws!(router::AbstractRouter, path::AbstractString, handler::Function; kwargs...) 
     ws!(router, path; on_message=handler, kwargs...)
 
 """
-    getwsendpoint(router, uri) → Union{Nothing,WsEndpoint}
+    getwsendpoint(router, uri) → Union{Nothing,WSEndpoint}
 
 Resolve the WebSocket endpoint registered for `uri`, or `nothing` when the
 router serves no matching WS route. Defaults to `nothing`.

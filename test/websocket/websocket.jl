@@ -30,7 +30,7 @@
     end
 end
 
-@testset "WebSocket server-initiated push (ws_send_all)" begin
+@testset "WebSocket server-initiated push (broadcastws)" begin
     s = App(workers=2)
     get!(s, "/") do req; text("ok") end
     ws!(s, "/ws/push"; on_message=msg -> Message("reply: $(msg.data)"))
@@ -38,7 +38,7 @@ end
     with_server(s) do port
         HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/push") do ws
             sleep(0.4)                       # let the upgrade register in the loop
-            Mongoose.ws_send_all(s, "/ws/push", "server-push")
+            Mongoose.broadcastws(s, "/ws/push", "server-push")
             @test String(HTTP.WebSockets.receive(ws)) == "server-push"
 
             # In-flight reply interleaving still works after a push.
@@ -55,7 +55,7 @@ end
             ch = Channel{String}(1)
             # Client A stays open while we push to /b only.
             HTTP.WebSockets.open("ws://127.0.0.1:$port/a") do wa
-                Mongoose.ws_send_all(s2, "/b", "to-b")
+                Mongoose.broadcastws(s2, "/b", "to-b")
                 sleep(0.5)
                 # A must NOT have received anything: prove it by round-tripping.
                 HTTP.WebSockets.send(wa, "x")

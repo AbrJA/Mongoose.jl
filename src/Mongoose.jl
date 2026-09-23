@@ -13,7 +13,7 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, isrunning, url, route!, use!, serve!, onerror!, onstart!, onstop!,
     context, Cookie, Headers, setcookie, cookies, form, header,
-    ws!, ws_send_all, Message,
+    ws!, broadcastws, Message,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
     RouteError, ServerError, BindError,
     HTTPError, errorstatus,
@@ -27,7 +27,7 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
     UnavailableForLegalReasonsError, InternalServerError,
     BadGatewayError, ServiceUnavailableError, GatewayTimeoutError,
     TLSConfig,
-    service!, service, services, with_services, background!,
+    service!, service, services, withservices, background!,
     AbstractExecutor, SyncExecutor, AsyncExecutor, submit!, stop!, haspending,
     AbstractTransport, FakeTransport, close!,
     supportsws, supportstls, supportsstream,
@@ -183,7 +183,7 @@ end
         matchroute(frozen, :get, "/fixed")
         matchroute(frozen, :get, "/users/1")
         matchroute(frozen, :get, "/files/a/b")
-        invoke_endpoint(Endpoint(req -> Response(200, Pair{String,String}[], "e")), req, ())
+        invokeendpoint(Endpoint(req -> Response(200, Pair{String,String}[], "e")), req, ())
         frozen_ctx = RequestContext(frozen)
         process(frozen_ctx, req)
         process(frozen_ctx,

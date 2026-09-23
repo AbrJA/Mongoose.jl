@@ -96,12 +96,12 @@ end
 end
 
 
-@testset "services()/with_services type-stable access" begin
+@testset "services()/withservices type-stable access" begin
     s = App(services=(db="pool", retries=3))
     get!(s, "/svcs") do req
         plain = services(req)
         @test plain.db == "pool"
-        out = with_services(req) do svcs
+        out = withservices(req) do svcs
             "$(svcs.db)/$(svcs.retries)"
         end
         text(out)
@@ -113,5 +113,5 @@ end
     # No services registered → empty NamedTuple, never an error.
     r0 = Mongoose.Request(:get, "/", Dict{String,String}(), Pair{String,String}[], "")
     @test services(r0) == NamedTuple()
-    @test with_services(svcs -> svcs, r0) == NamedTuple()
+    @test withservices(svcs -> svcs, r0) == NamedTuple()
 end

@@ -277,7 +277,7 @@ app = App(; router=router, workers=4, ws_idle_timeout_ms=60_000)
 start!(app; port=8080)
 ```
 
-## WebSocket Server Push (`ws_send_all`)
+## WebSocket Server Push (`broadcastws`)
 
 WebSockets can also be *pushed* to: send a frame to every open client of a
 path from any task (background housekeeping, event relays, request handlers).
@@ -299,7 +299,7 @@ ws!(router, "/stock";
 app = App(; router=router, workers=4)
 
 # Broadcast a stock event to everyone currently connected to /stock
-ws_send_all(app, "/stock", JSON.json(Dict("event" => "low", "sku" => "SHOP-MUG-6")))
+broadcastws(app, "/stock", JSON.json(Dict("event" => "low", "sku" => "SHOP-MUG-6")))
 
 start!(app; port=8080)
 ```
@@ -418,7 +418,9 @@ end
 router = Router()
 
 route!(router, :get, "/users/:id::Int", (req, id) -> begin
-    db = service(req, :db)
+    db = withservices(req) do svcs
+        svcs.db                       # concrete type → type-stable
+    end
     name = get(db.users, id, nothing)
     name === nothing && return json(Dict("error" => "not found"); status=404)
     json(Dict("id" => id, "name" => name))
@@ -535,6 +537,8 @@ app = App(;
     request_timeout_ms = 30_000,          # 30s
     drain_timeout_ms   = 10_000,          # 10s graceful shutdown
     ws_idle_timeout_ms = 120_000,         # 2min WS idle
+    header_timeout_ms  = 10_000,          # close conns that stall before a request
+    max_connections    = 10_000,          # refuse beyond this many open conns
 )
 
 # Full middleware stack

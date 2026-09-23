@@ -1,15 +1,15 @@
-struct SecurityHeaders <: AbstractMiddleware
+struct Security <: AbstractMiddleware
     headers::Vector{Pair{String,String}}
 end
 
 @doc """
-    SecurityHeaders — adds standard security headers to all responses.
+    Security — adds standard security headers to all responses.
 
     Protects against common web vulnerabilities (XSS, clickjacking, MIME
     sniffing).
-""" SecurityHeaders
+""" Security
 
-function (mw::SecurityHeaders)(request::Request, next::Function)
+function (mw::Security)(request::Request, next::Function)
     response = next()
     response isa Response || return response
     return mergeheaders(response, mw.headers; prepend=true)
@@ -44,5 +44,5 @@ function security(;
     content_type_options && push!(headers, "X-Content-Type-Options" => "nosniff")
     referrer_policy !== nothing && push!(headers, "Referrer-Policy" => referrer_policy)
     csp !== nothing && push!(headers, "Content-Security-Policy" => csp)
-    return SecurityHeaders(headers)
+    return Security(headers)
 end

@@ -49,7 +49,7 @@ end
 
     `App(services=(db=pool, ...))` stores its services here; `service!` mutates
     `deps` in place (a cold, pre-start operation). Handlers access services with
-    `service(req, Val(:db))` for convenient retrieval, or `with_services(req) do svcs … end` for type-stable access.
+    `service(req, Val(:db))` for convenient retrieval, or `withservices(req) do svcs … end` for type-stable access.
 """
 mutable struct ServiceRegistry
     deps::NamedTuple
@@ -140,7 +140,7 @@ mutable struct RunState
     url::Union{Nothing,String}
     manager::Manager
     tls::Union{Nothing,TLSConfig}
-    ws_clients::Dict{Int,WsConn}
+    ws_clients::Dict{Int,WSConn}
     ws_gen_ids::Dict{Ptr{Cvoid},Int}     # connection pointer → generation id (WS)
     ws_lock::Threads.SpinLock     # guards ws_clients/ws_gen_ids
     id_seq::Threads.Atomic{UInt64}       # X-Request-Id sequence
@@ -154,7 +154,7 @@ mutable struct RunState
 end
 
 RunState() = RunState(Threads.Atomic{Bool}(false), nothing, nothing, Manager(empty=true), nothing,
-    Dict{Int,WsConn}(), Dict{Ptr{Cvoid},Int}(), Threads.SpinLock(),
+    Dict{Int,WSConn}(), Dict{Ptr{Cvoid},Int}(), Threads.SpinLock(),
     Threads.Atomic{UInt64}(0), Threads.Atomic{UInt64}(0),
     Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(),
     Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(),
@@ -436,13 +436,13 @@ Retrieve a service by name from the request context.
   through the dynamic request context — the return type is inferred `Any`.
 - `service(req, :db, DBPool)` asserts the type and throws otherwise.
 
-For **type-stable** access in hot paths use [`with_services`](@ref), whose
+For **type-stable** access in hot paths use [`withservices`](@ref), whose
 closure receives the concrete `NamedTuple`:
 
 # Example
 ```julia
 app = App(services=(db=pool, cache=redis))
-with_services(req) do svcs
+withservices(req) do svcs
     svcs.db            # concrete: DBPool
 end
 db = service(req, Val(:db))   # convenient, dynamically typed
@@ -479,7 +479,7 @@ end
     services(req) → NamedTuple
 
 The request's DI services as a NamedTuple (empty when none were registered).
-Dynamically typed at this boundary; use [`with_services`](@ref) for
+Dynamically typed at this boundary; use [`withservices`](@ref) for
 type-stable access.
 """
 function services(req::Request)
@@ -490,7 +490,7 @@ function services(req::Request)
 end
 
 """
-    with_services(f, req) → f(services(req))
+    withservices(f, req) → f(services(req))
 
 Function-barrier access to DI services: the closure receives the concrete
 NamedTuple, so field access inside it specializes — unlike
@@ -498,12 +498,12 @@ NamedTuple, so field access inside it specializes — unlike
 
 # Example
 ```julia
-with_services(req) do svcs
+withservices(req) do svcs
     svcs.db.query("select 1")
 end
 ```
 """
-@inline with_services(f::F, req::Request) where {F} = f(services(req))
+@inline withservices(f::F, req::Request) where {F} = f(services(req))
 
 """
     background!(app, f)
@@ -576,7 +576,7 @@ use!(f::Function, server::AbstractServer; paths=nothing) =
     use!(server, f; paths=paths)
 
 # Metrics gauges: capture the server so `/metrics` can report live counts.
-function attach!(mw::PrometheusMetrics, server::AbstractServer)
+function attach!(mw::Metrics, server::AbstractServer)
     exec = server.executor
     mw.state = () -> (
         connections = length(server.runtime.conn_times),

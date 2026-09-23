@@ -26,11 +26,11 @@
 | **Architecture** | Modular: `Router`, `Executor`, and `Transport` are replaceable components behind small protocols — plus a transport-agnostic core (`Mongoose.Kernel`) with **no FFI dependencies**, loadable and testable without the C library. Sync (`workers=0`) or bounded async worker pool. Backpressure and per-request timeouts. |
 | **HTTPS/TLS** | Native TLS via `TLSConfig` — cert, key, CA as files, PEM strings, or raw bytes. |
 | **Routing** | Exact-match `Dict` + ordered parametric patterns. Typed path parameters (`:id::Int`) delivered as typed tuples. Wildcards (`*path`). Route groups with scoped middleware as metadata. `freeze!` closes and compiles the route table for statically-typed dispatch (AOT/`--trim=safe` profile). |
-| **WebSocket** | Same port as HTTP. Frame size limits. Idle timeout. Origin allowlist. Upgrade rejection. Ping/pong (RFC 6455). Server-initiated push to open clients (`ws_send_all`). |
+| **WebSocket** | Same port as HTTP. Frame size limits. Idle timeout. Origin allowlist. Upgrade rejection. Ping/pong (RFC 6455). Server-initiated push to open clients (`broadcastws`). |
 | **Middleware** | CORS, rate limiting, bearer/API key auth, structured logging, Prometheus metrics, health checks, security headers, GZip compression. Plain closures work as middleware. |
 | **JSON** | Built-in JSON via JSON. `parsejson(req)` for parsing, `json(...)` for responses. Struct validation with `validate(req, T)`. |
-| **Testing** | `FakeTransport` (aka `FakeTransport`) runs the whole pipeline with **no server and no FFI**. |
-| **Production** | Graceful shutdown with drain. 503 backpressure on overload. Custom *and* typed exception handlers. Background tasks. Dependency injection. |
+| **Testing** | `FakeTransport` runs the whole pipeline with **no server and no FFI**. |
+| **Production** | Graceful shutdown with drain on SIGINT **and SIGTERM**, plus `atexit`. 503 backpressure on overload. Header timeouts and connection caps. Custom *and* typed exception handlers. Background tasks. Dependency injection. |
 
 ---
 
@@ -277,16 +277,26 @@ app = App(;
 
 ### Naming conventions
 
-- **Types** are `TitleCase`; acronyms stay all-caps (`HTTPError`, `TLSConfig`).
-  Content formats are the exception (`Html`, `Json`, `Xml`, `Js`, `Css`).
-- **Functions** are lowercase compounds without underscores (`parsequery`,
-  `formatheaders`, `mergeheaders`, `getwsendpoint`).
+- **Types** are `TitleCase`; acronyms stay all-caps (`HTTPError`, `TLSConfig`,
+  `SSEWriter`, `WSConn`, `WSEndpoint`). Content-format markers are the one
+  exception (`Html`, `Json`, `Xml`, `Js`, `Css`) because they read as words.
+- **Functions** are lowercase compounds with **no underscores** (`parsequery`,
+  `formatheaders`, `mergeheaders`, `getwsendpoint`, `invokeendpoint`,
+  `broadcastws`, `withservices`).
+- **Middleware builders** are the lowercase name of the type they return:
+  `cors()` → `Cors`, `metrics()` → `Metrics`, `security()` → `Security`,
+  `compress()` → `Compress`, `etag()` → `Etag`.
 - **Mutators** end in `!` (`route!`, `use!`, `shutdown!`, `freeze!`).
-- **Predicates** are `is*`/`has*` (`isfrozen`, `hasroute`, `haspending`).
+- **Predicates** are `is*`/`has*` (`isfrozen`, `isrunning`, `hasroute`,
+  `haspending`).
 - **Teardown verbs by scope**: server `start!`/`shutdown!`; executor
   `start!`/`stop!`; transport/streams `close!`.
 - **Capabilities** are traits: `supportsws`/`supportstls`/`supportsstream`
   on transports, `haswsroutes`/`getwsendpoint` on routers.
+- **`get!`/`put!`/`delete!`** are `Base` methods Mongoose extends (the other
+  HTTP verbs are Mongoose exports) — see the API reference.
+- Documented spec-name exceptions: `Cookie(; max_age=…)` mirrors the
+  `Set-Cookie` attribute, and FFI structs keep their `Mg*` prefix.
 
 ### Unit conventions
 
@@ -446,7 +456,7 @@ ws!(app, "/chat";
 | `on_message` | `(msg) → Message \| nothing` | Called per frame. Return `nothing` for no reply. |
 | `on_close` | `() → Any` | Connection already gone. Optional. |
 
-#### Server-initiated push (`ws_send_all`)
+#### Server-initiated push (`broadcastws`)
 
 Send a frame to every open client of a path — from any task — via the same
 thread-safe reply queue the worker pool uses:
@@ -455,7 +465,7 @@ thread-safe reply queue the worker pool uses:
 ws!(app, "/stock"; on_message = msg -> Message("pong"))
 
 # broadcast to everyone currently connected to /stock (async executors)
-ws_send_all(app, "/stock", JSON.json(Dict("event" => "low", "sku" => "SHOP-MUG-6")))
+broadcastws(app, "/stock", JSON.json(Dict("event" => "low", "sku" => "SHOP-MUG-6")))
 ```
 
 Frames are sent on the poll/callback thread, so this is safe to call from
@@ -496,16 +506,19 @@ app = App(; router=router, workers=4, services=(db=connect_to_database(), cache=
 # Or incrementally:
 service!(app, :db, connect_to_database())
 
-# Access in handlers — the Val form is type-stable:
+# Type-stable access: the closure receives the concrete NamedTuple.
 get!(app, "/users") do req
-    db = service(req, Val(:db))     # type-stable: DBPool
-    users = fetch_users(db)
+    users = withservices(req) do svcs
+        fetch_users(svcs.db)        # svcs.db :: DBPool
+    end
     json(users)
 end
 
-# Symbol lookup (any) and checked lookup:
+# Convenient lookups (dynamically typed — they read through the request context):
 service(req, :db)                   # → Any
-service(req, :db, DBPool)            # → DBPool or throws
+service(req, Val(:db))              # → Any (no name re-parse)
+service(req, :db, DBPool)           # → DBPool or throws
+services(req)                       # → the whole NamedTuple
 ```
 
 ---

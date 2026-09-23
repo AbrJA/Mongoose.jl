@@ -17,7 +17,7 @@
 - **WebSocket** — same port, frame limits, idle timeout, origin allowlist, upgrade rejection, ping/pong
 - **SSE** — Server-Sent Events with `sse()` / `emit()`
 - **Native TLS** — HTTPS via `TLSConfig`
-- **Production-ready** — graceful shutdown, backpressure, custom + typed errors, DI, background tasks
+- **Production-ready** — graceful shutdown (SIGINT/SIGTERM + atexit), backpressure, header timeouts, connection caps, custom + typed errors, DI, background tasks
 - **Testable without FFI** — `FakeTransport` runs the whole pipeline without `Mongoose_jll`
 
 ## Installation

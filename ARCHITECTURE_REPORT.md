@@ -122,7 +122,7 @@ app = Mongoose.app() do builder
         with_router(Router()) |>
         with_workers(4) |>
         with_middleware([cors(), logger()]) |>
-        with_services(db=connect_db()) |>
+        withservices(db=connect_db()) |>
         with_tls(TLSConfig(...))
 end
 ```
@@ -139,7 +139,7 @@ struct HttpHandler <: AbstractHandler
 end
 
 struct WsHandler <: AbstractHandler
-    endpoints::Dict{String,WsEndpoint}
+    endpoints::Dict{String,WSEndpoint}
 end
 ```
 

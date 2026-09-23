@@ -57,7 +57,7 @@ Whether the server serves any WebSocket endpoints. See [`haswsroutes`](@ref).
 haswsroutes(server::AbstractServer) = haswsroutes(server.router)
 
 """
-    getwsendpoint(server, uri) → Union{Nothing,WsEndpoint}
+    getwsendpoint(server, uri) → Union{Nothing,WSEndpoint}
 
 Resolve the WebSocket endpoint for `uri`, or `nothing`. See
 [`getwsendpoint`](@ref).

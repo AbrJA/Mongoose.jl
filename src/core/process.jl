@@ -101,9 +101,9 @@ end
 
 # Built-in endpoint methods for the invocation protocol (defined here because
 # `Endpoint` lives in router.jl, included after interface.jl).
-@inline invoke_endpoint(ep::Endpoint, request::Request, params) =
+@inline invokeendpoint(ep::Endpoint, request::Request, params) =
     isempty(params) ? ep.handler(request) : ep.handler(request, params...)
-@inline endpoint_middleware(ep::Endpoint) = ep.middleware
+@inline endpointmiddleware(ep::Endpoint) = ep.middleware
 
 @inline function _method_not_allowed(mask::UInt8)
     return Response(Plain, "405 Method Not Allowed"; status=405,
@@ -135,7 +135,7 @@ function _resolve_terminal(router::AbstractRouter, request::Request)
 
     ep = result.endpoint
     params = result.params
-    return ((r) -> invoke_endpoint(ep, r, params)), endpoint_middleware(ep)
+    return ((r) -> invokeendpoint(ep, r, params)), endpointmiddleware(ep)
 end
 
 # Built-in mapping for status-carrying exceptions: a custom error page for that

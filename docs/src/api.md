@@ -65,8 +65,8 @@ head!
 process
 RequestContext
 terminalfor
-invoke_endpoint
-endpoint_middleware
+invokeendpoint
+endpointmiddleware
 errorresponse
 runpipeline
 asmiddleware
@@ -111,7 +111,7 @@ form
 header
 service
 services
-with_services
+withservices
 ```
 
 ## URI & String Utilities
@@ -144,8 +144,8 @@ AbstractMiddleware
 FunctionMiddleware
 Logger
 Health
-PrometheusMetrics
-SecurityHeaders
+Metrics
+Security
 Etag
 Cors
 Bearer
@@ -167,7 +167,7 @@ sse
 
 ```@docs
 Message
-ws_send_all
+broadcastws
 ```
 
 ## Lifecycle

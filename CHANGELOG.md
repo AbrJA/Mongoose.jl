@@ -37,6 +37,12 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - `Logger` access-logs throwing handlers as 500 and writes each line atomically.
 
 ### Changed
+- Public-name standardization: `ws_send_all` → `broadcastws`,
+  `with_services` → `withservices`, `invoke_endpoint` → `invokeendpoint`,
+  `endpoint_middleware` → `endpointmiddleware` (no underscores anywhere on
+  the public surface); `WsConn`/`WsEndpoint` → `WSConn`/`WSEndpoint` (acronym
+  casing); `PrometheusMetrics`/`SecurityHeaders` → `Metrics`/`Security` so
+  every middleware builder is the lowercase name of its type.
 - Naming/ergonomics normalization (0.5 window): unit-suffixed kwargs
   (`*_ms`/`*_seconds`/`*_bytes`), `cors(allow_methods=, allow_headers=,
   max_age_seconds=)`, `security()` disabled with `nothing`, app-first

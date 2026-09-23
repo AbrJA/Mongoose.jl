@@ -156,11 +156,11 @@ abstract type AbstractCompiledDispatch end
 mutable struct Router <: AbstractRouter
     fixed::Dict{String,FixedRoute}
     param_routes::Vector{ParamRoute}
-    ws_routes::Dict{String,WsEndpoint}
+    ws_routes::Dict{String,WSEndpoint}
     frozen::Bool
     compiled::Union{Nothing,AbstractCompiledDispatch}
     Router() = new(Dict{String,FixedRoute}(), ParamRoute[],
-                   Dict{String,WsEndpoint}(), false, nothing)
+                   Dict{String,WSEndpoint}(), false, nothing)
 end
 
 """
@@ -483,7 +483,7 @@ function ws!(router::Router, path::AbstractString;
              on_close::Union{Function,Nothing}=nothing,
              allowed_origins=nothing)
     router.frozen && throw(RouteError("router is frozen: registration is closed"))
-    router.ws_routes[String(path)] = WsEndpoint(on_message=on_message, on_open=on_open,
+    router.ws_routes[String(path)] = WSEndpoint(on_message=on_message, on_open=on_open,
         on_close=on_close, allowed_origins=asstrings(allowed_origins))
     return router
 end

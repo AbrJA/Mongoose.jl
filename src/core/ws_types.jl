@@ -1,14 +1,14 @@
 """
-    WebSocket types — loaded early (before Router) since Router references WsEndpoint.
+    WebSocket types — loaded early (before Router) since Router references WSEndpoint.
 """
 
 # --- Connection tracking ---
 
-mutable struct WsConn
+mutable struct WSConn
     const uri::String
     last_active::Float64
     closing::Bool
-    WsConn(uri::String, t::Float64=time(), closing::Bool=false) = new(uri, t, closing)
+    WSConn(uri::String, t::Float64=time(), closing::Bool=false) = new(uri, t, closing)
 end
 
 # --- Message ---
@@ -33,17 +33,17 @@ end
 
 # --- WebSocket endpoint ---
 
-struct WsEndpoint
+struct WSEndpoint
     on_message::Function
     on_open::Union{Function,Nothing}
     on_close::Union{Function,Nothing}
     allowed_origins::Vector{String}   # empty = allow any Origin
 end
 
-function WsEndpoint(; on_message::Function, on_open::Union{Function,Nothing}=nothing,
+function WSEndpoint(; on_message::Function, on_open::Union{Function,Nothing}=nothing,
                     on_close::Union{Function,Nothing}=nothing,
                     allowed_origins=nothing)
-    return WsEndpoint(on_message, on_open, on_close, asstrings(allowed_origins))
+    return WSEndpoint(on_message, on_open, on_close, asstrings(allowed_origins))
 end
 
 # --- Internal tagged message wrapper (used by async worker pool) ---

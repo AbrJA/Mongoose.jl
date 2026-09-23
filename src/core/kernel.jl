@@ -26,7 +26,7 @@ include("status.jl")        # statusreason
 include("request.jl")       # Request, Headers, form/multipart/query helpers
 include("response.jl")      # Response, StreamResponse, Cookie
 include("errors.jl")        # RouteError/ServerError/BindError, HTTPError hierarchy
-include("ws_types.jl")      # Message, Intent, WsEndpoint, Tagged, WsConn
+include("ws_types.jl")      # Message, Intent, WSEndpoint, Tagged, WSConn
 include("validation.jl")    # validate(), ValidationError
 
 include("pipeline.jl")      # AbstractMiddleware, asmiddleware, runpipeline
@@ -67,18 +67,18 @@ export AbstractRequest, Request, Headers, asheaders, mergeheaders, context, form
     UnavailableForLegalReasonsError, InternalServerError,
     BadGatewayError, ServiceUnavailableError, GatewayTimeoutError,
     validate, ValidationError,
-    Message, Intent, WsEndpoint, WsConn, Tagged,
+    Message, Intent, WSEndpoint, WSConn, Tagged,
     AbstractRouter, Router, MethodMap, RouteResult, Matched, NoMatch, NotAllowed,
     SingleEndpoint, matchroute, hasroute,
     gethandler, getendpoint, sethandler!, haswsroutes, getwsendpoint,
     route!, ws!, group, group!, RouteGroup, mount!, post!, patch!, options!, head!,
     Endpoint, errorresponse, process, RequestContext, freeze!, isfrozen, terminalfor,
-    invoke_endpoint, endpoint_middleware,
+    invokeendpoint, endpointmiddleware,
     AbstractMiddleware, PathFilter, runpipeline, FunctionMiddleware, asmiddleware, asmiddlewares, attach!,
     AbstractExecutor, SyncExecutor, FakeExecutor, run!, submit!, start!, stop!,
     AbstractTransport, supportsws, supportstls, supportsstream,
     Cors, Bearer, ApiKey, BasicAuth, RateLimit, Compress, Logger, Health,
-    PrometheusMetrics, SecurityHeaders, Etag,
+    Metrics, Security, Etag,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
     parsequery, stripquery, formatheaders, urldecode, asstrings,
     SSEWriter, emit, sse

@@ -32,7 +32,7 @@ end
 @inline function ws_register!(server::AbstractServer, uri::String, conn::MgConnection)
     id = Int(Threads.atomic_add!(server.runtime.conn_seq, UInt64(1)) + UInt64(1))
     lock(server.runtime.ws_lock) do
-        server.runtime.ws_clients[id] = WsConn(uri, time(), false)
+        server.runtime.ws_clients[id] = WSConn(uri, time(), false)
         server.runtime.ws_gen_ids[conn] = id
     end
     # Track the connection so idle sweeps can send close frames in sync mode
@@ -210,7 +210,7 @@ function ws_idle_sweep!(server::AbstractServer)
 end
 
 """
-    ws_send_all(server, path, data)
+    broadcastws(server, path, data)
 
 Server-initiated WebSocket push: enqueue a text frame for every open client of
 `path` (async executors only — the frame is routed through the same reply
@@ -218,7 +218,7 @@ queue the worker pool uses, so it is sent on the poll/callback thread and is
 safe to call from any task). Idle/closed clients are skipped naturally: a stale
 conn id is dropped when drained.
 """
-function ws_send_all(server::AbstractServer, path::AbstractString, data::AbstractString)
+function broadcastws(server::AbstractServer, path::AbstractString, data::AbstractString)
     exec = server.executor
     exec isa AsyncExecutor || return nothing
     isopen(exec.replies) || return nothing
@@ -246,7 +246,7 @@ tag_ws(id, res::String)         = tag_ws(id, Message(res))
 tag_ws(id, res::Vector{UInt8})  = tag_ws(id, Message(res))
 tag_ws(id, ::Nothing)           = nothing
 
-function call_ws_endpoint(endpoint::WsEndpoint, request::Tagged{Intent})
+function call_ws_endpoint(endpoint::WSEndpoint, request::Tagged{Intent})
     try
         res = endpoint.on_message(request.payload.body)
         return tag_ws(request.id, res)
