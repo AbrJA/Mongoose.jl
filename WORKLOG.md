@@ -213,8 +213,108 @@ ETag/conditional requests~~ **shipped** · OpenAPI-from-metadata · sessions/CSR
 · HTTP/2 decision · docs build item done (keep building at each API change) ·
 1.0.
 
+## Audit (Sep 17) — deep review findings & batch plan
+
+Four parallel audits (concurrency/lifecycle, HTTP+WS protocol/security,
+API/design, prod-readiness) plus live verification probes. Status:
+`[ ]` pending · `[~]` in progress · `[x]` shipped (commit hash).
+Verification tags from the audit: **[live]** reproduced on a running server,
+**[code]** verified by reading, **[rep]** reported.
+
+### Batch 6 — P0 + P1 hotfix (start here)
+- [ ] **6.1 [live] P0: chunked requests hang.** `adapter.jl:49` calls bare
+  `decode_chunked` (Kernel-only, unexported) → `UndefVarError`, no response;
+  the decode is also a double-decode (Mongoose already de-chunks `hm.body`)
+  and the decoder is overflow-unsafe on hostile chunk sizes. Fix: drop the
+  adapter branch (trust `hm.body`), wire test with an IO body.
+- [ ] **6.2 [live] CORS intercepts every OPTIONS** and 403s when `Origin` is
+  absent (`cors.jl:46-66`). Fix: preflight only when `Origin` +
+  `Access-Control-Request-Method` are both present; always `Vary: Origin`.
+- [ ] **6.3 [live] `Connection: Close` echo is case-sensitive**
+  (`http_handler.jl:31`); Mongoose closes anyway → pooling client hangs.
+- [ ] **6.4 [live] `SameSite=None` is dropped** (`response.jl:252`); no CRLF
+  validation on cookie fields or `redirect` Location (response splitting).
+- [ ] **6.5 [code] WS idle timeout compares ms to seconds** → ~1000× late;
+  sweep never force-closes (`ws_handler.jl:158-174`). Fix unit, mark closing,
+  add `mg_close_conn` binding for unresponsive peers.
+- [ ] **6.6 [code] WS upgrade runs `on_open`/registers before the handshake
+  check** (`ws_handler.jl:51-66`) → phantom client after a 426.
+- [ ] **6.7 [live] `ws_send_all` documented/used unqualified but not
+  exported** from the facade.
+- [ ] **6.8 [code] Malformed JSON/form/multipart become 500** instead of
+  400/415 (`response.jl:137`, `request.jl:164,268`, `process.jl:212-219`).
+- [ ] **6.9 [code] `PathFilter` prefix matching is not segment-aware**
+  (`/api` matches `/apixyz`, `pipeline.jl:37-43`).
+- [ ] **6.10 [code] Logger misses 500s** (`next()` outside try) and writes
+  multi-arg lines from worker threads (`logger.jl:62-82`).
+
+### Batch 7 — lifecycle & concurrency
+- [ ] 7.1 `runtime.bg_tasks` pushed from workers without a lock + unbounded
+  growth until shutdown (`http_handler.jl:166-170`).
+- [ ] 7.2 `stop!(AsyncExecutor)` can deadlock (worker blocked in
+  `put!(replies)`, or handler that never returns) (`async.jl:53-61`).
+- [ ] 7.3 `haspending` ignores `runtime.streams` → SSE truncated at shutdown;
+  sync mode never drains (`async.jl:121`, `lifecycle.jl:124-131,152`).
+- [ ] 7.4 Stream producers run on the poll thread (`@async`,
+  `connection.jl:154`) → CPU-bound producer blocks `mg_mgr_poll`.
+- [ ] 7.5 WS replies keyed by raw connection pointer → cross-client delivery
+  after malloc reuse (`ws_handler.jl:66,112`, `async.jl:134-149`); use a
+  monotonic connection generation id.
+- [ ] 7.6 Worker exception outside the handler try loses the reply and leaks
+  the `connections` entry; `supervise_workers!` races `stop!`
+  (`async.jl:82-97,101-109`).
+- [ ] 7.7 `decode_chunked` overflow guards (`strings.jl:146,149`) if kept.
+
+### Batch 8 — CI / ops / release
+- [ ] 8.1 CI runs only the main suite, main branch only; acceptance +
+  quality never gated (`CI.yml:2-8,44-45`); `JET.report_package` cannot fail
+  (`quality.jl:14`) → switch to `JET.test_package` and gate both.
+- [ ] 8.2 SIGTERM not handled (only SIGINT) → no drain under
+  Docker/K8s/systemd (`lifecycle.jl:10-14`); add handler + `atexit`.
+- [ ] 8.3 Sync mode default (`workers=0`) freezes on one slow handler;
+  `request_timeout_ms` async-only; sync has no drain.
+- [ ] 8.4 No slowloris defense: header/read timeout, `max_connections`,
+  431/414 paths missing from `ServerConfig`.
+- [ ] 8.5 `max_body_bytes` above the C receive cap unenforceable; verify the
+  cap empirically and validate/clamp config.
+- [ ] 8.6 Metrics: no route label, no gauges (connections, queue, inflight,
+  WS clients, streams); health checks not wired to drain/startup state.
+- [ ] 8.7 Release hygiene: no CHANGELOG, `0.5.0` vs tag `v0.3.1`, no semver
+  policy, GPL-2 decision, dead `Performance.yml` + untracked `perf/`.
+- [ ] 8.8 Coverage measurement/gate; fuzz/property tests for parsers; TLS
+  matrix; doctests.
+
+### Batch 9 — design & docs
+- [ ] 9.1 `ep = result.endpoint::Endpoint` breaks custom routers
+  (`process.jl:133`); add an endpoint-invocation protocol.
+- [ ] 9.2 `service(req, Val(:x))` infers `Any` despite the "type-stable"
+  docs (`process.jl:188-190`, `server/core.jl:397-405`); fix typing or docs.
+- [ ] 9.3 Abstract `App.context`/`App.executor` fields → per-request dynamic
+  dispatch; parameterize or store an `invoke` closure.
+- [ ] 9.4 Parameterize hot middleware/stream structs (`PathFilter{M}`,
+  `Bearer{F}`, `RateLimit{F}`, `Logger{O}`, `SSEWriter{W}`).
+- [ ] 9.5 `Headers` API: silent `getindex`, no `delete!`/`setindex!`.
+- [ ] 9.6 `Response(status, body)` emits no Content-Type while `text()` does;
+  fold `StreamResponse.content_type` into headers.
+- [ ] 9.7 `Request` positional constructor soup → keyword constructor.
+- [ ] 9.8 Base `get!/put!/delete!` hijacked for registration (undocumented;
+  blocks future route removal) → decide rename (`del!`) or document.
+- [ ] 9.9 Docs drift: `compiled.jl` auto-HEAD comment, README
+  "(aka FakeTransport)", DESIGN.md stale names, test names `bake`.
+- [ ] 9.10 Export hygiene: `Tagged`/`Intent`/`PathFilter`/`MethodMap`/
+  `sethandler!` internals; add `isrunning(app)`/`url(app)`.
+- [ ] 9.11 Acronym casing policy (`HTTPError` vs `Html`/`Json`); stop-verb
+  table in the manual; capability-trait vocabulary vs `haswsroutes`.
+- [ ] 9.12 `use!`/group scoping unification; decode path once at the adapter
+  boundary (encoded-prefix bypass).
+- [ ] 9.13 Post-1.0 features: proxy headers, sessions/CSRF, OpenAPI,
+  static Cache-Control, streaming request bodies, HTTP/2 decision,
+  permessage-deflate, FFI layout pin/self-check, optional CodecZlib.
+
 ## Changelog
 
+- **Sep 17 — Audit (deep review) delivered**; findings + batches 6–9 recorded
+  above. Batch 6 (P0 + P1 hotfix) starts next.
 - **Sep 17 — Batch 5 (surface coherence) shipped**: the read-side router
   protocol now lives on the server too — `freeze!(app)`, `isfrozen(app)`,
   `length(app)`, `matchroute(app, …)`, `hasroute(app, path)`,
