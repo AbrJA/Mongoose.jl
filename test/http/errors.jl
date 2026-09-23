@@ -30,6 +30,32 @@
         end
     end
 
+    @testset "Malformed bodies map to 400/415" begin
+        s = App()
+        post!(s, "/j") do req; json(parsejson(req)) end
+        post!(s, "/f") do req; form(req); text("form ok") end
+        post!(s, "/m") do req; multipart(req); text("multipart ok") end
+
+        with_server(s) do port
+            # Invalid JSON → 400 (was 500).
+            r = HTTP.post("http://127.0.0.1:$port/j";
+                body="not json{", headers=["Content-Type" => "application/json"],
+                status_exception=false, retry=false)
+            @test r.status == 400
+
+            # Wrong Content-Type for form()/multipart() → 415 (was 500).
+            r2 = HTTP.post("http://127.0.0.1:$port/f";
+                body="a=1", headers=["Content-Type" => "application/json"],
+                status_exception=false, retry=false)
+            @test r2.status == 415
+
+            r3 = HTTP.post("http://127.0.0.1:$port/m";
+                body="x", headers=["Content-Type" => "application/json"],
+                status_exception=false, retry=false)
+            @test r3.status == 415
+        end
+    end
+
     @testset "Custom error handler via onerror!" begin
         s = App()
         get!(s, "/") do req; text("ok") end

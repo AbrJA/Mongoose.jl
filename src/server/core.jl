@@ -464,7 +464,8 @@ use!(app, (req, next) -> (req.headers ...; next()))
 function use!(server::AbstractServer, @nospecialize(mw); paths=nothing)
     _ensure_registratable(server, "middleware")
     inner = asmiddleware(mw)
-    prefixes = asstrings(paths)
+    prefixes = String[rstrip(p, '/') for p in asstrings(paths)]
+    filter!(!isempty, prefixes)
     wrapped = isempty(prefixes) ? inner : PathFilter(inner, prefixes)
     push!(server.middlewares, wrapped)
     # Refresh the seam's baked tuple stack (registration is build-phase only).

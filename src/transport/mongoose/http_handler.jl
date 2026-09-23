@@ -28,7 +28,13 @@ end
 # dead connection, and the next request on it hangs. Echo the header so
 # clients tear the connection down themselves.
 
-@inline conn_close_requested(req::Request) = get(req.headers, "connection", "") == "close"
+@inline function conn_close_requested(req::Request)::Bool
+    value = get(req.headers, "connection", "")
+    for token in split(value, ',')
+        lowercase(strip(token)) == "close" && return true
+    end
+    return false
+end
 
 @inline function _echo_conn_close!(res, req::Request)
     if conn_close_requested(req) && res isa Response

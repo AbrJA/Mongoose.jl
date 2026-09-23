@@ -97,9 +97,10 @@ const CLOSE = ["Connection" => "close"]
             @test j["bytes"] == 9
             @test j["head"] == "file-bod"
 
+            # Malformed upload without a multipart Content-Type → 415 (was 500).
             r = HTTP.post("$base/api/upload"; status_exception=false, headers=AUTH,
                 body="--no-boundary--garbage", read_idle_timeout=10)
-            @test r.status == 500
+            @test r.status == 415
             @test HTTP.header(r, "Connection") == "close"
         end
 

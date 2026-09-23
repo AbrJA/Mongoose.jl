@@ -54,35 +54,51 @@ end
 
 function (mw::Logger)(request::Request, next::Function)
     t0 = time_ns()
-    response = next()
+    response = try
+        next()
+    catch
+        # A throwing handler still gets an access-log line (mapped to 500 by
+        # the transport); build a single write so concurrent workers cannot
+        # interleave partial lines.
+        elapsed_ns = time_ns() - t0
+        elapsed_ns >= mw.threshold_ns &&
+            _log_request(mw, request, 500, elapsed_ns / 1_000_000, "")
+        rethrow()
+    end
     elapsed_ns = time_ns() - t0
 
     if elapsed_ns >= mw.threshold_ns
         elapsed_ms = elapsed_ns / 1_000_000
         status = response isa Response ? response.status : 0
         rid = response isa Response ? get(response.headers, "x-request-id", "") : ""
-
-        if mw.structured
-            # JSON structured log line (no dependency — manual formatting)
-            method = uppercase(String(request.method))
-            uri = _escape(request.uri)
-            println(mw.output,
-                "{\"method\":\"", method,
-                "\",\"uri\":\"", uri,
-                "\",\"status\":", status,
-                ",\"duration\":", round(elapsed_ms; digits=2),
-                ",\"request_id\":\"", _escape(rid),
-                "\",\"ts\":\"", Libc.strftime("%Y-%m-%dT%H:%M:%S", time()),
-                "\"}")
-        else
-            line = uppercase(String(request.method)), " ", request.uri,
-                   " → ", status, " (", round(elapsed_ms; digits=2), "ms)"
-            isempty(rid) || (line = (line..., " id=", rid))
-            println(mw.output, line...)
-        end
+        _log_request(mw, request, status, elapsed_ms, rid)
     end
 
     return response
+end
+
+function _log_request(mw::Logger, request::Request, status::Int,
+                      elapsed_ms::Float64, rid::String)
+    io = IOBuffer(sizehint=160)
+    if mw.structured
+        # JSON structured log line (no dependency — manual formatting)
+        method = uppercase(String(request.method))
+        print(io,
+            "{\"method\":\"", method,
+            "\",\"uri\":\"", _escape(request.uri),
+            "\",\"status\":", status,
+            ",\"duration\":", round(elapsed_ms; digits=2),
+            ",\"request_id\":\"", _escape(rid),
+            "\",\"ts\":\"", Libc.strftime("%Y-%m-%dT%H:%M:%S", time()),
+            "\"}\n")
+    else
+        print(io, uppercase(String(request.method)), " ", request.uri,
+              " → ", status, " (", round(elapsed_ms; digits=2), "ms)")
+        isempty(rid) || print(io, " id=", rid)
+        print(io, '\n')
+    end
+    write(mw.output, take!(io))
+    return nothing
 end
 
 """

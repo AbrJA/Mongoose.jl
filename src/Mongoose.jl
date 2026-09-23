@@ -13,7 +13,7 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, route!, use!, serve!, onerror!, onstart!, onstop!,
     context, Cookie, Headers, setcookie, cookies, form, header,
-    ws!, Message,
+    ws!, ws_send_all, Message,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
     RouteError, ServerError, BindError,
     HTTPError, errorstatus,

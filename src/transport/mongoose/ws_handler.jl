@@ -41,8 +41,19 @@ end
 # --- Upgrade ---
 
 function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
+    headers = parse_headers(msg)
+    # Only a real upgrade handshake may run user hooks or register a client;
+    # `mg_ws_upgrade` replies 426 to anything else.
+    is_upgrade = occursin("websocket", lowercase(get(headers, "upgrade", ""))) &&
+                 occursin("upgrade", lowercase(get(headers, "connection", ""))) &&
+                 haskey(headers, "sec-websocket-key")
+    if !is_upgrade
+        mg_ws_upgrade(conn, ev_data, C_NULL)
+        return
+    end
+
     if !isempty(endpoint.allowed_origins)
-        origin = get(parse_headers(msg), "origin", "")
+        origin = get(headers, "origin", "")
         if !any(o -> o == origin, endpoint.allowed_origins)
             mg_http_reply(conn, 403, "", "Forbidden")
             return
@@ -157,11 +168,13 @@ end
 
 function ws_idle_sweep!(server::AbstractServer)
     now = time()
-    timeout = Float64(server.config.ws_idle_timeout_ms)
+    # `last_active` is `time()` (seconds); the config is milliseconds.
+    timeout = server.config.ws_idle_timeout_ms / 1000.0
     to_close = lock(server.runtime.ws_lock) do
         to_close = Int[]
         for (id, entry) in server.runtime.ws_clients
             if (now - entry.last_active) > timeout
+                entry.closing = true
                 push!(to_close, id)
             end
         end
@@ -169,8 +182,11 @@ function ws_idle_sweep!(server::AbstractServer)
     end
     for id in to_close
         conn = get(server.runtime.connections, id, nothing)
-        conn !== nothing && mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
-        close_ws!(server, id)
+        conn === nothing && continue
+        # Queue a Close frame, then drop the socket even if the peer never
+        # answers — mg_close_conn flushes pending output before closing.
+        mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
+        mg_close_conn(conn)
     end
 end
 

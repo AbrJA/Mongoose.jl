@@ -174,6 +174,23 @@ end
         @test contains(s, "temp=val")
         @test !contains(s, "Max-Age")
     end
+
+    @testset "SameSite=None is emitted" begin
+        s = setcookie(Mongoose.Cookie("cross", "v"; samesite=:none, secure=true))
+        @test contains(s, "SameSite=None")
+        @test contains(s, "Secure")
+    end
+
+    @testset "CRLF/control characters are rejected" begin
+        @test_throws ArgumentError Mongoose.Cookie("a", "b\r\nSet-Cookie: evil")
+        @test_throws ArgumentError Mongoose.Cookie("a\r\nx", "b")
+        @test_throws ArgumentError Mongoose.Cookie("a", "b"; path="/\r\nX: y")
+        @test_throws ArgumentError redirect("/x\r\nSet-Cookie: y")
+        # The positional constructor bypasses the keyword validation, but
+        # serialization still refuses to emit a split response.
+        raw = Mongoose.Cookie("a", "b\r\nX: y", "/", "", -1, false, true, :lax)
+        @test_throws ArgumentError setcookie(raw)
+    end
 end
 
 @testset "cookies(req)" begin

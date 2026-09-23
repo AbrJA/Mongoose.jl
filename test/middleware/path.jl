@@ -30,3 +30,24 @@ end
         @test client(:get, "/admin/panel"; headers=["Authorization" => "Bearer secret"]).status == 200
     end
 end
+
+@testset "path prefixes match whole segments" begin
+    app = App()
+    get!(app, "/api/users") do req; text("users") end
+    get!(app, "/apixyz") do req; text("other") end
+    use!(app, bearer(t -> t == "s"); paths=["/api"])
+    client = Mongoose.FakeTransport(app)
+    @test client(:get, "/api/users").status == 401
+    @test client(:get, "/apixyz").status == 200
+
+    # Trailing slashes are normalized; "/" (or empty) means no filter.
+    app2 = App()
+    get!(app2, "/api/users") do req; text("users") end
+    use!(app2, bearer(t -> t == "s"); paths=["/api/"])
+    @test Mongoose.FakeTransport(app2)(:get, "/api/users").status == 401
+
+    app3 = App()
+    get!(app3, "/api/users") do req; text("users") end
+    use!(app3, bearer(t -> t == "s"); paths=["/"])
+    @test Mongoose.FakeTransport(app3)(:get, "/api/users").status == 401
+end

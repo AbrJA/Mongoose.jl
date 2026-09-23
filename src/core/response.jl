@@ -132,10 +132,15 @@ end
 """
     parsejson(req) → Any
 
-Parse the request body as JSON.
+Parse the request body as JSON. Throws `BadRequestError` (400) on malformed
+JSON so the pipeline answers 400 instead of falling through to a 500.
 """
 function parsejson(req::Request)
-    return decode(Json, req.body)
+    return try
+        decode(Json, req.body)
+    catch e
+        throw(BadRequestError("Invalid JSON body: $(sprint(showerror, e))"))
+    end
 end
 
 # `json(req)` used to parse the body; it now dispatches to the serializer,
@@ -167,6 +172,7 @@ redirect("https://example.com"; status=301)
 ```
 """
 function redirect(url::AbstractString; status::Int=302, headers=Headers())
+    _has_ctl(url) && throw(ArgumentError("redirect URL contains control characters"))
     return Response(status, mergeheaders(asheaders(headers), ["Location" => String(url)]), "")
 end
 
@@ -228,11 +234,24 @@ struct Cookie
     samesite::Symbol      # :strict, :lax, :none
 end
 
+# CRLF/control-character guard for values that end up in response headers
+# (Set-Cookie fields, Location). Prevents response splitting.
+@inline function _has_ctl(s::AbstractString)::Bool
+    for c in s
+        (c == '\r' || c == '\n' || c < ' ') && return true
+    end
+    return false
+end
+
 function Cookie(name::String, value::String;
                 path::String="/", domain::String="",
                 max_age::Int=-1, secure::Bool=false,
                 httponly::Bool=true, samesite::Symbol=:lax)
     samesite in (:strict, :lax, :none) || error("samesite must be :strict, :lax, or :none")
+    _has_ctl(name) && throw(ArgumentError("Cookie name contains control characters"))
+    _has_ctl(value) && throw(ArgumentError("Cookie value contains control characters"))
+    _has_ctl(path) && throw(ArgumentError("Cookie path contains control characters"))
+    _has_ctl(domain) && throw(ArgumentError("Cookie domain contains control characters"))
     return Cookie(name, value, path, domain, max_age, secure, httponly, samesite)
 end
 
@@ -242,6 +261,10 @@ end
 Serialize a `Cookie` to a `Set-Cookie` header value string.
 """
 function setcookie(c::Cookie)::String
+    # Defense in depth: the positional `Cookie` constructor bypasses the
+    # keyword validation, so re-check before serializing to a header.
+    (_has_ctl(c.name) || _has_ctl(c.value) || _has_ctl(c.path) || _has_ctl(c.domain)) &&
+        throw(ArgumentError("Cookie fields contain control characters"))
     io = IOBuffer(sizehint=128)
     print(io, c.name, "=", c.value)
     !isempty(c.path) && print(io, "; Path=", c.path)
@@ -249,7 +272,7 @@ function setcookie(c::Cookie)::String
     c.max_age >= 0 && print(io, "; Max-Age=", c.max_age)
     c.secure && print(io, "; Secure")
     c.httponly && print(io, "; HttpOnly")
-    c.samesite != :none && print(io, "; SameSite=", titlecase(String(c.samesite)))
+    print(io, "; SameSite=", titlecase(String(c.samesite)))
     return String(take!(io))
 end
 

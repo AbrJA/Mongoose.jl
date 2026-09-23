@@ -177,3 +177,42 @@ end
         @test ok == false
     end
 end
+
+@testset "WS upgrade guardrails" begin
+    @testset "Non-upgrade request does not run on_open or register" begin
+        s = App()
+        opened = Ref(false)
+        ws!(s, "/ws/hook";
+            on_message=msg -> Message("x"),
+            on_open=req -> (opened[] = true; true))
+
+        with_server(s) do port
+            resp = HTTP.get("http://127.0.0.1:$port/ws/hook"; status_exception=false)
+            @test resp.status == 426
+            @test opened[] == false
+            @test isempty(s.runtime.ws_clients)
+        end
+    end
+
+    @testset "Idle timeout closes the client" begin
+        # The sweep compares seconds against the *_ms config and must drop the
+        # server-side registration (on_close + bookkeeping) for an idle client.
+        # Client-side close-frame delivery depends on the peer's read loop, so
+        # the assertion is on the server-observable contract.
+        s = App(workers=2, ws_idle_timeout_ms=200)
+        closed = Ref(false)
+        ws!(s, "/ws/idle";
+            on_message=msg -> Message("x"),
+            on_close=() -> (closed[] = true))
+
+        with_server(s) do port
+            HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/idle") do ws
+                dropped = wait_until(timeout=6.0) do
+                    isempty(s.runtime.ws_clients) && isempty(s.runtime.connections)
+                end
+                @test dropped
+                @test closed[]
+            end
+        end
+    end
+end

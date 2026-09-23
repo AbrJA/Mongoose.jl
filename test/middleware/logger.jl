@@ -42,5 +42,19 @@
         end
         @test isempty(take!(io))
     end
+
+    @testset "Throwing handler is logged as 500" begin
+        io = IOBuffer()
+        s = App()
+        get!(s, "/boom") do req; error("boom") end
+        use!(s, logger(output=io))
+
+        with_server(s) do port
+            HTTP.get("http://127.0.0.1:$port/boom"; status_exception=false)
+        end
+        output = String(take!(io))
+        @test contains(output, "/boom")
+        @test contains(output, "500")
+    end
 end
 

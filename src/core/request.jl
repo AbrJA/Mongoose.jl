@@ -164,7 +164,7 @@ Parse an `application/x-www-form-urlencoded` request body.
 function form(req::Request)::Dict{String,String}
     ct = get(req.headers, "content-type", "")
     startswith(ct, "application/x-www-form-urlencoded") ||
-        throw(ArgumentError("form() requires Content-Type: application/x-www-form-urlencoded, got \"$ct\""))
+        throw(UnsupportedMediaTypeError("form() requires Content-Type: application/x-www-form-urlencoded, got \"$ct\""))
     return parsequery(req.body)
 end
 
@@ -268,11 +268,11 @@ end
 function multipart(req::Request)::Dict{String,Union{String,MultipartFile}}
     ct = get(req.headers, "content-type", "")
     startswith(ct, "multipart/form-data") ||
-        throw(ArgumentError("multipart() requires Content-Type: multipart/form-data, got \"$ct\""))
+        throw(UnsupportedMediaTypeError("multipart() requires Content-Type: multipart/form-data, got \"$ct\""))
 
     # Extract boundary
     boundary = _extract_boundary(ct)
-    isempty(boundary) && throw(ArgumentError("No boundary found in Content-Type header"))
+    isempty(boundary) && throw(BadRequestError("No boundary found in Content-Type header"))
 
     return _parse_multipart(codeunits(req.body), boundary)
 end

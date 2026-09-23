@@ -83,6 +83,16 @@ function mg_conn_get_fn_data(conn::MgConnection)
 end
 
 """
+    mg_close_conn(conn) — Close a connection, flushing any pending output first.
+
+Used to drop WebSocket clients that ignore a Close frame (idle sweep) once the
+close frame has been queued with `mg_ws_send`.
+"""
+function mg_close_conn(conn::MgConnection)
+    ccall((:mg_close_conn, libmongoose), Cvoid, (Ptr{Cvoid},), conn)
+end
+
+"""
     mg_log_set_level(level) — Set the Mongoose C library log level.
 """
 function mg_log_set_level(level::Integer)

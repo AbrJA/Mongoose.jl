@@ -20,7 +20,7 @@ function _event_loop_sync(app::App)
         drain_streams!(app)
         if app.config.ws_idle_timeout_ms > 0 && !isempty(app.runtime.ws_clients)
             now = time()
-            if (now - last_sweep) >= 5.0
+            if (now - last_sweep) >= 1.0
                 ws_idle_sweep!(app)
                 last_sweep = now
             end
@@ -48,7 +48,7 @@ function _event_loop_async(app::App)
         end
 
         if app.config.ws_idle_timeout_ms > 0 && !isempty(app.runtime.ws_clients)
-            if (now - last_sweep) >= 5.0
+            if (now - last_sweep) >= 1.0
                 ws_idle_sweep!(app)
                 last_sweep = now
             end

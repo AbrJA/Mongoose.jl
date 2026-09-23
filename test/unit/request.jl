@@ -230,7 +230,7 @@ end
             Dict{String,String}(),
             Headers(["content-type" => "application/json"]),
             "{}")
-        @test_throws ArgumentError multipart(req)
+        @test_throws UnsupportedMediaTypeError multipart(req)
     end
 end
 

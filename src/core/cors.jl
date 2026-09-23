@@ -47,8 +47,11 @@ function (mw::Cors)(request::Request, next::Function)
     origin = get(request.headers, "origin", nothing)
     allowed = origin !== nothing && _origin_allowed(mw, origin)
 
-    if request.method === :options
-        # Preflight
+    # Preflight (RFC 9110 §9.3.7 / Fetch): OPTIONS + Origin +
+    # Access-Control-Request-Method. A bare OPTIONS is a regular request and
+    # must reach the route; only real preflights are answered here.
+    if request.method === :options && origin !== nothing &&
+       haskey(request.headers, "access-control-request-method")
         if !allowed ||
            !_methods_ok(mw, get(request.headers, "access-control-request-method", "")) ||
            !_headers_ok(mw, get(request.headers, "access-control-request-headers", ""))
@@ -66,13 +69,16 @@ function (mw::Cors)(request::Request, next::Function)
     end
 
     response = next()
-    (origin === nothing || !allowed) && return response
+    origin === nothing && return response
     if response isa Response
-        headers = Pair{String,String}[
-            "Access-Control-Allow-Origin" => _allowed_origin_value(mw, origin),
-            "Vary"                        => "Origin",
-        ]
-        mw.allow_credentials && push!(headers, "Access-Control-Allow-Credentials" => "true")
+        # Reflect only for allowed origins, but always advertise `Vary: Origin`
+        # so caches never mix reflected and non-reflected responses.
+        headers = Pair{String,String}[]
+        if allowed
+            push!(headers, "Access-Control-Allow-Origin" => _allowed_origin_value(mw, origin))
+            mw.allow_credentials && push!(headers, "Access-Control-Allow-Credentials" => "true")
+        end
+        push!(headers, "Vary" => "Origin")
         return mergeheaders(response, headers; prepend=true)
     end
     return response

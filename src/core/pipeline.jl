@@ -35,9 +35,10 @@ struct PathFilter <: AbstractMiddleware
 end
 
 function (mw::PathFilter)(req::Request, next::Function)
-    uri = req.uri
+    path = req.path
     for prefix in mw.prefixes
-        startswith(uri, prefix) && return mw.inner(req, next)
+        # Segment-boundary match: "/api" matches "/api" and "/api/x", not "/apixyz".
+        (path == prefix || startswith(path, prefix * "/")) && return mw.inner(req, next)
     end
     return next()
 end
