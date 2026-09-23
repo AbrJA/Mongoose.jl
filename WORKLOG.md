@@ -252,21 +252,27 @@ Verification tags from the audit: **[live]** reproduced on a running server,
   try/catch logs 500 then rethrows; single-write line. *commit: `db56dce`*
 
 ### Batch 7 — lifecycle & concurrency
-- [ ] 7.1 `runtime.bg_tasks` pushed from workers without a lock + unbounded
-  growth until shutdown (`http_handler.jl:166-170`).
-- [ ] 7.2 `stop!(AsyncExecutor)` can deadlock (worker blocked in
-  `put!(replies)`, or handler that never returns) (`async.jl:53-61`).
-- [ ] 7.3 `haspending` ignores `runtime.streams` → SSE truncated at shutdown;
-  sync mode never drains (`async.jl:121`, `lifecycle.jl:124-131,152`).
-- [ ] 7.4 Stream producers run on the poll thread (`@async`,
-  `connection.jl:154`) → CPU-bound producer blocks `mg_mgr_poll`.
-- [ ] 7.5 WS replies keyed by raw connection pointer → cross-client delivery
-  after malloc reuse (`ws_handler.jl:66,112`, `async.jl:134-149`); use a
-  monotonic connection generation id.
-- [ ] 7.6 Worker exception outside the handler try loses the reply and leaks
-  the `connections` entry; `supervise_workers!` races `stop!`
-  (`async.jl:82-97,101-109`).
-- [ ] 7.7 `decode_chunked` overflow guards (`strings.jl:146,149`) if kept.
+- [x] 7.1 `runtime.bg_tasks` pushed from workers without a lock + unbounded
+  growth until shutdown. Fixed: `bg_track!`/`bg_prune!`/`bg_snapshot` under a
+  spinlock; the async loop prunes on its health tick. *commit: `c021fa7`*
+- [x] 7.2 `stop!(AsyncExecutor)` can deadlock. Fixed: bounded join
+  (`timeout`, defaults to 5 s, `shutdown!` passes `drain_timeout_ms`) that
+  drains replies while waiting; `stopping` flag blocks respawns.
+  *commit: `c021fa7`*
+- [x] 7.3 `haspending` ignores `runtime.streams` → SSE truncated at shutdown.
+  Fixed: streams counted; `drain_poll!` drains them; final poll flushes the
+  terminal chunk; regression test shuts down mid-SSE. *commit: `c021fa7`*
+- [x] 7.4 Stream producers run on the poll thread. Fixed: `Threads.@spawn`.
+  *commit: `c021fa7`*
+- [x] 7.5 WS replies keyed by raw connection pointer. Fixed: monotonic
+  generation ids (`ws_gen_ids`), stale replies dropped; unit test.
+  *commit: `c021fa7`*
+- [x] 7.6 Worker exception outside the handler try loses the reply and leaks
+  the `connections` entry; `supervise_workers!` races `stop!`.
+  Fixed: per-job catch keeps workers alive; `_http_job` always returns a
+  reply; supervisor no-ops once stopping. *commit: `c021fa7`*
+- [x] 7.7 `decode_chunked` overflow guards. Fixed + hostile-size tests.
+  *commit: `c021fa7`*
 
 ### Batch 8 — CI / ops / release
 - [ ] 8.1 CI runs only the main suite, main branch only; acceptance +
@@ -316,6 +322,11 @@ Verification tags from the audit: **[live]** reproduced on a running server,
 
 ## Changelog
 
+- **Sep 17 — Batch 7 (lifecycle & concurrency) shipped** (`c021fa7`):
+  locked + pruned `bg_tasks`; bounded `stop!` that drains replies; streams
+  counted in drain with a final flush; `Threads.@spawn` producers; WS
+  generation ids; always-reply job errors; hostile chunk-size guards. 1105
+  tests + 80 acceptance + Aqua/JET + docs green. Next: batch 8 (CI/ops).
 - **Sep 17 — Batch 6 (P0 + P1 hotfix) shipped**: chunked requests fixed
   (`7997167`); CORS preflight detection, case-insensitive Connection echo,
   SameSite=None + cookie/redirect CTL rejection, WS idle units + force close +
