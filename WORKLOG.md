@@ -293,9 +293,11 @@ Verification tags from the audit: **[live]** reproduced on a running server,
 - [x] 8.5 Cap verified empirically: 8 MiB round-trips, 10 MiB resets (the
   audit's 3 MiB guess was wrong). `max_body_bytes`/`ws_max_frame_bytes` above
   the ceiling are rejected at construction. *commit: `4f96f0b`*
-- [ ] 8.6 Metrics/health integration — DEFERRED to batch 9: route labels and
-  gauges need a middleware→server attach seam (middleware is constructed
-  before `use!`), and health readiness needs the same server reference.
+- [x] 8.6 Metrics gauges via the new `attach!(middleware, server)` hook:
+  `/metrics` now reports `mongoose_connections`, `mongoose_ws_clients`,
+  `mongoose_active_streams`, `mongoose_executor_inflight`, and
+  `mongoose_executor_queue_depth`. Health readiness wiring is still open
+  (same seam, no consumer yet). *commit: `07c4a53`*
 - [x] 8.7 `CHANGELOG.md` (Keep a Changelog + explicit 0.x breaking policy);
   deleted the dead `Performance.yml`. Tagging 0.5.0 and the GPL-2 decision are
   release-owner decisions, left open. *commit: `809fc79`*
@@ -305,34 +307,53 @@ Verification tags from the audit: **[live]** reproduced on a running server,
   *commit: `4f96f0b`*
 
 ### Batch 9 — design & docs
-- [ ] 9.1 `ep = result.endpoint::Endpoint` breaks custom routers
-  (`process.jl:133`); add an endpoint-invocation protocol.
-- [ ] 9.2 `service(req, Val(:x))` infers `Any` despite the "type-stable"
-  docs (`process.jl:188-190`, `server/core.jl:397-405`); fix typing or docs.
-- [ ] 9.3 Abstract `App.context`/`App.executor` fields → per-request dynamic
-  dispatch; parameterize or store an `invoke` closure.
-- [ ] 9.4 Parameterize hot middleware/stream structs (`PathFilter{M}`,
-  `Bearer{F}`, `RateLimit{F}`, `Logger{O}`, `SSEWriter{W}`).
-- [ ] 9.5 `Headers` API: silent `getindex`, no `delete!`/`setindex!`.
-- [ ] 9.6 `Response(status, body)` emits no Content-Type while `text()` does;
-  fold `StreamResponse.content_type` into headers.
-- [ ] 9.7 `Request` positional constructor soup → keyword constructor.
-- [ ] 9.8 Base `get!/put!/delete!` hijacked for registration (undocumented;
-  blocks future route removal) → decide rename (`del!`) or document.
-- [ ] 9.9 Docs drift: `compiled.jl` auto-HEAD comment, README
-  "(aka FakeTransport)", DESIGN.md stale names, test names `bake`.
-- [ ] 9.10 Export hygiene: `Tagged`/`Intent`/`PathFilter`/`MethodMap`/
-  `sethandler!` internals; add `isrunning(app)`/`url(app)`.
-- [ ] 9.11 Acronym casing policy (`HTTPError` vs `Html`/`Json`); stop-verb
-  table in the manual; capability-trait vocabulary vs `haswsroutes`.
-- [ ] 9.12 `use!`/group scoping unification; decode path once at the adapter
-  boundary (encoded-prefix bypass).
-- [ ] 9.13 Post-1.0 features: proxy headers, sessions/CSRF, OpenAPI,
-  static Cache-Control, streaming request bodies, HTTP/2 decision,
-  permessage-deflate, FFI layout pin/self-check, optional CodecZlib.
+- [x] 9.1 Endpoint-invocation protocol (`invoke_endpoint` /
+  `endpoint_middleware`); custom routers carry their own endpoint type; the
+  RegexRouter showcase and a custom-endpoint test prove the seam. *`07c4a53`*
+- [x] 9.2 `services(req)` + `with_services(f, req)` (function-barrier typed
+  access); `service` docs corrected — the Val form is convenient, not
+  statically typed. *`07c4a53`*
+- [x] 9.3 Decided: `App.context`/`executor` stay abstract-typed. It is one
+  virtual call per request, an accepted trade-off recorded in DESIGN T6;
+  parameterizing `App` would break the context rebuild on `service!`/`use!`.
+- [x] 9.4 Parameterized `PathFilter{M}`, `Bearer{F}`, `RateLimit{F}`,
+  `Logger{O}`, `SSEWriter{W}`. *`07c4a53`*
+- [x] 9.5 `Headers` gained case-insensitive `delete!` and `push!(h, k, v)`;
+  `getindex` stays silent-`nothing` (earlier decision). *`07c4a53`*
+- [x] 9.6 `Response(status, body)` adds a default `Content-Type` for non-empty
+  bodies (explicit CT never duplicated). Folding `StreamResponse.content_type`
+  into headers is deferred (works today; churn not worth it now).
+  *`07c4a53`*
+- [x] 9.7 `Request(; method, uri, …)` keyword constructor. *`07c4a53`*
+- [x] 9.8 Documented in api.md: `get!`/`put!`/`delete!` are Base extensions;
+  the rest are Mongoose exports. *`07c4a53`*
+- [x] 9.9 Drift fixed: compiled.jl auto-HEAD comment, DESIGN.md marked
+  historical, FakeTransport doc/heading duplicates, `bake` test names.
+  *`07c4a53`*
+- [~] 9.10 `isrunning(server)` / `url(server)` shipped; unexporting
+  `Tagged`/`Intent`/`PathFilter`/`MethodMap`/`sethandler!` is deferred — the
+  facade uses them unqualified across layers and the churn is cosmetic.
+  *`07c4a53`*
+- [x] 9.11 Naming-conventions section in README (types/acronyms, functions,
+  `!` mutators, predicates, teardown verbs by scope, capability traits).
+  *`07c4a53`*
+- [ ] 9.12 DEFERRED: decoding the path once at the adapter boundary changes
+  route-matching semantics (routes would match decoded paths); needs its own
+  design pass. Current behavior is documented.
+- [ ] 9.13 Post-1.0 features (proxy headers, sessions/CSRF, OpenAPI, static
+  Cache-Control, streaming request bodies, HTTP/2, permessage-deflate, FFI
+  pin/self-check, optional CodecZlib) — unchanged, out of the 0.5 scope.
 
 ## Changelog
 
+- **Sep 17 — Batch 9 (design & docs) shipped** (`07c4a53`): endpoint
+  invocation protocol for custom routers; `services`/`with_services` typed DI
+  access; `attach!` seam with metrics gauges; parameterized hot structs;
+  `Headers.delete!`/`push!(k,v)`; `Request` keyword constructor;
+  `isrunning`/`url`; `Response` default Content-Type; naming-conventions
+  section and doc-drift fixes. 3550 tests + 81 acceptance + Aqua/JET baseline
+  + docs green. Deferred: 9.12 (path decode at the adapter), health
+  readiness, post-1.0 features.
 - **Sep 17 — Batch 8 (CI / ops / release) shipped**: CI gates acceptance +
   quality on every branch with a failing JET baseline (`809fc79`); SIGTERM +
   atexit graceful shutdown, `header_timeout_ms`/`max_connections`, verified
