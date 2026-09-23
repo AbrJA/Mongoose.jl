@@ -18,8 +18,8 @@ end
     Bearer — Bearer token authentication middleware.
     Checks the `Authorization: Bearer <token>` header and delegates validation to a user-supplied function.
 """
-struct Bearer <: AbstractMiddleware
-    validator::Function
+struct Bearer{F} <: AbstractMiddleware
+    validator::F
 end
 
 function (mw::Bearer)(request::Request, next::Function)

@@ -71,6 +71,25 @@ end
     end
 end
 
+@testset "Headers mutation helpers" begin
+    h = Headers(["A" => "1", "b" => "2"])
+    push!(h, "C", "3")
+    @test h.data == ["A" => "1", "b" => "2", "C" => "3"]
+    delete!(h, "a")                       # case-insensitive
+    @test h.data == ["b" => "2", "C" => "3"]
+    delete!(h, "missing")                 # no-op
+    @test length(h) == 2
+end
+
+@testset "Request keyword constructor" begin
+    req = Request(; method=:get, uri="/x?q=1", headers=("x-a" => "1",), body="b")
+    @test req.path == "/x"
+    @test req.uri == "/x?q=1"
+    @test get(req.headers, "x-a", "") == "1"
+    @test req.body == "b"
+    @test Request(; method=:post, uri="/p").path == "/p"
+end
+
 @testset "Header normalization (asheaders + Headers constructors)" begin
     h = Headers(["a" => "1"])
     @test Mongoose.asheaders(h) === h

@@ -36,6 +36,7 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
         register_server!(server)
         init_server!(server)
         url = bind_server!(server, host, port)
+        server.runtime.url = url
 
         # Run lifecycle start hooks and background tasks
         for hook in server.hooks_start
@@ -97,6 +98,7 @@ function shutdown!(server::AbstractServer)
     drain_bg_tasks!(server)
     stop_event_loop!(server)
     unregister_server!(server)
+    server.runtime.url = nothing
     teardown!(server)
     log_server_stopped(server)
 end

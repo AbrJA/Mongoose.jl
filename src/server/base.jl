@@ -64,3 +64,19 @@ Resolve the WebSocket endpoint for `uri`, or `nothing`. See
 """
 getwsendpoint(server::AbstractServer, uri::AbstractString) =
     getwsendpoint(server.router, uri)
+
+"""
+    isrunning(server) → Bool
+
+Whether the server's event loop is currently running (started and not yet shut
+down).
+"""
+isrunning(server::AbstractServer) = server.runtime.running[]
+
+"""
+    url(server) → Union{Nothing,String}
+
+The bound base URL (e.g. `"http://127.0.0.1:8080"`) while running, `nothing`
+otherwise.
+"""
+url(server::AbstractServer) = server.runtime.url

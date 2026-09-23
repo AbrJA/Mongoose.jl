@@ -1,3 +1,8 @@
+> **Historical design document.** Names and module boundaries below may
+> predate the current API (`MongooseCore` → `Kernel`, `invoke_request` →
+> `process`, `support_websocket` → `supportsws`, …). `WORKLOG.md` records the
+> shipped renames; the code is the source of truth.
+
 # Mongoose.jl — Design Redesign (TARGET ARCHITECTURE)
 
 Status: **implemented in large part** across the `feat/modular` series.

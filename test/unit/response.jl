@@ -98,10 +98,22 @@ end
 @testset "Header input normalization" begin
     @testset "Response/json/text accept Headers and tuples" begin
         r = Response(200, "x"; headers=Headers(["A" => "1"]))
-        @test r.headers.data == ["A" => "1"]
+        @test any(==("A" => "1"), r.headers)
+        @test any(h -> h.first == "Content-Type", r.headers)   # default added
 
         r2 = Response(200, "x"; headers=("A" => "1",))
-        @test r2.headers.data == ["A" => "1"]
+        @test any(==("A" => "1"), r2.headers)
+        @test any(h -> h.first == "Content-Type", r2.headers)
+
+        # A bare response now matches `text()`: non-empty body gets a default
+        # Content-Type, and an explicit one is never duplicated.
+        bare = Response(200, "hi")
+        @test count(h -> h.first == "Content-Type", bare.headers) == 1
+        explicit = Response(200, "hi"; headers=["Content-Type" => "text/csv"])
+        @test get(explicit.headers, "content-type", "") == "text/csv"
+        @test count(h -> h.first == "Content-Type", explicit.headers) == 1
+        empty_resp = Response(204, "")
+        @test !any(h -> h.first == "Content-Type", empty_resp.headers)
 
         r3 = Response(Json, Dict("a" => 1); headers=Headers(["X" => "1"]))
         @test r3.headers[1].first == "Content-Type"
@@ -157,7 +169,7 @@ end
         @test_throws ErrorException Mongoose.Cookie("x", "y"; samesite=:invalid)
     end
 
-    @testset "bake/serialize" begin
+    @testset "setcookie/serialize" begin
         c = Mongoose.Cookie("id", "123"; max_age=600, secure=true, httponly=true, samesite=:strict)
         s = setcookie(c)
         @test contains(s, "id=123")
@@ -168,7 +180,7 @@ end
         @test contains(s, "Path=/")
     end
 
-    @testset "bake session cookie (no max_age)" begin
+    @testset "setcookie session cookie (no max_age)" begin
         c = Mongoose.Cookie("temp", "val")
         s = setcookie(c)
         @test contains(s, "temp=val")

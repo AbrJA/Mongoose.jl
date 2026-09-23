@@ -99,13 +99,16 @@ end
 
 # --- Allow header for 405 (RFC 9110 §15.5.6) — single source: the bitmask ---
 
+# Built-in endpoint methods for the invocation protocol (defined here because
+# `Endpoint` lives in router.jl, included after interface.jl).
+@inline invoke_endpoint(ep::Endpoint, request::Request, params) =
+    isempty(params) ? ep.handler(request) : ep.handler(request, params...)
+@inline endpoint_middleware(ep::Endpoint) = ep.middleware
+
 @inline function _method_not_allowed(mask::UInt8)
     return Response(Plain, "405 Method Not Allowed"; status=405,
         headers=["Allow" => allow_from_bitmask(mask)])
 end
-
-@inline _call_endpoint(ep::Endpoint, params, req::Request) =
-    isempty(params) ? ep.handler(req) : ep.handler(req, params...)
 
 """
     _resolve_terminal(router, request) → (terminal, scoped_middleware)
@@ -130,9 +133,9 @@ function _resolve_terminal(router::AbstractRouter, request::Request)
         return ((r) -> _method_not_allowed(result.allowed)), AbstractMiddleware[]
     end
 
-    ep = result.endpoint::Endpoint
+    ep = result.endpoint
     params = result.params
-    return ((r) -> _call_endpoint(ep, params, r)), ep.middleware
+    return ((r) -> invoke_endpoint(ep, r, params)), endpoint_middleware(ep)
 end
 
 # Built-in mapping for status-carrying exceptions: a custom error page for that

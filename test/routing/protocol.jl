@@ -53,3 +53,48 @@ end
     end
 end
 
+@testset "Custom endpoint type (invoke_endpoint seam)" begin
+    # A router may carry its own endpoint type as long as it implements
+    # `invoke_endpoint` (and optionally `endpoint_middleware`).
+    struct MyEndpoint
+        handler::Function
+    end
+    struct MyRouter <: AbstractRouter
+        entries::Vector{Tuple{String,Symbol,MyEndpoint}}
+    end
+    MyRouter() = MyRouter(Tuple{String,Symbol,MyEndpoint}[])
+
+    Mongoose.invoke_endpoint(ep::MyEndpoint, req::Request, params) = ep.handler(req)
+
+    function Mongoose.route!(r::MyRouter, method::Symbol, path::AbstractString,
+                             handler::Function; middleware=nothing, metadata=nothing)
+        push!(r.entries, (String(path), method, MyEndpoint(handler)))
+        return r
+    end
+    function Mongoose.matchroute(r::MyRouter, method::Symbol, path::AbstractString)
+        clean = String(Mongoose.stripquery(path))
+        for (p, m, ep) in r.entries
+            m === method && p == clean && return Mongoose.Matched(ep, Mongoose.SingleEndpoint(ep, method), ())
+        end
+        return Mongoose.NoMatch()
+    end
+    Mongoose.hasroute(r::MyRouter, path::AbstractString) =
+        any(e -> e[1] == String(Mongoose.stripquery(path)), r.entries)
+
+    app = App(router=MyRouter())
+    get!(app, "/mine", req -> text("custom endpoint"))
+    with_server(app) do port
+        resp = HTTP.get("http://127.0.0.1:$port/mine"; status_exception=false)
+        @test resp.status == 200
+        @test String(resp.body) == "custom endpoint"
+    end
+
+    # Without invoke_endpoint, dispatch fails loudly rather than type-erroring.
+    struct BareEndpoint
+        handler::Function
+    end
+    @test_throws MethodError Mongoose.invoke_endpoint(
+        BareEndpoint(req -> text("x")),
+        Mongoose.Request(:get, "/", Dict{String,String}(), Pair{String,String}[], ""), ())
+end
+

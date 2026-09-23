@@ -275,6 +275,19 @@ app = App(;
 )
 ```
 
+### Naming conventions
+
+- **Types** are `TitleCase`; acronyms stay all-caps (`HTTPError`, `TLSConfig`).
+  Content formats are the exception (`Html`, `Json`, `Xml`, `Js`, `Css`).
+- **Functions** are lowercase compounds without underscores (`parsequery`,
+  `formatheaders`, `mergeheaders`, `getwsendpoint`).
+- **Mutators** end in `!` (`route!`, `use!`, `shutdown!`, `freeze!`).
+- **Predicates** are `is*`/`has*` (`isfrozen`, `hasroute`, `haspending`).
+- **Teardown verbs by scope**: server `start!`/`shutdown!`; executor
+  `start!`/`stop!`; transport/streams `close!`.
+- **Capabilities** are traits: `supportsws`/`supportstls`/`supportsstream`
+  on transports, `haswsroutes`/`getwsendpoint` on routers.
+
 ### Unit conventions
 
 Every quantity carries its unit — as a suffix on Python-style kwargs and

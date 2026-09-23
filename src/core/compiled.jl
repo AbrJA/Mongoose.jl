@@ -17,8 +17,8 @@
 
     Semantics are identical to the generic path: exact (fixed) matches win,
     parametric routes resolve in registration order, the `"*"` catch-all is
-    the final fallback, missing methods produce 405, and HEAD falls back to the
-    GET endpoint with the body stripped.
+    the final fallback, and missing methods produce 405. HEAD is served only
+    by an explicit `head!` route (no auto-HEAD fallback).
 """
 
 # --- Prebuilt 0-arity terminal: calls a handler with a baked concrete type ---

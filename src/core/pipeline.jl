@@ -27,12 +27,25 @@
 """
 abstract type AbstractMiddleware end
 
+# --- Middleware attach hook (server-state injection) ---
+
+"""
+    attach!(middleware, server) → middleware
+
+Optional lifecycle hook: `use!` calls it when middleware is registered, so
+middleware that needs server state (metrics gauges, readiness checks) can
+capture a reference. Default is a no-op.
+"""
+attach!(mw, server) = mw
+
 # --- PathFilter: restricts middleware to specific URI prefixes ---
 
-struct PathFilter <: AbstractMiddleware
-    inner::AbstractMiddleware
+struct PathFilter{M} <: AbstractMiddleware
+    inner::M
     prefixes::Vector{String}
 end
+
+attach!(mw::PathFilter, server) = (attach!(mw.inner, server); mw)
 
 function (mw::PathFilter)(req::Request, next::Function)
     path = req.path

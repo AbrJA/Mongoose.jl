@@ -84,7 +84,13 @@ Response(404, "Not Found"; headers=["X-Custom" => "value"])
 """
 function Response(status::Int, body::Union{String,Vector{UInt8}};
                   headers=Headers())
-    return Response(status, asheaders(headers), body)
+    h = asheaders(headers)
+    # Keep bare responses consistent with `text()`/`Response(Plain, …)`:
+    # a non-empty body gets a default Content-Type unless one is provided.
+    if !isempty(body) && !haskey(h, "content-type")
+        h = mergeheaders(h, [contenttypepair(Plain)])
+    end
+    return Response(status, h, body)
 end
 
 # --- Typed format constructors ---

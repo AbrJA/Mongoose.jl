@@ -13,6 +13,11 @@
             body = String(resp.body)
             @test contains(body, "http_requests_total")
             @test contains(body, "http_request_duration_seconds")
+            # Server-state gauges are present once `attach!` captured the server.
+            @test contains(body, "mongoose_connections")
+            @test contains(body, "mongoose_ws_clients")
+            @test contains(body, "mongoose_executor_queue_depth")
+            @test occursin(r"mongoose_connections \d+", body)
         end
     end
 

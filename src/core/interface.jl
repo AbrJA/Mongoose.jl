@@ -123,6 +123,31 @@ end
 @inline gethandler(m::Matched, method::Symbol) = gethandler(m.handlers, method)
 @inline getendpoint(m::Matched, method::Symbol) = getendpoint(m.handlers, method)
 
+# --- Endpoint invocation protocol (custom-router seam) ---
+
+"""
+    invoke_endpoint(endpoint, request, params) → Response
+
+Call the matched endpoint's handler with the route parameters. The built-in
+`Endpoint` dispatches `handler(req, params...)` (or `handler(req)` when there
+are none) — that method lives in `process.jl`, after `Endpoint` is defined.
+
+Custom routers that carry their own endpoint type implement this method (and
+[`endpoint_middleware`](@ref)) instead of forcing their endpoints into
+`Mongoose.Endpoint`.
+"""
+function invoke_endpoint(ep, ::Request, params)
+    throw(MethodError(invoke_endpoint, (ep, params)))
+end
+
+"""
+    endpoint_middleware(endpoint) → Vector{AbstractMiddleware}
+
+Scoped middleware owned by a matched endpoint (empty for custom endpoint
+types). Paired with [`invoke_endpoint`](@ref) for custom routers.
+"""
+endpoint_middleware(ep) = AbstractMiddleware[]
+
 # --- Optional capabilities: safe defaults ---
 
 """

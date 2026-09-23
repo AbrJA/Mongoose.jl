@@ -46,9 +46,9 @@ end
     Logger — Request logging middleware.
     Logs each request's method, URI, status code, and elapsed time.
 """
-struct Logger <: AbstractMiddleware
+struct Logger{O} <: AbstractMiddleware
     threshold_ns::Int
-    output::IO
+    output::O
     structured::Bool
 end
 

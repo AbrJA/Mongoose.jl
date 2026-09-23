@@ -95,3 +95,23 @@ end
     end
 end
 
+
+@testset "services()/with_services type-stable access" begin
+    s = App(services=(db="pool", retries=3))
+    get!(s, "/svcs") do req
+        plain = services(req)
+        @test plain.db == "pool"
+        out = with_services(req) do svcs
+            "$(svcs.db)/$(svcs.retries)"
+        end
+        text(out)
+    end
+    with_server(s) do port
+        resp = HTTP.get("http://127.0.0.1:$port/svcs"; status_exception=false)
+        @test String(resp.body) == "pool/3"
+    end
+    # No services registered → empty NamedTuple, never an error.
+    r0 = Mongoose.Request(:get, "/", Dict{String,String}(), Pair{String,String}[], "")
+    @test services(r0) == NamedTuple()
+    @test with_services(svcs -> svcs, r0) == NamedTuple()
+end

@@ -18,6 +18,8 @@ App
 AbstractServer
 start!
 shutdown!
+isrunning
+url
 ```
 
 ## Routing
@@ -49,16 +51,27 @@ options!
 head!
 ```
 
+> `get!`, `put!`, and `delete!` are `Base` methods that Mongoose extends (the
+> other verbs are Mongoose exports). All accept `(server_or_router, path,
+> handler)` and the do-block form `get!(server, path) do req … end`.
+
+> `get!`, `put!`, and `delete!` are `Base` methods that Mongoose extends (the
+> other verbs are Mongoose exports). All accept `(server_or_router, path,
+> handler)` and the do-block form `get!(server, path) do req … end`.
+
 ## Request Processing
 
 ```@docs
 process
 RequestContext
 terminalfor
+invoke_endpoint
+endpoint_middleware
 errorresponse
 runpipeline
 asmiddleware
 asmiddlewares
+attach!
 AbstractRequest
 ```
 
@@ -97,6 +110,8 @@ cookies
 form
 header
 service
+services
+with_services
 ```
 
 ## URI & String Utilities

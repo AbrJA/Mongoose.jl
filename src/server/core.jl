@@ -49,7 +49,7 @@ end
 
     `App(services=(db=pool, ...))` stores its services here; `service!` mutates
     `deps` in place (a cold, pre-start operation). Handlers access services with
-    `service(req, Val(:db))` for type-stable retrieval.
+    `service(req, Val(:db))` for convenient retrieval, or `with_services(req) do svcs … end` for type-stable access.
 """
 mutable struct ServiceRegistry
     deps::NamedTuple
@@ -137,6 +137,7 @@ end
 mutable struct RunState
     running::Threads.Atomic{Bool}
     master::Union{Nothing,Task}
+    url::Union{Nothing,String}
     manager::Manager
     tls::Union{Nothing,TLSConfig}
     ws_clients::Dict{Int,WsConn}
@@ -152,7 +153,7 @@ mutable struct RunState
     bg_lock::Threads.SpinLock            # guards bg_tasks (workers push)
 end
 
-RunState() = RunState(Threads.Atomic{Bool}(false), nothing, Manager(empty=true), nothing,
+RunState() = RunState(Threads.Atomic{Bool}(false), nothing, nothing, Manager(empty=true), nothing,
     Dict{Int,WsConn}(), Dict{Ptr{Cvoid},Int}(), Threads.SpinLock(),
     Threads.Atomic{UInt64}(0), Threads.Atomic{UInt64}(0),
     Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(),
@@ -431,14 +432,20 @@ end
 Retrieve a service by name from the request context.
 - `service(req, :db)` returns the raw value (values may be zero-arg callables,
   which are invoked).
-- `service(req, Val(:db))` is the **typed** form: with `services` registered as
-  a NamedTuple, the return type is statically known.
+- `service(req, Val(:db))` avoids re-parsing the name, but the lookup goes
+  through the dynamic request context — the return type is inferred `Any`.
 - `service(req, :db, DBPool)` asserts the type and throws otherwise.
+
+For **type-stable** access in hot paths use [`with_services`](@ref), whose
+closure receives the concrete `NamedTuple`:
 
 # Example
 ```julia
 app = App(services=(db=pool, cache=redis))
-db = service(req, Val(:db))        # type-stable: DBPool
+with_services(req) do svcs
+    svcs.db            # concrete: DBPool
+end
+db = service(req, Val(:db))   # convenient, dynamically typed
 ```
 """
 function service(req::Request, name::Symbol)
@@ -467,6 +474,36 @@ function service(req::Request, name::Symbol, ::Type{T})::T where {T}
     v === nothing && throw(KeyError(name))
     throw(TypeError(:service, T, v))
 end
+
+"""
+    services(req) → NamedTuple
+
+The request's DI services as a NamedTuple (empty when none were registered).
+Dynamically typed at this boundary; use [`with_services`](@ref) for
+type-stable access.
+"""
+function services(req::Request)
+    ctx = req.context
+    ctx === nothing && return NamedTuple()
+    svcs = get(ctx, :_services, nothing)
+    return svcs isa NamedTuple ? svcs : NamedTuple()
+end
+
+"""
+    with_services(f, req) → f(services(req))
+
+Function-barrier access to DI services: the closure receives the concrete
+NamedTuple, so field access inside it specializes — unlike
+`service(req, Val(:x))`, which reads through the dynamic request context.
+
+# Example
+```julia
+with_services(req) do svcs
+    svcs.db.query("select 1")
+end
+```
+"""
+@inline with_services(f::F, req::Request) where {F} = f(services(req))
 
 """
     background!(app, f)
@@ -524,6 +561,7 @@ function use!(server::AbstractServer, @nospecialize(mw); paths=nothing)
     prefixes = String[rstrip(p, '/') for p in asstrings(paths)]
     filter!(!isempty, prefixes)
     wrapped = isempty(prefixes) ? inner : PathFilter(inner, prefixes)
+    attach!(wrapped, server)
     push!(server.middlewares, wrapped)
     # Refresh the seam's baked tuple stack (registration is build-phase only).
     server.context = RequestContext(server.router; middlewares=server.middlewares,
@@ -536,3 +574,16 @@ end
 # Do-block convenience: use!(app) do req, next ... end
 use!(f::Function, server::AbstractServer; paths=nothing) =
     use!(server, f; paths=paths)
+
+# Metrics gauges: capture the server so `/metrics` can report live counts.
+function attach!(mw::PrometheusMetrics, server::AbstractServer)
+    exec = server.executor
+    mw.state = () -> (
+        connections = length(server.runtime.conn_times),
+        ws_clients = length(server.runtime.ws_clients),
+        streams = length(server.runtime.streams),
+        inflight = exec isa AsyncExecutor ? exec.inflight[] : 0,
+        queue_depth = exec isa AsyncExecutor ? Base.n_avail(exec.calls) : 0,
+    )
+    return mw
+end

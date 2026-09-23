@@ -19,12 +19,12 @@ struct _RateShard
     last_cleanup::Base.RefValue{Float64}
 end
 
-struct RateLimit <: AbstractMiddleware
+struct RateLimit{F} <: AbstractMiddleware
     max_requests::Int
     window_seconds::Int
     cleanup_interval::Float64
     shards::Vector{_RateShard}
-    key_fn::Function            # (Request) -> bucket key
+    key_fn::F                   # (Request) -> bucket key
     trust_proxies::Bool
 end
 

@@ -20,8 +20,8 @@
     end
     ```
 """
-struct SSEWriter
-    writer::IO                       # StreamWriter (live) or a test buffer
+struct SSEWriter{W}
+    writer::W                        # StreamWriter (live) or a test buffer
 end
 
 """

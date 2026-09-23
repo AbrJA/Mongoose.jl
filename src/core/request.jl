@@ -59,8 +59,21 @@ _headerpair(p) = throw(ArgumentError("headers must be Pairs of strings, got $(ty
 # Mutable helpers (used by middleware and the transport when augmenting
 # response headers after construction).
 @inline Base.push!(h::Headers, kv::Pair{String,String}) = (push!(h.data, kv); h)
+@inline Base.push!(h::Headers, key::AbstractString, value::AbstractString) =
+    push!(h, String(key) => String(value))
 @inline Base.append!(h::Headers, kvs::AbstractVector{<:Pair{String,String}}) =
     (append!(h.data, kvs); h)
+
+"""
+    delete!(headers, key) → Headers
+
+Remove every pair whose name matches `key` case-insensitively.
+"""
+function Base.delete!(h::Headers, key::AbstractString)
+    lkey = lowercase(String(key))
+    filter!(p -> lowercase(p.first) != lkey, h.data)
+    return h
+end
 
 formatheaders(h::Headers)::String = formatheaders(h.data)
 
@@ -132,6 +145,22 @@ end
 function Request(method::Symbol, uri::String,
                  query::Dict{String,String}, headers,
                  body::String, context::Union{Nothing,Dict{Symbol,Any}}=nothing,
+                 remote_addr::Union{Nothing,String}=nothing)
+    path = String(stripquery(uri))
+    return Request(method, uri, path, query, asheaders(headers), body, context, remote_addr)
+end
+
+"""
+    Request(; method, uri, query=Dict(), headers=Headers(), body="",
+              context=nothing, remote_addr=nothing) → Request
+
+Keyword constructor; `path` is derived from `uri`. Prefer this over the
+positional forms for readability.
+"""
+function Request(; method::Symbol, uri::String,
+                 query::Dict{String,String}=Dict{String,String}(),
+                 headers=Headers(), body::String="",
+                 context::Union{Nothing,Dict{Symbol,Any}}=nothing,
                  remote_addr::Union{Nothing,String}=nothing)
     path = String(stripquery(uri))
     return Request(method, uri, path, query, asheaders(headers), body, context, remote_addr)

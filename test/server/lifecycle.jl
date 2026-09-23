@@ -226,3 +226,16 @@ end
     end
     shutdown!(app)
 end
+
+@testset "isrunning/url accessors" begin
+    app = App()
+    get!(app, "/") do req; text("ok") end
+    @test !isrunning(app)
+    @test url(app) === nothing
+    with_server(app) do port
+        @test isrunning(app)
+        @test url(app) == "http://127.0.0.1:$port"
+    end
+    @test !isrunning(app)
+    @test url(app) === nothing
+end

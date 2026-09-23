@@ -479,7 +479,7 @@ use!(app, compress(min_size_bytes=1024))
 start!(app; port=8080)
 ```
 
-## Testing with FakeTransport (FakeTransport)
+## Testing with FakeTransport
 
 `FakeTransport` is the FFI-free reference transport:
 it dispatches requests through the full pipeline with **no server and no

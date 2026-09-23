@@ -11,7 +11,7 @@ using CodecZlib
 # `import Mongoose: X` or `Mongoose.Kernel.X`.
 export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
     Plain, Html, Json, Css, Js, Xml, Binary,
-    start!, shutdown!, route!, use!, serve!, onerror!, onstart!, onstop!,
+    start!, shutdown!, isrunning, url, route!, use!, serve!, onerror!, onstart!, onstop!,
     context, Cookie, Headers, setcookie, cookies, form, header,
     ws!, ws_send_all, Message,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
@@ -27,7 +27,7 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
     UnavailableForLegalReasonsError, InternalServerError,
     BadGatewayError, ServiceUnavailableError, GatewayTimeoutError,
     TLSConfig,
-    service!, service, background!,
+    service!, service, services, with_services, background!,
     AbstractExecutor, SyncExecutor, AsyncExecutor, submit!, stop!, haspending,
     AbstractTransport, FakeTransport, close!,
     supportsws, supportstls, supportsstream,
@@ -51,7 +51,7 @@ import .Kernel: route!, ws!, post!, patch!, options!, head!,
     submit!, start!, stop!, haspending,
     supportsws, supportstls, supportsstream,
     freeze!, isfrozen, matchroute, hasroute, haswsroutes, getwsendpoint,
-    terminalfor
+    attach!, terminalfor
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. FFI Layer (C constants, structs, bindings)
@@ -183,6 +183,7 @@ end
         matchroute(frozen, :get, "/fixed")
         matchroute(frozen, :get, "/users/1")
         matchroute(frozen, :get, "/files/a/b")
+        invoke_endpoint(Endpoint(req -> Response(200, Pair{String,String}[], "e")), req, ())
         frozen_ctx = RequestContext(frozen)
         process(frozen_ctx, req)
         process(frozen_ctx,

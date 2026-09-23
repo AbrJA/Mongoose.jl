@@ -36,9 +36,10 @@ mutable struct _MetricsShard
     )
 end
 
-struct PrometheusMetrics <: AbstractMiddleware
+mutable struct PrometheusMetrics <: AbstractMiddleware
     shards::Vector{_MetricsShard}
     path::String
+    state::Union{Nothing,Function}   # set by `attach!` (server gauges)
 end
 
 @doc """
@@ -165,6 +166,22 @@ function _renderstats(mw::PrometheusMetrics)
     println(io, "http_request_duration_seconds_sum ", agg_sum)
     println(io, "http_request_duration_seconds_count ", agg_total)
 
+    # Server-state gauges (present once `attach!` captured the server).
+    if mw.state !== nothing
+        st = mw.state()
+        for (name, help, value) in (
+            ("mongoose_connections", "Currently open connections", st.connections),
+            ("mongoose_ws_clients", "Open WebSocket clients", st.ws_clients),
+            ("mongoose_active_streams", "In-flight streaming responses", st.streams),
+            ("mongoose_executor_inflight", "Jobs currently executing", st.inflight),
+            ("mongoose_executor_queue_depth", "Jobs waiting in the executor queue", st.queue_depth),
+        )
+            println(io, "# HELP ", name, " ", help)
+            println(io, "# TYPE ", name, " gauge")
+            println(io, name, " ", value)
+        end
+    end
+
     return Response(200, _METRICS_CONTENT_TYPE, String(take!(io)))
 end
 
@@ -206,5 +223,5 @@ Prometheus `scrape_configs`:
 """
 function metrics(; path::String="/metrics")
     shards = [_MetricsShard() for _ in 1:_METRICS_SHARDS]
-    return PrometheusMetrics(shards, path)
+    return PrometheusMetrics(shards, path, nothing)
 end
