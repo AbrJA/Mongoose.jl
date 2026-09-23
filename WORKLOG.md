@@ -222,31 +222,34 @@ Verification tags from the audit: **[live]** reproduced on a running server,
 **[code]** verified by reading, **[rep]** reported.
 
 ### Batch 6 — P0 + P1 hotfix (start here)
-- [ ] **6.1 [live] P0: chunked requests hang.** `adapter.jl:49` calls bare
+- [x] **6.1 [live] P0: chunked requests hang.** `adapter.jl:49` called bare
   `decode_chunked` (Kernel-only, unexported) → `UndefVarError`, no response;
-  the decode is also a double-decode (Mongoose already de-chunks `hm.body`)
-  and the decoder is overflow-unsafe on hostile chunk sizes. Fix: drop the
-  adapter branch (trust `hm.body`), wire test with an IO body.
-- [ ] **6.2 [live] CORS intercepts every OPTIONS** and 403s when `Origin` is
-  absent (`cors.jl:46-66`). Fix: preflight only when `Origin` +
-  `Access-Control-Request-Method` are both present; always `Vary: Origin`.
-- [ ] **6.3 [live] `Connection: Close` echo is case-sensitive**
-  (`http_handler.jl:31`); Mongoose closes anyway → pooling client hangs.
-- [ ] **6.4 [live] `SameSite=None` is dropped** (`response.jl:252`); no CRLF
-  validation on cookie fields or `redirect` Location (response splitting).
-- [ ] **6.5 [code] WS idle timeout compares ms to seconds** → ~1000× late;
-  sweep never force-closes (`ws_handler.jl:158-174`). Fix unit, mark closing,
-  add `mg_close_conn` binding for unresponsive peers.
-- [ ] **6.6 [code] WS upgrade runs `on_open`/registers before the handshake
-  check** (`ws_handler.jl:51-66`) → phantom client after a 426.
-- [ ] **6.7 [live] `ws_send_all` documented/used unqualified but not
-  exported** from the facade.
-- [ ] **6.8 [code] Malformed JSON/form/multipart become 500** instead of
-  400/415 (`response.jl:137`, `request.jl:164,268`, `process.jl:212-219`).
-- [ ] **6.9 [code] `PathFilter` prefix matching is not segment-aware**
-  (`/api` matches `/apixyz`, `pipeline.jl:37-43`).
-- [ ] **6.10 [code] Logger misses 500s** (`next()` outside try) and writes
-  multi-arg lines from worker threads (`logger.jl:62-82`).
+  also a double-decode (Mongoose already de-chunks `hm.body`). Fixed: drop the
+  adapter branch, wire tests (chunked IO body + payload that looks chunked).
+  *commit: `7997167`*
+- [x] **6.2 [live] CORS intercepts every OPTIONS** and 403s when `Origin` is
+  absent. Fixed: preflight only with `Origin` + `Access-Control-Request-Method`;
+  `Vary: Origin` also on denied origins. *commit: `db56dce`*
+- [x] **6.3 [live] `Connection: Close` echo is case-sensitive.** Fixed:
+  token-aware case-insensitive check. *commit: `db56dce`*
+- [x] **6.4 [live] `SameSite=None` dropped; no CRLF validation.** Fixed:
+  always emitted; CTL rejected in Cookie fields/setcookie/redirect.
+  *commit: `db56dce`*
+- [x] **6.5 [code] WS idle timeout ms-vs-seconds, no force-close.** Fixed:
+  `/1000`, sweep every 1s, `closing` marked, Close + `mg_close_conn` (new
+  binding). Server-side test asserts registration drop + `on_close`.
+  *commit: `db56dce`*
+- [x] **6.6 [code] WS upgrade ran hooks/registration before the handshake
+  check.** Fixed: header pre-check; non-upgrade GET → 426 with no side
+  effects. *commit: `db56dce`*
+- [x] **6.7 [live] `ws_send_all` not exported.** Fixed: facade export.
+  *commit: `db56dce`*
+- [x] **6.8 [code] Malformed JSON/form/multipart became 500.** Fixed: 400/415
+  (+ missing boundary → 400); acceptance updated. *commit: `db56dce`*
+- [x] **6.9 [code] `PathFilter` not segment-aware.** Fixed: whole-segment
+  match + trailing-slash normalization. *commit: `db56dce`*
+- [x] **6.10 [code] Logger missed 500s; interleaving writes.** Fixed:
+  try/catch logs 500 then rethrows; single-write line. *commit: `db56dce`*
 
 ### Batch 7 — lifecycle & concurrency
 - [ ] 7.1 `runtime.bg_tasks` pushed from workers without a lock + unbounded
@@ -313,6 +316,12 @@ Verification tags from the audit: **[live]** reproduced on a running server,
 
 ## Changelog
 
+- **Sep 17 — Batch 6 (P0 + P1 hotfix) shipped**: chunked requests fixed
+  (`7997167`); CORS preflight detection, case-insensitive Connection echo,
+  SameSite=None + cookie/redirect CTL rejection, WS idle units + force close +
+  upgrade handshake guard, `ws_send_all` export, 400/415 body errors,
+  segment-aware `paths=`, logger 500s (`db56dce`). 1088 tests + 80 acceptance
+  + Aqua/JET + docs green. Next: batch 7 (lifecycle & concurrency).
 - **Sep 17 — Audit (deep review) delivered**; findings + batches 6–9 recorded
   above. Batch 6 (P0 + P1 hotfix) starts next.
 - **Sep 17 — Batch 5 (surface coherence) shipped**: the read-side router
