@@ -92,3 +92,38 @@
     end
 end
 
+
+@testset "shutdown drains active streams" begin
+    finished = Ref(false)
+    app = App(drain_timeout_ms=5000)
+    get!(app, "/drain") do req
+        sse(req) do writer
+            for i in 1:5
+                emit(writer; data="e$i")
+                sleep(0.05)
+            end
+            finished[] = true
+        end
+    end
+
+    port = fresh_port()
+    start!(app; host="127.0.0.1", port=port, blocking=false)
+    try
+        wait_for_server("http://127.0.0.1:$port/")
+        resp_task = @async HTTP.get("http://127.0.0.1:$port/drain"; status_exception=false)
+
+        # Wait until the stream is registered, then shut down while it runs:
+        # the drain must let the producer finish and deliver all events.
+        started = wait_until(timeout=5.0) do
+            !isempty(app.runtime.streams)
+        end
+        @test started
+        shutdown!(app)
+
+        @test finished[]
+        resp = fetch(resp_task)
+        @test contains(String(resp.body), "data: e5")
+    finally
+        shutdown!(app)
+    end
+end

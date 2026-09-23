@@ -146,18 +146,25 @@ Build the reply for a buffered/streamed HTTP request, adding `X-Request-Id`.
 """
 function _http_job(server::AbstractServer, id::Int, req::Request)
     rid = resolve_request_id(req, server)
-    res = try
-        invoke_http(server, req)
+    try
+        res = try
+            invoke_http(server, req)
+        catch e
+            @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
+            errorresponse(server.errors, req, 500)
+        end
+        _echo_conn_close!(res, req)
+        if res isa StreamResponse
+            return Tagged{Union{Response,StreamResponse,Message}}(id, res)
+        end
+        resp = mergeheaders(res, ["X-Request-Id" => rid])
+        return Tagged{Union{Response,StreamResponse,Message}}(id, resp)
     catch e
-        @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
-        errorresponse(server.errors, req, 500)
+        # Anything outside the handler's own try (post-processing) still gets a
+        # reply, so the connection entry is cleaned up and the client answered.
+        @log_error "Request job error uri=$(req.uri)" e catch_backtrace()
+        return Tagged{Union{Response,StreamResponse,Message}}(id, errorresponse(server.errors, req, 500))
     end
-    _echo_conn_close!(res, req)
-    if res isa StreamResponse
-        return Tagged{Union{Response,StreamResponse,Message}}(id, res)
-    end
-    resp = mergeheaders(res, ["X-Request-Id" => rid])
-    return Tagged{Union{Response,StreamResponse,Message}}(id, resp)
 end
 
 """
@@ -172,8 +179,17 @@ connection id is gone from `app.connections`.
 function _http_job_timed(server::AbstractServer, id::Int, req::Request, timeout::Integer)
     t = Threads.@spawn _http_job(server, id, req)
     r = timedwait(() -> istaskdone(t), timeout / 1000.0; pollint=0.002)
-    r === :ok && return fetch(t)
-    push!(server.runtime.bg_tasks, t)
+    if r === :ok
+        return try
+            fetch(t)
+        catch e
+            # A job that failed outside the handler's own try still gets a reply
+            # so the connection entry is cleaned up and the client is answered.
+            @log_error "Request job failed uri=$(req.uri)" e catch_backtrace()
+            Tagged{Union{Response,StreamResponse,Message}}(id, errorresponse(server.errors, req, 500))
+        end
+    end
+    bg_track!(server, t)
     @log_warn "Request timeout uri=$(req.uri)"
     return Tagged{Union{Response,StreamResponse,Message}}(id, errorresponse(server.errors, 504))
 end

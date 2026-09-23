@@ -151,7 +151,9 @@ function send_stream_response!(server::AbstractServer, conn::MgConnection, resp:
     chan = Channel{Union{Vector{UInt8},Nothing}}(64)
     server.runtime.streams[Int(conn)] = ActiveStream(chan, conn, false)
     producer = resp.producer
-    @async _run_stream(chan, producer)
+    # A producer must never run on the poll thread: a CPU-bound generator
+    # (@async is sticky) would stall mg_mgr_poll, draining, and timeouts.
+    Threads.@spawn _run_stream(chan, producer)
     return nothing
 end
 

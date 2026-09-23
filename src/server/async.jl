@@ -5,6 +5,7 @@ mutable struct AsyncExecutor <: AbstractExecutor
     calls::Channel{Function}
     replies::Channel{Tagged{Union{Response,StreamResponse,Message}}}
     inflight::Threads.Atomic{Int}
+    stopping::Threads.Atomic{Bool}
 end
 
 @doc """
@@ -26,7 +27,7 @@ function AsyncExecutor(workers::Int, queue_size::Int)
     return AsyncExecutor(workers, queue_size, Task[],
         Channel{Function}(queue_size),
         Channel{Tagged{Union{Response,StreamResponse,Message}}}(queue_size),
-        Threads.Atomic{Int}(0))
+        Threads.Atomic{Int}(0), Threads.Atomic{Bool}(false))
 end
 
 # --- Lifecycle ---
@@ -34,6 +35,7 @@ end
 function init_executor!(exec::AsyncExecutor)
     exec.calls = Channel{Function}(exec.queue_size)
     exec.replies = Channel{Tagged{Union{Response,StreamResponse,Message}}}(exec.queue_size)
+    exec.stopping[] = false
     empty!(exec.worker_tasks)
     return exec
 end
@@ -50,10 +52,28 @@ function spawn_workers!(exec::AsyncExecutor)
     end
 end
 
-function stop!(exec::AsyncExecutor)
+"""
+    stop!(exec::AsyncExecutor; timeout=5.0)
+
+Stop the worker pool. `calls` is closed first, then replies are drained while
+workers are joined so a full reply queue cannot deadlock the join. The join is
+bounded by `timeout` seconds: a handler that never returns is abandoned (its
+task keeps running, as before) instead of hanging shutdown forever.
+"""
+function stop!(exec::AsyncExecutor; timeout::Real=5.0)
+    exec.stopping[] = true
     close(exec.calls)
-    for t in exec.worker_tasks
-        try wait(t) catch end
+    deadline = time() + timeout
+    while time() < deadline
+        all(istaskdone, exec.worker_tasks) && break
+        # Consume replies so workers blocked in put! can finish their loop.
+        while isready(exec.replies)
+            try take!(exec.replies) catch; break; end
+        end
+        yield()
+    end
+    if !all(istaskdone, exec.worker_tasks)
+        @log_warn "Executor stop: $(count(!istaskdone, exec.worker_tasks)) worker(s) still running after $(timeout)s; abandoning"
     end
     close(exec.replies)
     empty!(exec.worker_tasks)
@@ -80,25 +100,26 @@ end
 # --- Worker loop ---
 
 function worker_loop(exec::AsyncExecutor)
-    try
-        for job in exec.calls
-            Threads.atomic_add!(exec.inflight, 1)
-            try
-                reply = job()
-                reply === nothing && continue
-                isopen(exec.replies) && put!(exec.replies, reply)
-            finally
-                Threads.atomic_sub!(exec.inflight, 1)
-            end
+    for job in exec.calls
+        Threads.atomic_add!(exec.inflight, 1)
+        try
+            reply = job()
+            reply === nothing && continue
+            isopen(exec.replies) && put!(exec.replies, reply)
+        catch e
+            # A failing job must not kill the worker (and thus the pool).
+            e isa InvalidStateException ||
+                @log_error "Worker job error" e catch_backtrace()
+        finally
+            Threads.atomic_sub!(exec.inflight, 1)
         end
-    catch e
-        e isa InvalidStateException || rethrow(e)
     end
 end
 
 # --- Supervisor ---
 
 function supervise_workers!(exec::AsyncExecutor)
+    exec.stopping[] && return nothing
     for i in eachindex(exec.worker_tasks)
         t = exec.worker_tasks[i]
         if istaskdone(t)
@@ -106,6 +127,7 @@ function supervise_workers!(exec::AsyncExecutor)
             exec.worker_tasks[i] = Threads.@spawn worker_loop(exec)
         end
     end
+    return nothing
 end
 
 # --- App wiring (server-level orchestration) ---
@@ -116,18 +138,25 @@ function init_server!(app::App)
     empty!(app.runtime.connections)
     empty!(app.runtime.streams)
     empty!(app.runtime.ws_clients)
+    empty!(app.runtime.ws_gen_ids)
 end
 
-haspending(app::App) = app.executor isa AsyncExecutor ? haspending(app.executor) : false
+function haspending(app::App)
+    app.executor isa AsyncExecutor && haspending(app.executor) && return true
+    return !isempty(app.runtime.streams)
+end
 
 function drain_poll!(app::App)
     mg_mgr_poll(app.runtime.manager.ptr, 10)
     dispatch_replies!(app)
+    # The event loop may already have exited during shutdown; drain streams
+    # here too so `drain!` can actually finish them (poll-thread only).
+    drain_streams!(app)
 end
 
 function dispatch_replies!(app::App)::Bool
     exec = app.executor
-    exec === nothing && return false
+    exec isa AsyncExecutor || return false
     did_ws = false
     while isopen(exec.replies) && isready(exec.replies)
         reply = try take!(exec.replies) catch e; e isa InvalidStateException && break; rethrow(e) end

@@ -83,7 +83,10 @@ function shutdown!(server::AbstractServer)
     end
 
     drain!(server)
-    stop!(server.executor)
+    exec = server.executor
+    exec isa AsyncExecutor ?
+        stop!(exec; timeout=server.config.drain_timeout_ms / 1000.0) :
+        stop!(exec)
     drain_bg_tasks!(server)
     stop_event_loop!(server)
     unregister_server!(server)
@@ -128,14 +131,17 @@ function drain!(server::AbstractServer)
         drain_poll!(server)
         yield()
     end
+    # Flush final bytes (e.g. a stream's terminal chunk) before teardown:
+    # mg_send only buffers, mg_mgr_poll is what writes them to the socket.
+    drain_poll!(server)
 end
 
 # Background tasks get the same one-shot `drain_timeout_ms` budget as streams:
 # a `background!` loop usually never finishes, so the wait is a grace period,
 # not a join. Called after `stop!(executor)` so no worker can push a new
-# timed-out request task while the vector is filtered.
+# timed-out request task while the snapshot is taken.
 function drain_bg_tasks!(server::AbstractServer)
-    tasks = server.runtime.bg_tasks
+    tasks = bg_snapshot(server)
     isempty(tasks) && return
     deadline = time() + server.config.drain_timeout_ms / 1000.0
     for t in tasks
@@ -144,7 +150,7 @@ function drain_bg_tasks!(server::AbstractServer)
         remaining <= 0 && break
         timedwait(() -> istaskdone(t), remaining; pollint=0.01)
     end
-    filter!(!istaskdone, tasks)
+    bg_prune!(server)
     return
 end
 

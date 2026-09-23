@@ -29,13 +29,25 @@ end
     end
 end
 
-@inline function ws_register!(server::AbstractServer, conn_id::Int, uri::String, conn::MgConnection)
+@inline function ws_register!(server::AbstractServer, uri::String, conn::MgConnection)
+    id = Int(Threads.atomic_add!(server.runtime.conn_seq, UInt64(1)) + UInt64(1))
     lock(server.runtime.ws_lock) do
-        server.runtime.ws_clients[conn_id] = WsConn(uri, time(), false)
+        server.runtime.ws_clients[id] = WsConn(uri, time(), false)
+        server.runtime.ws_gen_ids[conn] = id
     end
     # Track the connection so idle sweeps can send close frames in sync mode
     # too (async mode also inserts it, but the mapping is mode-agnostic now).
-    server.runtime.connections[conn_id] = conn
+    server.runtime.connections[id] = conn
+    return id
+end
+
+# Generation id for a live WS connection (0 when unknown). Reply routing uses
+# this id instead of the raw pointer, so a stale worker reply can never be
+# delivered to a new client that happens to reuse the same address.
+@inline function ws_id_of(server::AbstractServer, conn::MgConnection)::Int
+    return lock(server.runtime.ws_lock) do
+        get(server.runtime.ws_gen_ids, conn, 0)
+    end
 end
 
 # --- Upgrade ---
@@ -74,7 +86,7 @@ function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
         end
     end
     mg_ws_upgrade(conn, ev_data, C_NULL)
-    ws_register!(server, Int(conn), uri, conn)
+    ws_register!(server, uri, conn)
 end
 
 # --- WS Control Frames (Ping/Pong/Close) ---
@@ -83,7 +95,7 @@ function on_ws_control(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
     msg = MgWsMessage(ev_data)
     op = msg.flags & 0x0F
     if op == WS_OP_PING || op == WS_OP_PONG
-        ws_touch!(server, Int(conn))
+        id = ws_id_of(server, conn); id != 0 && ws_touch!(server, id)
     end
     if op == WS_OP_CLOSE || op == WS_OP_PING
         reply_op = op == WS_OP_CLOSE ? WS_OP_CLOSE : WS_OP_PONG
@@ -100,7 +112,8 @@ end
 
 function on_ws_message(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
-    conn_id = Int(conn)
+    conn_id = ws_id_of(server, conn)
+    conn_id == 0 && return
     ws_touch!(server, conn_id)
 
     if msg.data.len > server.config.ws_max_frame_bytes
@@ -138,11 +151,15 @@ end
 # --- Connection Close ---
 
 function on_connection_close(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
-    conn_id = Int(conn)
-    close_ws!(server, conn_id)
+    conn_id = lock(server.runtime.ws_lock) do
+        id = get(server.runtime.ws_gen_ids, conn, 0)
+        delete!(server.runtime.ws_gen_ids, conn)
+        id
+    end
+    conn_id != 0 && close_ws!(server, conn_id)
     filter!(kv -> kv.second != conn, server.runtime.connections)
     # Abort any active stream on this connection: unblocks the producer.
-    st = pop!(server.runtime.streams, conn_id, nothing)
+    st = pop!(server.runtime.streams, Int(conn), nothing)
     st !== nothing && close(st.channel)
 end
 

@@ -49,3 +49,28 @@ end
     @test Mongoose.getwsendpoint(app2.router, "/g2/ws").allowed_origins == ["https://a.test"]
 end
 
+
+@testset "WS connection generation ids" begin
+    app = App()
+    ws!(app, "/ws"; on_message = m -> nothing)
+
+    c1 = Ptr{Cvoid}(0x1000 % UInt)
+    id1 = Mongoose.ws_register!(app, "/ws", c1)
+    @test app.runtime.ws_gen_ids[c1] == id1
+    @test app.runtime.connections[id1] == c1
+    @test haskey(app.runtime.ws_clients, id1)
+
+    Mongoose.on_connection_close(app, c1, C_NULL)
+    @test !haskey(app.runtime.ws_gen_ids, c1)
+    @test !haskey(app.runtime.connections, id1)
+    @test !haskey(app.runtime.ws_clients, id1)
+
+    # A new connection reusing the same address gets a fresh generation id, so
+    # a stale worker reply can never be delivered to it.
+    c2 = Ptr{Cvoid}(0x1000 % UInt)
+    id2 = Mongoose.ws_register!(app, "/ws", c2)
+    @test id2 != id1
+    @test app.runtime.ws_gen_ids[c2] == id2
+    Mongoose.on_connection_close(app, c2, C_NULL)
+    @test isempty(app.runtime.ws_gen_ids)
+end

@@ -143,9 +143,13 @@ function decode_chunked(data::AbstractString)::String
             # blank line — either way the payload is complete.
             return String(take!(out))
         end
-        j + Int(size) <= n || return data
-        write(out, view(bytes, j:j+Int(size)-1))
-        i = j + Int(size)
+        # Guard against overflow/BoundsError on hostile sizes: a chunk larger
+        # than the remaining input cannot be valid.
+        size > UInt(n) && return data
+        sz = Int(size)
+        j + sz <= n || return data
+        write(out, view(bytes, j:j+sz-1))
+        i = j + sz
         (i + 1 <= n && bytes[i] == UInt8('\r') && bytes[i+1] == UInt8('\n')) || return data
         i += 2
     end

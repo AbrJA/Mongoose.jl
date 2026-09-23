@@ -44,6 +44,7 @@ function _event_loop_async(app::App)
 
         if (now - last_health) >= 2.0
             supervise_workers!(exec)
+            bg_prune!(app)
             last_health = now
         end
 

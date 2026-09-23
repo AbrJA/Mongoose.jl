@@ -40,3 +40,26 @@ end
     @test !haspending(fe3)
 end
 
+
+@testset "AsyncExecutor stop! is bounded and drains replies" begin
+    # A worker stuck in a never-returning job must not hang stop! forever.
+    exec = AsyncExecutor(1, 4)
+    start!(exec, nothing)
+    submit!(exec, () -> sleep(5.0))
+    sleep(0.1)                          # let the worker pick up the job
+    t0 = time()
+    stop!(exec; timeout=0.2)
+    @test time() - t0 < 3.0
+
+    # A full reply queue (worker blocked in put!) must not deadlock the join.
+    exec2 = AsyncExecutor(1, 1)
+    start!(exec2, nothing)
+    for i in 1:6
+        submit!(exec2, () -> i)
+    end
+    ok = timedwait(10.0; pollint=0.05) do
+        stop!(exec2; timeout=2.0)
+        true
+    end
+    @test ok == :ok
+end

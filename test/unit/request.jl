@@ -297,3 +297,12 @@ end
         @test get(sr.headers, "cache-control", "") == "no-cache"
     end
 end
+
+@testset "decode_chunked hostile sizes" begin
+    import Mongoose.Kernel: decode_chunked
+    # A chunk larger than the remaining input is malformed → passthrough, no
+    # BoundsError/InexactError from Int conversion.
+    @test decode_chunked("7fffffffffffffff\r\n") == "7fffffffffffffff\r\n"
+    @test decode_chunked("ffffffffffffffffffff\r\n") == "ffffffffffffffffffff\r\n"
+    @test decode_chunked("ffffffffffffffff\r\nx") == "ffffffffffffffff\r\nx"
+end

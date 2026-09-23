@@ -128,17 +128,53 @@ mutable struct RunState
     manager::Manager
     tls::Union{Nothing,TLSConfig}
     ws_clients::Dict{Int,WsConn}
-    ws_lock::Threads.SpinLock     # guards ws_clients (mutated on the poll thread)
+    ws_gen_ids::Dict{Ptr{Cvoid},Int}     # connection pointer → generation id (WS)
+    ws_lock::Threads.SpinLock     # guards ws_clients/ws_gen_ids
     id_seq::Threads.Atomic{UInt64}       # X-Request-Id sequence
-    conn_seq::Threads.Atomic{UInt64}     # Async connection id sequence
+    conn_seq::Threads.Atomic{UInt64}     # Connection id sequence (HTTP async + WS)
     connections::Dict{Int,MgConnection}  # Transport-side in-flight (async): id → conn
     streams::Dict{Int,ActiveStream}      # Streaming responses drained by the loop
     bg_tasks::Vector{Task}
+    bg_lock::Threads.SpinLock            # guards bg_tasks (workers push)
 end
 
 RunState() = RunState(Threads.Atomic{Bool}(false), nothing, Manager(empty=true), nothing,
-    Dict{Int,WsConn}(), Threads.SpinLock(), Threads.Atomic{UInt64}(0), Threads.Atomic{UInt64}(0),
-    Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(), Task[])
+    Dict{Int,WsConn}(), Dict{Ptr{Cvoid},Int}(), Threads.SpinLock(),
+    Threads.Atomic{UInt64}(0), Threads.Atomic{UInt64}(0),
+    Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(), Task[], Threads.SpinLock())
+
+# --- Background task tracking ---
+# Workers push timed-out request tasks; the event loop prunes completed ones on
+# its health tick so the vector does not grow for the server's lifetime.
+
+@inline function bg_track!(server::AbstractServer, t::Task)
+    lock(server.runtime.bg_lock)
+    try
+        push!(server.runtime.bg_tasks, t)
+    finally
+        unlock(server.runtime.bg_lock)
+    end
+    return t
+end
+
+function bg_prune!(server::AbstractServer)
+    lock(server.runtime.bg_lock)
+    try
+        filter!(!istaskdone, server.runtime.bg_tasks)
+    finally
+        unlock(server.runtime.bg_lock)
+    end
+    return nothing
+end
+
+function bg_snapshot(server::AbstractServer)
+    lock(server.runtime.bg_lock)
+    try
+        return copy(server.runtime.bg_tasks)
+    finally
+        unlock(server.runtime.bg_lock)
+    end
+end
 
 """
     App — Mongoose.jl web application.
@@ -430,7 +466,7 @@ end
 """
 function background!(server::AbstractServer, f::Function)
     _ensure_registratable(server, "background tasks")
-    push!(server.hooks_start, () -> push!(server.runtime.bg_tasks, @async f()))
+    push!(server.hooks_start, () -> bg_track!(server, @async f()))
     return server
 end
 background!(f::Function, server::AbstractServer) = background!(server, f)

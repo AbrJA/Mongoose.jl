@@ -182,6 +182,7 @@ Endpoint
 AbstractExecutor
 SyncExecutor
 AsyncExecutor
+stop!
 FakeExecutor
 run!
 AbstractTransport
