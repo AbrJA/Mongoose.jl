@@ -346,6 +346,17 @@ Verification tags from the audit: **[live]** reproduced on a running server,
 
 ## Changelog
 
+- **Sep 17 — Public-name standardization (final naming pass)**: audited the
+  whole exported surface and removed the last four underscores
+  (`ws_send_all`→`broadcastws`, `with_services`→`withservices`,
+  `invoke_endpoint`→`invokeendpoint`, `endpoint_middleware`→
+  `endpointmiddleware`), fixed acronym casing (`WsConn`/`WsEndpoint`→
+  `WSConn`/`WSEndpoint`), and made every middleware builder the lowercase name
+  of its type (`PrometheusMetrics`→`Metrics`, `SecurityHeaders`→`Security`).
+  README naming conventions now document the rules and exceptions; DI docs use
+  `withservices`; metrics docs list the gauges. Inventory: 127 facade names,
+  zero underscores; Kernel extension names also underscore-free. 3550 tests +
+  81 acceptance + Aqua/JET baseline + docs green.
 - **Sep 17 — Batch 9 (design & docs) shipped** (`07c4a53`): endpoint
   invocation protocol for custom routers; `services`/`with_services` typed DI
   access; `attach!` seam with metrics gauges; parameterized hot structs;
