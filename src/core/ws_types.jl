@@ -33,17 +33,17 @@ end
 
 # --- WebSocket endpoint ---
 
-struct WSEndpoint
-    on_message::Function
-    on_open::Union{Function,Nothing}
-    on_close::Union{Function,Nothing}
+struct WSEndpoint{M,O,C}
+    on_message::M
+    on_open::O
+    on_close::C
     allowed_origins::Vector{String}   # empty = allow any Origin
 end
 
-function WSEndpoint(; on_message::Function, on_open::Union{Function,Nothing}=nothing,
-                    on_close::Union{Function,Nothing}=nothing,
-                    allowed_origins=nothing)
-    return WSEndpoint(on_message, on_open, on_close, asstrings(allowed_origins))
+function WSEndpoint(; on_message::M, on_open::O=nothing,
+                    on_close::C=nothing,
+                    allowed_origins=nothing) where {M,O,C}
+    return WSEndpoint{M,O,C}(on_message, on_open, on_close, asstrings(allowed_origins))
 end
 
 # --- Internal tagged message wrapper (used by async worker pool) ---

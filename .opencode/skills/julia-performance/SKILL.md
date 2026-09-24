@@ -25,8 +25,9 @@ against.
    # good
    struct Bearer{F}; validator::F; end
    ```
-   Known remaining offenders (accepted or to-fix): `Endpoint.handler`,
-   `WSEndpoint` callbacks, `App.context`, `App.executor`.
+   Done: `Endpoint{F}`, `WSEndpoint{M,O,C}`, `Bearer{F}`, `RateLimit{F}`,
+   `Logger{O}`, `SSEWriter{W}`, `PathFilter{M}`. Remaining: `App.context` and
+   `App.executor` (accepted dynamic hops; C2/DESIGN T6).
 
 3. **Function barriers for type-erased containers.** A `Dict`/`Vector` of
    abstract elements erases types; recover specialization by passing the value
@@ -46,15 +47,15 @@ against.
    | Path | B/op | ns/op |
    |---|---|---|
    | `process` frozen fixed route | 192 | ~225 |
-   | `process` generic fixed route | 320 | ~680 |
+   | `process` generic fixed route | 304 | ~630 |
    | `process` frozen param route | 528 | ~400 |
-   | `process` generic param route | 704 | ~1600 |
+   | `process` generic param route | 688 | ~1500 |
    | `process` frozen + `cors()`+`etag()` | 1024 | ~1300 |
    | `mergeheaders` | 368 | ~110 |
    | `asheaders(tuple)` | 112 | ~50 |
    | `parse_method` | **0** | ~4 |
    | `formatheaders` (2 headers) | 336 | ~150 |
-   | `Request(...)` (empty) | 224 | ~55 |
+   | `Request(...)` (empty) | 240 | ~60 |
    | `parsequery("a=1&b=2")` | 1088 | ~360 |
    | `context(req)` | 304 | ~75 |
 

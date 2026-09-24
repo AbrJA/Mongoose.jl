@@ -116,3 +116,14 @@ end
     @test Mongoose.freeze!(_OpenRouter()) isa _OpenRouter
     @test isfrozen(_OpenRouter()) == false
 end
+
+@testset "Typed endpoints" begin
+    f = req -> text("ok")
+    ep = Mongoose.Endpoint(f)
+    @test ep isa Mongoose.Endpoint{typeof(f)}   # handler type captured
+    @test ep.handler === f
+
+    r = Router()
+    route!(r, :get, "/typed", f)
+    @test Mongoose.gethandler(r.fixed["/typed"].handlers, :get) === f
+end

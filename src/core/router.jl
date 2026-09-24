@@ -22,22 +22,26 @@
 # --- Route endpoint (handler + scoped middleware + metadata) ---
 
 """
-    Endpoint — what a route owns: handler, scoped middleware, and metadata.
+    Endpoint{F} — what a route owns: handler, scoped middleware, and metadata.
+
+    The handler's concrete type is a type parameter, so the endpoint can be
+    invoked without a dynamic call when its type is known (custom routers,
+    compiled terminals); registration specializes on the handler type.
 
     The router only stores and returns `Endpoint`s; it does not execute
     middleware. `middleware` applies to this route (in addition to app-global
     middleware); `metadata` is opaque and available for OpenAPI-style docs.
 """
-struct Endpoint
-    handler::Function
+struct Endpoint{F}
+    handler::F
     middleware::Vector{AbstractMiddleware}
     metadata::Any
 end
 
-function Endpoint(handler::Function;
+function Endpoint(handler::F;
                   middleware=nothing,
-                  metadata=nothing)
-    return Endpoint(handler, asmiddlewares(middleware), metadata)
+                  metadata=nothing) where {F}
+    return Endpoint{F}(handler, asmiddlewares(middleware), metadata)
 end
 
 # --- Method Dispatch (struct fields instead of Dict for zero-allocation dispatch) ---
@@ -227,7 +231,7 @@ OpenAPI-style tooling.
 Overlapping parametric routes resolve first-registered-first at dispatch;
 static routes always take precedence over parametric ones.
 """
-function route!(router::Router, method::Symbol, path::AbstractString, @nospecialize(handler::Function);
+function route!(router::Router, method::Symbol, path::AbstractString, handler::Function;
                 middleware=nothing,
                 metadata=nothing)
     m = _normalize_method(method)
@@ -237,7 +241,7 @@ function route!(router::Router, method::Symbol, path::AbstractString, @nospecial
     return router
 end
 
-function route!(router::Router, method::AbstractString, path::AbstractString, @nospecialize(handler::Function);
+function route!(router::Router, method::AbstractString, path::AbstractString, handler::Function;
                 middleware=nothing,
                 metadata=nothing)
     route!(router, _normalize_method(Symbol(method)), path, handler;
@@ -501,7 +505,7 @@ get!(app, "/users/:id::Int") do req, id
 end
 ```
 """
-function Base.get!(r::Router, path::AbstractString, @nospecialize(handler::Function))
+function Base.get!(r::Router, path::AbstractString, handler::Function)
     route!(r, :get, path, handler); return r
 end
 Base.get!(f::Function, r::Router, path::AbstractString) = Base.get!(r, path, f)
@@ -509,7 +513,7 @@ Base.get!(f::Function, r::Router, path::AbstractString) = Base.get!(r, path, f)
 """
     post!(router_or_app, path, handler)
 """
-function post!(r::Router, path::AbstractString, @nospecialize(handler::Function))
+function post!(r::Router, path::AbstractString, handler::Function)
     route!(r, :post, path, handler); return r
 end
 post!(f::Function, r::Router, path::AbstractString) = post!(r, path, f)
@@ -517,7 +521,7 @@ post!(f::Function, r::Router, path::AbstractString) = post!(r, path, f)
 """
     put!(router_or_app, path, handler)
 """
-function Base.put!(r::Router, path::AbstractString, @nospecialize(handler::Function))
+function Base.put!(r::Router, path::AbstractString, handler::Function)
     route!(r, :put, path, handler); return r
 end
 Base.put!(f::Function, r::Router, path::AbstractString) = Base.put!(r, path, f)
@@ -525,7 +529,7 @@ Base.put!(f::Function, r::Router, path::AbstractString) = Base.put!(r, path, f)
 """
     patch!(router_or_app, path, handler)
 """
-function patch!(r::Router, path::AbstractString, @nospecialize(handler::Function))
+function patch!(r::Router, path::AbstractString, handler::Function)
     route!(r, :patch, path, handler); return r
 end
 patch!(f::Function, r::Router, path::AbstractString) = patch!(r, path, f)
@@ -533,7 +537,7 @@ patch!(f::Function, r::Router, path::AbstractString) = patch!(r, path, f)
 """
     delete!(router_or_app, path, handler)
 """
-function Base.delete!(r::Router, path::AbstractString, @nospecialize(handler::Function))
+function Base.delete!(r::Router, path::AbstractString, handler::Function)
     route!(r, :delete, path, handler); return r
 end
 Base.delete!(f::Function, r::Router, path::AbstractString) = Base.delete!(r, path, f)
@@ -541,7 +545,7 @@ Base.delete!(f::Function, r::Router, path::AbstractString) = Base.delete!(r, pat
 """
     options!(router_or_app, path, handler)
 """
-function options!(r::Router, path::AbstractString, @nospecialize(handler::Function))
+function options!(r::Router, path::AbstractString, handler::Function)
     route!(r, :options, path, handler); return r
 end
 options!(f::Function, r::Router, path::AbstractString) = options!(r, path, f)
@@ -549,7 +553,7 @@ options!(f::Function, r::Router, path::AbstractString) = options!(r, path, f)
 """
     head!(router_or_app, path, handler)
 """
-function head!(r::Router, path::AbstractString, @nospecialize(handler::Function))
+function head!(r::Router, path::AbstractString, handler::Function)
     route!(r, :head, path, handler); return r
 end
 head!(f::Function, r::Router, path::AbstractString) = head!(r, path, f)

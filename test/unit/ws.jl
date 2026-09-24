@@ -74,3 +74,14 @@ end
     Mongoose.on_connection_close(app, c2, C_NULL)
     @test isempty(app.runtime.ws_gen_ids)
 end
+
+@testset "Typed WS endpoints" begin
+    g = msg -> Message("x")
+    we = Mongoose.WSEndpoint(on_message=g)
+    @test we isa Mongoose.WSEndpoint{typeof(g),Nothing,Nothing}
+    @test we.on_message === g
+
+    we2 = Mongoose.WSEndpoint(on_message=g, on_open=req -> true, on_close=() -> nothing)
+    @test we2.on_open isa Function
+    @test we2.on_close isa Function
+end

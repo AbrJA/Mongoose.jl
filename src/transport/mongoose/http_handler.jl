@@ -276,7 +276,7 @@ end
 
 # --- Routing convenience on server/app ---
 
-function route!(server::AbstractServer, method::Symbol, path::AbstractString, @nospecialize(handler::Function);
+function route!(server::AbstractServer, method::Symbol, path::AbstractString, handler::Function;
                 middleware=nothing,
                 metadata=nothing)
     _ensure_registratable(server, "routes")
@@ -284,7 +284,7 @@ function route!(server::AbstractServer, method::Symbol, path::AbstractString, @n
     return server
 end
 
-function route!(server::AbstractServer, method::AbstractString, path::AbstractString, @nospecialize(handler::Function);
+function route!(server::AbstractServer, method::AbstractString, path::AbstractString, handler::Function;
                 middleware=nothing,
                 metadata=nothing)
     route!(server.router, Symbol(lowercase(method)), path, handler;
@@ -305,13 +305,13 @@ function ws!(server::AbstractServer, path::AbstractString, handler::Function; kw
 end
 
 # Method-specific helpers for server/app (extend Base where applicable to avoid ambiguity)
-Base.get!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :get, path, h); server)
-post!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :post, path, h); server)
-Base.put!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :put, path, h); server)
-patch!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :patch, path, h); server)
-Base.delete!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :delete, path, h); server)
-options!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :options, path, h); server)
-head!(server::AbstractServer, path::AbstractString, @nospecialize(h::Function)) = (route!(server, :head, path, h); server)
+Base.get!(server::AbstractServer, path::AbstractString, h::Function) = (route!(server, :get, path, h); server)
+post!(server::AbstractServer, path::AbstractString, h::Function) = (route!(server, :post, path, h); server)
+Base.put!(server::AbstractServer, path::AbstractString, h::Function) = (route!(server, :put, path, h); server)
+patch!(server::AbstractServer, path::AbstractString, h::Function) = (route!(server, :patch, path, h); server)
+Base.delete!(server::AbstractServer, path::AbstractString, h::Function) = (route!(server, :delete, path, h); server)
+options!(server::AbstractServer, path::AbstractString, h::Function) = (route!(server, :options, path, h); server)
+head!(server::AbstractServer, path::AbstractString, h::Function) = (route!(server, :head, path, h); server)
 
 # Do-block convenience
 Base.get!(f::Function, server::AbstractServer, path::AbstractString) = Base.get!(server, path, f)

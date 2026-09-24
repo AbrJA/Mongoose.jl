@@ -470,8 +470,10 @@ four gates plus before/after numbers in the commit message.
   compiled dispatch without an extra call. Users can still pre-freeze.
 
 ### Phase C — type parameterization (also fixes `juliac --trim`)
-- [ ] **C1** `Endpoint{F}` / `WSEndpoint{F}` (concrete handler/callback types);
-  drop `@nospecialize(handler::Function)` and the `::Function` fields.
+- [x] **C1** `Endpoint{F}` / `WSEndpoint{M,O,C}` with the handler/callback types
+  captured; `@nospecialize(handler::Function)` removed from registration so
+  the types are actually captured. Generic path 320→304 B / 704→688 B; no
+  regressions. *commit: (this one)*
 - [ ] **C2** Parametric `App{R,E<:AbstractExecutor}` with executor function
   barriers (`_executor_start(::E, app)`, `dispatch_replies!(app, ::AsyncExecutor)`)
   and a typed context bundle; remove the abstract `App.context`/`executor`
