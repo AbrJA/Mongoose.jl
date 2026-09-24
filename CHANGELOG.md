@@ -13,6 +13,13 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- **Log-injection hardening**: the plain-text access logger replaced control
+  bytes in the request target (a hostile URI could forge log lines or inject
+  terminal escapes); structured mode already escaped them.
+- **ABI sanity check**: on the first request the server verifies the pinned
+  Mongoose struct offsets against the running build (accepted flag, header
+  length, address family byte) and logs a loud error once instead of silently
+  mis-reading connection state on an unsupported platform.
 - **WebSocket pushes are bounded and non-blocking**: a slow reader used to grow
   the connection's send buffer without bound (measured: 20 MB buffered for
   20 MB of pushes) and `broadcastws` stalled on the bounded reply queue
@@ -151,6 +158,11 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   fails the verifier (62 unresolved dynamic calls in startup/registration) and
   a `--trim=unsafe` build crashes constructing a parametric route. The
   required design work is tracked in `WORKLOG.md`.
+- **TLS is 1.3-only** (Mongoose's built-in TLS in the `Mongoose_jll` build).
+  TLS 1.2 clients cannot connect; terminate at a reverse proxy or rebuild the
+  JLL with OpenSSL. Setting `TLSConfig.ca` enables mutual TLS (a client
+  certificate is then required). Stalled TLS handshakes are only reclaimed
+  when `header_timeout_ms` is set.
 - **Unmasked WebSocket client frames are tolerated**: Mongoose's frame parser
   does not enforce RFC 6455 §5.1 client masking. Browsers always mask, and
   there is no server-side security impact; an enforcing parser would have to

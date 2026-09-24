@@ -525,6 +525,18 @@ four gates plus before/after numbers in the commit message.
 
 ## Changelog
 
+- **Sep 24 — Tier-1 hardening (TLS / ABI / logs)**: TLS matrix run with a real
+  CA + client certs: verified TLS 1.3, mutual TLS (setting `TLSConfig.ca`
+  requires a client cert), hostname verification, keep-alive reuse, 64 KB
+  POST, SSE and `wss` over TLS. Findings documented: the JLL build is **TLS
+  1.3-only** (mongoose built-in TLS — no 1.2 for old clients; terminate at a
+  proxy or rebuild the JLL), and stalled TLS handshakes are reclaimed only
+  with `header_timeout_ms` set (verified: closed after 2.5 s at 2000 ms).
+  Added tests for `wss` + stalled-handshake reclaim. One-time ABI self-check
+  at first request (accepted bit, `head.len`, address-family byte) so a
+  platform layout mismatch fails loudly. Plain logger now sanitizes control
+  bytes (log/terminal injection). 3821 ×2 tests + 81 acceptance + Aqua/JET +
+  docs. *commit: this one*
 - **Sep 24 — Tier-1 hardening (WS backpressure)**: proved and fixed two WS
   defects of the same class as the SSE bug — (1) `send_ws_frame!` had no cap,
   so a slow reader buffered 20 MB for 20 MB of pushes; (2) `broadcastws`

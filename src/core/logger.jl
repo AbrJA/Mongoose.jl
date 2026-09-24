@@ -77,6 +77,21 @@ function (mw::Logger)(request::Request, next::Function)
     return response
 end
 
+# Replace control bytes so a hostile request target cannot forge extra log
+# lines or inject terminal escapes (structured mode escapes via `_escape`).
+function _printable(s::AbstractString)::String
+    needs = false
+    for b in codeunits(s)
+        (b < 0x20 || b == 0x7f) && (needs = true; break)
+    end
+    needs || return String(s)
+    io = IOBuffer(sizehint=ncodeunits(s))
+    for b in codeunits(s)
+        write(io, (b < 0x20 || b == 0x7f) ? UInt8('?') : b)
+    end
+    return String(take!(io))
+end
+
 function _log_request(mw::Logger, request::Request, status::Int,
                       elapsed_ms::Float64, rid::String)
     io = IOBuffer(sizehint=160)
@@ -92,7 +107,7 @@ function _log_request(mw::Logger, request::Request, status::Int,
             "\",\"ts\":\"", Libc.strftime("%Y-%m-%dT%H:%M:%S", time()),
             "\"}\n")
     else
-        print(io, uppercase(String(request.method)), " ", request.uri,
+        print(io, uppercase(String(request.method)), " ", _printable(request.uri),
               " → ", status, " (", round(elapsed_ms; digits=2), "ms)")
         isempty(rid) || print(io, " id=", rid)
         print(io, '\n')

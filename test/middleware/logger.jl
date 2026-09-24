@@ -58,3 +58,23 @@
     end
 end
 
+
+@testset "Control characters are sanitized (log injection)" begin
+    io = IOBuffer()
+    s = App()
+    get!(s, "/x") do req; text("ok") end
+    use!(s, logger(output=io))
+    FakeTransport(s)(:get, "/x\x1b[31mHACK\x0aINJECTED")
+    out = String(take!(io))
+    @test !occursin('\x1b', out)
+    @test count(==('\n'), out) == 1          # no forged extra line
+
+    io2 = IOBuffer()
+    s2 = App()
+    get!(s2, "/x") do req; text("ok") end
+    use!(s2, logger(output=io2, structured=true))
+    FakeTransport(s2)(:get, "/x\x1b[31m")
+    for line in filter(!isempty, split(String(take!(io2)), '\n'))
+        JSON.parse(line)                     # must remain valid JSON
+    end
+end

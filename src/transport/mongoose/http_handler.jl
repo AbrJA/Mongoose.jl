@@ -101,6 +101,20 @@ function on_headers(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvo
     # incomplete case is dropped in `on_read` before buffering more). Read
     # `head.len` in place: materializing the whole message copies ~1KB.
     head_len = Int(unsafe_load(Ptr{Csize_t}(reinterpret(UInt, ev_data) + _MG_HTTP_MSG_HEAD_LEN_OFFSET)))
+
+    # One-time ABI sanity check: if the pinned struct offsets do not match this
+    # Mongoose build/platform, fail loudly once instead of silently
+    # mis-reading connection state (remote_addr, draining, stream caps).
+    if !server.runtime.abi_checked
+        flags = unsafe_load(Ptr{UInt32}(reinterpret(UInt, conn) + _MG_CONN_FLAGS_OFFSET))
+        ip6 = unsafe_load(Ptr{UInt8}(reinterpret(UInt, conn) + _MG_CONN_REM_OFFSET + 19))
+        if ((flags >> 2) & 0x1) == 0 || head_len <= 0 || ip6 > 1
+            @log_error "Mongoose ABI mismatch: pinned struct offsets do not match " *
+                       "this build ($(Sys.MACHINE)). remote_addr/draining/stream " *
+                       "caps may misbehave; re-verify _MG_CONN_*/_MG_HTTP_MSG_* offsets."
+        end
+        server.runtime.abi_checked = true
+    end
     if server.config.max_header_bytes > 0 && head_len > server.config.max_header_bytes
         rid = resolve_request_id(server, _header_value_string(ev_data, "X-Request-Id"))
         send_http_response!(conn, _close_response(errorresponse(server.errors, 431)), rid)

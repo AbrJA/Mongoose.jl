@@ -42,6 +42,21 @@ Base.@kwdef struct TLSConfig
     skip_verification::Bool = false
 end
 
+@doc """
+    TLSConfig(; cert, key, ca="", name="", skip_verification=false)
+
+TLS material for `start!(app; tls=...)`. The `Mongoose_jll` build uses
+Mongoose's built-in TLS, which is **TLS 1.3 only** — clients pinned to TLS 1.2
+(older runtimes, some corporate proxies) cannot connect; terminate at a
+reverse proxy or rebuild the JLL against OpenSSL if you need 1.2.
+
+Setting `ca` enables **mutual TLS**: the server then requires a client
+certificate signed by that CA (a handshake without one fails). TLS handshakes
+have no C-level timeout, so configure `header_timeout_ms` (the accept-time
+sweep reclaims stalled handshakes) and `max_connections` on public TLS
+listeners.
+""" TLSConfig
+
 # --- Dependency injection registry ---
 
 """
@@ -170,6 +185,7 @@ mutable struct RunState
     pending_close::Set{Ptr{Cvoid}}       # async replies to mark draining after send
     early_rejected::Set{Ptr{Cvoid}}      # oversize requests already answered (413)
     ws_dropped::Threads.Atomic{UInt64}   # WS pushes dropped (queue full / send cap)
+    abi_checked::Bool                    # one-time struct-layout sanity check
     bg_tasks::Vector{Task}
     bg_lock::Threads.SpinLock            # guards bg_tasks (workers push)
 end
@@ -180,7 +196,7 @@ RunState() = RunState(Threads.Atomic{Bool}(false), nothing, nothing, Manager(emp
     Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(),
     Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(),
     Dict{Ptr{Cvoid},String}(), Set{Ptr{Cvoid}}(), Set{Ptr{Cvoid}}(),
-    Threads.Atomic{UInt64}(0), Task[], Threads.SpinLock())
+    Threads.Atomic{UInt64}(0), false, Task[], Threads.SpinLock())
 
 # --- Background task tracking ---
 # Workers push timed-out request tasks; the event loop prunes completed ones on

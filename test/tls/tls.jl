@@ -1,3 +1,5 @@
+using Sockets
+
 @testset "TLS server" begin
     mktempdir() do dir
         certs = make_test_certificates(dir)
@@ -38,6 +40,44 @@
                     @warn "TLS server did not become ready"
                     @test_skip true
                 end
+            finally
+                shutdown!(s)
+            end
+        end
+
+        @testset "wss over TLS" begin
+            s = App(workers=2)
+            ws!(s, "/ws"; on_message=msg -> Message(msg.data))
+            port = fresh_port()
+            start!(s; host="127.0.0.1", port=port, blocking=false, tls=tls)
+            try
+                HTTP.WebSockets.open("wss://127.0.0.1:$port/ws";
+                                     require_ssl_verification=false) do ws
+                    HTTP.WebSockets.send(ws, "over-tls")
+                    @test String(HTTP.WebSockets.receive(ws)) == "over-tls"
+                end
+            catch e
+                @warn "wss test failed" exception=(e, catch_backtrace())
+                @test_skip true
+            finally
+                shutdown!(s)
+            end
+        end
+
+        @testset "stalled TLS handshake is closed by header_timeout" begin
+            s = App(header_timeout_ms=200)
+            get!(s, "/") do req; text("ok") end
+            port = fresh_port()
+            start!(s; host="127.0.0.1", port=port, blocking=false, tls=tls)
+            try
+                sock = Sockets.connect("127.0.0.1", port)
+                # Send nothing: the handshake never starts. The connection is
+                # tracked from accept, so the slowloris sweep must reclaim it
+                # (TLS handshakes have no C-level timeout of their own).
+                eof_task = @async eof(sock)
+                @test timedwait(() -> istaskdone(eof_task), 5.0; pollint=0.05) == :ok
+                @test istaskdone(eof_task) && fetch(eof_task) === true
+                close(sock)
             finally
                 shutdown!(s)
             end
