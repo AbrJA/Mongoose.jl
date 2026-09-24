@@ -523,6 +523,19 @@ resp = client(:get, "/hello"; query=Dict("foo" => "bar"))
 @test resp.status == 200
 ```
 
+For deterministic async tests, `FakeExecutor` mirrors the `AsyncExecutor`
+contract (queued `submit!`, `haspending`, `start!`/`stop!`) but never spawns
+workers: jobs run only when the test calls `run!`, inline in submission
+order — no threads, no sleeps.
+
+```julia
+fe = FakeExecutor()
+@test submit!(fe, () -> "first") == true   # enqueued, not run
+@test haspending(fe)
+@test run!(fe) == ["first"]                # FIFO, inline
+@test !haspending(fe)
+```
+
 ## Production Configuration
 
 ```julia

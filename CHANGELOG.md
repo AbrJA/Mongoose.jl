@@ -61,6 +61,9 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - `stop!(AsyncExecutor; timeout)` is bounded and drains replies while joining.
 
 ### Added
+- `FakeExecutor` and `run!` are now exported from the facade (previously
+  `Mongoose.Kernel`-only), matching `FakeTransport` as the testing doubles
+  for the two extension seams.
 - Complete `HTTPError` alias coverage for 400–511 (incl. `ProxyAuthRequiredError`,
   `MisdirectedRequestError`, `RequestHeaderFieldsTooLargeError`,
   `HTTPVersionNotSupportedError`, `VariantAlsoNegotiatesError`,

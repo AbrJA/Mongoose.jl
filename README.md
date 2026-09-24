@@ -307,6 +307,15 @@ resp = client(:get, "/hello")
 @test contains(resp.body, "\"msg\"")
 ```
 
+For deterministic async tests, `FakeExecutor` queues jobs on `submit!` and
+runs them only when you call `run!`, in submission order:
+
+```julia
+fe = FakeExecutor()
+submit!(fe, () -> "work")   # enqueued, not run
+@test run!(fe) == ["work"]  # FIFO, inline, no threads
+```
+
 ---
 
 ## 🔌 Pluggable Components

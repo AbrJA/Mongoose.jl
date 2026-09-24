@@ -525,6 +525,11 @@ four gates plus before/after numbers in the commit message.
 
 ## Changelog
 
+- **Sep 23 — Testing surface (group H)**: `FakeExecutor`/`run!` promoted from
+  `Mongoose.Kernel`-only to facade exports (symmetry with `FakeTransport`;
+  documented workflow no longer needs the internal module path). Tests now
+  exercise the facade names; README + examples show the deterministic
+  queue/`run!` recipe. *commit: this one*
 - **Sep 23 — Naming pass 2 (groups D–G) shipped**: group D (`2a8d9a4`) —
   `terminalfor`→`getterminal`, `endpointmiddleware`→`scopedmiddleware`,
   `NotAllowed`→`MethodMismatch`, unexported `Intent`/`Tagged`/`WSConn`.
