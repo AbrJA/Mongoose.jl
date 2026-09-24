@@ -7,6 +7,7 @@
 const MG_EV_OPEN = Cint(1)          # Connection created (partially initialized)
 const MG_EV_POLL = Cint(2)          # Periodic poll event (most frequent)
 const MG_EV_ACCEPT = Cint(5)        # Incoming connection accepted
+const MG_EV_READ = Cint(7)          # Data received from socket
 const MG_EV_CLOSE = Cint(9)         # Connection closed
 const MG_EV_HTTP_HDRS = Cint(10)    # HTTP headers complete (body may follow)
 const MG_EV_HTTP_MSG = Cint(11)     # Full HTTP message received
@@ -37,6 +38,7 @@ const WS_OP_PONG = Cint(10)
 
 # Default limits
 const MAX_BODY_BYTES = 1_048_576  # 1 MB default max body size
+const DEFAULT_MAX_HEADER_BYTES = 64 * 1024  # 64 KiB default request-header cap
 const DRAIN_TIMEOUT_MS = 5000    # 5s shutdown drain timeout
 
 # Empirically verified ceiling of the C receive buffer on the current

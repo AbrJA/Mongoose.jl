@@ -87,6 +87,8 @@ struct ServerConfig
     ws_max_frame_bytes::Int
     ws_idle_timeout_ms::Int
     header_timeout_ms::Int
+    body_timeout_ms::Int
+    max_header_bytes::Int
     max_connections::Int
     workers::Int
     queue_size::Int
@@ -99,6 +101,8 @@ struct ServerConfig
                           ws_max_frame_bytes::Integer=MAX_BODY_BYTES,
                           ws_idle_timeout_ms::Integer=0,
                           header_timeout_ms::Integer=0,
+                          body_timeout_ms::Integer=0,
+                          max_header_bytes::Integer=DEFAULT_MAX_HEADER_BYTES,
                           max_connections::Integer=0,
                           workers::Integer=0,
                           queue_size::Integer=1024)
@@ -112,14 +116,18 @@ struct ServerConfig
         poll_timeout_ms >= 0 || throw(ServerError("poll_timeout_ms must be >= 0"))
         drain_timeout_ms >= 0 || throw(ServerError("drain_timeout_ms must be >= 0"))
         header_timeout_ms >= 0 || throw(ServerError("header_timeout_ms must be >= 0"))
+        body_timeout_ms >= 0 || throw(ServerError("body_timeout_ms must be >= 0"))
+        max_header_bytes >= 0 || throw(ServerError("max_header_bytes must be >= 0"))
+        max_header_bytes <= C_RECV_CEILING_BYTES ||
+            throw(ServerError("max_header_bytes must be <= $C_RECV_CEILING_BYTES bytes"))
         max_connections >= 0 || throw(ServerError("max_connections must be >= 0"))
         workers >= 0 || throw(ServerError("workers must be >= 0"))
         workers > 0 && queue_size > 0 || workers == 0 ||
             throw(ServerError("queue_size must be > 0 when workers > 0"))
         new(Int(poll_timeout_ms), Int(max_body_bytes), Int(drain_timeout_ms),
             Int(request_timeout_ms), Int(ws_max_frame_bytes), Int(ws_idle_timeout_ms),
-            Int(header_timeout_ms), Int(max_connections),
-            Int(workers), Int(queue_size))
+            Int(header_timeout_ms), Int(body_timeout_ms), Int(max_header_bytes),
+            Int(max_connections), Int(workers), Int(queue_size))
     end
 end
 
@@ -148,7 +156,8 @@ mutable struct RunState
     connections::Dict{Int,MgConnection}  # Transport-side in-flight (async): id → conn
     streams::Dict{Int,ActiveStream}      # Streaming responses drained by the loop
     conn_times::Dict{Ptr{Cvoid},Float64} # accept time per open connection (poll thread)
-    awaiting_headers::Dict{Ptr{Cvoid},Float64}  # conns without a complete request yet
+    awaiting_headers::Dict{Ptr{Cvoid},Float64}  # conns without complete headers yet
+    awaiting_body::Dict{Ptr{Cvoid},Float64}     # conns whose headers arrived, body pending
     conn_addr::Dict{Ptr{Cvoid},String}   # formatted peer IP, one per connection
     pending_close::Set{Ptr{Cvoid}}       # async replies to mark draining after send
     early_rejected::Set{Ptr{Cvoid}}      # oversize requests already answered (413)
@@ -160,7 +169,7 @@ RunState() = RunState(Threads.Atomic{Bool}(false), nothing, nothing, Manager(emp
     Dict{Int,Kernel.WSConn}(), Dict{Ptr{Cvoid},Int}(), Threads.SpinLock(),
     Threads.Atomic{UInt64}(0), Threads.Atomic{UInt64}(0),
     Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(),
-    Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(),
+    Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(),
     Dict{Ptr{Cvoid},String}(), Set{Ptr{Cvoid}}(), Set{Ptr{Cvoid}}(), Task[], Threads.SpinLock())
 
 # --- Background task tracking ---
@@ -220,7 +229,9 @@ end
     | `request_timeout_ms`   | `0`                | Per-request timeout (0 = disabled)     |
     | `ws_max_frame_bytes`   | `MAX_BODY_BYTES`   | Max WebSocket frame size               |
     | `ws_idle_timeout_ms`   | `0`                | WS idle timeout (0 = disabled)         |
-    | `header_timeout_ms`    | `0`                | Close conns without a complete request |
+    | `header_timeout_ms`    | `0`                | Close conns without complete headers   |
+    | `body_timeout_ms`      | `0`                | Max time to receive a request body     |
+    | `max_header_bytes`     | `64 KiB`           | Max request header size (0 = unlimited)|
     | `max_connections`      | `0`                | Max open connections (0 = unlimited)   |
     | `router`               | `Router()`         | Custom router instance                 |
     | `tls`                  | `nothing`          | `TLSConfig` for HTTPS                  |
@@ -298,6 +309,8 @@ function App(;
              ws_max_frame_bytes::Integer=MAX_BODY_BYTES,
              ws_idle_timeout_ms::Integer=0,
              header_timeout_ms::Integer=0,
+             body_timeout_ms::Integer=0,
+             max_header_bytes::Integer=DEFAULT_MAX_HEADER_BYTES,
              max_connections::Integer=0,
              router::R=Router(),
              tls::Union{Nothing,TLSConfig}=nothing,
@@ -306,8 +319,8 @@ function App(;
 
     cfg = ServerConfig(;
         poll_timeout_ms, max_body_bytes, drain_timeout_ms, request_timeout_ms,
-        ws_max_frame_bytes, ws_idle_timeout_ms, header_timeout_ms, max_connections,
-        workers, queue_size)
+        ws_max_frame_bytes, ws_idle_timeout_ms, header_timeout_ms, body_timeout_ms,
+        max_header_bytes, max_connections, workers, queue_size)
 
     errs = Dict{Int,Union{Response,Function}}(k => v for (k, v) in errors)
     for code in keys(errs)

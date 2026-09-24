@@ -182,3 +182,66 @@ end
         close(sock)
     end
 end
+
+@testset "body_timeout closes stalled uploads" begin
+    app = App(workers=2, body_timeout_ms=300)
+    get!(app, "/ping") do req; text("pong") end
+    post!(app, "/echo") do req; text("len=$(sizeof(body(req)))") end
+
+    with_server(app) do port
+        # A body that never completes is reclaimed after the timeout.
+        sock = Sockets.connect("127.0.0.1", port)
+        write(sock, "POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\nx")
+        eof_task = @async eof(sock)
+        @test timedwait(() -> istaskdone(eof_task), 6.0; pollint=0.05) == :ok
+        @test istaskdone(eof_task) && fetch(eof_task) === true
+        close(sock)
+
+        # A body that completes within the timeout is served.
+        sock2 = Sockets.connect("127.0.0.1", port)
+        write(sock2, "POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 5\r\nConnection: close\r\n\r\n")
+        sleep(0.15)                      # below body_timeout_ms
+        write(sock2, "hello")
+        task = @async String(read(sock2))
+        @test timedwait(() -> istaskdone(task), 5.0; pollint=0.05) == :ok
+        resp = istaskdone(task) ? fetch(task) : ""
+        istaskdone(task) || close(sock2)
+        @test contains(resp, "200 OK")
+        @test contains(resp, "len=5")
+        close(sock2)
+
+        @test HTTP.get("http://127.0.0.1:$port/ping"; status_exception=false,
+                       retry=false).status == 200
+    end
+end
+
+@testset "max_header_bytes caps request headers" begin
+    app = App(max_header_bytes=1024)
+    get!(app, "/ping") do req; text("pong") end
+
+    with_server(app) do port
+        @test HTTP.get("http://127.0.0.1:$port/ping"; status_exception=false,
+                       retry=false).status == 200
+
+        # Complete-but-oversized headers → clean 431.
+        sock = Sockets.connect("127.0.0.1", port)
+        write(sock, "GET /ping HTTP/1.1\r\nHost: x\r\nX-Big: " * "A"^2000 * "\r\n\r\n")
+        task = @async readline(sock)
+        @test timedwait(() -> istaskdone(task), 5.0; pollint=0.05) == :ok
+        line = istaskdone(task) ? fetch(task) : ""
+        istaskdone(task) || close(sock)
+        @test contains(line, "431")
+        close(sock)
+
+        # Incomplete oversized headers → dropped before buffering more.
+        sock2 = Sockets.connect("127.0.0.1", port)
+        write(sock2, "GET /ping HTTP/1.1\r\nHost: x\r\nX-Big: " * "A"^2000)
+        eof_task = @async eof(sock2)
+        @test timedwait(() -> istaskdone(eof_task), 5.0; pollint=0.05) == :ok
+        @test istaskdone(eof_task) && fetch(eof_task) === true
+        close(sock2)
+
+        @test HTTP.get("http://127.0.0.1:$port/ping"; status_exception=false,
+                       retry=false).status == 200
+    end
+end

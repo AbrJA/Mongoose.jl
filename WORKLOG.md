@@ -525,6 +525,17 @@ four gates plus before/after numbers in the commit message.
 
 ## Changelog
 
+- **Sep 23 — Post-campaign hardening (#2/#3)**: `body_timeout_ms` bounds
+  stalled request bodies (swept like the header timeout; `MG_EV_HTTP_HDRS`
+  fires on every poll while a body is pending, so the handler is idempotent
+  per connection via the `awaiting_body` marker); `max_header_bytes` (default
+  64 KiB) answers complete oversized headers with a clean 431 and drops
+  incomplete ones at `MG_EV_READ` before more is buffered. Tests + docs +
+  README updated; external campaign re-run green (34/34 wire, 8/8
+  concurrency, 8/8 lifecycle). **Maintenance note:** `_MG_CONN_REM_OFFSET`,
+  `_MG_CONN_FLAGS_OFFSET` and `_MG_HTTP_MSG_HEAD_LEN_OFFSET` pin Mongoose
+  7.21's struct layout — on any `Mongoose_jll` bump, re-run the wire probe and
+  acceptance suite before releasing.
 - **Sep 23 — Prod-readiness verification campaign (adversarial)**: built an
   independent harness (raw-socket Python probes, curl, HTTP.jl concurrency +
   soak, lifecycle cycles) against a purpose-built server. Found and fixed six

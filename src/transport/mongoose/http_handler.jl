@@ -15,21 +15,65 @@ Close connections that connected but never delivered a complete request
 (slowloris defense). Bounded by `header_timeout_ms`; no-op when disabled.
 """
 function conn_sweep!(server::AbstractServer)
-    server.config.header_timeout_ms <= 0 && return nothing
-    timeout = server.config.header_timeout_ms / 1000.0
     now = time()
+    _sweep!(server, server.runtime.awaiting_headers,
+            server.config.header_timeout_ms, now, "header timeout")
+    _sweep!(server, server.runtime.awaiting_body,
+            server.config.body_timeout_ms, now, "body timeout")
+    return nothing
+end
+
+# Close connections whose entry is older than `timeout_ms` (0 = disabled).
+# `mg_error` only marks closing; the poll loop deregisters the fd and closes
+# the socket. Calling `mg_close_conn` would leak the fd and leave a dangling
+# epoll registration (event-loop wedge).
+function _sweep!(server::AbstractServer, track::Dict{Ptr{Cvoid},Float64},
+                 timeout_ms::Int, now::Float64, reason::String)
+    timeout_ms <= 0 && return nothing
+    timeout = timeout_ms / 1000.0
     stale = Ptr{Cvoid}[]
-    for (c, t) in server.runtime.awaiting_headers
+    for (c, t) in track
         (now - t) > timeout && push!(stale, c)
     end
     for c in stale
-        delete!(server.runtime.awaiting_headers, c)
-        # Mark closing; the poll loop deregisters the fd and closes the
-        # socket. Calling `mg_close_conn` here would leak the fd and leave a
-        # dangling epoll registration (event-loop wedge).
-        mg_error(c, "header timeout")
+        delete!(track, c)
+        mg_error(c, reason)
     end
     return nothing
+end
+
+"""
+    on_read(server, conn, ev_data)
+
+Raw socket reads. Used to bound request-header bytes: once a pending
+connection's receive buffer exceeds `max_header_bytes` and the header block is
+still incomplete, the connection is dropped before more memory is buffered.
+Complete-but-oversized headers are answered with a 431 at `MG_EV_HTTP_HDRS`.
+"""
+function on_read(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
+    maxh = server.config.max_header_bytes
+    maxh > 0 || return nothing
+    haskey(server.runtime.awaiting_headers, conn) || return nothing
+    len = Int(unsafe_load(Ptr{Csize_t}(reinterpret(UInt, conn) + _MG_CONN_RECV_LEN_OFFSET)))
+    len <= maxh && return nothing
+    # If the terminator is already in the buffer, HDRS will answer 431.
+    buf = unsafe_load(Ptr{Ptr{UInt8}}(reinterpret(UInt, conn) + _MG_CONN_RECV_OFFSET))
+    _has_header_terminator(buf, 0, len) && return nothing
+    mg_error(conn, "header too large")
+    return nothing
+end
+
+# Scan [start, len) for CRLFCRLF. Only called for over-cap buffers.
+@inline function _has_header_terminator(buf::Ptr{UInt8}, start::Int, len::Int)::Bool
+    i = start
+    @inbounds while i + 3 < len
+        if unsafe_load(buf, i + 1) == UInt8('\r') && unsafe_load(buf, i + 2) == UInt8('\n') &&
+           unsafe_load(buf, i + 3) == UInt8('\r') && unsafe_load(buf, i + 4) == UInt8('\n')
+            return true
+        end
+        i += 1
+    end
+    return false
 end
 
 """
@@ -46,28 +90,53 @@ body is still arriving. Two jobs:
 """
 function on_headers(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
     delete!(server.runtime.awaiting_headers, conn)
-    p = mg_http_get_header_ptr(ev_data, "Content-Length")
-    p == C_NULL && return nothing
-    len = _parse_content_length(unsafe_load(p))
-    len < 0 && return nothing
-    if len > server.config.max_body_bytes
-        msg = MgHttpMessage(ev_data)
+    # Mongoose fires HDRS on *every poll* while a body is still pending, so
+    # this handler must be idempotent per connection: `awaiting_body` doubles
+    # as the "headers already processed" marker (its timestamp is the body
+    # start), and `early_rejected` suppresses duplicate error responses.
+    haskey(server.runtime.awaiting_body, conn) && return nothing
+    conn in server.runtime.early_rejected && return nothing
+
+    # Header-size cap: complete headers over the limit get a clean 431 (the
+    # incomplete case is dropped in `on_read` before buffering more). Read
+    # `head.len` in place: materializing the whole message copies ~1KB.
+    head_len = Int(unsafe_load(Ptr{Csize_t}(reinterpret(UInt, ev_data) + _MG_HTTP_MSG_HEAD_LEN_OFFSET)))
+    if server.config.max_header_bytes > 0 && head_len > server.config.max_header_bytes
         rid = resolve_request_id(server, _header_value_string(ev_data, "X-Request-Id"))
-        res = errorresponse(server.errors, 413)
-        # Advertise close: the reply is already sent, and the connection is
-        # closed once the client finishes uploading (below). Closing earlier
-        # would RST a client that is still writing its body.
-        if res isa Response
-            _has_conn_header(res.headers) || append!(res.headers, ["Connection" => "close"])
-        end
-        send_http_response!(conn, res, rid)
-        # The body is still coming: remember the conn so `preprocess_http`
-        # ignores the eventual MG_EV_HTTP_MSG (no second response). Keep it on
-        # the sweep so a client that stalls mid-upload is still reclaimed.
+        send_http_response!(conn, _close_response(errorresponse(server.errors, 431)), rid)
         push!(server.runtime.early_rejected, conn)
-        server.runtime.awaiting_headers[conn] = time()
+        # Sweep stalled uploads when configured; otherwise the client is
+        # expected to close after the `Connection: close` reply.
+        server.config.body_timeout_ms > 0 && (server.runtime.awaiting_body[conn] = time())
+        return nothing
     end
+
+    p = mg_http_get_header_ptr(ev_data, "Content-Length")
+    if p != C_NULL
+        len = _parse_content_length(unsafe_load(p))
+        if len > server.config.max_body_bytes
+            rid = resolve_request_id(server, _header_value_string(ev_data, "X-Request-Id"))
+            # Advertise close: the reply is already sent, and the connection is
+            # closed once the client finishes uploading. Closing earlier would
+            # RST a client that is still writing its body.
+            send_http_response!(conn, _close_response(errorresponse(server.errors, 413)), rid)
+            push!(server.runtime.early_rejected, conn)
+            server.config.body_timeout_ms > 0 && (server.runtime.awaiting_body[conn] = time())
+            return nothing
+        end
+    end
+
+    server.runtime.awaiting_body[conn] = time()
     return nothing
+end
+
+# Force `Connection: close` on a response that will be followed by a close
+# once the client finishes writing (avoids a mid-upload RST).
+@inline function _close_response(res)
+    if res isa Response
+        _has_conn_header(res.headers) || append!(res.headers, ["Connection" => "close"])
+    end
+    return res
 end
 
 # Materialize one header value (rare paths only; hot paths use the pointer).
@@ -159,8 +228,9 @@ end
 
 function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})::Union{Nothing,Request}
     msg = MgHttpMessage(ev_data)
-    # A complete request arrived: it no longer counts against header_timeout.
+    # A complete request arrived: it no longer counts against the timeouts.
     delete!(server.runtime.awaiting_headers, conn)
+    delete!(server.runtime.awaiting_body, conn)
     # Already answered at the headers event (oversize body): the body has now
     # fully arrived, so the message is dropped and the conn closes cleanly.
     if conn in server.runtime.early_rejected

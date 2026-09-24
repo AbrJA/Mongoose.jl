@@ -63,6 +63,12 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - `Logger` access-logs throwing handlers as 500 and writes each line atomically.
 
 ### Changed
+- New hardening knobs: `body_timeout_ms` (0 = disabled) bounds how long a
+  client may take to deliver a request body, and `max_header_bytes`
+  (default **64 KiB**, 0 = unlimited) caps request headers — oversized
+  complete headers get a clean 431, incomplete ones are dropped before more
+  is buffered. The 64 KiB default is stricter than before (the old bound was
+  Mongoose's 8 MiB receive ceiling).
 - Public-name standardization: `ws_send_all` → `broadcastws`,
   `with_services` → `withservices`, `invoke_endpoint` → `invokeendpoint`,
   `endpoint_middleware` → `endpointmiddleware` (no underscores anywhere on
@@ -106,7 +112,10 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   fails the verifier (62 unresolved dynamic calls in startup/registration) and
   a `--trim=unsafe` build crashes constructing a parametric route. The
   required design work is tracked in `WORKLOG.md`.
-- `mg_close_conn` binding for force-closing idle WebSocket peers.
+- **Unmasked WebSocket client frames are tolerated**: Mongoose's frame parser
+  does not enforce RFC 6455 §5.1 client masking. Browsers always mask, and
+  there is no server-side security impact; an enforcing parser would have to
+  bypass the C layer.
 
 ## [0.4.0] and earlier
 

@@ -552,7 +552,9 @@ app = App(;
     request_timeout_ms = 30_000,          # 30s
     drain_timeout_ms   = 10_000,          # 10s graceful shutdown
     ws_idle_timeout_ms = 120_000,         # 2min WS idle
-    header_timeout_ms  = 10_000,          # close conns that stall before a request
+    header_timeout_ms  = 10_000,          # close conns that stall before headers
+    body_timeout_ms    = 30_000,          # max time to receive a request body
+    max_header_bytes   = 64 * 1024,       # request-header cap
     max_connections    = 10_000,          # refuse beyond this many open conns
 )
 

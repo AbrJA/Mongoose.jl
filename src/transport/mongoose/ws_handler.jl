@@ -147,6 +147,7 @@ end
 
 function on_connection_close(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
     delete!(server.runtime.conn_times, conn)
+    delete!(server.runtime.awaiting_body, conn)
     delete!(server.runtime.pending_close, conn)
     delete!(server.runtime.early_rejected, conn)
     delete!(server.runtime.awaiting_headers, conn)

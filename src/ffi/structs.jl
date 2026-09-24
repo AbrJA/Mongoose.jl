@@ -30,6 +30,16 @@ end
 # 7.21): next(8) + mgr(8) + loc(24) = 40.
 const _MG_CONN_REM_OFFSET = 40
 
+# Offsets of the `recv` iobuf inside `struct mg_connection` (Mongoose 7.21):
+# recv starts after fd(8)+id(8); `struct mg_iobuf { buf; len; size; align; }`.
+const _MG_CONN_RECV_OFFSET = 80      # recv.buf (uint8_t *)
+const _MG_CONN_RECV_LEN_OFFSET = 88  # recv.len (size_t)
+
+# Offset of `head.len` inside `struct mg_http_message` (Mongoose 7.21):
+# method/uri/query/proto (4×16) + headers[30] (30×32) + body(16) + head(16)
+# = 1040, plus 8 for `len` inside the `mg_str`. Verified with the C compiler.
+const _MG_HTTP_MSG_HEAD_LEN_OFFSET = 1048
+
 # Offset of the trailing bitfield word in `struct mg_connection` (Mongoose
 # 7.21, 64-bit). Verified with `offsetof(struct mg_connection, tls) + 8`:
 # sizeof(mg_connection) = 288, iobuf = 32 bytes, data at 240, tls at 272, so

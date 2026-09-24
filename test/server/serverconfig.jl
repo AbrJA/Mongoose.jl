@@ -31,4 +31,12 @@ end
     @test app.config.max_connections == 10
     @test_throws Mongoose.ServerError App(header_timeout_ms=-1)
     @test_throws Mongoose.ServerError App(max_connections=-1)
+
+    limits = App(body_timeout_ms=500, max_header_bytes=2048)
+    @test limits.config.body_timeout_ms == 500
+    @test limits.config.max_header_bytes == 2048
+    @test App().config.max_header_bytes == Mongoose.DEFAULT_MAX_HEADER_BYTES
+    @test_throws Mongoose.ServerError App(body_timeout_ms=-1)
+    @test_throws Mongoose.ServerError App(max_header_bytes=-1)
+    @test_throws Mongoose.ServerError App(max_header_bytes=Mongoose.C_RECV_CEILING_BYTES + 1)
 end

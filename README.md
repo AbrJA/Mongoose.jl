@@ -204,6 +204,10 @@ ws!(app, "/chat";
 broadcastws(app, "/chat", "Server announcement")
 ```
 
+> Note: unmasked client frames are tolerated (Mongoose's parser does not
+> enforce RFC 6455 §5.1 masking). Browsers always mask and there is no
+> server-side security impact.
+
 ```julia
 get!(app, "/events") do req
     sse(req) do writer
@@ -226,7 +230,9 @@ app = App(;
     request_timeout_ms = 5_000,      # 0 = disabled (async mode)
     drain_timeout_ms   = 5_000,      # graceful shutdown budget
     max_body_bytes     = 1_048_576,
-    header_timeout_ms  = 0,          # close conns that stall before a request
+    header_timeout_ms  = 0,          # close conns that stall before headers
+    body_timeout_ms    = 0,          # max time to receive a request body
+    max_header_bytes   = 64 * 1024,  # request-header cap
     max_connections    = 0,          # 0 = unlimited
     ws_max_frame_bytes = 1_048_576,
     ws_idle_timeout_ms = 0,          # 0 = disabled
@@ -252,7 +258,8 @@ start!(app; port=8443)
   streams, run `onstop!` hooks, and stop workers (SIGTERM and normal exits go
   through Julia's `atexit` path; SIGINT is caught while `start!` blocks).
 - **Backpressure** — the async executor bounds its queue and answers `503` when
-  full; `max_connections` and `header_timeout_ms` protect against slow clients.
+  full; `max_connections`, `header_timeout_ms`, `body_timeout_ms`, and
+  `max_header_bytes` protect against slow clients and oversized requests.
 - **Observability** — `logger()` access logs, `metrics()` (request counters,
   latency histogram, and live gauges: connections, WS clients, streams,
   executor depth), and `health()` probes for Kubernetes.

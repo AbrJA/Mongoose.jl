@@ -9,7 +9,7 @@
 
 @inline is_handled_event(ev::Cint) = (ev == MG_EV_HTTP_MSG || ev == MG_EV_HTTP_HDRS ||
     ev == MG_EV_WS_OPEN || ev == MG_EV_WS_MSG || ev == MG_EV_WS_CTL ||
-    ev == MG_EV_CLOSE || ev == MG_EV_ACCEPT)
+    ev == MG_EV_CLOSE || ev == MG_EV_ACCEPT || ev == MG_EV_READ)
 
 # --- Singleton C function pointer ---
 
@@ -55,6 +55,8 @@ end
 @inline function dispatch_event(@nospecialize(server), ev::Cint, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid})
     if ev == MG_EV_ACCEPT
         on_accept(server, conn, ev_data)
+    elseif ev == MG_EV_READ
+        on_read(server, conn, ev_data)
     elseif ev == MG_EV_HTTP_HDRS
         on_headers(server, conn, ev_data)
     elseif ev == MG_EV_HTTP_MSG
@@ -84,7 +86,9 @@ function on_accept(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
     end
     now = time()
     server.runtime.conn_times[conn] = now
-    server.config.header_timeout_ms > 0 && (server.runtime.awaiting_headers[conn] = now)
+    # Canonical "headers not complete yet" set: used by the slowloris sweep
+    # and by the header-size cap (independent of `header_timeout_ms`).
+    server.runtime.awaiting_headers[conn] = now
     tls = server.runtime.tls
     tls !== nothing && init_tls!(conn, tls)
     return nothing
