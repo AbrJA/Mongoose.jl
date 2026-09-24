@@ -43,10 +43,6 @@ const _MG_CONN_FLAGS_OFFSET = 280
 # +8 for the `len` field. Used for stream/WebSocket backpressure.
 const _MG_CONN_SEND_LEN_OFFSET = 120
 
-# `recv.buf` / `recv.len` (bytes read but not yet parsed): recv iobuf at 80.
-const _MG_CONN_RECV_OFFSET = 80
-const _MG_CONN_RECV_LEN_OFFSET = 88
-
 """
     MgStr — Mirrors the C `struct mg_str { const char *buf; size_t len; }`.
 """

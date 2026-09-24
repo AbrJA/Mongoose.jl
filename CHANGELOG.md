@@ -108,6 +108,12 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - `Logger` access-logs throwing handlers as 500 and writes each line atomically.
 
 ### Changed
+- Removed dead code that reimplemented C behavior: the Julia
+  `decode_chunked` parser (mongoose already decodes chunked bodies in place;
+  the function was only exercised by its own unit tests) and the byte-level
+  read of mongoose's receive buffer. `max_header_bytes` now applies to
+  complete header blocks (431); incomplete headers are bounded by mongoose's
+  receive ceiling and reclaimed by `header_timeout_ms`.
 - **C-interop simplification (reliability first):** the framework no longer
   writes into mongoose structs. The only struct write (`is_draining` for
   flush-then-close) and the features that depended on it are gone:

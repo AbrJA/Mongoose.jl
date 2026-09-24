@@ -9,7 +9,7 @@
 
 @inline is_handled_event(ev::Cint) = (ev == MG_EV_HTTP_MSG || ev == MG_EV_HTTP_HDRS ||
     ev == MG_EV_WS_OPEN || ev == MG_EV_WS_MSG || ev == MG_EV_WS_CTL ||
-    ev == MG_EV_CLOSE || ev == MG_EV_ACCEPT || ev == MG_EV_READ)
+    ev == MG_EV_CLOSE || ev == MG_EV_ACCEPT)
 
 # --- Singleton C function pointer ---
 
@@ -55,8 +55,6 @@ end
 @inline function dispatch_event(@nospecialize(server), ev::Cint, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid})
     if ev == MG_EV_ACCEPT
         on_accept(server, conn, ev_data)
-    elseif ev == MG_EV_READ
-        on_read(server, conn, ev_data)
     elseif ev == MG_EV_HTTP_HDRS
         on_headers(server, conn, ev_data)
     elseif ev == MG_EV_HTTP_MSG

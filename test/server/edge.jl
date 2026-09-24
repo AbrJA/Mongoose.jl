@@ -214,7 +214,10 @@ end
 end
 
 @testset "max_header_bytes caps request headers" begin
-    app = App(max_header_bytes=1024)
+    # `header_timeout_ms` reclaims headers that never complete; the byte cap
+    # applies to complete header blocks (431). Incomplete headers are bounded
+    # by mongoose's receive ceiling plus this timeout.
+    app = App(max_header_bytes=1024, header_timeout_ms=200)
     get!(app, "/ping") do req; text("pong") end
 
     with_server(app) do port
@@ -231,11 +234,11 @@ end
         @test contains(line, "431")
         close(sock)
 
-        # Incomplete oversized headers → dropped before buffering more.
+        # Incomplete oversized headers → reclaimed by the header timeout.
         sock2 = Sockets.connect("127.0.0.1", port)
         write(sock2, "GET /ping HTTP/1.1\r\nHost: x\r\nX-Big: " * "A"^2000)
         eof_task = @async eof(sock2)
-        @test timedwait(() -> istaskdone(eof_task), 5.0; pollint=0.05) == :ok
+        @test timedwait(() -> istaskdone(eof_task), 6.0; pollint=0.05) == :ok
         @test istaskdone(eof_task) && fetch(eof_task) === true
         close(sock2)
 

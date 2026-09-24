@@ -256,7 +256,7 @@ const CLOSE = ["Connection" => "close"]
             @test occursin("GET", allow) && !occursin("HEAD", allow)
 
             # RFC 9112 §7.1: chunked request bodies are decoded by the adapter
-            # (decode_chunked is unit-tested in test/unit/request.jl). A
+            # (mongoose decodes chunked in place; the adapter does not re-decode). A
             # wire-level curl probe is deliberately omitted: raw-body clients
             # wedging the C connection — the same keep-alive interaction as the
             # old multipart hang — costs far more than it proves.

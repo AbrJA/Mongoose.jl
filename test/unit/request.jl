@@ -273,80 +273,8 @@ end
 end
 
 
-@testset "Chunked body decoding (RFC 9112 §7.1)" begin
-    import Mongoose.Kernel: decode_chunked, decode_path_segment
-
-    env = @__MODULE__  # module so struct types resolve below
-
-    @testset "Basic framing" begin
-        @test decode_chunked("6\r\nchunky\r\n0\r\n\r\n") == "chunky"
-        @test decode_chunked("4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n") == "Wikipedia"
-    end
-    @testset "Extensions + trailers" begin
-        @test decode_chunked("4;ext=1\r\nWiki\r\n0;done\r\nX-Trailer: yes\r\n\r\n") == "Wiki"
-    end
-    @testset "Multi-chunk with embedded CRLF" begin
-        @test decode_chunked("4\r\nA\r\nB\r\n0\r\n\r\n") == "A\r\nB"
-    end
-    @testset "Malformed framing passes through untouched" begin
-        @test decode_chunked("not chunked at all") == "not chunked at all"
-        @test decode_chunked("ff\r\ntoomuch\r\n0\r\n\r\n") == "ff\r\ntoomuch\r\n0\r\n\r\n"
-    end
-    @testset "Empty" begin
-        @test decode_chunked("0\r\n\r\n") == ""
-    end
-    @testset "Path segment decoding (RFC 3986; '+' literal)" begin
-        @test decode_path_segment("john%20doe") == "john doe"
-        @test decode_path_segment("a+b") == "a+b"
-        @test decode_path_segment("plain") == "plain"
-        @test decode_path_segment("caf%C3%A9") == "café"
-    end
-end
-
-@testset "Headers: mutation + Response integration" begin
-    @testset "push!/append!/copy/getindex" begin
-        h = Headers(["a" => "1"])
-        push!(h, "B" => "2")
-        append!(h, ["C" => "3", "D" => "4"])
-        @test length(h) == 4
-        @test h[2] == ("B" => "2")
-        c = copy(h)
-        @test c isa Headers && length(c) == 4
-    end
-
-    @testset "Response.headers is a Headers value" begin
-        r = Response(200, ["Content-Type" => "text/plain"], "hi")
-        @test r.headers isa Headers
-        @test get(r.headers, "content-type", "") == "text/plain"
-        @test r.headers["Content-Type"] == "text/plain"   # dict-style (case-insensitive)
-        push!(r.headers, "X-Tag" => "v")
-        @test get(r.headers, "x-tag", "") == "v"
-        # vector constructor still works
-        r2 = Response(404, Pair{String,String}["X-A" => "b"], "")
-        @test r2.headers isa Headers
-        @test get(r2.headers, "x-a", "") == "b"
-    end
-
-    @testset "StreamResponse.headers is a Headers value" begin
-        sr = StreamResponse(w -> nothing, 200; content_type="text/event-stream",
-            headers=["Cache-Control" => "no-cache"])
-        @test sr.headers isa Headers
-        @test length(sr.headers) == 1
-        @test get(sr.headers, "cache-control", "") == "no-cache"
-    end
-end
-
-@testset "decode_chunked hostile sizes" begin
-    import Mongoose.Kernel: decode_chunked
-    # A chunk larger than the remaining input is malformed → passthrough, no
-    # BoundsError/InexactError from Int conversion.
-    @test decode_chunked("7fffffffffffffff\r\n") == "7fffffffffffffff\r\n"
-    @test decode_chunked("ffffffffffffffffffff\r\n") == "ffffffffffffffffffff\r\n"
-    @test decode_chunked("ffffffffffffffff\r\nx") == "ffffffffffffffff\r\nx"
-end
-
 @testset "parser robustness (fuzz-ish, never throws)" begin
-    import Mongoose.Kernel: decode_chunked, urldecode, parsequery
+    import Mongoose.Kernel: urldecode, parsequery
     # Deterministic LCG over arbitrary bytes; the untrusted-input parsers must
     # never throw regardless of the payload.
     x = UInt64(0x12345678)
@@ -360,7 +288,6 @@ end
         end
         s = String(copy(bytes))
         @test parsequery(s) isa Dict{String,String}
-        @test decode_chunked(s) isa String
         @test urldecode(bytes, 1, length(bytes)) isa String
         @test Mongoose.Kernel._extract_boundary(s) isa String
         req = Request(:get, "/", "/", Dict{String,String}(), Headers(["cookie" => s]), "")

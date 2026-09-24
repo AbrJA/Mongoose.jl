@@ -43,40 +43,6 @@ function _sweep!(server::AbstractServer, track::Dict{Ptr{Cvoid},Float64},
 end
 
 """
-    on_read(server, conn, ev_data)
-
-Raw socket reads. Used to bound request-header bytes: once a pending
-connection's receive buffer exceeds `max_header_bytes` and the header block is
-still incomplete, the connection is dropped before more memory is buffered.
-Complete-but-oversized headers are answered with a 431 at `MG_EV_HTTP_HDRS`.
-"""
-function on_read(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
-    maxh = server.config.max_header_bytes
-    maxh > 0 || return nothing
-    haskey(server.runtime.awaiting_headers, conn) || return nothing
-    len = Int(unsafe_load(Ptr{Csize_t}(reinterpret(UInt, conn) + _MG_CONN_RECV_LEN_OFFSET)))
-    len <= maxh && return nothing
-    # If the terminator is already in the buffer, HDRS will answer 431.
-    buf = unsafe_load(Ptr{Ptr{UInt8}}(reinterpret(UInt, conn) + _MG_CONN_RECV_OFFSET))
-    _has_header_terminator(buf, 0, len) && return nothing
-    mg_error(conn, "header too large")
-    return nothing
-end
-
-# Scan [start, len) for CRLFCRLF. Only called for over-cap buffers.
-@inline function _has_header_terminator(buf::Ptr{UInt8}, start::Int, len::Int)::Bool
-    i = start
-    @inbounds while i + 3 < len
-        if unsafe_load(buf, i + 1) == UInt8('\r') && unsafe_load(buf, i + 2) == UInt8('\n') &&
-           unsafe_load(buf, i + 3) == UInt8('\r') && unsafe_load(buf, i + 4) == UInt8('\n')
-            return true
-        end
-        i += 1
-    end
-    return false
-end
-
-"""
     on_headers(server, conn, ev_data)
 
 `MG_EV_HTTP_HDRS` fires once the request headers are complete, even if the

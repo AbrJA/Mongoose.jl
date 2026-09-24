@@ -116,57 +116,6 @@ response header block in one buffer (no intermediate String).
     return io
 end
 
-# --- Chunked body decoding (RFC 9112 §7.1) ---
-
-"""
-    decode_chunked(data) → String
-
-Decode a `Transfer-Encoding: chunked` request body into its payload bytes.
-
-Grammar (RFC 9112 §7.1): `chunk-size [chunk-ext] CRLF chunk-data CRLF`…
-terminated by a zero chunk plus optional trailers, then a final CRLF.
-
-Decoding is best-effort and defensive: malformed framing is returned
-verbatim (the caller's own parsing/limits still apply), so a hostile body
-can never crash or loop the decoder.
-"""
-function decode_chunked(data::AbstractString)::String
-    bytes = codeunits(data)
-    n = length(bytes)
-    i = 1
-    out = IOBuffer()
-    while i <= n
-        # chunk-size line: "<hex>[;ext] CRLF" — stop at ';' or CR/LF.
-        j = i
-        while j <= n && bytes[j] != UInt8(';') && bytes[j] != UInt8('\r') && bytes[j] != UInt8('\n')
-            j += 1
-        end
-        size = tryparse(UInt, String(bytes[i:j-1]); base=16)
-        size === nothing && return data
-        # skip chunk-ext if present
-        while j <= n && bytes[j] != UInt8('\r')
-            j += 1
-        end
-        (j + 1 <= n && bytes[j] == UInt8('\r') && bytes[j+1] == UInt8('\n')) || return data
-        j += 2
-        if size == 0
-            # zero chunk: trailing bytes are the trailer section, ending in a
-            # blank line — either way the payload is complete.
-            return String(take!(out))
-        end
-        # Guard against overflow/BoundsError on hostile sizes: a chunk larger
-        # than the remaining input cannot be valid.
-        size > UInt(n) && return data
-        sz = Int(size)
-        j + sz <= n || return data
-        write(out, view(bytes, j:j+sz-1))
-        i = j + sz
-        (i + 1 <= n && bytes[i] == UInt8('\r') && bytes[i+1] == UInt8('\n')) || return data
-        i += 2
-    end
-    return String(take!(out))
-end
-
 # --- Path-segment decoding (RFC 3986) ---
 
 # Is there a percent-escape anywhere in the span? Cheap pre-check so the hot

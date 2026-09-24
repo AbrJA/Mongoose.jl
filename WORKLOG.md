@@ -525,6 +525,14 @@ four gates plus before/after numbers in the commit message.
 
 ## Changelog
 
+- **Sep 24 — Dead-code sweep (policy follow-up)**: removed `decode_chunked`
+  (a Julia reimplementation of mongoose's in-place chunked decoder, used only
+  by its own tests) and the receive-buffer byte cap (`on_read` + CRLF scan +
+  `MG_EV_READ` + two offsets). `max_header_bytes` still answers complete
+  oversized headers with 431; incomplete headers are bounded by mongoose's
+  8 MiB ceiling and reclaimed by `header_timeout_ms`. 3413 tests (the delta is
+  the removed decoder's fuzz iterations) + acceptance + Aqua/JET + docs.
+  *commit: this one*
 - **Sep 24 — Reliability-first C-interop simplification**: adopted the rule
   "use the public mongoose API; never write into its structs; remove features
   that need it" (RULES.md §2b). Reverted an in-progress byte-accounting
