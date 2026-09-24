@@ -52,7 +52,7 @@ against.
    | `process` frozen + `cors()`+`etag()` | 1024 | ~1300 |
    | `mergeheaders` | 368 | ~110 |
    | `asheaders(tuple)` | 112 | ~50 |
-   | `parse_method` | **0** | ~2 |
+   | `parse_method` | **0** | ~4 |
    | `formatheaders` (2 headers) | 336 | ~150 |
    | `Request(...)` (empty) | 224 | ~55 |
    | `parsequery("a=1&b=2")` | 1088 | ~360 |
@@ -70,10 +70,10 @@ against.
    lines and hand-framed headers once. `formatheaders` exists for this.
 
 6. **Do not build `Symbol`s or parse strings per request.** `parse_method` is
-   the reference implementation: a length-filtered byte comparison against a
-   const tuple of the seven methods — 0 B/op (it used to intern a `Symbol` and
-   cost 272 B/op). Same rule for any `Symbol(...)`, `lowercase`, or `split` on
-   the request path.
+   the reference implementation: a const tuple of the seven methods compared
+   with `Kernel.bytesequal` (`memcmp` + length filter) — 0 B/op, ~4 ns (it
+   used to intern a `Symbol` and cost 272 B/op). Same rule for any `Symbol(...)`,
+   `lowercase`, or `split` on the request path.
 
 7. **Counters over string-keyed dicts.** `Dict{String,Int}` with a per-request
    key (`"GET_200"`) allocates and locks. Prefer a fixed-size array indexed by

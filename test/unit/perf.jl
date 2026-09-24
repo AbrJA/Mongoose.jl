@@ -26,6 +26,30 @@
     @test @allocated(with_mw()) <= 2200         # baseline ~1088 B
 end
 
+@testset "Method token parsing" begin
+    for (wire, sym) in (("GET", :get), ("POST", :post), ("PUT", :put),
+                        ("DELETE", :delete), ("PATCH", :patch),
+                        ("OPTIONS", :options), ("HEAD", :head))
+        @test Mongoose.parse_method(Mongoose.MgStr(pointer(wire), ncodeunits(wire))) === sym
+    end
+    # Case-sensitive per RFC 9110 §9.1; unknown tokens are rejected.
+    for wire in ("get", "Get", "BREW", "G")
+        @test Mongoose.parse_method(Mongoose.MgStr(pointer(wire), ncodeunits(wire))) === :unknown
+    end
+    @test Mongoose.parse_method(Mongoose.MgStr(C_NULL, 0)) === :unknown
+end
+
+@testset "bytesequal" begin
+    buf = Vector{UInt8}("GET")
+    GC.@preserve buf begin
+        p = pointer(buf)
+        @test Mongoose.Kernel.bytesequal(p, 3, "GET")
+        @test !Mongoose.Kernel.bytesequal(p, 3, "get")
+        @test !Mongoose.Kernel.bytesequal(p, 3, "POST")
+        @test !Mongoose.Kernel.bytesequal(p, 2, "GET")
+    end
+end
+
 @testset "Hot helper inference" begin
     @test @inferred(Mongoose.Kernel.asheaders(("a" => "1",))) isa Headers
     @test @inferred(Mongoose.Kernel.mergeheaders(Response(200, "x"), ["A" => "1"])) isa Response

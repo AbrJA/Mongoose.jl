@@ -103,10 +103,9 @@ end
     return unsafe_string(str.buf, str.len)
 end
 
-# HTTP method tokens are case-sensitive (RFC 9110 §9.1), so a plain byte
-# comparison against the supported set is enough. Lengths differ for most
-# candidates, so this is a couple of loads per request — no String/Symbol
-# allocation, no hashing, no special cases.
+# HTTP method tokens are case-sensitive (RFC 9110 §9.1), so a byte comparison
+# against the supported set is enough. The length check rejects most candidates
+# before the `memcmp`, and `bytesequal` allocates nothing.
 const _METHODS = (("GET", :get), ("POST", :post), ("PUT", :put),
                   ("DELETE", :delete), ("PATCH", :patch),
                   ("OPTIONS", :options), ("HEAD", :head))
@@ -122,18 +121,9 @@ Convert the C method string to a lowercase `Symbol`; unknown methods return
     (str.buf == C_NULL || len == 0) && return :unknown
     buf = str.buf
     for (name, sym) in _METHODS
-        ncodeunits(name) == len || continue
-        _bytes_eq(buf, name) && return sym
+        Kernel.bytesequal(buf, len, name) && return sym
     end
     return :unknown
-end
-
-@inline function _bytes_eq(buf::Ptr{UInt8}, name::String)::Bool
-    n = ncodeunits(name)
-    @inbounds for i in 1:n
-        unsafe_load(buf, i) == codeunit(name, i) || return false
-    end
-    return true
 end
 
 """

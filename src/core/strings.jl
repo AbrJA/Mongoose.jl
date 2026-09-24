@@ -221,3 +221,21 @@ asstrings(::Nothing) = String[]
 asstrings(s::AbstractString) = String[String(s)]
 asstrings(v::AbstractVector) = String[String(s) for s in v]
 asstrings(t::Tuple) = String[String(s) for s in t]
+
+# --- Allocation-free token comparison ---
+
+"""
+    bytesequal(buf, len, token) → Bool
+
+Compare a C byte slice against an ASCII token without allocating. `memcmp` is
+the C standard comparison (stable across platforms and Julia versions); the
+length check rejects most candidates before the call. Case-sensitive — HTTP
+method tokens are case-sensitive (RFC 9110 §9.1).
+"""
+@inline function bytesequal(buf::Ptr{UInt8}, len::Int, token::String)::Bool
+    ncodeunits(token) == len || return false
+    GC.@preserve token begin
+        return ccall(:memcmp, Cint, (Ptr{UInt8}, Ptr{UInt8}, Csize_t),
+                     buf, pointer(token), len) == 0
+    end
+end
