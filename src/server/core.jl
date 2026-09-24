@@ -89,6 +89,7 @@ struct ServerConfig
     header_timeout_ms::Int
     body_timeout_ms::Int
     max_header_bytes::Int
+    stream_buffer_bytes::Int
     max_bg_tasks::Int
     max_connections::Int
     workers::Int
@@ -104,6 +105,7 @@ struct ServerConfig
                           header_timeout_ms::Integer=0,
                           body_timeout_ms::Integer=0,
                           max_header_bytes::Integer=DEFAULT_MAX_HEADER_BYTES,
+                          stream_buffer_bytes::Integer=DEFAULT_STREAM_BUFFER_BYTES,
                           max_bg_tasks::Integer=0,
                           max_connections::Integer=0,
                           workers::Integer=0,
@@ -122,6 +124,7 @@ struct ServerConfig
         max_header_bytes >= 0 || throw(ServerError("max_header_bytes must be >= 0"))
         max_header_bytes <= C_RECV_CEILING_BYTES ||
             throw(ServerError("max_header_bytes must be <= $C_RECV_CEILING_BYTES bytes"))
+        stream_buffer_bytes >= 0 || throw(ServerError("stream_buffer_bytes must be >= 0"))
         max_bg_tasks >= 0 || throw(ServerError("max_bg_tasks must be >= 0"))
         max_connections >= 0 || throw(ServerError("max_connections must be >= 0"))
         workers >= 0 || throw(ServerError("workers must be >= 0"))
@@ -132,7 +135,7 @@ struct ServerConfig
         new(Int(poll_timeout_ms), Int(max_body_bytes), Int(drain_timeout_ms),
             Int(request_timeout_ms), Int(ws_max_frame_bytes), Int(ws_idle_timeout_ms),
             Int(header_timeout_ms), Int(body_timeout_ms), Int(max_header_bytes),
-            bg_cap, Int(max_connections), Int(workers), Int(queue_size))
+            Int(stream_buffer_bytes), bg_cap, Int(max_connections), Int(workers), Int(queue_size))
     end
 end
 
@@ -267,6 +270,7 @@ end
     | `header_timeout_ms`    | `0`                | Close conns without complete headers   |
     | `body_timeout_ms`      | `0`                | Max time to receive a request body     |
     | `max_header_bytes`     | `64 KiB`           | Max request header size (0 = unlimited)|
+    | `stream_buffer_bytes`  | `1 MiB`            | Unsent stream bytes before backpressure|
     | `max_bg_tasks`         | `4×workers`        | Runaway timed-out tasks before 503     |
     | `max_connections`      | `0`                | Max open connections (0 = unlimited)   |
     | `router`               | `Router()`         | Custom router instance                 |
@@ -347,6 +351,7 @@ function App(;
              header_timeout_ms::Integer=0,
              body_timeout_ms::Integer=0,
              max_header_bytes::Integer=DEFAULT_MAX_HEADER_BYTES,
+             stream_buffer_bytes::Integer=DEFAULT_STREAM_BUFFER_BYTES,
              max_bg_tasks::Integer=0,
              max_connections::Integer=0,
              router::R=Router(),
@@ -357,7 +362,8 @@ function App(;
     cfg = ServerConfig(;
         poll_timeout_ms, max_body_bytes, drain_timeout_ms, request_timeout_ms,
         ws_max_frame_bytes, ws_idle_timeout_ms, header_timeout_ms, body_timeout_ms,
-        max_header_bytes, max_bg_tasks, max_connections, workers, queue_size)
+        max_header_bytes, stream_buffer_bytes, max_bg_tasks, max_connections,
+        workers, queue_size)
 
     errs = Dict{Int,Union{Response,Function}}(k => v for (k, v) in errors)
     for code in keys(errs)

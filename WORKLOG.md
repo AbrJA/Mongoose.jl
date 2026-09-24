@@ -525,6 +525,20 @@ four gates plus before/after numbers in the commit message.
 
 ## Changelog
 
+- **Sep 23 — Application-layer campaign (round 2)**: independently probed
+  static traversal, WS fragmentation/limits/broadcast/origin, SSE slow
+  consumers, multipart fuzzing, IPv6, per-IP ratelimit, sustained overload
+  and metrics accuracy. Found + fixed five defects: dotfiles were served
+  (now denied, `.well-known` excepted); SSE to a slow reader buffered
+  unboundedly and stalled the event loop (new `stream_buffer_bytes` cap,
+  default 1 MiB); IPv6 hosts were unbracketed in the listen URL (now
+  `[::1]:port`); metrics ignored handler exceptions (now recorded as the
+  `HTTPError` status or 500); shared `DEFAULT_*` error responses were mutated
+  in place (copy-on-write header adds; `_echo_conn_close!` call sites now
+  assign the result). Clean: WS 7/7, multipart 15/15, ratelimit (per-IP,
+  XFF trust, no race), overload (5×200/45×503 + recovery), traversal matrix
+  (0 leaks). Re-ran the transport campaign: wire 34/34, concurrency 8/8,
+  lifecycle 8/8; gates 3807 ×2 + 81 acceptance + Aqua/JET + docs.
 - **Sep 23 — Runaway-task fix (#5)**: `_http_job_timed` abandons over-deadline
   handlers (Julia tasks cannot be killed). Added `max_bg_tasks` (default auto
   `4×workers`) admission control: once the runaway budget is reached, new timed

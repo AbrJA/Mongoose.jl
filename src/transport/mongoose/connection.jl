@@ -182,13 +182,23 @@ end
 Send any pending chunks for in-flight streams. Called from the event loop;
 must run on the poll thread only (C connections are not thread-safe).
 """
+# Bytes queued in Mongoose's send buffer for this connection (not yet accepted
+# by the socket). Poll-thread only.
+@inline _send_buffered(conn::MgConnection)::Int =
+    Int(unsafe_load(Ptr{Csize_t}(reinterpret(UInt, conn) + _MG_CONN_SEND_LEN_OFFSET)))
+
 function drain_streams!(server::AbstractServer)
     streams = server.runtime.streams
     isempty(streams) && return
+    cap = server.config.stream_buffer_bytes
     done = Int[]
     for (id, st) in streams
         chan = st.channel
         while isopen(chan) && isready(chan)
+            # Backpressure: stop feeding a connection whose unsent buffer is
+            # full. Chunks stay in the bounded channel (the producer blocks),
+            # so a slow reader cannot grow server memory without bound.
+            cap > 0 && _send_buffered(st.conn) >= cap && break
             chunk = take!(chan)
             if chunk === nothing
                 push!(done, id)

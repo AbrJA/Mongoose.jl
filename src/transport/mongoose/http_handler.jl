@@ -130,14 +130,19 @@ function on_headers(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvo
     return nothing
 end
 
+# Add a header to a response without mutating it: `errorresponse` may return
+# the shared `DEFAULT_*` objects (or a user-registered `Response`), so
+# in-place appends would accumulate across requests.
+@inline function _add_header_once(res::Response, key::String, value::String)::Response
+    get(res.headers, key, nothing) === nothing || return res
+    h = copy(res.headers)
+    push!(h, key => value)
+    return Response(res.status, h, res.body)
+end
+
 # Force `Connection: close` on a response that will be followed by a close
 # once the client finishes writing (avoids a mid-upload RST).
-@inline function _close_response(res)
-    if res isa Response
-        _has_conn_header(res.headers) || append!(res.headers, ["Connection" => "close"])
-    end
-    return res
-end
+@inline _close_response(res) = res isa Response ? _add_header_once(res, "Connection", "close") : res
 
 # Materialize one header value (rare paths only; hot paths use the pointer).
 @inline function _header_value_string(msg_ptr::Ptr{Cvoid}, name::AbstractString)::Union{Nothing,String}
@@ -198,7 +203,7 @@ end
 
 @inline function _echo_conn_close!(res, req::Request)
     if conn_close_requested(req) && res isa Response
-        _has_conn_header(res.headers) || append!(res.headers, ["Connection" => "close"])
+        return _add_header_once(res, "Connection", "close")
     end
     return res
 end
@@ -219,7 +224,7 @@ end
 # message headers tell us whether the client asked for a close.
 @inline function _echo_conn_close_error!(res, msg::MgHttpMessage)
     if _conn_close_in_headers(msg) && res isa Response
-        _has_conn_header(res.headers) || append!(res.headers, ["Connection" => "close"])
+        return _add_header_once(res, "Connection", "close")
     end
     return res
 end
@@ -281,7 +286,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
             @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
             errorresponse(server.errors, req, 500)
         end
-        _echo_conn_close!(res, req)
+        res = _echo_conn_close!(res, req)
         rid = resolve_request_id(req, server)
         if res isa StreamResponse
             send_stream_response!(server, conn, res)
@@ -301,8 +306,8 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         # Timed-out handlers cannot be killed; once the runaway budget is
         # exhausted, shed new timed requests rather than accumulate more.
         if timeout > 0 && _bg_full(server)
-            res = _echo_conn_close!(errorresponse(server.errors, 503), req)
-            _has_conn_header(res.headers) || append!(res.headers, ["Retry-After" => "1"])
+            res = _add_header_once(_echo_conn_close!(errorresponse(server.errors, 503), req),
+                                   "Retry-After", "1")
             @log_warn "Request shed: runaway timed-out tasks reached $(server.config.max_bg_tasks)"
             send_http_response!(conn, res::Response, resolve_request_id(req, server))
             return nothing
@@ -318,7 +323,8 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         end
         if !submit!(exec, job)
             delete!(server.runtime.connections, id)
-            res = _echo_conn_close!(errorresponse(server.errors, 503), req)
+            res = _add_header_once(_echo_conn_close!(errorresponse(server.errors, 503), req),
+                                   "Retry-After", "1")
             send_http_response!(conn, res::Response, resolve_request_id(req, server))
         end
     end
@@ -340,7 +346,7 @@ function _http_job(server::AbstractServer, id::Int, req::Request)
             @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
             errorresponse(server.errors, req, 500)
         end
-        _echo_conn_close!(res, req)
+        res = _echo_conn_close!(res, req)
         if res isa StreamResponse
             return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, res)
         end
@@ -427,12 +433,34 @@ end
     qi !== nothing && (rel = rel[1:prevind(rel, qi)])
     rel = lstrip(rel, '/')
 
+    # Decode percent-escapes so the root guard and the dotfile rule see the
+    # same path Mongoose will open. `+` stays literal in paths (RFC 3986).
+    rel = urldecode(codeunits(rel), 1, ncodeunits(rel); plus=false)
+
     candidate = normpath(joinpath(root, rel))
     (candidate == root || startswith(candidate, root * Base.Filesystem.path_separator)) || return false
+    _has_hidden_segment(rel) && return false
 
     isfile(candidate) && return true
     isfile(candidate * ".gz") && return true
     isfile(joinpath(isempty(rel) ? root : candidate, "index.html")) && return true
+    return false
+end
+
+# Dotfiles are not served (`.env`, `.git`, editor backups); `.well-known` is
+# the standardized exception (ACME challenges, security.txt). Every other
+# dot-segment rejects the path, including `..`-normalized attempts.
+function _has_hidden_segment(rel::String)::Bool
+    isempty(rel) && return false
+    first_seg = true
+    for seg in eachsplit(rel, '/')
+        isempty(seg) && continue
+        if startswith(seg, '.')
+            first_seg && seg == ".well-known" && (first_seg = false; continue)
+            return true
+        end
+        first_seg = false
+    end
     return false
 end
 
@@ -490,6 +518,10 @@ head!(f::Function, server::AbstractServer, path::AbstractString) = head!(server,
 Serve static files from `directory` under `uri_prefix` on the URL. The
 directory is the positional argument; the URL prefix is always the keyword
 (so the two can never be silently swapped).
+
+Dotfiles (`.env`, `.git`, …) are not served; `.well-known` is allowed for
+ACME challenges and `security.txt`. Symlinks inside the directory are
+followed by the OS, so do not place links that escape the root.
 """
 function serve!(server::AbstractServer, directory::AbstractString; uri_prefix::AbstractString="/")
     _ensure_registratable(server, "static mounts")

@@ -89,34 +89,47 @@ Return the raw (non-cumulative) histogram bucket index for a given elapsed time 
     return _N_HIST_BUCKETS
 end
 
+# Record one request outcome (counter + histogram observation).
+@inline function _record!(mw::Metrics, request::Request, status::Int, elapsed_s::Float64)
+    mi = _method_idx(request.method)
+    si = _status_idx(status)
+    bidx = _histidx(elapsed_s)
+    shard = _shard(mw)
+    lock(shard.lock)
+    try
+        @inbounds shard.counts[mi, si] += 1
+        @inbounds shard.raw_hist[bidx] += 1
+        shard.hist_sum += elapsed_s
+        shard.hist_total += 1
+    finally
+        unlock(shard.lock)
+    end
+    return nothing
+end
+
 function (mw::Metrics)(request::Request, next::Function)
     if request.method === :get && request.uri == mw.path
         return _renderstats(mw)
     end
 
     t0 = time_ns()
-    response = next()
+    response = try
+        next()
+    catch e
+        # Handler exceptions bypass the response path; record the failure
+        # (the transport maps it to the `HTTPError` status or 500) so error
+        # rates stay visible, then let the normal error mapping proceed.
+        _record!(mw, request, e isa HTTPError ? errorstatus(e) : 500,
+                 (time_ns() - t0) * 1e-9)
+        rethrow()
+    end
     elapsed_s = (time_ns() - t0) * 1e-9
 
     # Record both buffered responses and completed streams (SSE). The
     # streaming status is only known at dispatch (200), so streams are
     # bucketed as their nominal status — still visible in the histogram.
     if response isa Response || response isa StreamResponse
-        status = response isa Response ? response.status : 200
-        mi = _method_idx(request.method)
-        si = _status_idx(status)
-        bidx = _histidx(elapsed_s)
-
-        shard = _shard(mw)
-        lock(shard.lock)
-        try
-            @inbounds shard.counts[mi, si] += 1
-            @inbounds shard.raw_hist[bidx] += 1
-            shard.hist_sum += elapsed_s
-            shard.hist_total += 1
-        finally
-            unlock(shard.lock)
-        end
+        _record!(mw, request, response isa Response ? response.status : 200, elapsed_s)
     end
 
     return response

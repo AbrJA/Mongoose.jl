@@ -114,3 +114,32 @@ end
         end
     end
 end
+
+@testset "dotfiles denied, traversal blocked" begin
+    mktempdir() do dir
+        write(joinpath(dir, "index.html"), "INDEX")
+        write(joinpath(dir, ".env"), "SECRET=1")
+        mkdir(joinpath(dir, ".well-known"))
+        write(joinpath(dir, ".well-known", "security.txt"), "Contact: x")
+        mkdir(joinpath(dir, "sub"))
+        write(joinpath(dir, "sub", ".hidden"), "H")
+        write(joinpath(dir, "sub", "ok.txt"), "OK")
+
+        s = App()
+        serve!(s, dir)
+        with_server(s) do port
+            base = "http://127.0.0.1:$port"
+            @test HTTP.get("$base/index.html"; status_exception=false, retry=false).status == 200
+            @test HTTP.get("$base/sub/ok.txt"; status_exception=false, retry=false).status == 200
+            @test HTTP.get("$base/.well-known/security.txt"; status_exception=false, retry=false).status == 200
+            @test HTTP.get("$base/.env"; status_exception=false, retry=false).status == 404
+            @test HTTP.get("$base/%2eenv"; status_exception=false, retry=false).status == 404
+            @test HTTP.get("$base/sub/.hidden"; status_exception=false, retry=false).status == 404
+            @test HTTP.get("$base/.well-known/../.env"; status_exception=false, retry=false).status == 404
+            # Traversal attempts (raw and percent-encoded) never escape the root.
+            @test HTTP.get("$base/../outside.txt"; status_exception=false, retry=false).status == 404
+            @test HTTP.get("$base/%2e%2e/outside.txt"; status_exception=false, retry=false).status == 404
+            @test HTTP.get("$base/sub/%2e%2e/%2e%2e/outside.txt"; status_exception=false, retry=false).status == 404
+        end
+    end
+end

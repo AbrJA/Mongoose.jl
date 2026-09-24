@@ -52,3 +52,19 @@ end
         @test occursin("http_requests_total{method=\"GET\",status=\"200\"} 1", body)
     end
 end
+
+@testset "Exceptions are counted (500 and HTTPError status)" begin
+    s = App()
+    get!(s, "/boom") do req; error("boom") end
+    get!(s, "/teapot") do req; throw(ImATeapotError("short and stout")) end
+    use!(s, metrics())
+
+    with_server(s) do port
+        base = "http://127.0.0.1:$port"
+        HTTP.get("$base/boom"; status_exception=false, retry=false)
+        HTTP.get("$base/teapot"; status_exception=false, retry=false)
+        body = String(HTTP.get("$base/metrics"; status_exception=false, retry=false).body)
+        @test contains(body, "http_requests_total{method=\"GET\",status=\"500\"} 1")
+        @test contains(body, "http_requests_total{method=\"GET\",status=\"418\"} 1")
+    end
+end

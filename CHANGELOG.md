@@ -13,6 +13,25 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- **Static file serving no longer exposes dotfiles** (`.env`, `.git`, …);
+  `.well-known` stays allowed (ACME/`security.txt`). Path checks now decode
+  percent-escapes first, so encoded traversal and encoded dotfiles are
+  blocked too. (Symlinks inside a mount are still followed by the OS — do
+  not place links that escape the root.)
+- **IPv6 binds actually work**: `host="::1"` (or `"::"` for dual-stack) was
+  passed unbracketed into the listen URL, so the C parser bound nowhere
+  useful. URLs are now `[::1]:port`; HTTP.jl and dual-stack verified.
+- **Metrics count handler exceptions**: 500s (and `HTTPError` statuses) were
+  invisible to `http_requests_total`/the histogram because the exception
+  bypassed the response path. Exceptions are now recorded as
+  `errorstatus(e)` or 500.
+- **Streaming responses apply backpressure**: at most `stream_buffer_bytes`
+  (default 1 MiB) of unsent data is buffered per connection. Previously a
+  slow SSE reader could grow server memory without bound and stall the event
+  loop while the producer drained into Mongoose's send buffer.
+- **Error responses are no longer mutated across requests**: the shared
+  `DEFAULT_*` error pages had `Connection`/`Retry-After` appended in place
+  (headers accumulated). Header additions are copy-on-write now.
 - **Critical — connection-close paths leaked the fd and could wedge the
   event loop**: the max-connections refusal, the `header_timeout_ms` sweep,
   and the WS idle close called `mg_close_conn`, which frees the connection
@@ -70,6 +89,8 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   `Retry-After` instead of exhausting the thread pool. The
   `mongoose_bg_tasks` gauge exposes the current count. Handlers should be
   self-bounding (DB/HTTP client timeouts) for real resource limits.
+- `stream_buffer_bytes` (default 1 MiB, 0 = unlimited) caps unsent streamed
+  data per connection; queue-full and shed `503`s now carry `Retry-After: 1`.
 - New hardening knobs: `body_timeout_ms` (0 = disabled) bounds how long a
   client may take to deliver a request body, and `max_header_bytes`
   (default **64 KiB**, 0 = unlimited) caps request headers — oversized

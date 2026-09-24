@@ -197,6 +197,7 @@ end
         rejected = filter(r -> r.status == 503, responses)
         @test !isempty(rejected)
         @test all(r -> HTTP.hasheader(r, "X-Request-Id"), rejected)
+        @test all(r -> HTTP.header(r, "Retry-After") == "1", rejected)
     end
 end
 

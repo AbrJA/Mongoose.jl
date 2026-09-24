@@ -127,3 +127,43 @@ end
         shutdown!(app)
     end
 end
+
+@testset "slow consumer backpressure caps buffered bytes" begin
+    cap = 64 * 1024
+    s = App(workers=2, stream_buffer_bytes=cap)
+    get!(s, "/events") do req
+        sse(req) do w
+            for i in 1:20000
+                emit(w; data="x"^1000)   # ~20MB: exceeds any kernel buffer
+            end
+        end
+    end
+    get!(s, "/ping") do req; text("pong") end
+
+    with_server(s) do port
+        sock = Sockets.connect("127.0.0.1", port)
+        write(sock, "GET /events HTTP/1.1\r\nHost: x\r\n\r\n")
+        readuntil(sock, "\r\n\r\n")     # response headers
+        readavailable(sock)               # a few events
+        sleep(1.0)                        # stop reading: producer hits the cap
+
+        # Event loop stays responsive.
+        t0 = time()
+        r = HTTP.get("http://127.0.0.1:$port/ping"; status_exception=false, retry=false)
+        @test r.status == 200
+        @test time() - t0 < 1.0
+
+        # The connection's unsent buffer is capped (one chunk of slack).
+        @test length(s.runtime.streams) == 1
+        st = first(values(s.runtime.streams))
+        @test Mongoose._send_buffered(st.conn) <= cap + 64 * 1024
+        @test isready(st.channel)         # producer parked on the bounded channel
+
+        close(sock)
+        @test wait_until(timeout=5.0) do
+            isempty(s.runtime.streams)
+        end
+        @test HTTP.get("http://127.0.0.1:$port/ping"; status_exception=false,
+                       retry=false).status == 200
+    end
+end

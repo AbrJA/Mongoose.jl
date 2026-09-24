@@ -285,3 +285,30 @@ end
         @test r2.status == 200
     end
 end
+
+@testset "IPv6 host binding" begin
+    v6 = try
+        l = Sockets.listen(Sockets.IPv6("::1"), 0)
+        close(l)
+        true
+    catch
+        false
+    end
+    if !v6
+        @test_skip true
+    else
+        app = App(workers=2)
+        get!(app, "/v6") do req
+            json(Dict("remote" => something(req.remote_addr, "none")))
+        end
+        port = fresh_port()
+        start!(app; host="::1", port=port, blocking=false)
+        try
+            r = HTTP.get("http://[::1]:$port/v6"; status_exception=false, retry=false)
+            @test r.status == 200
+            @test occursin("0000:0000:0000:0000:0000:0000:0000:0001", String(r.body))
+        finally
+            shutdown!(app)
+        end
+    end
+end

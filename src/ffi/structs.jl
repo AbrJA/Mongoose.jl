@@ -34,6 +34,7 @@ const _MG_CONN_REM_OFFSET = 40
 # recv starts after fd(8)+id(8); `struct mg_iobuf { buf; len; size; align; }`.
 const _MG_CONN_RECV_OFFSET = 80      # recv.buf (uint8_t *)
 const _MG_CONN_RECV_LEN_OFFSET = 88  # recv.len (size_t)
+const _MG_CONN_SEND_LEN_OFFSET = 120 # send.len (size_t): bytes queued to the socket
 
 # Offset of `head.len` inside `struct mg_http_message` (Mongoose 7.21):
 # method/uri/query/proto (4×16) + headers[30] (30×32) + body(16) + head(16)
