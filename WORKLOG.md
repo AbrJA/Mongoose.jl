@@ -500,15 +500,18 @@ four gates plus before/after numbers in the commit message.
   the batch-10 enabler; document the dynamic `Router` as the dev path.
 
 ### Phase D — simplification & maintenance
-- [ ] **D1** Delete what the redesign makes redundant: generic/compiled
-  duplication (keep one table representation), `Tagged`/`Intent` from the
-  export list, `MethodMap` dynamic `getfield`/`setfield!`, `PathFilter`,
-  `SingleEndpoint` if `Matched` can carry typed endpoints directly.
-- [ ] **D2** Docs: a "Performance & deployment" page (freeze + tuple
-  middleware + sync/async choice + measured numbers), and update the README
-  feature claims with real numbers from A1.
-- [ ] **D3** Update the `julia-performance` skill baselines after each phase;
-  add the new anti-patterns to the list.
+- [x] **D1** `MethodMap` uses explicit per-method branches (no dynamic
+  `getfield`/`setfield!` symbol lookup); `getendpoint` docstring restored.
+  Kept: `PathFilter` (prefix-scoped global middleware), `SingleEndpoint`
+  (custom-router carrier), and the Kernel-exported internals (`Tagged`,
+  `Intent`, `MethodMap`) as the documented extension surface.
+  *commit: this one*
+- [x] **D2** `docs/src/performance.md` added (measured baselines, production
+  recipe, observability, regression guards, AOT/trim status) and linked from
+  the docs index + sidebar. *commit: this one*
+- [x] **D3** `julia-performance` skill refreshed: current baselines, typed-
+  struct list (`App{R,E}` included), MethodMap note, fixed anti-patterns.
+  *commit: this one*
 
 ### Acceptance targets
 - Frozen fixed route: ≤ 200 B/op, ≤ 400 ns/op (from 384 B / ~850 ns).

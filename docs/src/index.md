@@ -95,4 +95,5 @@ turned off with `nothing`.
 ## Next Steps
 
 - [Examples](@ref) — cookbook-style recipes for common patterns
+- [Performance & Deployment](@ref) — measured baselines and the production recipe
 - [API Reference](@ref) — full documentation of all exported types and functions

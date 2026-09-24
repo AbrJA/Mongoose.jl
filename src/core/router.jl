@@ -61,34 +61,43 @@ mutable struct MethodMap
     MethodMap() = new(nothing, nothing, nothing, nothing, nothing, nothing, nothing)
 end
 
-@inline function _method_slot(mm::MethodMap, method::Symbol)::Symbol
-    method === :get     && return :get
-    method === :post    && return :post
-    method === :put     && return :put
-    method === :delete  && return :delete
-    method === :patch   && return :patch
-    method === :options && return :options
-    method === :head    && return :head
-    throw(RouteError("Invalid HTTP method: $method"))
-end
-
+# Explicit per-method branches instead of `getfield(mm, symbol)`: the compiler
+# sees every field directly (no dynamic field lookup) and each branch is
+# type-stable. Invalid methods still fail loudly.
 """
     getendpoint(mm, method) → Union{Nothing, Endpoint}
+
+The endpoint registered for `method`, or `nothing`; throws `RouteError` for a
+method outside the seven supported HTTP methods.
 """
 @inline function getendpoint(mm::MethodMap, method::Symbol)::Union{Nothing,Endpoint}
-    return getfield(mm, _method_slot(mm, method))
+    method === :get     && return mm.get
+    method === :post    && return mm.post
+    method === :put     && return mm.put
+    method === :delete  && return mm.delete
+    method === :patch   && return mm.patch
+    method === :options && return mm.options
+    method === :head    && return mm.head
+    throw(RouteError("Invalid HTTP method: $method"))
 end
 
 """
     gethandler(mm, method) → Union{Nothing, Function}
 """
 @inline function gethandler(mm::MethodMap, method::Symbol)::Union{Nothing,Function}
-    ep = getfield(mm, _method_slot(mm, method))
+    ep = getendpoint(mm, method)
     return ep === nothing ? nothing : ep.handler
 end
 
 function sethandler!(mm::MethodMap, method::Symbol, ep::Endpoint)
-    setfield!(mm, _method_slot(mm, method), ep)
+    method === :get     ? (mm.get     = ep) :
+    method === :post    ? (mm.post    = ep) :
+    method === :put     ? (mm.put     = ep) :
+    method === :delete  ? (mm.delete  = ep) :
+    method === :patch   ? (mm.patch   = ep) :
+    method === :options ? (mm.options = ep) :
+    method === :head    ? (mm.head    = ep) :
+    throw(RouteError("Invalid HTTP method: $method"))
     return
 end
 

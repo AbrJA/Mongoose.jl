@@ -173,3 +173,5 @@ per-request dynamic dispatch.
   deliberate; document any in-place mutation instead of adding more copies.
 - Internal APIs in hot paths (`Base.n_avail`) — pin with a test so an upgrade
   fails loudly rather than silently misbehaving.
+- Dynamic `getfield(mm, ::Symbol)` field lookup (fixed): `MethodMap` uses
+  explicit per-method branches, so every field is visible to the compiler.
