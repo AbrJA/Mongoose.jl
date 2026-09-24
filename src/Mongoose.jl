@@ -12,7 +12,7 @@ using CodecZlib
 export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, isrunning, url, route!, use!, serve!, onerror!, onstart!, onstop!,
-    context, Cookie, Headers, setcookie, cookies, form, header,
+    context, Cookie, Headers, setcookie, parsecookies, parseform, header,
     ws!, broadcastws, Message,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
     RouteError, ServerError, BindError,
@@ -38,7 +38,7 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
     SSEWriter, emit, sse,
     json, parsejson, html, text, redirect,
     post!, patch!, options!, head!,
-    query, querydict, body, multipart, MultipartFile,
+    query, parsequery, body, parsemultipart, MultipartFile,
     validate, ValidationError
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -131,7 +131,7 @@ end
         form_req = Request(:post, "/", Dict{String,String}(),
             ["content-type" => "application/x-www-form-urlencoded"],
             "a=1&b=hello", nothing)
-        form(form_req)
+        parseform(form_req)
 
         # --- Remote address (field + handler read) ---
         raddr_req = Request(:get, "/who", Dict{String,String}(), Pair{String,String}[],

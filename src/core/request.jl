@@ -107,7 +107,7 @@ end
     Request — Full HTTP request with owned data.
 
     `query` is parsed lazily: the transport stores the raw query string and
-    [`querydict`](@ref) memoizes the parsed `Dict` on first access, so requests
+    [`parsequery`](@ref) memoizes the parsed `Dict` on first access, so requests
     that never read the query pay only the raw-string copy (nothing at all when
     there is no query). `context` is allocated on first access the same way.
 
@@ -123,7 +123,7 @@ mutable struct Request <: AbstractRequest
     const method::Symbol
     const uri::String
     const path::String                          # URI without query string (pre-stripped)
-    query::Union{Nothing,Dict{String,String}}   # parsed lazily via `querydict`
+    query::Union{Nothing,Dict{String,String}}   # parsed lazily via `parsequery`
     const query_raw::String                     # raw query (no '?'), lazy source
     const headers::Headers
     const body::String
@@ -168,13 +168,14 @@ function Request(method::Symbol, uri::String,
 end
 
 """
-    querydict(req) → Dict{String,String}
+    parsequery(req) → Dict{String,String}
 
-The request's query parameters, parsed from the URI on first access and
+The request's query parameters, parsed from the raw query on first access and
 memoized. Prefer [`query`](@ref) for typed lookups; use this when you need the
-whole dict.
+whole dict. (The string method [`parsequery(str)`](@ref parsequery) is the
+underlying parser.)
 """
-@inline function querydict(req::Request)::Dict{String,String}
+@inline function parsequery(req::Request)::Dict{String,String}
     q = req.query
     q !== nothing && return q
     parsed = parsequery(req.query_raw)
@@ -218,14 +219,14 @@ end
 end
 
 """
-    form(req) → Dict{String,String}
+    parseform(req) → Dict{String,String}
 
 Parse an `application/x-www-form-urlencoded` request body.
 """
-function form(req::Request)::Dict{String,String}
+function parseform(req::Request)::Dict{String,String}
     ct = get(req.headers, "content-type", "")
     startswith(ct, "application/x-www-form-urlencoded") ||
-        throw(UnsupportedMediaTypeError("form() requires Content-Type: application/x-www-form-urlencoded, got \"$ct\""))
+        throw(UnsupportedMediaTypeError("parseform() requires Content-Type: application/x-www-form-urlencoded, got \"$ct\""))
     return parsequery(req.body)
 end
 
@@ -262,29 +263,29 @@ flag = query(req, "debug", false) # Auto-parse to Bool
 ```
 """
 @inline function query(req::Request, key::String)::Union{String,Nothing}
-    return get(querydict(req), key, nothing)
+    return get(parsequery(req), key, nothing)
 end
 
 @inline function query(req::Request, key::String, default::String)::String
-    return get(querydict(req), key, default)
+    return get(parsequery(req), key, default)
 end
 
 @inline function query(req::Request, key::String, default::T)::T where {T<:Integer}
-    val = get(querydict(req), key, nothing)
+    val = get(parsequery(req), key, nothing)
     val === nothing && return default
     parsed = tryparse(T, val)
     return parsed === nothing ? default : parsed
 end
 
 @inline function query(req::Request, key::String, default::T)::T where {T<:AbstractFloat}
-    val = get(querydict(req), key, nothing)
+    val = get(parsequery(req), key, nothing)
     val === nothing && return default
     parsed = tryparse(T, val)
     return parsed === nothing ? default : parsed
 end
 
 @inline function query(req::Request, key::String, default::Bool)::Bool
-    val = get(querydict(req), key, nothing)
+    val = get(parsequery(req), key, nothing)
     val === nothing && return default
     lv = lowercase(val)
     return lv == "true" || lv == "1" || lv == "yes"
@@ -312,7 +313,7 @@ struct MultipartFile
 end
 
 """
-    multipart(req) → Dict{String, Union{String, MultipartFile}}
+    parsemultipart(req) → Dict{String, Union{String, MultipartFile}}
 
 Parse a multipart/form-data request body.
 Returns a Dict where string fields map to their values and file fields map to MultipartFile objects.
@@ -320,16 +321,16 @@ Returns a Dict where string fields map to their values and file fields map to Mu
 # Example
 ```julia
 post!(app, "/upload") do req
-    parts = multipart(req)
+    parts = parsemultipart(req)
     file = parts["avatar"]::MultipartFile
     text("Received \$(file.filename) (\$(length(file.data)) bytes)")
 end
 ```
 """
-function multipart(req::Request)::Dict{String,Union{String,MultipartFile}}
+function parsemultipart(req::Request)::Dict{String,Union{String,MultipartFile}}
     ct = get(req.headers, "content-type", "")
     startswith(ct, "multipart/form-data") ||
-        throw(UnsupportedMediaTypeError("multipart() requires Content-Type: multipart/form-data, got \"$ct\""))
+        throw(UnsupportedMediaTypeError("parsemultipart() requires Content-Type: multipart/form-data, got \"$ct\""))
 
     # Extract boundary
     boundary = _extract_boundary(ct)

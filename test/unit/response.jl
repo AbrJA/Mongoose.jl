@@ -205,18 +205,18 @@ end
     end
 end
 
-@testset "cookies(req)" begin
+@testset "parsecookies(req)" begin
     @testset "Parse single cookie" begin
         req = Request(:get, "/", "/", Dict{String,String}(),
             Headers(["cookie" => "name=value"]), "")
-        jar = Mongoose.cookies(req)
+        jar = Mongoose.parsecookies(req)
         @test jar["name"] == "value"
     end
 
     @testset "Parse multiple cookies" begin
         req = Request(:get, "/", "/", Dict{String,String}(),
             Headers(["cookie" => "a=1; b=2; c=3"]), "")
-        jar = Mongoose.cookies(req)
+        jar = Mongoose.parsecookies(req)
         @test jar["a"] == "1"
         @test jar["b"] == "2"
         @test jar["c"] == "3"
@@ -224,14 +224,14 @@ end
 
     @testset "No cookie header" begin
         req = Request(:get, "/", "/", Dict{String,String}(), Headers(), "")
-        jar = Mongoose.cookies(req)
+        jar = Mongoose.parsecookies(req)
         @test isempty(jar)
     end
 
     @testset "Empty cookie value" begin
         req = Request(:get, "/", "/", Dict{String,String}(),
             Headers(["cookie" => "key="]), "")
-        jar = Mongoose.cookies(req)
+        jar = Mongoose.parsecookies(req)
         @test jar["key"] == ""
     end
 end

@@ -206,10 +206,10 @@ end
 end
 
 @testset "Form parsing" begin
-    @testset "form() parses URL-encoded body" begin
+    @testset "parseform() parses URL-encoded body" begin
         s = App()
         post!(s, "/form") do req
-            data = form(req)
+            data = parseform(req)
             text(get(data, "name", "missing"))
         end
         with_server(s) do port
@@ -225,7 +225,7 @@ end
 @testset "Query parameters" begin
     @testset "Single query param" begin
         s = App()
-        get!(s, "/q") do req; text(get(querydict(req), "name", "")) end
+        get!(s, "/q") do req; text(get(parsequery(req), "name", "")) end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/q?name=test"; status_exception=false)
             @test String(resp.body) == "test"
@@ -235,8 +235,8 @@ end
     @testset "Multiple query params" begin
         s = App()
         get!(s, "/q") do req
-            a = get(querydict(req), "a", "")
-            b = get(querydict(req), "b", "")
+            a = get(parsequery(req), "a", "")
+            b = get(parsequery(req), "b", "")
             text("$a,$b")
         end
         with_server(s) do port
@@ -247,7 +247,7 @@ end
 
     @testset "Empty query string" begin
         s = App()
-        get!(s, "/q") do req; text("keys=$(length(querydict(req)))") end
+        get!(s, "/q") do req; text("keys=$(length(parsequery(req)))") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/q"; status_exception=false)
             @test String(resp.body) == "keys=0"
@@ -275,7 +275,7 @@ end
     @testset "Parse cookies from request" begin
         s = App()
         get!(s, "/cookies") do req
-            jar = Mongoose.cookies(req)
+            jar = Mongoose.parsecookies(req)
             val = get(jar, "token", "missing")
             text(val)
         end

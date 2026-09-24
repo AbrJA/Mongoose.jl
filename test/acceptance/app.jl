@@ -55,11 +55,11 @@ function buildapp(; token::String="test-token", workers::Integer=2)
                   "limit" => query(req, "limit", 20)))
     end
     post!(router, "/api/form") do req
-        form_dict = form(req)
+        form_dict = parseform(req)
         json(Dict("received" => form_dict))
     end
     post!(router, "/api/upload") do req
-        parts = multipart(req)
+        parts = parsemultipart(req)
         file = get(parts, "file", nothing)::Union{MultipartFile,Nothing}
         file === nothing && return json(Dict("error" => "no file"); status=400)
         json(Dict("name" => file.name, "filename" => file.filename,
@@ -82,7 +82,7 @@ function buildapp(; token::String="test-token", workers::Integer=2)
 
     # --- Cookies ---
     get!(router, "/api/cookie") do req
-        current = get(Mongoose.cookies(req), "session", "none")
+        current = get(Mongoose.parsecookies(req), "session", "none")
         c = Mongoose.Cookie("session", "abc123"; httponly=true, samesite=:lax, max_age=3600)
         text("cookie=$current"; headers=["Set-Cookie" => Mongoose.setcookie(c)])
     end

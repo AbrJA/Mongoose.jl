@@ -153,14 +153,16 @@ end
 ## 📨 Request & Response
 
 ```julia
-body(req)                 # raw body
-parsejson(req)            # JSON → Dict/Array/...
-validate(req, CreateUser) # parse + coerce + validate into a struct
-query(req, "page", 1)     # typed query param with default
+body(req)                  # raw body
+parsejson(req)             # JSON → Dict/Array/...
+parseform(req)             # urlencoded body → Dict
+parsemultipart(req)        # multipart body → Dict/MultipartFile
+parsecookies(req)          # Cookie header → Dict
+parsequery(req)            # whole query Dict (query(req, k) for typed lookups)
+validate(req, CreateUser)  # parse + coerce + validate into a struct
+query(req, "page", 1)      # typed query param with default
 header(req, "authorization")
-cookies(req)              # Dict{String,String}
-form(req) / multipart(req)
-context(req)              # per-request Dict{Symbol,Any}
+context(req)               # per-request Dict{Symbol,Any}
 ```
 
 ```julia

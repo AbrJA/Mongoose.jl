@@ -7,7 +7,7 @@
         @test req.method == :get
         @test req.uri == "/test?q=1"
         @test req.path == "/test"
-        @test querydict(req)["q"] == "1"
+        @test parsequery(req)["q"] == "1"
         @test req.body == ""
     end
 
@@ -180,19 +180,19 @@ end
 @testset "lazy query parsing" begin
     # Pre-parsed (tests/FakeTransport): returned as-is.
     r1 = Request(:get, "/q?a=1", Dict("a" => "1"), Pair{String,String}[], "")
-    @test querydict(r1) === r1.query
+    @test parsequery(r1) === r1.query
 
     # Transport-shaped: raw query string, parsed on first access and memoized.
     r2 = Request(:get, "/q?a=1&b=2", "/q", nothing, "a=1&b=2", Headers(), "")
     @test r2.query === nothing
-    @test querydict(r2) == Dict("a" => "1", "b" => "2")
-    @test querydict(r2) === r2.query
+    @test parsequery(r2) == Dict("a" => "1", "b" => "2")
+    @test parsequery(r2) === r2.query
     @test query(r2, "a") == "1"
     @test query(r2, "page", 2) == 2
 
     # No query: empty dict, no error.
     r3 = Request(:get, "/q", "/q", nothing, "", Headers(), "")
-    @test isempty(querydict(r3))
+    @test isempty(parsequery(r3))
     @test query(r3, "missing", "none") == "none"
 end
 
@@ -255,7 +255,7 @@ end
             Dict{String,String}(),
             Headers(["content-type" => "multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW"]),
             body_content)
-        parts = multipart(req)
+        parts = parsemultipart(req)
         @test parts["field1"] == "value1"
         @test parts["file"] isa MultipartFile
         @test parts["file"].filename == "test.txt"
@@ -268,7 +268,7 @@ end
             Dict{String,String}(),
             Headers(["content-type" => "application/json"]),
             "{}")
-        @test_throws UnsupportedMediaTypeError multipart(req)
+        @test_throws UnsupportedMediaTypeError parsemultipart(req)
     end
 end
 
@@ -364,12 +364,12 @@ end
         @test urldecode(bytes, 1, length(bytes)) isa String
         @test Mongoose.Kernel._extract_boundary(s) isa String
         req = Request(:get, "/", "/", Dict{String,String}(), Headers(["cookie" => s]), "")
-        @test Mongoose.cookies(req) isa Dict{String,String}
+        @test Mongoose.parsecookies(req) isa Dict{String,String}
         mreq = Request(:post, "/", "/", Dict{String,String}(),
             Headers(["content-type" => "multipart/form-data; boundary=$s"]), s)
         # Empty/unparseable boundaries are a typed 400, never a raw exception.
         mresult = try
-            Mongoose.multipart(mreq) isa Dict
+            Mongoose.parsemultipart(mreq) isa Dict
         catch e
             e isa Mongoose.HTTPError
         end

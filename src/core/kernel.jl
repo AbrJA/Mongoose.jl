@@ -50,9 +50,9 @@ include("security.jl")
 include("compress.jl")
 include("etag.jl")
 
-export AbstractRequest, Request, Headers, asheaders, mergeheaders, context, form, header, query, querydict, body,
-    multipart, MultipartFile,
-    Response, StreamResponse, Cookie, setcookie, cookies, json, parsejson, html, text, redirect,
+export AbstractRequest, Request, Headers, asheaders, mergeheaders, context, parseform, header, query, body,
+    parsemultipart, MultipartFile,
+    Response, StreamResponse, Cookie, setcookie, parsecookies, json, parsejson, html, text, redirect,
     Plain, Html, Css, Js, Json, Xml, Binary, mime, contenttypepair, encode, decode,
     statusreason,
     RouteError, ServerError, BindError,

@@ -150,7 +150,7 @@ using Mongoose
 router = Router()
 
 route!(router, :post, "/upload", req -> begin
-    parts = multipart(req)  # Dict{String, Union{String, MultipartFile}}
+    parts = parsemultipart(req)  # Dict{String, Union{String, MultipartFile}}
     isempty(parts) && return json(Dict("error" => "No files"); status=400)
 
     for (name, value) in parts
@@ -375,7 +375,7 @@ route!(router, :post, "/login", req -> begin
 end)
 
 route!(router, :get, "/profile", req -> begin
-    jar = cookies(req)
+    jar = parsecookies(req)
     session = get(jar, "session", nothing)
     session === nothing && return json(Dict("error" => "unauthorized"); status=401)
     json(Dict("session" => session))

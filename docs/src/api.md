@@ -55,10 +55,6 @@ head!
 > other verbs are Mongoose exports). All accept `(server_or_router, path,
 > handler)` and the do-block form `get!(server, path) do req … end`.
 
-> `get!`, `put!`, and `delete!` are `Base` methods that Mongoose extends (the
-> other verbs are Mongoose exports). All accept `(server_or_router, path,
-> handler)` and the do-block form `get!(server, path) do req … end`.
-
 ## Request Processing
 
 ```@docs
@@ -101,14 +97,13 @@ setcookie
 
 ```@docs
 query
-querydict
 body
 parsejson
-multipart
+parseform
+parsemultipart
 MultipartFile
+parsecookies
 context
-cookies
-form
 header
 service
 services

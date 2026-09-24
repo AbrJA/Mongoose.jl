@@ -285,11 +285,11 @@ end
 # --- Utility: parse cookies from request ---
 
 """
-    cookies(req) → Dict{String,String}
+    parsecookies(req) → Dict{String,String}
 
 Parse cookies from the request `Cookie` header.
 """
-function cookies(req::Request)::Dict{String,String}
+function parsecookies(req::Request)::Dict{String,String}
     cookie_header = get(req.headers, "cookie", nothing)
     cookie_header === nothing && return Dict{String,String}()
     return _parse_cookie_string(cookie_header)

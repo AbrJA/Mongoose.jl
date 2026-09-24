@@ -33,8 +33,8 @@
     @testset "Malformed bodies map to 400/415" begin
         s = App()
         post!(s, "/j") do req; json(parsejson(req)) end
-        post!(s, "/f") do req; form(req); text("form ok") end
-        post!(s, "/m") do req; multipart(req); text("multipart ok") end
+        post!(s, "/f") do req; parseform(req); text("form ok") end
+        post!(s, "/m") do req; parsemultipart(req); text("multipart ok") end
 
         with_server(s) do port
             # Invalid JSON → 400 (was 500).
@@ -43,7 +43,7 @@
                 status_exception=false, retry=false)
             @test r.status == 400
 
-            # Wrong Content-Type for form()/multipart() → 415 (was 500).
+            # Wrong Content-Type for parseform()/parsemultipart() → 415 (was 500).
             r2 = HTTP.post("http://127.0.0.1:$port/f";
                 body="a=1", headers=["Content-Type" => "application/json"],
                 status_exception=false, retry=false)
