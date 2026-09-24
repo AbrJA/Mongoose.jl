@@ -144,6 +144,8 @@ function init_server!(app::App)
     empty!(app.runtime.ws_gen_ids)
     empty!(app.runtime.conn_times)
     empty!(app.runtime.awaiting_headers)
+    empty!(app.runtime.pending_close)
+    empty!(app.runtime.early_rejected)
     empty!(app.runtime.conn_addr)
 end
 
@@ -175,6 +177,11 @@ function _dispatch_replies!(exec::AsyncExecutor, app::App)::Bool
         conn === nothing && continue
         if reply.payload isa Response
             send_http_response!(conn, reply.payload)
+            if conn in app.runtime.pending_close
+                # Response is queued: let mongoose flush, then close.
+                mark_draining!(conn)
+                delete!(app.runtime.pending_close, conn)
+            end
             delete!(app.runtime.connections, reply.id)
         elseif reply.payload isa StreamResponse
             try send_stream_response!(app, conn, reply.payload) catch e; @log_error "Stream error" e catch_backtrace() end

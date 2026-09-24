@@ -216,3 +216,70 @@ end
         end
     end
 end
+
+using Sockets
+
+# Minimal client-side WebSocket framing for control-frame tests (masked).
+function _ws_client_frame(op::UInt8, payload::Vector{UInt8}=UInt8[])
+    n = length(payload)
+    io = IOBuffer()
+    write(io, UInt8(0x80) | op)
+    if n < 126
+        write(io, UInt8(0x80) | UInt8(n))
+    else
+        write(io, UInt8(0x80) | UInt8(126))
+        write(io, hton(UInt16(n)))
+    end
+    key = rand(UInt8, 4)
+    write(io, key)
+    for (i, c) in enumerate(payload)
+        write(io, c ⊻ key[mod1(i, 4)])
+    end
+    return take!(io)
+end
+
+function _ws_read_frame(sock)
+    b1 = read(sock, UInt8)
+    b2 = read(sock, UInt8)
+    op = b1 & 0x0F
+    n = Int(b2 & 0x7F)
+    if n == 126
+        n = Int(ntoh(read(sock, UInt16)))
+    elseif n == 127
+        n = Int(ntoh(read(sock, UInt64)))
+    end
+    masked = (b2 & 0x80) != 0
+    key = masked ? read(sock, 4) : UInt8[]
+    data = read(sock, n)
+    if masked
+        data = UInt8[c ⊻ key[mod1(i, 4)] for (i, c) in enumerate(data)]
+    end
+    return op, data
+end
+
+@testset "Control frames are answered exactly once" begin
+    # Regression: mongoose auto-replies to PING (PONG) and CLOSE (echo +
+    # drain); the control handler must not reply a second time.
+    s = App(workers=2)
+    ws!(s, "/ws/ctl"; on_message=msg -> Message(msg.data))
+    with_server(s) do port
+        sock = Sockets.connect("127.0.0.1", port)
+        write(sock, "GET /ws/ctl HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\n" *
+                    "Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" *
+                    "Sec-WebSocket-Version: 13\r\nOrigin: http://127.0.0.1\r\n\r\n")
+        @test contains(readuntil(sock, "\r\n\r\n"), "101")
+
+        write(sock, _ws_client_frame(0x09, Vector{UInt8}("ping")))
+        op, data = _ws_read_frame(sock)
+        @test op == 0x0A && String(data) == "ping"
+        sleep(0.3)
+        @test bytesavailable(sock) == 0          # no duplicate pong
+
+        write(sock, _ws_client_frame(0x08, UInt8[0x03, 0xE8]))
+        op, _ = _ws_read_frame(sock)
+        @test op == 0x08
+        sleep(0.3)
+        @test bytesavailable(sock) == 0          # no duplicate close
+        close(sock)
+    end
+end

@@ -24,9 +24,77 @@ function conn_sweep!(server::AbstractServer)
     end
     for c in stale
         delete!(server.runtime.awaiting_headers, c)
-        mg_close_conn(c)
+        # Mark closing; the poll loop deregisters the fd and closes the
+        # socket. Calling `mg_close_conn` here would leak the fd and leave a
+        # dangling epoll registration (event-loop wedge).
+        mg_error(c, "header timeout")
     end
     return nothing
+end
+
+"""
+    on_headers(server, conn, ev_data)
+
+`MG_EV_HTTP_HDRS` fires once the request headers are complete, even if the
+body is still arriving. Two jobs:
+
+1. Slowloris bookkeeping: drop the connection from the header-timeout watch,
+   so a slow upload longer than `header_timeout_ms` is not killed mid-body.
+2. Early `413`: reject a declared `Content-Length` above `max_body_bytes`
+   before the body is buffered (Mongoose would otherwise wait for the whole
+   body and only then let the handler answer).
+"""
+function on_headers(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
+    delete!(server.runtime.awaiting_headers, conn)
+    p = mg_http_get_header_ptr(ev_data, "Content-Length")
+    p == C_NULL && return nothing
+    len = _parse_content_length(unsafe_load(p))
+    len < 0 && return nothing
+    if len > server.config.max_body_bytes
+        msg = MgHttpMessage(ev_data)
+        rid = resolve_request_id(server, _header_value_string(ev_data, "X-Request-Id"))
+        res = errorresponse(server.errors, 413)
+        # Advertise close: the reply is already sent, and the connection is
+        # closed once the client finishes uploading (below). Closing earlier
+        # would RST a client that is still writing its body.
+        if res isa Response
+            _has_conn_header(res.headers) || append!(res.headers, ["Connection" => "close"])
+        end
+        send_http_response!(conn, res, rid)
+        # The body is still coming: remember the conn so `preprocess_http`
+        # ignores the eventual MG_EV_HTTP_MSG (no second response). Keep it on
+        # the sweep so a client that stalls mid-upload is still reclaimed.
+        push!(server.runtime.early_rejected, conn)
+        server.runtime.awaiting_headers[conn] = time()
+    end
+    return nothing
+end
+
+# Materialize one header value (rare paths only; hot paths use the pointer).
+@inline function _header_value_string(msg_ptr::Ptr{Cvoid}, name::AbstractString)::Union{Nothing,String}
+    p = mg_http_get_header_ptr(msg_ptr, name)
+    p == C_NULL && return nothing
+    s = unsafe_load(p)
+    (s.buf == C_NULL || s.len == 0) && return nothing
+    return unsafe_string(s.buf, s.len)
+end
+
+# Allocation-free decimal parse of a Content-Length header span. Returns -1
+# when absent, non-numeric, or absurdly large (the caller treats it as "no
+# declared length").
+@inline function _parse_content_length(s::MgStr)::Int
+    (s.buf == C_NULL || s.len == 0) && return -1
+    v = 0
+    seen = false
+    @inbounds for i in 0:Int(s.len)-1
+        c = unsafe_load(s.buf, i + 1)
+        c == UInt8(' ') && continue
+        (UInt8('0') <= c <= UInt8('9')) || return -1
+        v = v * 10 + Int(c - UInt8('0'))
+        v > 100_000_000 && return -1
+        seen = true
+    end
+    return seen ? v : -1
 end
 
 # --- Request ID resolution ---
@@ -93,6 +161,14 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
     msg = MgHttpMessage(ev_data)
     # A complete request arrived: it no longer counts against header_timeout.
     delete!(server.runtime.awaiting_headers, conn)
+    # Already answered at the headers event (oversize body): the body has now
+    # fully arrived, so the message is dropped and the conn closes cleanly.
+    if conn in server.runtime.early_rejected
+        delete!(server.runtime.early_rejected, conn)
+        delete!(server.runtime.awaiting_headers, conn)
+        mark_draining!(conn)
+        return nothing
+    end
     method = parse_method(msg.method)
     uri = to_string(msg.uri)
 
@@ -143,7 +219,12 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
             send_http_response!(conn, res::Response, rid)
         end
     else
-        # Async path: enqueue a job to the worker pool
+        # Async path: enqueue a job to the worker pool. A client-requested
+        # `Connection: close` is recorded here and applied when the reply is
+        # actually sent: mongoose only sets `is_draining` when a *synchronous*
+        # handler clears `is_resp`, which never happens for pool replies, and
+        # marking earlier would close the connection before the reply exists.
+        conn_close_requested(req) && push!(server.runtime.pending_close, conn)
         exec = server.executor
         id = Int(Threads.atomic_add!(server.runtime.conn_seq, UInt64(1)) + UInt64(1))
         server.runtime.connections[id] = conn

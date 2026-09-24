@@ -83,13 +83,48 @@ function mg_conn_get_fn_data(conn::MgConnection)
 end
 
 """
-    mg_close_conn(conn) — Close a connection, flushing any pending output first.
+    mg_error(conn, msg) — Mark a connection as closing (`c->is_closing = 1`).
 
-Used to drop WebSocket clients that ignore a Close frame (idle sweep) once the
-close frame has been queued with `mg_ws_send`.
+This is the safe way to drop a connection from outside the C callback. The
+next `mg_mgr_poll` reaps it through the internal close path: deregister the fd
+from epoll, `closesocket`, fire `MG_EV_CLOSE`, free the struct.
+
+Do NOT use [`mg_close_conn`](@ref) for this: it frees the struct immediately
+WITHOUT closing the fd or removing it from the epoll set, which leaks the
+socket and leaves a dangling epoll registration (the poll loop then spins or
+wedges on a freed connection). `mg_error` only marks; the poll loop closes.
+
+`msg` is passed as a `%s` argument, so it may contain arbitrary text.
+"""
+@inline function mg_error(conn::MgConnection, msg::AbstractString)
+    ccall((:mg_error, libmongoose), Cvoid, (Ptr{Cvoid}, Cstring, Cstring),
+          conn, "%s", msg)
+    return nothing
+end
+
+"""
+    mg_close_conn(conn) — Free a connection struct immediately.
+
+INTERNAL/FFI escape hatch only. It does not close the socket fd nor deregister
+it from epoll, so calling it on a live connection leaks the fd and corrupts the
+poll loop. Use [`mg_error`](@ref) to drop a live connection; this binding is
+kept for completeness (e.g. connections already detached from the manager).
 """
 function mg_close_conn(conn::MgConnection)
     ccall((:mg_close_conn, libmongoose), Cvoid, (Ptr{Cvoid},), conn)
+end
+
+"""
+    mg_http_get_header_ptr(msg_ptr, name) → Ptr{MgStr}
+
+Look up a request header by name (case-insensitive, as Mongoose does) without
+materializing the whole header list or allocating. Returns `C_NULL` when the
+header is absent; otherwise a pointer to the value span, valid only for the
+duration of the current event.
+"""
+@inline function mg_http_get_header_ptr(msg_ptr::Ptr{Cvoid}, name::AbstractString)::Ptr{MgStr}
+    ccall((:mg_http_get_header, libmongoose), Ptr{MgStr},
+          (Ptr{Cvoid}, Cstring), msg_ptr, name)
 end
 
 """

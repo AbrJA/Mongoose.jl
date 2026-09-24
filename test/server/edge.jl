@@ -103,6 +103,7 @@ end
             take!(gate)
         end
     end
+    get!(app, "/ping") do req; text("pong") end
 
     with_server(app) do port
         t1 = @async HTTP.get("http://127.0.0.1:$port/hold"; status_exception=false,
@@ -128,6 +129,11 @@ end
         for t in (t1, t2)
             timedwait(() -> istaskdone(t), 10.0; pollint=0.05)
         end
+        # Regression: refused connections must not leak fds or epoll entries
+        # (mg_error path); the server keeps serving afterwards.
+        r = HTTP.get("http://127.0.0.1:$port/ping"; status_exception=false,
+                     retry=false, read_idle_timeout=3)
+        @test r.status == 200
     end
 end
 
@@ -145,6 +151,34 @@ end
             isempty(app.runtime.awaiting_headers)
         end
         @test closed
+        # Regression: the sweep must actually close the TCP socket. The old
+        # `mg_close_conn` path leaked the fd and left a dangling epoll
+        # registration, which wedged the event loop for later requests.
+        eof_task = @async eof(sock)
+        @test timedwait(() -> istaskdone(eof_task), 3.0; pollint=0.05) == :ok
+        @test istaskdone(eof_task) && fetch(eof_task) === true
+        close(sock)
+        r = HTTP.get("http://127.0.0.1:$port/"; status_exception=false, retry=false)
+        @test r.status == 200
+    end
+end
+
+@testset "header_timeout does not kill slow request bodies" begin
+    app = App(header_timeout_ms=200)
+    post!(app, "/echo") do req; text("len=$(sizeof(body(req)))") end
+
+    with_server(app) do port
+        sock = Sockets.connect("127.0.0.1", port)
+        body = "x"^100
+        write(sock, "POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\nConnection: close\r\n\r\n")
+        sleep(0.6)                    # longer than header_timeout_ms, headers done
+        write(sock, body)
+        task = @async String(read(sock))
+        @test timedwait(() -> istaskdone(task), 5.0; pollint=0.05) == :ok
+        resp = istaskdone(task) ? fetch(task) : ""
+        istaskdone(task) || close(sock)
+        @test contains(resp, "200 OK")
+        @test contains(resp, "len=100")
         close(sock)
     end
 end

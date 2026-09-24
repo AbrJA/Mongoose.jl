@@ -150,6 +150,8 @@ mutable struct RunState
     conn_times::Dict{Ptr{Cvoid},Float64} # accept time per open connection (poll thread)
     awaiting_headers::Dict{Ptr{Cvoid},Float64}  # conns without a complete request yet
     conn_addr::Dict{Ptr{Cvoid},String}   # formatted peer IP, one per connection
+    pending_close::Set{Ptr{Cvoid}}       # async replies to mark draining after send
+    early_rejected::Set{Ptr{Cvoid}}      # oversize requests already answered (413)
     bg_tasks::Vector{Task}
     bg_lock::Threads.SpinLock            # guards bg_tasks (workers push)
 end
@@ -159,7 +161,7 @@ RunState() = RunState(Threads.Atomic{Bool}(false), nothing, nothing, Manager(emp
     Threads.Atomic{UInt64}(0), Threads.Atomic{UInt64}(0),
     Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(),
     Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(),
-    Dict{Ptr{Cvoid},String}(), Task[], Threads.SpinLock())
+    Dict{Ptr{Cvoid},String}(), Set{Ptr{Cvoid}}(), Set{Ptr{Cvoid}}(), Task[], Threads.SpinLock())
 
 # --- Background task tracking ---
 # Workers push timed-out request tasks; the event loop prunes completed ones on

@@ -30,6 +30,30 @@ end
 # 7.21): next(8) + mgr(8) + loc(24) = 40.
 const _MG_CONN_REM_OFFSET = 40
 
+# Offset of the trailing bitfield word in `struct mg_connection` (Mongoose
+# 7.21, 64-bit). Verified with `offsetof(struct mg_connection, tls) + 8`:
+# sizeof(mg_connection) = 288, iobuf = 32 bytes, data at 240, tls at 272, so
+# the bitfield unit starts at 280. `is_draining` is the 13th declared bitfield
+# (0-based bit 12).
+const _MG_CONN_FLAGS_OFFSET = 280
+const _MG_CONN_IS_DRAINING_BIT = UInt32(1) << 12
+
+"""
+    mark_draining!(conn) — set `c->is_draining`: flush pending output, then close.
+
+Mongoose sets `is_draining` itself when a *synchronous* handler clears
+`is_resp` inside the `MG_EV_HTTP_MSG` callback. Async replies are sent after
+that callback returns, so the poll loop never sees the client's
+`Connection: close`; without this flag the header is echoed but the socket
+stays open. The struct layout is pinned to Mongoose 7.21 (same ABI assumption
+as `_MG_CONN_REM_OFFSET`); wire tests cover it.
+"""
+@inline function mark_draining!(conn::MgConnection)
+    p = Ptr{UInt32}(reinterpret(UInt, conn) + _MG_CONN_FLAGS_OFFSET)
+    unsafe_store!(p, unsafe_load(p) | _MG_CONN_IS_DRAINING_BIT)
+    return nothing
+end
+
 """
     MgStr — Mirrors the C `struct mg_str { const char *buf; size_t len; }`.
 """

@@ -13,6 +13,32 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- **Critical — connection-close paths leaked the fd and could wedge the
+  event loop**: the max-connections refusal, the `header_timeout_ms` sweep,
+  and the WS idle close called `mg_close_conn`, which frees the connection
+  struct without closing the socket or removing it from the epoll set. Each
+  call leaked a descriptor and left a dangling epoll registration; a burst
+  (or a single slowloris) could spin/wedge the server permanently. All three
+  now use `mg_error` (mark closing; the poll loop runs the real close path)
+  or `mark_draining!` when queued output must flush first.
+- **Async `Connection: close` is honored**: Mongoose only sets `is_draining`
+  when a *synchronous* handler replies inside the callback; pool replies are
+  sent after it returns, so the header was echoed but the socket stayed open.
+  The reply path now marks the connection draining once the response is
+  queued, and the socket closes after the flush.
+- **`header_timeout_ms` no longer kills slow request bodies**: the
+  slowloris watch is cleared at `MG_EV_HTTP_HDRS` (headers complete), so a
+  legitimate upload longer than the timeout is served, while incomplete
+  headers are still reclaimed.
+- **Oversized `Content-Length` gets an early, clean 413** (before the body is
+  buffered). The reply advertises `Connection: close` and the socket closes
+  after the upload finishes, so clients mid-write see the 413 instead of a
+  reset.
+- **WebSocket control frames are answered once**: Mongoose already auto-replies
+  to PING (PONG) and CLOSE (echo + drain); the control handler was sending a
+  second reply. It now only updates keep-alive bookkeeping.
+- `MG_EV_HTTP_HDRS` was missing from the handled-event allowlist, so the
+  headers-complete event never reached the handler.
 - **Chunked requests no longer hang** (P0): the adapter re-decoded Mongoose's
   already-decoded body through an unbound name, so every `Transfer-Encoding:
   chunked` request died with `UndefVarError` and no response.

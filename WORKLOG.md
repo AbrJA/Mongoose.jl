@@ -525,6 +525,24 @@ four gates plus before/after numbers in the commit message.
 
 ## Changelog
 
+- **Sep 23 — Prod-readiness verification campaign (adversarial)**: built an
+  independent harness (raw-socket Python probes, curl, HTTP.jl concurrency +
+  soak, lifecycle cycles) against a purpose-built server. Found and fixed six
+  real defects, incl. one critical:
+  (1) `mg_close_conn` in the max-connections refusal / header-timeout sweep /
+  WS idle close frees the struct without closing the fd or deregistering
+  epoll → fd leak + dangling epoll pointer → event-loop wedge (reproduced:
+  slowloris then all requests hang); now `mg_error` / `mark_draining!`.
+  (2) Async `Connection: close` never closed (Mongoose sets `is_draining`
+  only for synchronous replies) → `pending_close` + `mark_draining!` when the
+  pool reply is queued. (3) `header_timeout_ms` killed slow uploads; cleared
+  at `MG_EV_HTTP_HDRS` (also added that event to the allowlist). (4) Early
+  clean 413 on oversized `Content-Length` (no mid-upload RST). (5) WS control
+  frames were answered twice. (6) regression tests for all of the above.
+  Results: 34/34 wire probes, 8/8 concurrency/soak (800 parallel keep-alive,
+  500-request single conn, 250 abrupt disconnects, 240 WS echoes, 10 SSE
+  streams, zero fd/thread/RSS growth), 8/8 lifecycle, 3757 main + 3757 stream
+  tests, 81 acceptance, Aqua+JET, docs — all green.
 - **Sep 23 — Base integrations (group I)**: `isempty(::Router)` /
   `isempty(::App)`; ordered `keys`/`values`/`pairs(::Headers)` (duplicates
   preserved, `pairs` zero-copy); terse one-line `show` for `Request`,

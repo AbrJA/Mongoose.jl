@@ -7,8 +7,9 @@
 
 # --- Event filter (skip unhandled events without deref) ---
 
-@inline is_handled_event(ev::Cint) = (ev == MG_EV_HTTP_MSG || ev == MG_EV_WS_OPEN ||
-    ev == MG_EV_WS_MSG || ev == MG_EV_WS_CTL || ev == MG_EV_CLOSE || ev == MG_EV_ACCEPT)
+@inline is_handled_event(ev::Cint) = (ev == MG_EV_HTTP_MSG || ev == MG_EV_HTTP_HDRS ||
+    ev == MG_EV_WS_OPEN || ev == MG_EV_WS_MSG || ev == MG_EV_WS_CTL ||
+    ev == MG_EV_CLOSE || ev == MG_EV_ACCEPT)
 
 # --- Singleton C function pointer ---
 
@@ -54,6 +55,8 @@ end
 @inline function dispatch_event(@nospecialize(server), ev::Cint, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid})
     if ev == MG_EV_ACCEPT
         on_accept(server, conn, ev_data)
+    elseif ev == MG_EV_HTTP_HDRS
+        on_headers(server, conn, ev_data)
     elseif ev == MG_EV_HTTP_MSG
         on_http_message(server, conn, ev_data)
     elseif ev == MG_EV_WS_OPEN
@@ -74,7 +77,9 @@ function on_accept(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
     maxc = server.config.max_connections
     if maxc > 0 && length(server.runtime.conn_times) >= maxc
         # Refuse the connection before mongoose parses anything from it.
-        mg_close_conn(conn)
+        # `mg_error` only marks it; the poll loop runs the real close path
+        # (epoll DEL + closesocket). `mg_close_conn` would leak the fd.
+        mg_error(conn, "max connections reached")
         return nothing
     end
     now = time()

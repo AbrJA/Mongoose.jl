@@ -94,18 +94,13 @@ end
 function on_ws_control(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
     op = msg.flags & 0x0F
+    # Keep-alive bookkeeping only. Mongoose's WS layer already auto-replies:
+    # PING → PONG and CLOSE → CLOSE echo + drain (see `ws_process` in the C
+    # library), so replying here would send every control frame twice.
     if op == WS_OP_PING || op == WS_OP_PONG
         id = ws_id_of(server, conn); id != 0 && ws_touch!(server, id)
     end
-    if op == WS_OP_CLOSE || op == WS_OP_PING
-        reply_op = op == WS_OP_CLOSE ? WS_OP_CLOSE : WS_OP_PONG
-        if msg.data.len > 0 && msg.data.buf != C_NULL
-            payload = copy(unsafe_wrap(Array, msg.data.buf, Int(msg.data.len)))
-            mg_ws_send(conn, payload, reply_op)
-        else
-            mg_ws_send(conn, UInt8[], reply_op)
-        end
-    end
+    return nothing
 end
 
 # --- WS Message ---
@@ -152,6 +147,8 @@ end
 
 function on_connection_close(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
     delete!(server.runtime.conn_times, conn)
+    delete!(server.runtime.pending_close, conn)
+    delete!(server.runtime.early_rejected, conn)
     delete!(server.runtime.awaiting_headers, conn)
     delete!(server.runtime.conn_addr, conn)
     conn_id = lock(server.runtime.ws_lock) do
@@ -203,10 +200,12 @@ function ws_idle_sweep!(server::AbstractServer)
     for id in to_close
         conn = get(server.runtime.connections, id, nothing)
         conn === nothing && continue
-        # Queue a Close frame, then drop the socket even if the peer never
-        # answers — mg_close_conn flushes pending output before closing.
+        # Queue a Close frame, then mark the connection draining: the poll
+        # loop flushes the frame, then reaps the socket even if the peer never
+        # answers (epoll DEL + closesocket). `mg_close_conn` would leak the fd
+        # and corrupt epoll; `mg_error` would drop the unflushed Close frame.
         mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
-        mg_close_conn(conn)
+        mark_draining!(conn)
     end
 end
 

@@ -8,6 +8,7 @@ const MG_EV_OPEN = Cint(1)          # Connection created (partially initialized)
 const MG_EV_POLL = Cint(2)          # Periodic poll event (most frequent)
 const MG_EV_ACCEPT = Cint(5)        # Incoming connection accepted
 const MG_EV_CLOSE = Cint(9)         # Connection closed
+const MG_EV_HTTP_HDRS = Cint(10)    # HTTP headers complete (body may follow)
 const MG_EV_HTTP_MSG = Cint(11)     # Full HTTP message received
 const MG_EV_WS_OPEN = Cint(12)     # WebSocket connection opened
 const MG_EV_WS_MSG = Cint(13)      # WebSocket message received

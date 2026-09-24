@@ -84,3 +84,38 @@
     end
 end
 
+
+@testset "Async Connection: close closes the socket" begin
+    # Regression: mongoose only sets `is_draining` when a *synchronous*
+    # handler clears `is_resp`; pool replies are sent after the callback, so
+    # the flag has to be applied by the framework when the reply is queued.
+    s = App(workers=2)
+    get!(s, "/close") do req; text("bye") end
+    with_server(s) do port
+        sock = Sockets.connect("127.0.0.1", port)
+        write(sock, "GET /close HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+        task = @async String(read(sock))   # returns once the server closes
+        @test timedwait(() -> istaskdone(task), 5.0; pollint=0.05) == :ok
+        resp = istaskdone(task) ? fetch(task) : ""
+        istaskdone(task) || close(sock)
+        @test contains(resp, "200 OK")
+        @test contains(lowercase(resp), "connection: close")
+        close(sock)
+    end
+end
+
+@testset "Oversized Content-Length rejected before the body" begin
+    s = App(max_body_bytes=1024)
+    post!(s, "/echo") do req; text("got") end
+    with_server(s) do port
+        sock = Sockets.connect("127.0.0.1", port)
+        # Declared length above the cap; no body sent at all.
+        write(sock, "POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 100000\r\n\r\n")
+        task = @async readline(sock)
+        @test timedwait(() -> istaskdone(task), 5.0; pollint=0.05) == :ok
+        line = istaskdone(task) ? fetch(task) : ""
+        istaskdone(task) || close(sock)
+        @test contains(line, "413")
+        close(sock)
+    end
+end
