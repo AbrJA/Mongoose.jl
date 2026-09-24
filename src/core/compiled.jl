@@ -66,7 +66,9 @@ end
 # --- Compile-time action baking ---
 
 # Wrap a 0-arity terminal in its route-scoped middleware (once, at freeze).
-@inline function _wrap_scoped(inner::Function, mws::Vector{AbstractMiddleware})::Function
+# The middleware tuple is captured in the closure's type; per request the
+# pipeline runs through the allocation-free `Next` continuation.
+@inline function _wrap_scoped(inner::F, mws::M)::Function where {F,M<:Tuple}
     isempty(mws) && return inner
     return (req) -> runpipeline(mws, req, inner)
 end
@@ -95,8 +97,8 @@ end
     plain = (req, p::P) -> call(req, p)
     mws = ep.middleware
     isempty(mws) && return (p::P) -> BoundParams{typeof(plain), P}(plain, p)
-    return (p::P) -> BoundParams{ScopedParamCall{P,typeof(plain)}, P}(
-        ScopedParamCall{P,typeof(plain)}(mws, plain), p)
+    return (p::P) -> BoundParams{ScopedParamCall{P,typeof(plain),typeof(mws)}, P}(
+        ScopedParamCall{P,typeof(plain),typeof(mws)}(mws, plain), p)
 end
 @inline _bake_param_slot(::Nothing, ::Type) = nothing
 
@@ -107,11 +109,11 @@ end
 
 # Scoped parametric thunk: runs the route-scoped middleware around the plain
 # terminal at request time (middleware list is pre-built per route).
-struct ScopedParamCall{P,F}
-    mws::Vector{AbstractMiddleware}
+struct ScopedParamCall{P,F,M}
+    mws::M
     plain::F
 end
-(spc::ScopedParamCall{P,F})(req::Request, p::P) where {P,F} =
+(spc::ScopedParamCall{P,F,M})(req::Request, p::P) where {P,F,M} =
     runpipeline(spc.mws, req, BoundParams{typeof(spc.plain), P}(spc.plain, p))
 
 # --- Compiled nodes ---

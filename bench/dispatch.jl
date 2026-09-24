@@ -38,6 +38,9 @@ ctx_generic = RequestContext(generic)
 ctx_fparam = RequestContext(fparam)
 ctx_gparam = RequestContext(gparam)
 ctx_mw = RequestContext(frozen; middlewares=(cors(), etag()))
+noop(req, next) = next()
+scoped = Router(); route!(scoped, :get, "/", r -> text("ok"); middleware=(noop, noop)); freeze!(scoped)
+ctx_scoped = RequestContext(scoped)
 
 rows = [
     ("process frozen fixed", () -> process(ctx_fixed, req)),
@@ -45,6 +48,7 @@ rows = [
     ("process frozen param", () -> process(ctx_fparam, reqp)),
     ("process generic param", () -> process(ctx_gparam, reqp)),
     ("process frozen + cors+etag", () -> process(ctx_mw, req)),
+    ("process frozen + scoped mw", () -> process(ctx_scoped, req)),
     ("mergeheaders", () -> Mongoose.Kernel.mergeheaders(Response(200, "x"), ["A" => "1"])),
     ("asheaders(tuple)", () -> Mongoose.Kernel.asheaders(("a" => "1", "b" => "2"))),
     ("parse_method", () -> Mongoose.parse_method(Mongoose.MgStr(pointer("GET"), 3))),
@@ -61,6 +65,7 @@ const LIMITS = Dict(
     "process frozen param" => 700.0,
     "process generic param" => 920.0,
     "process frozen + cors+etag" => 1450.0,
+    "process frozen + scoped mw" => 260.0,
     "parse_method" => 50.0,
     "parsequery(2 params)" => 1450.0,  # B2 target: ~0 when unused
 )

@@ -486,10 +486,11 @@ four gates plus before/after numbers in the commit message.
   services vs 192 without; was ~496 with the eager Dict). `service`/
   `services`/`withservices` read the field; `context(req)` is user-data-only.
   *commit: (this one)*
-- [ ] **C5** Tuple middleware as the only pipeline representation: `use!`
-  builds a builder-style chain (or `App(middleware=(…))`); remove the
-  `Vector{AbstractMiddleware}` per-request path and the `PathFilter` wrapper
-  (fold prefix scoping into the tuple entry).
+- [x] **C5** `Endpoint{F,M<:Tuple}` stores scoped middleware as a captured
+  tuple (`asmiddlewaretuple`); compiled scoped wrappers run through the
+  allocation-free `Next` pipeline. Scoped routes: 192 B/op (was +80 B + a
+  closure); generic fixed 304→256 B, param 688→640 B. `PathFilter` still
+  wraps prefix-scoped global middleware (D1 candidate). *commit: this one*
 - [ ] **C6** `@routes`/`StaticRouter{Routes<:Tuple}` for AOT: compile-time
   route table with concrete handler types, terminals baked at registration;
   `freeze!` returns the compiled router (or builds `StaticRouter`), removing

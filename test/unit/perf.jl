@@ -24,6 +24,17 @@
     @test @allocated(fixed()) <= 400            # baseline ~192 B
     @test @allocated(param()) <= 1100           # baseline ~528 B
     @test @allocated(with_mw()) <= 2200         # baseline ~1088 B
+
+    # Route-scoped middleware runs through the tuple pipeline: no per-request
+    # closure, same allocation as a route without scoped middleware.
+    scoped = Router()
+    route!(scoped, :get, "/", r -> text("ok");
+           middleware=((req, next) -> next(), (req, next) -> next()))
+    freeze!(scoped)
+    ctx_scoped = RequestContext(scoped)
+    scoped_call() = process(ctx_scoped, req)
+    scoped_call()
+    @test @allocated(scoped_call()) <= 400
 end
 
 @testset "Typed DI does not allocate a context" begin

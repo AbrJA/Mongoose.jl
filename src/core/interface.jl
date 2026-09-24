@@ -141,12 +141,13 @@ function invokeendpoint(ep, ::Request, params)
 end
 
 """
-    endpointmiddleware(endpoint) → Vector{AbstractMiddleware}
+    endpointmiddleware(endpoint) → Tuple
 
-Scoped middleware owned by a matched endpoint (empty for custom endpoint
-types). Paired with [`invokeendpoint`](@ref) for custom routers.
+Scoped middleware owned by a matched endpoint (empty tuple for custom endpoint
+types). Paired with [`invokeendpoint`](@ref) for custom routers; the built-in
+`Endpoint` stores a captured tuple.
 """
-endpointmiddleware(ep) = AbstractMiddleware[]
+endpointmiddleware(ep) = ()
 
 # --- Optional capabilities: safe defaults ---
 

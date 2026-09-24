@@ -97,6 +97,18 @@ asmiddlewares(mws::Tuple) = AbstractMiddleware[asmiddleware(m) for m in mws]
 asmiddlewares(mw) = AbstractMiddleware[asmiddleware(mw)]
 
 """
+    asmiddlewaretuple(input) → Tuple
+
+Like [`asmiddlewares`](@ref) but returns an immutable tuple, so route-scoped
+middleware can live in a type parameter (`Endpoint{F,M}`) and run through the
+allocation-free tuple pipeline.
+"""
+asmiddlewaretuple(::Nothing) = ()
+asmiddlewaretuple(mws::Tuple) = map(asmiddleware, mws)
+asmiddlewaretuple(mws::AbstractVector) = Tuple(asmiddleware(m) for m in mws)
+asmiddlewaretuple(mw) = (asmiddleware(mw),)
+
+"""
     Next — immutable middleware continuation (internal).
 
     A `Function` holding the remaining middleware tuple, the terminal handler,
@@ -148,7 +160,7 @@ dispatch path passes pre-baked terminal functors.
     return next()
 end
 
-@inline function runpipeline(globals, scoped::AbstractVector{<:AbstractMiddleware},
+@inline function runpipeline(globals, scoped,
                                   req::Request, handler)
     ng, ns = length(globals), length(scoped)
     total = ng + ns

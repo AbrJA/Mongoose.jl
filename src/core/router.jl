@@ -32,16 +32,17 @@
     middleware. `middleware` applies to this route (in addition to app-global
     middleware); `metadata` is opaque and available for OpenAPI-style docs.
 """
-struct Endpoint{F}
+struct Endpoint{F,M<:Tuple}
     handler::F
-    middleware::Vector{AbstractMiddleware}
+    middleware::M
     metadata::Any
 end
 
 function Endpoint(handler::F;
                   middleware=nothing,
                   metadata=nothing) where {F}
-    return Endpoint{F}(handler, asmiddlewares(middleware), metadata)
+    mws = asmiddlewaretuple(middleware)
+    return Endpoint{F,typeof(mws)}(handler, mws, metadata)
 end
 
 # --- Method Dispatch (struct fields instead of Dict for zero-allocation dispatch) ---

@@ -47,10 +47,11 @@ against.
    | Path | B/op | ns/op |
    |---|---|---|
    | `process` frozen fixed route | 192 | ~225 |
-   | `process` generic fixed route | 304 | ~630 |
+   | `process` generic fixed route | 256 | ~700 |
    | `process` frozen param route | 528 | ~400 |
-   | `process` generic param route | 688 | ~1500 |
+   | `process` generic param route | 640 | ~1500 |
    | `process` frozen + `cors()`+`etag()` | 1024 | ~1300 |
+   | `process` frozen + route-scoped middleware | 192 | ~350 |
    | `mergeheaders` | 368 | ~110 |
    | `asheaders(tuple)` | 112 | ~50 |
    | `parse_method` | **0** | ~4 |
@@ -100,7 +101,7 @@ against.
 | Event dispatch | `transport/mongoose/events.jl`, `http_handler.jl` | poll thread; no user code here beyond dispatch |
 | Request adaptation | `transport/mongoose/adapter.jl` | `parse_method`, `parse_headers`, `remote_addr_of` allocate per request |
 | Routing | `core/router.jl`, `core/compiled.jl` | generic param match allocates `Vector{String}`; **`freeze!` + compiled dispatch is the fast path** |
-| Pipeline | `core/pipeline.jl`, `core/process.jl` | one closure + cursor per request; tuple stacks are cheaper than vectors |
+| Pipeline | `core/pipeline.jl`, `core/process.jl` | tuple stacks run allocation-free via `Next`; vectors keep the closure fallback |
 | Middleware | `core/*.jl` | each header-adding middleware calls `mergeheaders` (368 B) |
 | Executor | `core/executor.jl`, `server/async.jl` | `Channel{Function}` boxes jobs; `Threads.@spawn` per timed request |
 | Streaming | `transport/mongoose/connection.jl` | producers write to a bounded channel; loop drains |
