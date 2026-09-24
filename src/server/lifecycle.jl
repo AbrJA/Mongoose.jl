@@ -36,6 +36,11 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
         url = bind_server!(server, host, port)
         server.runtime.url = url
 
+        # Bound successfully: close and compile the route table so production
+        # runs the statically-typed dispatch by default. (Done after bind so a
+        # failed start does not permanently freeze the router.)
+        freeze!(server.router)
+
         # Run lifecycle start hooks and background tasks
         for hook in server.hooks_start
             try hook() catch e; @log_error "onstart! hook error" e catch_backtrace() end

@@ -15,12 +15,12 @@ function adapt_request(msg::MgHttpMessage;
                        remote_addr::Union{Nothing,String}=nothing)::Request
     method = parse_method(msg.method)
     uri = to_string(msg.uri)
-    query_str = to_string(msg.query)
-    query = parsequery(query_str)
     headers = parse_headers(msg)
     body = body_of(msg)
     path = stripquery(uri)
-    return Request(method, uri, String(path), query, headers, body, nothing, remote_addr)
+    # Query is parsed lazily from the raw string on first access.
+    return Request(method, uri, String(path), nothing, to_string(msg.query),
+                   headers, body, nothing, remote_addr)
 end
 
 """
@@ -30,12 +30,11 @@ Fast-path adapter reusing pre-extracted method and URI (avoids redundant C→Jul
 """
 function adapt_request(msg::MgHttpMessage, method::Symbol, uri::String;
                        remote_addr::Union{Nothing,String}=nothing)::Request
-    query_str = to_string(msg.query)
-    query = parsequery(query_str)
     headers = parse_headers(msg)
     body = body_of(msg)
     path = String(stripquery(uri))
-    return Request(method, uri, path, query, headers, body, nothing, remote_addr)
+    return Request(method, uri, path, nothing, to_string(msg.query),
+                   headers, body, nothing, remote_addr)
 end
 
 # --- Request body extraction ---
@@ -83,6 +82,20 @@ end
     return join((string(g, base=16, pad=4) for g in (groups..., groups2...)), ":")
 end
 
+"""
+    cached_remote_addr(server, conn) → Union{Nothing,String}
+
+Peer IP formatted once per connection (the formatting allocates a String) and
+cached until `MG_EV_CLOSE`. Poll-thread only.
+"""
+@inline function cached_remote_addr(server::AbstractServer, conn::MgConnection)::Union{Nothing,String}
+    cached = get(server.runtime.conn_addr, conn, nothing)
+    cached !== nothing && return isempty(cached) ? nothing : cached
+    addr = remote_addr_of(conn)
+    server.runtime.conn_addr[conn] = addr === nothing ? "" : addr
+    return addr
+end
+
 # --- Internal conversion helpers ---
 
 @inline function to_string(str::MgStr)::String
@@ -90,18 +103,37 @@ end
     return unsafe_string(str.buf, str.len)
 end
 
+# HTTP method tokens are case-sensitive (RFC 9110 §9.1), so a plain byte
+# comparison against the supported set is enough. Lengths differ for most
+# candidates, so this is a couple of loads per request — no String/Symbol
+# allocation, no hashing, no special cases.
+const _METHODS = (("GET", :get), ("POST", :post), ("PUT", :put),
+                  ("DELETE", :delete), ("PATCH", :patch),
+                  ("OPTIONS", :options), ("HEAD", :head))
+
 """
     parse_method(str::MgStr) → Symbol
 
-Convert the C method string to a lowercase `Symbol`. The previous hand-rolled
-byte comparison avoided a per-request `String` at the cost of ~25 hard-to-read
-lines; the surrounding adapter already allocates Strings/Dicts per request, so
-the simple version is the right trade-off.
+Convert the C method string to a lowercase `Symbol`; unknown methods return
+`:unknown`, which the router rejects with a 405/RouteError.
 """
 @inline function parse_method(str::MgStr)::Symbol
-    s = to_string(str)
-    isempty(s) && return :unknown
-    return Symbol(lowercase(s))
+    len = Int(str.len)
+    (str.buf == C_NULL || len == 0) && return :unknown
+    buf = str.buf
+    for (name, sym) in _METHODS
+        ncodeunits(name) == len || continue
+        _bytes_eq(buf, name) && return sym
+    end
+    return :unknown
+end
+
+@inline function _bytes_eq(buf::Ptr{UInt8}, name::String)::Bool
+    n = ncodeunits(name)
+    @inbounds for i in 1:n
+        unsafe_load(buf, i) == codeunit(name, i) || return false
+    end
+    return true
 end
 
 """

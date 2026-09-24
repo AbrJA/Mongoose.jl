@@ -111,5 +111,8 @@ end
     @test isfrozen(Router()) == false
     struct _OpenRouter <: Mongoose.AbstractRouter end
     @test isfrozen(_OpenRouter()) == false
-    @test_throws MethodError Mongoose.freeze!(_OpenRouter())
+    # `freeze!` is optional and defaults to a no-op, so `start!` can freeze
+    # every router without capability checks; the router stays open.
+    @test Mongoose.freeze!(_OpenRouter()) isa _OpenRouter
+    @test isfrozen(_OpenRouter()) == false
 end

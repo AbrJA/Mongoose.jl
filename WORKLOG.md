@@ -403,35 +403,22 @@ frozen + `cors()`+`etag()` 1440 B / ~1950 ns. Unit costs: `parse_method`
 dynamic work happens inside returned closures).
 
 **Design flaws / missing patterns found.**
-- [ ] P1 `parse_method` builds `lowercase(String)+Symbol` per request (272 B);
-  a byte lookup table for the 7 methods removes it.
-- [ ] P1 `parsequery` + eager `Request.query::Dict` (1088 B for 2 params);
-  lazy/compact query representation would cut per-request cost.
-- [ ] P1 Metrics: `string(method,"_",status)` key + `Dict{String,Int}` under a
-  SpinLock per request; fixed-size `Matrix{Int}` per shard (or atomics)
-  removes the allocation and most lock traffic.
-- [ ] P1 Pipeline: `_ChainCursor` + `next` closure allocated per request;
-  a tuple-specialized recursive walk (`runpipeline(stack::Tuple, i, …)`)
-  would be allocation-free. Tuple stacks are already supported in
-  `RequestContext`, so the fast path exists — use it.
+- [x] P1 `parse_method` — **fixed**: const tuple + byte compare, 0 B/op (was 272 B). *batch 12*
+- [x] P1 `parsequery` + eager `Request.query` — **fixed**: `querydict(req)` parses on first access (one raw String, nothing for queryless requests). *batch 12*
+- [x] P1 Metrics — **fixed**: fixed-size `Matrix{Int}` counters per shard, no string key. *batch 12*
+- [x] P1 Pipeline — **fixed**: immutable `Next` callable for tuple stacks; the compiled path lost its per-request closure (64 B saved, ~2× on the onion microbench). *batch 12*
 - [ ] P2 DI: with services registered, `process` eagerly allocates a
   `Dict{Symbol,Any}` and boxes the NamedTuple per request (304 B); typed DI
   via handler wrapping at registration is the clean fix (also the trim fix).
-- [ ] P2 `Endpoint.handler::Function`, `WSEndpoint` callbacks, and
-  `Channel{Function}` jobs force dynamic calls; parameterize (`Endpoint{F}`,
-  `WSEndpoint{F}`, typed jobs) — same change needed for trim.
-- [ ] P2 Per-connection values recomputed per request (`remote_addr_of` IP
-  string, request-id string); cache on the connection record.
-- [ ] P2 Header assembly uses `string(...)` chains (`send_http_response!` rid
-  path, `_close_after_raw`); use one `IOBuffer` per response.
+- [ ] P2 `Endpoint.handler::Function`, `WSEndpoint` callbacks, and `Channel{Function}` jobs — **Phase C1/C3** of batch 12.
+- [x] P2 Per-connection values — **partly fixed**: peer IP cached per connection (`cached_remote_addr`, cleared on close); request-id still per request. *batch 12*
+- [x] P2 Header assembly — **fixed**: one `IOBuffer` per response/stream head, no concatenation chains. *batch 12*
 - [ ] P2 Generic parametric matching allocates `Vector{String}` per request;
   compiled dispatch avoids it — keep steering production users to `freeze!`
   and add an allocation assertion so it cannot regress.
 - [ ] P3 `@nospecialize(handler::Function)` at registration guarantees a
   dynamic call on the generic path; documented trade-off, don't add more.
-- [ ] P3 No allocation/benchmark regression gate: no `@allocated` assertions,
-  no tracked bench script, no CI perf job (Performance.yml was deleted as
-  dead). Add a small `bench/` script + thresholds for the frozen/generic paths.
+- [x] P3 Regression gate — **fixed**: tracked `bench/dispatch.jl` (BENCH_ASSERT ceilings), `test/unit/perf.jl` allocation + `@inferred` guards, advisory CI perf step. *batch 12*
 
 **Deliverable:** `.opencode/skills/julia-performance/SKILL.md` — the working
 performance checklist (rules, hot-path map, measured baselines, verification
@@ -445,40 +432,40 @@ unblocks `juliac --trim`), then simplification. Every task lands with the
 four gates plus before/after numbers in the commit message.
 
 ### Phase A — measurement & guardrails (no API change)
-- [ ] **A1** Track a `bench/` script (was deleted with `Performance.yml`):
+- [x] **A1** Track a `bench/` script (was deleted with `Performance.yml`):
   fixed/param × frozen/generic × middleware on/off, printing B/op and ns/op
   from warm `@allocated`/`@elapsed` loops. Baselines live in the
   `julia-performance` skill.
-- [ ] **A2** Allocation assertions in the test suite: `@allocated` ceilings for
+- [x] **A2** Allocation assertions in the test suite: `@allocated` ceilings for
   `process` on a frozen fixed route (target ≤ 384 B), frozen param (≤ 720 B),
   and the middleware tuple path (≤ 1 KB with cors+etag). Fail on regression.
-- [ ] **A3** `@inferred` tests for the hot helpers (`matchroute`, `terminalfor`,
+- [x] **A3** `@inferred` tests for the hot helpers (`matchroute`, `terminalfor`,
   `mergeheaders`, `asheaders`, `parse_method`, `statusreason`) and a JET
   `report_opt` baseline for `process`/`_resolve_terminal`.
-- [ ] **A4** CI job running A1–A3 with generous thresholds (advisory on macOS,
+- [x] **A4** CI job running A1–A3 with generous thresholds (advisory on macOS,
   blocking on ubuntu).
 
 ### Phase B — hot-path wins (localized, mostly internal)
-- [ ] **B1** `parse_method`: byte lookup table for the 7 methods instead of
+- [x] **B1** `parse_method`: byte lookup table for the 7 methods instead of
   `lowercase(String)+Symbol`. Target: 272 B → ~0 B, ~200 ns → ~20 ns.
-- [ ] **B2** Query laziness: parse query on first `query()`/`req.query` access
+- [x] **B2** Query laziness: parse query on first `query()`/`req.query` access
   instead of eagerly in the adapter (`parsequery` costs 1088 B for 2 params).
   API: keep `query(req, …)`; make the eager `req.query::Dict` field a computed
   accessor (`querydict(req)`), or memoize into a `Ref`. Target: −1 KB/op on
   requests that ignore the query.
-- [ ] **B3** Metrics: replace `Dict{String,Int}` + `string(method,"_",status)`
+- [x] **B3** Metrics: replace `Dict{String,Int}` + `string(method,"_",status)`
   with a fixed-size `Matrix{Int}` (methods × status codes) per shard; keep the
   histogram as-is. Removes one String + dict growth per request and shrinks the
   locked section.
-- [ ] **B4** Pipeline: remove the per-request `_ChainCursor` + `next` closure;
+- [x] **B4** Pipeline: remove the per-request `_ChainCursor` + `next` closure;
   use a callable `Next` struct (subtype of `Function`) over the tuple stack so
   the onion is allocation-free. Keep the `(req, next)` middleware contract.
-- [ ] **B5** Transport header assembly with one `IOBuffer` per response
+- [x] **B5** Transport header assembly with one `IOBuffer` per response
   (`send_http_response!` rid path, `_close_after_raw`, stream head).
-- [ ] **B6** Per-connection caches in the transport: remote-address string
+- [x] **B6** Per-connection caches in the transport: remote-address string
   (currently formatted per request) and, if cheap, the request-id; cleared on
   `MG_EV_CLOSE`.
-- [ ] **B7** `start!` auto-`freeze!`s the router when registration is closed
+- [x] **B7** `start!` auto-`freeze!`s the router when registration is closed
   implicitly (registration after `start!` already throws), so production gets
   compiled dispatch without an extra call. Users can still pre-freeze.
 

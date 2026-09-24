@@ -96,7 +96,20 @@ asmiddlewares(mws::AbstractVector) = AbstractMiddleware[asmiddleware(m) for m in
 asmiddlewares(mws::Tuple) = AbstractMiddleware[asmiddleware(m) for m in mws]
 asmiddlewares(mw) = AbstractMiddleware[asmiddleware(mw)]
 
-# --- Pipeline execution ---
+"""
+    Next — immutable middleware continuation (internal).
+
+    A `Function` holding the remaining middleware tuple, the terminal handler,
+    and the request, so the onion needs no per-request closure.
+"""
+struct Next{M,H} <: Function
+    mws::M
+    handler::H
+    req::Request
+end
+
+@inline (n::Next{Tuple{}})() = n.handler(n.req)
+@inline (n::Next)() = first(n.mws)(n.req, Next(Base.tail(n.mws), n.handler, n.req))
 
 """
     runpipeline(middlewares, request, handler) → Response
@@ -106,18 +119,24 @@ Run the middleware onion around `handler`: each middleware receives
 `(request, next)`; `next` advances to the following middleware and finally the
 handler. Middleware may short-circuit by returning without calling `next`.
 
-The chain is executed with a **single closure** plus a mutable cursor instead of
-one closure per middleware per request, keeping the per-request allocation
-constant regardless of stack depth. The four-argument form walks the baked
-app-global stack `globals` and the route-scoped stack `scoped` with **one
-cursor over their virtual concatenation** — no `[global; scoped]` array built
-per request.
+The tuple form (the compiled/production path, where route-scoped middleware is
+already fused into the terminal) walks the baked stack with an immutable
+callable continuation — `Next` is a `Function`, so the `(req, next)` contract
+is unchanged, but no closure or cursor is allocated per request.
+
+The four-argument form (generic/dev path) walks the baked app-global stack and
+the route-scoped stack with **one cursor over their virtual concatenation** —
+no `[global; scoped]` array built per request.
 
 `handler` may be any 0-arity callable (`Function` or functor) — the compiled
 dispatch path passes pre-baked terminal functors.
 """
-@inline function runpipeline(middlewares, req::Request,
-                                  handler)
+@inline runpipeline(middlewares::Tuple, req::Request, handler) =
+    Next(middlewares, handler, req)()
+
+# Fallback for vector stacks (e.g. a compiled route's scoped wrapper): same
+# onion with one closure + cursor per request.
+@inline function runpipeline(middlewares, req::Request, handler)
     n = length(middlewares)
     n == 0 && return handler(req)
     cell = _ChainCursor(0)

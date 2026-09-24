@@ -129,7 +129,7 @@
     @testset "Query string stripped from path matching" begin
         s = App()
         get!(s, "/search") do req
-            q = get(req.query, "q", "none")
+            q = get(querydict(req), "q", "none")
             text("q=$q")
         end
         with_server(s) do port

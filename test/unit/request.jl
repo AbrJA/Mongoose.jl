@@ -7,7 +7,7 @@
         @test req.method == :get
         @test req.uri == "/test?q=1"
         @test req.path == "/test"
-        @test req.query["q"] == "1"
+        @test querydict(req)["q"] == "1"
         @test req.body == ""
     end
 
@@ -175,6 +175,25 @@ end
         @test query(req, "off", true) == false
         @test query(req, "missing", false) == false
     end
+end
+
+@testset "lazy query parsing" begin
+    # Pre-parsed (tests/FakeTransport): returned as-is.
+    r1 = Request(:get, "/q?a=1", Dict("a" => "1"), Pair{String,String}[], "")
+    @test querydict(r1) === r1.query
+
+    # Transport-shaped: raw query string, parsed on first access and memoized.
+    r2 = Request(:get, "/q?a=1&b=2", "/q", nothing, "a=1&b=2", Headers(), "")
+    @test r2.query === nothing
+    @test querydict(r2) == Dict("a" => "1", "b" => "2")
+    @test querydict(r2) === r2.query
+    @test query(r2, "a") == "1"
+    @test query(r2, "page", 2) == 2
+
+    # No query: empty dict, no error.
+    r3 = Request(:get, "/q", "/q", nothing, "", Headers(), "")
+    @test isempty(querydict(r3))
+    @test query(r3, "missing", "none") == "none"
 end
 
 @testset "Body parsing helpers" begin

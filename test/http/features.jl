@@ -225,7 +225,7 @@ end
 @testset "Query parameters" begin
     @testset "Single query param" begin
         s = App()
-        get!(s, "/q") do req; text(get(req.query, "name", "")) end
+        get!(s, "/q") do req; text(get(querydict(req), "name", "")) end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/q?name=test"; status_exception=false)
             @test String(resp.body) == "test"
@@ -235,8 +235,8 @@ end
     @testset "Multiple query params" begin
         s = App()
         get!(s, "/q") do req
-            a = get(req.query, "a", "")
-            b = get(req.query, "b", "")
+            a = get(querydict(req), "a", "")
+            b = get(querydict(req), "b", "")
             text("$a,$b")
         end
         with_server(s) do port
@@ -247,7 +247,7 @@ end
 
     @testset "Empty query string" begin
         s = App()
-        get!(s, "/q") do req; text("keys=$(length(req.query))") end
+        get!(s, "/q") do req; text("keys=$(length(querydict(req)))") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/q"; status_exception=false)
             @test String(resp.body) == "keys=0"

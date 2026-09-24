@@ -45,18 +45,22 @@ against.
 
    | Path | B/op | ns/op |
    |---|---|---|
-   | `process` frozen fixed route | 384 | ~850 |
-   | `process` generic fixed route | 512 | ~1600 |
-   | `process` frozen param route | 720 | ~1300 |
-   | `process` generic param route | 896 | ~2200 |
-   | `process` frozen + `cors()`+`etag()` | 1440 | ~1950 |
-   | `mergeheaders` | 368 | ~150 |
+   | `process` frozen fixed route | 192 | ~225 |
+   | `process` generic fixed route | 320 | ~680 |
+   | `process` frozen param route | 528 | ~400 |
+   | `process` generic param route | 704 | ~1600 |
+   | `process` frozen + `cors()`+`etag()` | 1024 | ~1300 |
+   | `mergeheaders` | 368 | ~110 |
    | `asheaders(tuple)` | 112 | ~50 |
-   | `parse_method` | 272 | ~200 |
-   | `formatheaders` (2 headers) | 336 | ~260 |
-   | `Request(...)` (empty) | 224 | ~62 |
-   | `parsequery("a=1&b=2")` | 1088 | ~570 |
-   | `context(req)` | 304 | ~79 |
+   | `parse_method` | **0** | ~2 |
+   | `formatheaders` (2 headers) | 336 | ~150 |
+   | `Request(...)` (empty) | 224 | ~55 |
+   | `parsequery("a=1&b=2")` | 1088 | ~360 |
+   | `context(req)` | 304 | ~75 |
+
+   Re-measure with `bench/dispatch.jl` (`BENCH_ASSERT=1` enforces the
+   ceilings); contexts are hoisted out of the measured loop, and the numbers
+   are single-thread warm medians, not guarantees.
 
    A change that adds a per-request allocation needs a written justification
    in the commit message.
@@ -65,10 +69,11 @@ against.
    one `write`/`String(take!(io))` over chains of `string(...)`. Build log
    lines and hand-framed headers once. `formatheaders` exists for this.
 
-6. **Do not build `Symbol`s or parse strings per request.** `parse_method`
-   currently costs ~272 B/op (`lowercase` + `Symbol` intern) — a byte lookup
-   table for the seven methods removes it. Same rule for any `Symbol(...)`,
-   `lowercase`, or `split` on the request path.
+6. **Do not build `Symbol`s or parse strings per request.** `parse_method` is
+   the reference implementation: a length-filtered byte comparison against a
+   const tuple of the seven methods — 0 B/op (it used to intern a `Symbol` and
+   cost 272 B/op). Same rule for any `Symbol(...)`, `lowercase`, or `split` on
+   the request path.
 
 7. **Counters over string-keyed dicts.** `Dict{String,Int}` with a per-request
    key (`"GET_200"`) allocates and locks. Prefer a fixed-size array indexed by
@@ -155,8 +160,10 @@ per-request dynamic dispatch.
 - `@nospecialize(handler::Function)` at registration: keeps compile time down
   but guarantees a dynamic call in the generic path. Acceptable only because
   the compiled path re-captures types — don't add more.
-- Eager `Dict{Symbol,Any}` per request for DI (`context(req)`), even when the
-  handler never reads it. Prefer typed DI via handler wrapping at registration.
+- Eager parsing per request: the query is now lazy (`querydict`), DI services
+  are still injected into a `Dict{Symbol,Any}` eagerly when registered
+  (`context(req)` — 304 B/op), and typed DI via handler wrapping is the
+  planned fix (batch 12 C4).
 - Recomputing per-connection values per request (`remote_addr`, request id)
   when they could be cached on the connection record.
 - Copying headers into a fresh `Headers` for every middleware

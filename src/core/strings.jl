@@ -99,10 +99,21 @@ Serialize headers into Mongoose C library format: `"Key: Value\\r\\n"`.
 function formatheaders(headers::Vector{Pair{String,String}})::String
     isempty(headers) && return ""
     io = IOBuffer(sizehint=length(headers) * 40)
+    formatheaders(io, headers)
+    return String(take!(io))
+end
+
+"""
+    formatheaders(io, headers)
+
+Write the Mongoose header framing for `headers` into `io` — used to assemble a
+response header block in one buffer (no intermediate String).
+"""
+@inline function formatheaders(io::IO, headers::Vector{Pair{String,String}})
     for (k, v) in headers
         print(io, k, ": ", v, "\r\n")
     end
-    return String(take!(io))
+    return io
 end
 
 # --- Chunked body decoding (RFC 9112 §7.1) ---

@@ -106,8 +106,10 @@ end
 """
     Request — Full HTTP request with owned data.
 
-    Fields are `const` (immutable after construction) except `context`,
-    which is lazily allocated on first access for per-request state.
+    `query` is parsed lazily: the transport stores the raw query string and
+    [`querydict`](@ref) memoizes the parsed `Dict` on first access, so requests
+    that never read the query pay only the raw-string copy (nothing at all when
+    there is no query). `context` is allocated on first access the same way.
 
     `remote_addr` is the transport-provided peer address (the client's IP as a
     string, or `nothing` when the transport does not supply one — e.g. the
@@ -117,7 +119,8 @@ mutable struct Request <: AbstractRequest
     const method::Symbol
     const uri::String
     const path::String                          # URI without query string (pre-stripped)
-    const query::Dict{String,String}
+    query::Union{Nothing,Dict{String,String}}   # parsed lazily via `querydict`
+    const query_raw::String                     # raw query (no '?'), lazy source
     const headers::Headers
     const body::String
     context::Union{Nothing,Dict{Symbol,Any}}
@@ -125,17 +128,25 @@ mutable struct Request <: AbstractRequest
 
     # Primary constructor — all fields explicit
     function Request(method::Symbol, uri::String, path::String,
-                     query::Dict{String,String}, headers::Headers,
-                     body::String,
+                     query::Union{Nothing,Dict{String,String}}, query_raw::String,
+                     headers::Headers, body::String,
                      context::Union{Nothing,Dict{Symbol,Any}}=nothing,
                      remote_addr::Union{Nothing,String}=nothing)
-        return new(method, uri, path, query, headers, body, context, remote_addr)
+        return new(method, uri, path, query, query_raw, headers, body, context, remote_addr)
     end
+end
+
+# Convenience: pre-parsed query (tests, FakeTransport); no raw source needed.
+function Request(method::Symbol, uri::String, path::String,
+                 query::Union{Nothing,Dict{String,String}}, headers::Headers,
+                 body::String, context::Union{Nothing,Dict{Symbol,Any}}=nothing,
+                 remote_addr::Union{Nothing,String}=nothing)
+    return Request(method, uri, path, query, "", headers, body, context, remote_addr)
 end
 
 # Convenience overload: accept raw pair vectors/tuples and normalize
 function Request(method::Symbol, uri::String, path::String,
-                 query::Dict{String,String}, headers,
+                 query::Union{Nothing,Dict{String,String}}, headers,
                  body::String, context::Union{Nothing,Dict{Symbol,Any}}=nothing,
                  remote_addr::Union{Nothing,String}=nothing)
     return Request(method, uri, path, query, asheaders(headers), body, context, remote_addr)
@@ -143,11 +154,26 @@ end
 
 # Convenience: auto-strip query from uri
 function Request(method::Symbol, uri::String,
-                 query::Dict{String,String}, headers,
+                 query::Union{Nothing,Dict{String,String}}, headers,
                  body::String, context::Union{Nothing,Dict{Symbol,Any}}=nothing,
                  remote_addr::Union{Nothing,String}=nothing)
     path = String(stripquery(uri))
     return Request(method, uri, path, query, asheaders(headers), body, context, remote_addr)
+end
+
+"""
+    querydict(req) → Dict{String,String}
+
+The request's query parameters, parsed from the URI on first access and
+memoized. Prefer [`query`](@ref) for typed lookups; use this when you need the
+whole dict.
+"""
+@inline function querydict(req::Request)::Dict{String,String}
+    q = req.query
+    q !== nothing && return q
+    parsed = parsequery(req.query_raw)
+    req.query = parsed
+    return parsed
 end
 
 """
@@ -230,29 +256,29 @@ flag = query(req, "debug", false) # Auto-parse to Bool
 ```
 """
 @inline function query(req::Request, key::String)::Union{String,Nothing}
-    return get(req.query, key, nothing)
+    return get(querydict(req), key, nothing)
 end
 
 @inline function query(req::Request, key::String, default::String)::String
-    return get(req.query, key, default)
+    return get(querydict(req), key, default)
 end
 
 @inline function query(req::Request, key::String, default::T)::T where {T<:Integer}
-    val = get(req.query, key, nothing)
+    val = get(querydict(req), key, nothing)
     val === nothing && return default
     parsed = tryparse(T, val)
     return parsed === nothing ? default : parsed
 end
 
 @inline function query(req::Request, key::String, default::T)::T where {T<:AbstractFloat}
-    val = get(req.query, key, nothing)
+    val = get(querydict(req), key, nothing)
     val === nothing && return default
     parsed = tryparse(T, val)
     return parsed === nothing ? default : parsed
 end
 
 @inline function query(req::Request, key::String, default::Bool)::Bool
-    val = get(req.query, key, nothing)
+    val = get(querydict(req), key, nothing)
     val === nothing && return default
     lv = lowercase(val)
     return lv == "true" || lv == "1" || lv == "yes"

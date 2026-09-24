@@ -32,7 +32,7 @@ function _sample_router!(r)
     route!(r, :get,    "/api/:v/users/:uid::Int/posts/:pid::Int",
         (req, v, uid, pid) -> text("$v:$uid:$pid"))
     route!(r, :get,    "/files/*path",          (req, path) -> text("path=$path"))
-    route!(r, :get,    "/search",               req -> text("q=$(get(req.query, "q", "none"))"))
+    route!(r, :get,    "/search",               req -> text("q=$(get(querydict(req), "q", "none"))"))
     route!(r, :get,    "/*deep",                (req, deep) -> text("catch:$deep"))
     route!(r, :get,    "/scop", req -> text("s"); middleware=[_NoopMw("x")])
     return r

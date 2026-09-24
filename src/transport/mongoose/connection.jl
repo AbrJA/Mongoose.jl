@@ -14,10 +14,9 @@ state, so the socket must not be reused (streams follow the same rule).
 """
 function send_http_response!(conn::MgConnection, res::Response)
     if res.body isa Vector{UInt8}
-        headers = _close_after_raw(formatheaders(res.headers), res)
-        _send_binary_response!(conn, res.status, headers, res.body)
+        _send_binary_response!(conn, res.status, _header_block(res, nothing, true), res.body)
     else
-        mg_http_reply(conn, res.status, formatheaders(res.headers), res.body)
+        mg_http_reply(conn, res.status, _header_block(res, nothing, false), res.body)
     end
 end
 
@@ -27,19 +26,24 @@ end
 Send response with X-Request-Id header injected.
 """
 function send_http_response!(conn::MgConnection, res::Response, rid::String)
-    headers = string(formatheaders(res.headers), "X-Request-Id: ", rid, "\r\n")
     if res.body isa Vector{UInt8}
-        _send_binary_response!(conn, res.status, _close_after_raw(headers, res), res.body)
+        _send_binary_response!(conn, res.status, _header_block(res, rid, true), res.body)
     else
-        mg_http_reply(conn, res.status, headers, res.body)
+        mg_http_reply(conn, res.status, _header_block(res, rid, false), res.body)
     end
 end
 
-# Hand-framed frames leave mongoose without response framing state; a reused
-# connection would wedge. The client must see `Connection: close`.
-@inline function _close_after_raw(header_str::String, res::Response)
-    get(res.headers, "connection", nothing) === nothing || return header_str
-    return string(header_str, "Connection: close\r\n")
+# One buffer per response header block (no intermediate String concatenation).
+# `close_raw` adds `Connection: close` for hand-framed (binary) bodies, which
+# leave mongoose without response-framing state and must not be reused.
+function _header_block(res::Response, rid::Union{Nothing,String}, close_raw::Bool)::String
+    io = IOBuffer(sizehint=128)
+    formatheaders(io, res.headers.data)
+    rid !== nothing && print(io, "X-Request-Id: ", rid, "\r\n")
+    if close_raw && get(res.headers, "connection", nothing) === nothing
+        write(io, "Connection: close\r\n")
+    end
+    return String(take!(io))
 end
 
 """
@@ -138,15 +142,12 @@ function send_stream_response!(server::AbstractServer, conn::MgConnection, resp:
     # response-framing state; reusing the connection afterwards wedges it.
     # Close after the stream (standard for SSE anyway — each client keeps its
     # own connection) to keep the server safe and predictable.
-    headers = string(
-        content_type_header_raw(resp.content_type),
-        formatheaders(resp.headers),
-        "Transfer-Encoding: chunked\r\n",
-        "Connection: close\r\n"
-    )
-    head = string("HTTP/1.1 ", resp.status, " ", statusreason(resp.status), "\r\n",
-                  headers, "\r\n")
-    mg_send(conn, Vector{UInt8}(codeunits(head)))
+    io = IOBuffer(sizehint=192)
+    print(io, "HTTP/1.1 ", resp.status, " ", statusreason(resp.status), "\r\n",
+        "Content-Type: ", resp.content_type, "\r\n")
+    formatheaders(io, resp.headers.data)
+    write(io, "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n")
+    mg_send(conn, take!(io))
 
     chan = Channel{Union{Vector{UInt8},Nothing}}(64)
     server.runtime.streams[Int(conn)] = ActiveStream(chan, conn, false)
@@ -201,5 +202,3 @@ function drain_streams!(server::AbstractServer)
     end
     return
 end
-
-@inline content_type_header_raw(ct::String) = "Content-Type: " * ct * "\r\n"

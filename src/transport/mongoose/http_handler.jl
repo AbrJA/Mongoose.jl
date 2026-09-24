@@ -118,7 +118,7 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
     end
 
     # 4. Build Request from FFI data
-    return adapt_request(msg, method, uri; remote_addr=remote_addr_of(conn))
+    return adapt_request(msg, method, uri; remote_addr=cached_remote_addr(server, conn))
 end
 
 # --- Unified HTTP handler (sync and async branching on the executor) ---

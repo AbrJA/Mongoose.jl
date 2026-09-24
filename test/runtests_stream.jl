@@ -30,6 +30,7 @@ const FILES = String[
     "unit/transport.jl",
     "unit/pipeline.jl",
     "unit/validation.jl",
+    "unit/perf.jl",
     "unit/testing.jl",
     "routing/protocol.jl",
     "routing/registration.jl",

@@ -31,6 +31,10 @@ using Mongoose
         include("unit/validation.jl")
     end
 
+    @testset "Unit: Performance guards" begin
+        include("unit/perf.jl")
+    end
+
     @testset "Unit: FakeTransport (FakeTransport)" begin
         include("unit/testing.jl")
     end

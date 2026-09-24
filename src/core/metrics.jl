@@ -14,14 +14,34 @@ const _N_HIST_BUCKETS = length(_HIST_BOUNDS) + 1  # +1 for the +Inf bucket
 
 const _METRICS_SHARDS = 8
 
+# Fixed-size counters: (method, status) is a matrix cell, not a string key, so
+# the per-request path allocates nothing and the locked section stays tiny.
+const _METHOD_NAMES = ("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD", "OTHER")
+const _N_METHODS = length(_METHOD_NAMES)
+const _STATUS_MIN = 100
+const _STATUS_MAX = 599
+const _STATUS_SLOTS = _STATUS_MAX - _STATUS_MIN + 1
+
+@inline function _method_idx(m::Symbol)::Int
+    m === :get     && return 1
+    m === :post    && return 2
+    m === :put     && return 3
+    m === :delete  && return 4
+    m === :patch   && return 5
+    m === :options && return 6
+    m === :head    && return 7
+    return 8
+end
+
+@inline _status_idx(status::Int)::Int = clamp(status, _STATUS_MIN, _STATUS_MAX) - _STATUS_MIN + 1
+
 const _METRICS_CONTENT_TYPE = Pair{String,String}[
     "Content-Type" => "text/plain; version=0.0.4; charset=utf-8"
 ]
 
 mutable struct _MetricsShard
     lock::Threads.SpinLock
-    # Key: "METHOD_STATUSCODE", e.g. "GET_200", "POST_404"
-    counts::Dict{String,Int}
+    counts::Matrix{Int}              # (_N_METHODS, _STATUS_SLOTS)
     # raw_hist[i] = count of observations that fell in bucket i (non-cumulative).
     # Cumulative sums are computed once at scrape time.
     raw_hist::Vector{Int}
@@ -30,7 +50,7 @@ mutable struct _MetricsShard
 
     _MetricsShard() = new(
         Threads.SpinLock(),
-        Dict{String,Int}(),
+        zeros(Int, _N_METHODS, _STATUS_SLOTS),
         zeros(Int, _N_HIST_BUCKETS),
         0.0, 0
     )
@@ -83,14 +103,14 @@ function (mw::Metrics)(request::Request, next::Function)
     # bucketed as their nominal status — still visible in the histogram.
     if response isa Response || response isa StreamResponse
         status = response isa Response ? response.status : 200
-        method = uppercase(String(request.method))
-        key = string(method, "_", status)
+        mi = _method_idx(request.method)
+        si = _status_idx(status)
         bidx = _histidx(elapsed_s)
 
         shard = _shard(mw)
         lock(shard.lock)
         try
-            shard.counts[key] = get(shard.counts, key, 0) + 1
+            @inbounds shard.counts[mi, si] += 1
             @inbounds shard.raw_hist[bidx] += 1
             shard.hist_sum += elapsed_s
             shard.hist_total += 1
@@ -104,7 +124,7 @@ end
 
 function _renderstats(mw::Metrics)
     # --- Aggregate all shards ---
-    agg_counts = Dict{String,Int}()
+    agg_counts = zeros(Int, _N_METHODS, _STATUS_SLOTS)
     agg_raw    = zeros(Int, _N_HIST_BUCKETS)
     agg_sum    = 0.0
     agg_total  = 0
@@ -125,9 +145,7 @@ function _renderstats(mw::Metrics)
             unlock(shard.lock)
         end
         # Aggregate outside the lock.
-        for (k, v) in local_counts
-            agg_counts[k] = get(agg_counts, k, 0) + v
-        end
+        agg_counts .+= local_counts
         for i in 1:_N_HIST_BUCKETS
             @inbounds agg_raw[i] += local_hist[i]
         end
@@ -140,14 +158,13 @@ function _renderstats(mw::Metrics)
 
     println(io, "# HELP http_requests_total Total number of HTTP requests")
     println(io, "# TYPE http_requests_total counter")
-    for (label, count) in sort!(collect(agg_counts), by=first)
-        # label is "METHOD_STATUS" — split at first underscore only;
-        # method names are uppercase letters only so the first _ is unambiguous.
-        sep = findfirst('_', label)
-        if sep !== nothing
-            method = label[1:sep-1]
-            status = label[sep+1:end]
-            println(io, "http_requests_total{method=\"", method, "\",status=\"", status, "\"} ", count)
+    for mi in 1:_N_METHODS
+        method = _METHOD_NAMES[mi]
+        for si in 1:_STATUS_SLOTS
+            count = @inbounds agg_counts[mi, si]
+            count == 0 && continue
+            println(io, "http_requests_total{method=\"", method,
+                "\",status=\"", si + _STATUS_MIN - 1, "\"} ", count)
         end
     end
 

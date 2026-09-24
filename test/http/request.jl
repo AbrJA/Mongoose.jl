@@ -30,8 +30,8 @@
     @testset "Query parameters parsed" begin
         s = App()
         get!(s, "/q") do req
-            a = get(req.query, "a", "")
-            b = get(req.query, "b", "")
+            a = get(querydict(req), "a", "")
+            b = get(querydict(req), "b", "")
             text("$a,$b")
         end
         with_server(s) do port

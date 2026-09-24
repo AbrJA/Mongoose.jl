@@ -1,7 +1,7 @@
 @testset "Query string handling" begin
     app = App()
     get!(app, "/search") do req
-        q = get(req.query, "q", "")
+        q = get(querydict(req), "q", "")
         text("query=$q")
     end
     with_server(app) do port

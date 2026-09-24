@@ -176,10 +176,9 @@ getwsendpoint(::AbstractRouter, ::AbstractString) = nothing
 
 Base.length(::AbstractRouter) = 0
 
-# Closed-route profile (AOT/trim): optional; defaults to "always open".
-function freeze!(router::AbstractRouter)
-    throw(MethodError(freeze!, (router,)))
-end
+# Closed-route profile (AOT/trim): optional; the default is a no-op ("always
+# open"), so `start!` can freeze every router without capability checks.
+freeze!(router::AbstractRouter) = router
 isfrozen(::AbstractRouter) = false
 
 # ── Compiled-dispatch capability (optional) ──────────────────────────────

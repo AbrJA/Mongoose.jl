@@ -101,6 +101,7 @@ setcookie
 
 ```@docs
 query
+querydict
 body
 parsejson
 multipart

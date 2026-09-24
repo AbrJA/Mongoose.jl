@@ -38,7 +38,7 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
     SSEWriter, emit, sse,
     json, parsejson, html, text, redirect,
     post!, patch!, options!, head!,
-    query, body, multipart, MultipartFile,
+    query, querydict, body, multipart, MultipartFile,
     validate, ValidationError
 
 # ══════════════════════════════════════════════════════════════════════════════
