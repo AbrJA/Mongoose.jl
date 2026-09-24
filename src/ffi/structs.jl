@@ -26,44 +26,26 @@ struct MgAddr
     is_ip6::UInt8
 end
 
-# Offset of `rem` (remote address) inside `struct mg_connection` (Mongoose
-# 7.21): next(8) + mgr(8) + loc(24) = 40.
+# Offsets used by the transport. Every one of these is **read-only**: the
+# framework never writes into a mongoose struct (no public API exists for that
+# and a shifted write could corrupt an adjacent field). Each offset is pinned
+# to Mongoose 7.21 and validated once per process by the ABI self-check; on a
+# mismatch `remote_addr` is disabled and the server logs loudly.
+
+# `rem` (remote address): next(8) + mgr(8) + loc(24) = 40.
 const _MG_CONN_REM_OFFSET = 40
 
-# Offsets of the `recv` iobuf inside `struct mg_connection` (Mongoose 7.21):
-# recv starts after fd(8)+id(8); `struct mg_iobuf { buf; len; size; align; }`.
-const _MG_CONN_RECV_OFFSET = 80      # recv.buf (uint8_t *)
-const _MG_CONN_RECV_LEN_OFFSET = 88  # recv.len (size_t)
-const _MG_CONN_SEND_LEN_OFFSET = 120 # send.len (size_t): bytes queued to the socket
-
-# Offset of `head.len` inside `struct mg_http_message` (Mongoose 7.21):
-# method/uri/query/proto (4×16) + headers[30] (30×32) + body(16) + head(16)
-# = 1040, plus 8 for `len` inside the `mg_str`. Verified with the C compiler.
-const _MG_HTTP_MSG_HEAD_LEN_OFFSET = 1048
-
-# Offset of the trailing bitfield word in `struct mg_connection` (Mongoose
-# 7.21, 64-bit). Verified with `offsetof(struct mg_connection, tls) + 8`:
-# sizeof(mg_connection) = 288, iobuf = 32 bytes, data at 240, tls at 272, so
-# the bitfield unit starts at 280. `is_draining` is the 13th declared bitfield
-# (0-based bit 12).
+# Trailing bitfield word (verified with `offsetof(struct mg_connection, tls) + 8`:
+# sizeof = 288, iobuf = 32, data at 240, tls at 272). Read for the ABI check only.
 const _MG_CONN_FLAGS_OFFSET = 280
-const _MG_CONN_IS_DRAINING_BIT = UInt32(1) << 12
 
-"""
-    mark_draining!(conn) — set `c->is_draining`: flush pending output, then close.
+# `send.len` (bytes queued to the socket): fd(8) + id(8) + recv iobuf(32) → 112,
+# +8 for the `len` field. Used for stream/WebSocket backpressure.
+const _MG_CONN_SEND_LEN_OFFSET = 120
 
-Mongoose sets `is_draining` itself when a *synchronous* handler clears
-`is_resp` inside the `MG_EV_HTTP_MSG` callback. Async replies are sent after
-that callback returns, so the poll loop never sees the client's
-`Connection: close`; without this flag the header is echoed but the socket
-stays open. The struct layout is pinned to Mongoose 7.21 (same ABI assumption
-as `_MG_CONN_REM_OFFSET`); wire tests cover it.
-"""
-@inline function mark_draining!(conn::MgConnection)
-    p = Ptr{UInt32}(reinterpret(UInt, conn) + _MG_CONN_FLAGS_OFFSET)
-    unsafe_store!(p, unsafe_load(p) | _MG_CONN_IS_DRAINING_BIT)
-    return nothing
-end
+# `recv.buf` / `recv.len` (bytes read but not yet parsed): recv iobuf at 80.
+const _MG_CONN_RECV_OFFSET = 80
+const _MG_CONN_RECV_LEN_OFFSET = 88
 
 """
     MgStr — Mirrors the C `struct mg_str { const char *buf; size_t len; }`.

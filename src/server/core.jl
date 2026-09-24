@@ -182,10 +182,9 @@ mutable struct RunState
     awaiting_headers::Dict{Ptr{Cvoid},Float64}  # conns without complete headers yet
     awaiting_body::Dict{Ptr{Cvoid},Float64}     # conns whose headers arrived, body pending
     conn_addr::Dict{Ptr{Cvoid},String}   # formatted peer IP, one per connection
-    pending_close::Set{Ptr{Cvoid}}       # async replies to mark draining after send
-    early_rejected::Set{Ptr{Cvoid}}      # oversize requests already answered (413)
     ws_dropped::Threads.Atomic{UInt64}   # WS pushes dropped (queue full / send cap)
-    abi_checked::Bool                    # one-time struct-layout sanity check
+    abi_ok::Bool                         # struct-layout sanity (false ⇒ degrade)
+    abi_checked::Bool                    # one-time check performed
     bg_tasks::Vector{Task}
     bg_lock::Threads.SpinLock            # guards bg_tasks (workers push)
 end
@@ -195,8 +194,8 @@ RunState() = RunState(Threads.Atomic{Bool}(false), nothing, nothing, Manager(emp
     Threads.Atomic{UInt64}(0), Threads.Atomic{UInt64}(0),
     Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(),
     Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(),
-    Dict{Ptr{Cvoid},String}(), Set{Ptr{Cvoid}}(), Set{Ptr{Cvoid}}(),
-    Threads.Atomic{UInt64}(0), false, Task[], Threads.SpinLock())
+    Dict{Ptr{Cvoid},String}(),
+    Threads.Atomic{UInt64}(0), true, false, Task[], Threads.SpinLock())
 
 # --- Background task tracking ---
 # Workers push timed-out request tasks; the event loop prunes completed ones on

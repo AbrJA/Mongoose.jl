@@ -84,72 +84,23 @@ body is still arriving. Two jobs:
 
 1. Slowloris bookkeeping: drop the connection from the header-timeout watch,
    so a slow upload longer than `header_timeout_ms` is not killed mid-body.
-2. Early `413`: reject a declared `Content-Length` above `max_body_bytes`
-   before the body is buffered (Mongoose would otherwise wait for the whole
-   body and only then let the handler answer).
+2. Reject a message carrying BOTH `Content-Length` and `Transfer-Encoding`
+   (RFC 9112 §6.1): front-ends may frame it differently than this server, so
+   it is a request-smuggling vector. There is no public Mongoose API to send a
+   response and close cleanly, so the connection is dropped (`mg_error`).
 """
 function on_headers(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
     delete!(server.runtime.awaiting_headers, conn)
     # Mongoose fires HDRS on *every poll* while a body is still pending, so
     # this handler must be idempotent per connection: `awaiting_body` doubles
     # as the "headers already processed" marker (its timestamp is the body
-    # start), and `early_rejected` suppresses duplicate error responses.
+    # start).
     haskey(server.runtime.awaiting_body, conn) && return nothing
-    conn in server.runtime.early_rejected && return nothing
 
-    # Header-size cap: complete headers over the limit get a clean 431 (the
-    # incomplete case is dropped in `on_read` before buffering more). Read
-    # `head.len` in place: materializing the whole message copies ~1KB.
-    head_len = Int(unsafe_load(Ptr{Csize_t}(reinterpret(UInt, ev_data) + _MG_HTTP_MSG_HEAD_LEN_OFFSET)))
-
-    # One-time ABI sanity check: if the pinned struct offsets do not match this
-    # Mongoose build/platform, fail loudly once instead of silently
-    # mis-reading connection state (remote_addr, draining, stream caps).
-    if !server.runtime.abi_checked
-        flags = unsafe_load(Ptr{UInt32}(reinterpret(UInt, conn) + _MG_CONN_FLAGS_OFFSET))
-        ip6 = unsafe_load(Ptr{UInt8}(reinterpret(UInt, conn) + _MG_CONN_REM_OFFSET + 19))
-        if ((flags >> 2) & 0x1) == 0 || head_len <= 0 || ip6 > 1
-            @log_error "Mongoose ABI mismatch: pinned struct offsets do not match " *
-                       "this build ($(Sys.MACHINE)). remote_addr/draining/stream " *
-                       "caps may misbehave; re-verify _MG_CONN_*/_MG_HTTP_MSG_* offsets."
-        end
-        server.runtime.abi_checked = true
-    end
-    if server.config.max_header_bytes > 0 && head_len > server.config.max_header_bytes
-        rid = resolve_request_id(server, _header_value_string(ev_data, "X-Request-Id"))
-        send_http_response!(conn, _close_response(errorresponse(server.errors, 431)), rid)
-        push!(server.runtime.early_rejected, conn)
-        # Sweep stalled uploads when configured; otherwise the client is
-        # expected to close after the `Connection: close` reply.
-        server.config.body_timeout_ms > 0 && (server.runtime.awaiting_body[conn] = time())
-        return nothing
-    end
-
-    # RFC 9112 §6.1: a message carrying BOTH Content-Length and
-    # Transfer-Encoding is a request-smuggling vector (front-ends may frame it
-    # differently than this server). Reject and close.
     if mg_http_get_header_ptr(ev_data, "Content-Length") != C_NULL &&
        mg_http_get_header_ptr(ev_data, "Transfer-Encoding") != C_NULL
-        rid = resolve_request_id(server, _header_value_string(ev_data, "X-Request-Id"))
-        send_http_response!(conn, _close_response(errorresponse(server.errors, 400)), rid)
-        push!(server.runtime.early_rejected, conn)
-        mark_draining!(conn)              # flush the 400, then close
+        mg_error(conn, "Content-Length with Transfer-Encoding")
         return nothing
-    end
-
-    p = mg_http_get_header_ptr(ev_data, "Content-Length")
-    if p != C_NULL
-        len = _parse_content_length(unsafe_load(p))
-        if len > server.config.max_body_bytes
-            rid = resolve_request_id(server, _header_value_string(ev_data, "X-Request-Id"))
-            # Advertise close: the reply is already sent, and the connection is
-            # closed once the client finishes uploading. Closing earlier would
-            # RST a client that is still writing its body.
-            send_http_response!(conn, _close_response(errorresponse(server.errors, 413)), rid)
-            push!(server.runtime.early_rejected, conn)
-            server.config.body_timeout_ms > 0 && (server.runtime.awaiting_body[conn] = time())
-            return nothing
-        end
     end
 
     server.runtime.awaiting_body[conn] = time()
@@ -164,37 +115,6 @@ end
     h = copy(res.headers)
     push!(h, key => value)
     return Response(res.status, h, res.body)
-end
-
-# Force `Connection: close` on a response that will be followed by a close
-# once the client finishes writing (avoids a mid-upload RST).
-@inline _close_response(res) = res isa Response ? _add_header_once(res, "Connection", "close") : res
-
-# Materialize one header value (rare paths only; hot paths use the pointer).
-@inline function _header_value_string(msg_ptr::Ptr{Cvoid}, name::AbstractString)::Union{Nothing,String}
-    p = mg_http_get_header_ptr(msg_ptr, name)
-    p == C_NULL && return nothing
-    s = unsafe_load(p)
-    (s.buf == C_NULL || s.len == 0) && return nothing
-    return unsafe_string(s.buf, s.len)
-end
-
-# Allocation-free decimal parse of a Content-Length header span. Returns -1
-# when absent, non-numeric, or absurdly large (the caller treats it as "no
-# declared length").
-@inline function _parse_content_length(s::MgStr)::Int
-    (s.buf == C_NULL || s.len == 0) && return -1
-    v = 0
-    seen = false
-    @inbounds for i in 0:Int(s.len)-1
-        c = unsafe_load(s.buf, i + 1)
-        c == UInt8(' ') && continue
-        (UInt8('0') <= c <= UInt8('9')) || return -1
-        v = v * 10 + Int(c - UInt8('0'))
-        v > 100_000_000 && return -1
-        seen = true
-    end
-    return seen ? v : -1
 end
 
 # --- Request ID resolution ---
@@ -234,27 +154,6 @@ end
     return res
 end
 
-@inline _has_conn_header(hs::Headers) =
-    any(p -> lowercase(p.first) == "connection", hs)
-
-
-@inline function _conn_close_in_headers(msg::MgHttpMessage)::Bool
-    head = lowercase(to_string(msg.head))
-    for line in eachsplit(head, '\n')
-        startswith(line, "connection:") && occursin("close", line) && return true
-    end
-    return false
-end
-
-# Early error responses (413/503) are sent before a Request is built; the C
-# message headers tell us whether the client asked for a close.
-@inline function _echo_conn_close_error!(res, msg::MgHttpMessage)
-    if _conn_close_in_headers(msg) && res isa Response
-        return _add_header_once(res, "Connection", "close")
-    end
-    return res
-end
-
 # --- Shared preprocessing ---
 
 function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})::Union{Nothing,Request}
@@ -262,14 +161,30 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
     # A complete request arrived: it no longer counts against the timeouts.
     delete!(server.runtime.awaiting_headers, conn)
     delete!(server.runtime.awaiting_body, conn)
-    # Already answered at the headers event (oversize body): the body has now
-    # fully arrived, so the message is dropped and the conn closes cleanly.
-    if conn in server.runtime.early_rejected
-        delete!(server.runtime.early_rejected, conn)
-        delete!(server.runtime.awaiting_headers, conn)
-        mark_draining!(conn)
+
+    # One-time ABI sanity check (read-only): the peer-address offset is the
+    # only pinned layout left. On a mismatch, degrade loudly instead of
+    # serving wrong addresses.
+    if !server.runtime.abi_checked
+        flags = unsafe_load(Ptr{UInt32}(reinterpret(UInt, conn) + _MG_CONN_FLAGS_OFFSET))
+        ip6 = unsafe_load(Ptr{UInt8}(reinterpret(UInt, conn) + _MG_CONN_REM_OFFSET + 19))
+        if ((flags >> 2) & 0x1) == 0 || msg.head.len == 0 || ip6 > 1
+            @log_error "Mongoose ABI mismatch: pinned struct offsets do not match " *
+                       "this build ($(Sys.MACHINE)); remote_addr is disabled. " *
+                       "Re-verify _MG_CONN_* offsets for this platform."
+            server.runtime.abi_ok = false
+        end
+        server.runtime.abi_checked = true
+    end
+
+    # Header-size cap: complete-but-oversized headers get a clean 431 (the
+    # incomplete case is dropped by the sweep before more is buffered).
+    if server.config.max_header_bytes > 0 && Int(msg.head.len) > server.config.max_header_bytes
+        rid = resolve_request_id(server, get(parse_headers(msg), "x-request-id", nothing))
+        send_http_response!(conn, errorresponse(server.errors, 431), rid)
         return nothing
     end
+
     method = parse_method(msg.method)
     uri = to_string(msg.uri)
 
@@ -282,10 +197,10 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
         end
     end
 
-# 2. Body size enforcement
+    # 2. Body size enforcement (mongoose buffers up to its 8 MiB ceiling)
     if msg.body.len > server.config.max_body_bytes
         rid = resolve_request_id(server, get(parse_headers(msg), "x-request-id", nothing))
-        send_http_response!(conn, _echo_conn_close_error!(errorresponse(server.errors, 413), msg), rid)
+        send_http_response!(conn, errorresponse(server.errors, 413), rid)
         return nothing
     end
 
@@ -321,19 +236,17 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         end
     else
         # Async path: enqueue a job to the worker pool. A client-requested
-        # `Connection: close` is recorded here and applied when the reply is
-        # actually sent: mongoose only sets `is_draining` when a *synchronous*
-        # handler clears `is_resp`, which never happens for pool replies, and
-        # marking earlier would close the connection before the reply exists.
-        conn_close_requested(req) && push!(server.runtime.pending_close, conn)
+        # `Connection: close` is honored by the client closing its side; the
+        # server cannot flush-and-close asynchronously through mongoose's
+        # public API (only synchronous replies set `is_draining`), so the
+        # header is not echoed here and the connection stays reusable.
         exec = server.executor
         timeout = server.config.request_timeout_ms
 
         # Timed-out handlers cannot be killed; once the runaway budget is
         # exhausted, shed new timed requests rather than accumulate more.
         if timeout > 0 && _bg_full(server)
-            res = _add_header_once(_echo_conn_close!(errorresponse(server.errors, 503), req),
-                                   "Retry-After", "1")
+            res = _add_header_once(errorresponse(server.errors, 503), "Retry-After", "1")
             @log_warn "Request shed: runaway timed-out tasks reached $(server.config.max_bg_tasks)"
             send_http_response!(conn, res::Response, resolve_request_id(req, server))
             return nothing
@@ -349,8 +262,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         end
         if !submit!(exec, job)
             delete!(server.runtime.connections, id)
-            res = _add_header_once(_echo_conn_close!(errorresponse(server.errors, 503), req),
-                                   "Retry-After", "1")
+            res = _add_header_once(errorresponse(server.errors, 503), "Retry-After", "1")
             send_http_response!(conn, res::Response, resolve_request_id(req, server))
         end
     end
@@ -372,7 +284,6 @@ function _http_job(server::AbstractServer, id::Int, req::Request)
             @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
             errorresponse(server.errors, req, 500)
         end
-        res = _echo_conn_close!(res, req)
         if res isa StreamResponse
             return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, res)
         end

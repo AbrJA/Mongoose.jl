@@ -199,15 +199,13 @@ end
 
         # A body that completes within the timeout is served.
         sock2 = Sockets.connect("127.0.0.1", port)
-        write(sock2, "POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 5\r\nConnection: close\r\n\r\n")
+        write(sock2, "POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 5\r\n\r\n")
         sleep(0.15)                      # below body_timeout_ms
         write(sock2, "hello")
-        task = @async String(read(sock2))
-        @test timedwait(() -> istaskdone(task), 5.0; pollint=0.05) == :ok
-        resp = istaskdone(task) ? fetch(task) : ""
-        istaskdone(task) || close(sock2)
-        @test contains(resp, "200 OK")
-        @test contains(resp, "len=5")
+        head = readuntil(sock2, "\r\n\r\n")
+        @test contains(head, "200 OK")
+        len = parse(Int, match(r"content-length: (\d+)"i, head).captures[1])
+        @test String(read(sock2, len)) == "len=5"
         close(sock2)
 
         @test HTTP.get("http://127.0.0.1:$port/ping"; status_exception=false,

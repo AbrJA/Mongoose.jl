@@ -525,6 +525,16 @@ four gates plus before/after numbers in the commit message.
 
 ## Changelog
 
+- **Sep 24 — Reliability-first C-interop simplification**: adopted the rule
+  "use the public mongoose API; never write into its structs; remove features
+  that need it" (RULES.md §2b). Reverted an in-progress byte-accounting
+  refactor that reimplemented C behavior in Julia (~100 lines of state to
+  avoid one 4-line struct write) and instead removed the write and the
+  features needing it: async `Connection: close` forcing, early 413/431
+  rejection, polite 400 on CL+TE, and WS Close frames for violations/idle.
+  The FFI surface is now read-only (peer address + send/recv lengths), each
+  offset ABI-checked and documented. 3839 tests + 81 acceptance + Aqua/JET +
+  docs. *commit: this one*
 - **Sep 24 — Tier-2 campaign (HTTP edges + WS protocol)**: 38/38 raw-HTTP and
   7/7 WS probes. Found + fixed: **CL+TE request smuggling** (both framing
   headers accepted with TE semantics, leaving a smuggled request queued — now

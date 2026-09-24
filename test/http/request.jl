@@ -85,55 +85,50 @@
 end
 
 
-@testset "Async Connection: close closes the socket" begin
-    # Regression: mongoose only sets `is_draining` when a *synchronous*
-    # handler clears `is_resp`; pool replies are sent after the callback, so
-    # the flag has to be applied by the framework when the reply is queued.
+@testset "Async Connection: close stays usable (client closes)" begin
+    # The framework no longer writes mongoose connection state: a pool reply
+    # cannot flush-and-close asynchronously through the public API, so the
+    # header is not echoed and the client closes its side (it asked to).
     s = App(workers=2)
     get!(s, "/close") do req; text("bye") end
     with_server(s) do port
         sock = Sockets.connect("127.0.0.1", port)
         write(sock, "GET /close HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
-        task = @async String(read(sock))   # returns once the server closes
-        @test timedwait(() -> istaskdone(task), 5.0; pollint=0.05) == :ok
-        resp = istaskdone(task) ? fetch(task) : ""
-        istaskdone(task) || close(sock)
-        @test contains(resp, "200 OK")
-        @test contains(lowercase(resp), "connection: close")
+        head = readuntil(sock, "\r\n\r\n")
+        @test contains(head, "200 OK")
+        @test !contains(lowercase(head), "connection: close")
+        len = parse(Int, match(r"content-length: (\d+)"i, head).captures[1])
+        @test String(read(sock, len)) == "bye"
         close(sock)
     end
 end
 
-@testset "Oversized Content-Length rejected before the body" begin
+@testset "Oversized body rejected (413) after buffering" begin
     s = App(max_body_bytes=1024)
     post!(s, "/echo") do req; text("got") end
     with_server(s) do port
-        sock = Sockets.connect("127.0.0.1", port)
-        # Declared length above the cap; no body sent at all.
-        write(sock, "POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 100000\r\n\r\n")
-        task = @async readline(sock)
-        @test timedwait(() -> istaskdone(task), 5.0; pollint=0.05) == :ok
-        line = istaskdone(task) ? fetch(task) : ""
-        istaskdone(task) || close(sock)
-        @test contains(line, "413")
-        close(sock)
+        # Early rejection is gone: mongoose buffers the body (bounded by its
+        # 8 MiB ceiling) and the message-complete path answers 413.
+        r = HTTP.post("http://127.0.0.1:$port/echo"; body=repeat("x", 4096),
+                      status_exception=false, retry=false)
+        @test r.status == 413
+        @test HTTP.get("http://127.0.0.1:$port/echo"; status_exception=false,
+                       retry=false).status == 405     # server healthy
     end
 end
 
-@testset "CL+TE request smuggling is rejected" begin
+@testset "CL+TE request smuggling is dropped" begin
     s = App()
     post!(s, "/echo") do req; text("len=$(sizeof(body(req)))") end
     with_server(s) do port
-        # Both framing headers present: reject with 400 and close (RFC 9112 §6.1).
+        # Both framing headers present: the connection is dropped (there is no
+        # public API to send a response and close cleanly).
         sock = Sockets.connect("127.0.0.1", port)
         write(sock, "POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 6\r\n" *
                     "Transfer-Encoding: chunked\r\n\r\n6\r\nhello!\r\n0\r\n\r\n")
-        line = readline(sock)
-        @test contains(line, "400")
-        # The server closes after flushing the 400: `read` returns only then.
         drained = @async read(sock)
         @test timedwait(() -> istaskdone(drained), 3.0; pollint=0.05) == :ok
-        @test istaskdone(drained)
+        @test istaskdone(drained) && isempty(fetch(drained))
         close(sock)
 
         # Plain chunked still works.

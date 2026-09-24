@@ -108,6 +108,20 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - `Logger` access-logs throwing handlers as 500 and writes each line atomically.
 
 ### Changed
+- **C-interop simplification (reliability first):** the framework no longer
+  writes into mongoose structs. The only struct write (`is_draining` for
+  flush-then-close) and the features that depended on it are gone:
+  * async `Connection: close` is no longer force-closed — the header is not
+    echoed and the client closes its side (sync mode still closes via
+    mongoose's own handling);
+  * early 413/431 rejection is removed — oversized bodies/headers are rejected
+    after mongoose buffers them (bounded by its 8 MiB receive ceiling);
+  * `Content-Length` + `Transfer-Encoding` now drops the connection instead of
+    sending a 400;
+  * WebSocket protocol violations and idle peers drop the connection instead
+    of delivering a Close frame.
+  Everything else uses the public C API; the remaining pinned offsets are
+  read-only (peer address, send/recv lengths) and ABI-checked at first request.
 - `request_timeout_ms` now bounds the **client's** wait only: timed-out
   handlers cannot be killed (Julia tasks are cooperative), so they are
   abandoned and tracked. `max_bg_tasks` (default auto: 4×workers) caps the
@@ -173,6 +187,13 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   the connection on `size;ext` chunks or a trailer section (RFC 9112 allows
   both; most clients never send them). Documented rather than worked around —
   re-framing in Julia would defeat the in-place parser.
+- **No early request rejection**: an oversized declared body is answered with
+  413 only after it is buffered (bounded by mongoose's 8 MiB ceiling ×
+  `max_connections`). `header_timeout_ms`/`body_timeout_ms` still reclaim
+  stalled connections.
+- **Async `Connection: close` is not force-closed**: the server keeps the
+  connection; the client closes its side. Sync mode closes normally.
+- **WebSocket violations/idle close by dropping the socket** (no Close frame).
 - **TLS is 1.3-only** (Mongoose's built-in TLS in the `Mongoose_jll` build).
   TLS 1.2 clients cannot connect; terminate at a reverse proxy or rebuild the
   JLL with OpenSSL. Setting `TLSConfig.ca` enables mutual TLS (a client

@@ -91,23 +91,6 @@ end
 
 # --- WS Control Frames (Ping/Pong/Close) ---
 
-# Send a Close frame with a code and drain-close the socket (RFC 6455 §7.4.1).
-# Used for protocol violations mongoose's parser tolerates (RSV bits,
-# fragmented/oversized control frames, invalid UTF-8, too-big messages).
-function ws_close!(server::AbstractServer, conn::MgConnection, code::Int)
-    payload = UInt8[UInt8((code >> 8) & 0xff), UInt8(code & 0xff)]
-    mg_ws_send(conn, payload, WS_OP_CLOSE)
-    id = ws_id_of(server, conn)
-    if id != 0
-        lock(server.runtime.ws_lock) do
-            entry = get(server.runtime.ws_clients, id, nothing)
-            entry !== nothing && (entry.closing = true)
-        end
-    end
-    mark_draining!(conn)                 # flush the Close, then close
-    return nothing
-end
-
 function on_ws_control(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
     op = msg.flags & 0x0F
@@ -118,7 +101,9 @@ function on_ws_control(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
     # RFC 6455 §5.5: control frames must be unfragmented, ≤125 bytes, RSV=0;
     # a CLOSE payload is 0 or ≥2 bytes.
     if rsv || !fin || len > 125 || (op == WS_OP_CLOSE && len == 1)
-        ws_close!(server, conn, WS_CLOSE_PROTOCOL_ERROR)
+        # RFC 6455 §5.5 violation: drop the connection (no public Mongoose API
+        # to flush a Close frame and then close cleanly).
+        mg_error(conn, "WebSocket control-frame violation")
         return nothing
     end
     # Keep-alive bookkeeping only. Mongoose's WS layer already auto-replies:
@@ -138,17 +123,20 @@ function on_ws_message(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
     conn_id == 0 && return
     ws_touch!(server, conn_id)
 
-    (msg.flags & 0x70) != 0 && return ws_close!(server, conn, WS_CLOSE_PROTOCOL_ERROR)
+    if (msg.flags & 0x70) != 0
+        mg_error(conn, "WebSocket RSV bit set")
+        return
+    end
 
     if msg.data.len > server.config.ws_max_frame_bytes
-        ws_close!(server, conn, WS_CLOSE_MESSAGE_TOO_BIG)
+        mg_error(conn, "WebSocket frame too large")
         return
     end
 
     ws_msg = parse_ws_message(msg)
     # RFC 6455 §5.6: text frames must carry valid UTF-8.
     if (msg.flags & 0x0F) == 0x01 && ws_msg.data isa String && !isvalid(ws_msg.data)
-        ws_close!(server, conn, WS_CLOSE_INVALID_PAYLOAD)
+        mg_error(conn, "WebSocket invalid UTF-8")
         return
     end
     uri = lock(server.runtime.ws_lock) do
@@ -178,8 +166,6 @@ end
 function on_connection_close(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
     delete!(server.runtime.conn_times, conn)
     delete!(server.runtime.awaiting_body, conn)
-    delete!(server.runtime.pending_close, conn)
-    delete!(server.runtime.early_rejected, conn)
     delete!(server.runtime.awaiting_headers, conn)
     delete!(server.runtime.conn_addr, conn)
     conn_id = lock(server.runtime.ws_lock) do
@@ -231,12 +217,10 @@ function ws_idle_sweep!(server::AbstractServer)
     for id in to_close
         conn = get(server.runtime.connections, id, nothing)
         conn === nothing && continue
-        # Queue a Close frame, then mark the connection draining: the poll
-        # loop flushes the frame, then reaps the socket even if the peer never
-        # answers (epoll DEL + closesocket). `mg_close_conn` would leak the fd
-        # and corrupt epoll; `mg_error` would drop the unflushed Close frame.
-        mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
-        mark_draining!(conn)
+        # Drop the idle peer. `mg_error` marks it closing; the poll loop runs
+        # the real close path (epoll DEL + closesocket). `mg_close_conn`
+        # would leak the fd and corrupt epoll.
+        mg_error(conn, "WebSocket idle timeout")
     end
 end
 

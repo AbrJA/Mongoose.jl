@@ -33,6 +33,26 @@ Do **NOT** write Julia code as if it were Python or C++. Adhere strictly to the 
 
 ---
 
+## 2b. C Interop Policy (Mongoose)
+
+Reliability first: leverage the C library, never reimplement it in Julia.
+
+* **Use the public C API only.** `mg_http_reply`, `mg_send`, `mg_ws_send`,
+  `mg_error`, `mg_http_get_header`, `mg_http_listen`, … are the only ways to
+  talk to mongoose.
+* **Never write into a mongoose struct.** No `unsafe_store!` on connection or
+  message memory. There is no public API for it, and a shifted offset on a new
+  build or platform would silently corrupt an adjacent field (e.g. a pointer).
+* **Reading pinned offsets is a last resort**, only when no public API exists
+  (peer address, send/recv buffer lengths). Each one must be documented with
+  how it was verified, validated by the one-time ABI self-check, and read-only.
+* **If a feature needs a struct write, or reimplements C behavior in Julia,
+  simplify or remove the feature.** Small and reliable beats feature count.
+  Removed for this reason: forcing async `Connection: close`, early 413/431
+  rejection, WS Close-frame delivery (violations/idle now drop the socket).
+
+---
+
 ## 3. Automated QA Integration
 
 Every iteration of the codebase must be validated against the following automated testing stack:

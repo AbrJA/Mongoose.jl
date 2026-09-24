@@ -89,6 +89,10 @@ Peer IP formatted once per connection (the formatting allocates a String) and
 cached until `MG_EV_CLOSE`. Poll-thread only.
 """
 @inline function cached_remote_addr(server::AbstractServer, conn::MgConnection)::Union{Nothing,String}
+    # The peer-address offset is the only pinned layout left; if the ABI check
+    # failed, serve `nothing` (ratelimit falls back to its shared bucket)
+    # instead of a wrong address.
+    server.runtime.abi_ok || return nothing
     cached = get(server.runtime.conn_addr, conn, nothing)
     cached !== nothing && return isempty(cached) ? nothing : cached
     addr = remote_addr_of(conn)
