@@ -189,7 +189,7 @@ Freezing also **compiles** the closed table into a `CompiledDispatch` (see
 terminal (handler + scoped middleware fused, with the handler's concrete type
 captured), and parametric matching runs through a statically-typed chain with
 no per-request path splitting. The pipeline uses the compiled path via
-`terminalfor` when `compiled !== nothing`; `matchroute` keeps its
+`getterminal` when `compiled !== nothing`; `matchroute` keeps its
 generic (correct) implementation.
 """
 function freeze!(r::Router)
@@ -385,7 +385,7 @@ end
 
 Resolve a request to its exhaustive outcome: `Matched(endpoint, handlers,
 params)` when the route serves the method, `NoMatch` when the path matches
-nothing, or `NotAllowed{allowed}` carrying the route's method bitmask.
+nothing, or `MethodMismatch{allowed}` carrying the route's method bitmask.
 Exact (static) matches win; parametric routes are scanned in registration
 order; the `"*"` catch-all is the final fallback. `HEAD` is served only by an
 explicit `head!` route — there is no auto-HEAD fallback.
@@ -397,7 +397,7 @@ function matchroute(router::Router, method::Symbol, path::AbstractString)::Route
     found === nothing && return NoMatch()
     mm, params = found
     ep = resolve_method(mm, m)
-    ep === nothing && return NotAllowed(method_bitmask(mm))
+    ep === nothing && return MethodMismatch(method_bitmask(mm))
     return Matched(ep, mm, params)
 end
 

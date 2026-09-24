@@ -103,7 +103,7 @@ end
 # `Endpoint` lives in router.jl, included after interface.jl).
 @inline invokeendpoint(ep::Endpoint, request::Request, params) =
     isempty(params) ? ep.handler(request) : ep.handler(request, params...)
-@inline endpointmiddleware(ep::Endpoint) = ep.middleware
+@inline scopedmiddleware(ep::Endpoint) = ep.middleware
 
 @inline function _method_not_allowed(mask::UInt8)
     return Response(Plain, "405 Method Not Allowed"; status=405,
@@ -119,7 +119,7 @@ route's scoped middleware. The terminal is always a short-circuiting
 exactly like the handler path.
 """
 function _resolve_terminal(router::AbstractRouter, request::Request)
-    compiled = terminalfor(router, request)
+    compiled = getterminal(router, request)
     if compiled !== nothing
         # Frozen/compiled router: the terminal already fuses scoped middleware;
         # `nothing` marks scoped as baked-in.
@@ -129,13 +129,13 @@ function _resolve_terminal(router::AbstractRouter, request::Request)
     result = matchroute(router, request.method, request.uri)
     if result isa NoMatch
         return ((r) -> Response(Plain, "404 Not Found"; status=404)), AbstractMiddleware[]
-    elseif result isa NotAllowed
+    elseif result isa MethodMismatch
         return ((r) -> _method_not_allowed(result.allowed)), AbstractMiddleware[]
     end
 
     ep = result.endpoint
     params = result.params
-    return ((r) -> invokeendpoint(ep, r, params)), endpointmiddleware(ep)
+    return ((r) -> invokeendpoint(ep, r, params)), scopedmiddleware(ep)
 end
 
 # Built-in mapping for status-carrying exceptions: a custom error page for that

@@ -3,7 +3,7 @@
 
     `freeze!(router)` compiles the closed route table into a
     `CompiledDispatch`. The pipeline then resolves a request through
-    `terminalfor` (see `interface.jl`) instead of the generic
+    `getterminal` (see `interface.jl`) instead of the generic
     `matchroute`/pipeline path, so the hot path:
 
     - never allocates a per-request closure or `[global; scoped]` concat,
@@ -421,7 +421,7 @@ end
 
 # --- Pipeline entry point ---
 
-function terminalfor(r::Router, req::Request)
+function getterminal(r::Router, req::Request)
     c = r.compiled
     c === nothing && return nothing
     return _compiled_terminal(c, req.method, stripquery(req.uri))

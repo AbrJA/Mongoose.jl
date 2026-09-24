@@ -3,7 +3,7 @@ mutable struct AsyncExecutor <: AbstractExecutor
     queue_size::Int
     worker_tasks::Vector{Task}
     calls::Channel{Function}
-    replies::Channel{Tagged{Union{Response,StreamResponse,Message}}}
+    replies::Channel{Kernel.Tagged{Union{Response,StreamResponse,Message}}}
     inflight::Threads.Atomic{Int}
     stopping::Threads.Atomic{Bool}
 end
@@ -12,7 +12,7 @@ end
     AsyncExecutor — bounded worker pool with a reply queue.
 
     Architecture:
-    - Transport submits closures (`() → Union{Nothing,Tagged}`) via `submit!`.
+    - Transport submits closures (`() → Union{Nothing,Kernel.Tagged}`) via `submit!`.
     - `workers` threads dequeue and run jobs, pushing replies onto `replies`.
     - The event loop drains `replies` (see `dispatch_replies!`) and sends them
       through the transport's connections.
@@ -26,7 +26,7 @@ end
 function AsyncExecutor(workers::Int, queue_size::Int)
     return AsyncExecutor(workers, queue_size, Task[],
         Channel{Function}(queue_size),
-        Channel{Tagged{Union{Response,StreamResponse,Message}}}(queue_size),
+        Channel{Kernel.Tagged{Union{Response,StreamResponse,Message}}}(queue_size),
         Threads.Atomic{Int}(0), Threads.Atomic{Bool}(false))
 end
 
@@ -34,7 +34,7 @@ end
 
 function init_executor!(exec::AsyncExecutor)
     exec.calls = Channel{Function}(exec.queue_size)
-    exec.replies = Channel{Tagged{Union{Response,StreamResponse,Message}}}(exec.queue_size)
+    exec.replies = Channel{Kernel.Tagged{Union{Response,StreamResponse,Message}}}(exec.queue_size)
     exec.stopping[] = false
     empty!(exec.worker_tasks)
     return exec

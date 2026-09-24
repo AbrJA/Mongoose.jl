@@ -1,9 +1,9 @@
 # Compiled frozen-route dispatch: semantic parity with the generic dispatch
 # path, plus the AOT/trim-friendly contract (freeze! → per-route codegen via
-# `terminalfor`).
+# `getterminal`).
 
 import Mongoose: AbstractMiddleware, matchroute, freeze!, process,
-    terminalfor, isfrozen, RouteError, RequestContext
+    getterminal, isfrozen, RouteError, RequestContext
 
 mkreq(method, path) = Request(method, path, Dict{String,String}(),
     Pair{String,String}[], "")
@@ -134,8 +134,8 @@ end
             @test mg isa Mongoose.NoMatch
             continue
         end
-        @test (mf isa Mongoose.NotAllowed) == (mg isa Mongoose.NotAllowed)
-        if mf isa Mongoose.NotAllowed
+        @test (mf isa Mongoose.MethodMismatch) == (mg isa Mongoose.MethodMismatch)
+        if mf isa Mongoose.MethodMismatch
             @test mf.allowed == mg.allowed
             continue
         end
@@ -146,14 +146,14 @@ end
     end
 end
 
-@testset "Compiled dispatch: terminalfor contract" begin
+@testset "Compiled dispatch: getterminal contract" begin
     r = Router()
     get!(r, "/a", req -> text("a"))
     # Unfrozen routers fall back to the generic pipeline.
-    @test terminalfor(r, mkreq(:get, "/a")) === nothing
+    @test getterminal(r, mkreq(:get, "/a")) === nothing
     freeze!(r)
-    @test terminalfor(r, mkreq(:get, "/a")) !== nothing
-    @test terminalfor(r, mkreq(:get, "/missing")) !== nothing  # 404 terminal
+    @test getterminal(r, mkreq(:get, "/a")) !== nothing
+    @test getterminal(r, mkreq(:get, "/missing")) !== nothing  # 404 terminal
 
     # Empty frozen router → 404 through the compiled path.
     re = freeze!(Router())

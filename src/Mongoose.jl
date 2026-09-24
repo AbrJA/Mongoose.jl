@@ -6,7 +6,7 @@ import JSON
 using CodecZlib
 
 # The facade exports the user-facing surface only. Extension protocols (router:
-# matchroute/gethandler/…; pipeline: terminalfor/runpipeline/…; formats:
+# matchroute/gethandler/…; pipeline: getterminal/runpipeline/…; formats:
 # encode/decode/mime; string utilities) live in Kernel — implementers use
 # `import Mongoose: X` or `Mongoose.Kernel.X`.
 export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
@@ -51,7 +51,7 @@ import .Kernel: route!, ws!, post!, patch!, options!, head!,
     submit!, start!, stop!, haspending,
     supportsws, supportstls, supportsstream,
     freeze!, isfrozen, matchroute, hasroute, haswsroutes, getwsendpoint,
-    attach!, terminalfor
+    attach!, getterminal
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. FFI Layer (C constants, structs, bindings)

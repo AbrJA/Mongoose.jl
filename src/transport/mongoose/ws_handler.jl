@@ -32,7 +32,7 @@ end
 @inline function ws_register!(server::AbstractServer, uri::String, conn::MgConnection)
     id = Int(Threads.atomic_add!(server.runtime.conn_seq, UInt64(1)) + UInt64(1))
     lock(server.runtime.ws_lock) do
-        server.runtime.ws_clients[id] = WSConn(uri, time(), false)
+        server.runtime.ws_clients[id] = Kernel.WSConn(uri, time(), false)
         server.runtime.ws_gen_ids[conn] = id
     end
     # Track the connection so idle sweeps can send close frames in sync mode
@@ -134,13 +134,13 @@ function on_ws_message(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
         # Async: submit the dispatch as a job to the worker pool
         exec = server.executor
         server.runtime.connections[conn_id] = conn
-        tagged = Tagged(conn_id, Intent(ws_msg, uri))
+        tagged = Kernel.Tagged(conn_id, Kernel.Intent(ws_msg, uri))
         if !submit!(exec, () -> invoke_ws(server, tagged))
             @log_warn "WebSocket message dropped: worker queue full conn_id=$conn_id"
         end
     else
         # Sync: handle inline
-        tagged = Tagged(conn_id, Intent(ws_msg, uri))
+        tagged = Kernel.Tagged(conn_id, Kernel.Intent(ws_msg, uri))
         result = invoke_ws(server, tagged)
         if result !== nothing
             send_ws_frame!(conn, result.payload)
@@ -229,25 +229,25 @@ function broadcastws(server::AbstractServer, path::AbstractString, data::Abstrac
     frame = Message(String(data))
     for id in ids
         isopen(exec.replies) || break
-        put!(exec.replies, Tagged{Union{Response,StreamResponse,Message}}(id, frame))
+        put!(exec.replies, Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, frame))
     end
     return nothing
 end
 
 # --- WS Dispatch ---
 
-function invoke_ws(server::AbstractServer, request::Tagged{Intent})
+function invoke_ws(server::AbstractServer, request::Kernel.Tagged{Kernel.Intent})
     endpoint = getwsendpoint(server.router, request.payload.uri)
     endpoint === nothing && return nothing
     return call_ws_endpoint(endpoint, request)
 end
 
-tag_ws(id, res::Message)        = Tagged{Union{Response,StreamResponse,Message}}(id, res)
+tag_ws(id, res::Message)        = Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, res)
 tag_ws(id, res::String)         = tag_ws(id, Message(res))
 tag_ws(id, res::Vector{UInt8})  = tag_ws(id, Message(res))
 tag_ws(id, ::Nothing)           = nothing
 
-function call_ws_endpoint(endpoint::WSEndpoint, request::Tagged{Intent})
+function call_ws_endpoint(endpoint::WSEndpoint, request::Kernel.Tagged{Kernel.Intent})
     try
         res = endpoint.on_message(request.payload.body)
         return tag_ws(request.id, res)

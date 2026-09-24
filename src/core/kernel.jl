@@ -26,7 +26,7 @@ include("status.jl")        # statusreason
 include("request.jl")       # Request, Headers, form/multipart/query helpers
 include("response.jl")      # Response, StreamResponse, Cookie
 include("errors.jl")        # RouteError/ServerError/BindError, HTTPError hierarchy
-include("ws_types.jl")      # Message, Intent, WSEndpoint, Tagged, WSConn
+include("ws_types.jl")      # Message, WSEndpoint (+ internal Intent/Tagged/WSConn)
 include("validation.jl")    # validate(), ValidationError
 
 include("pipeline.jl")      # AbstractMiddleware, asmiddleware, runpipeline
@@ -67,13 +67,13 @@ export AbstractRequest, Request, Headers, asheaders, mergeheaders, context, form
     UnavailableForLegalReasonsError, InternalServerError,
     BadGatewayError, ServiceUnavailableError, GatewayTimeoutError,
     validate, ValidationError,
-    Message, Intent, WSEndpoint, WSConn, Tagged,
-    AbstractRouter, Router, MethodMap, RouteResult, Matched, NoMatch, NotAllowed,
+    Message, WSEndpoint,
+    AbstractRouter, Router, MethodMap, RouteResult, Matched, NoMatch, MethodMismatch,
     SingleEndpoint, matchroute, hasroute,
     gethandler, getendpoint, sethandler!, haswsroutes, getwsendpoint,
     route!, ws!, group, group!, RouteGroup, mount!, post!, patch!, options!, head!,
-    Endpoint, errorresponse, process, RequestContext, freeze!, isfrozen, terminalfor,
-    invokeendpoint, endpointmiddleware,
+    Endpoint, errorresponse, process, RequestContext, freeze!, isfrozen, getterminal,
+    invokeendpoint, scopedmiddleware,
     AbstractMiddleware, PathFilter, runpipeline, FunctionMiddleware, asmiddleware, asmiddlewares, attach!,
     AbstractExecutor, SyncExecutor, FakeExecutor, run!, submit!, start!, stop!,
     AbstractTransport, supportsws, supportstls, supportsstream,

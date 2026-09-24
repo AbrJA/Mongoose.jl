@@ -140,7 +140,7 @@ mutable struct RunState
     url::Union{Nothing,String}
     manager::Manager
     tls::Union{Nothing,TLSConfig}
-    ws_clients::Dict{Int,WSConn}
+    ws_clients::Dict{Int,Kernel.WSConn}
     ws_gen_ids::Dict{Ptr{Cvoid},Int}     # connection pointer → generation id (WS)
     ws_lock::Threads.SpinLock     # guards ws_clients/ws_gen_ids
     id_seq::Threads.Atomic{UInt64}       # X-Request-Id sequence
@@ -155,7 +155,7 @@ mutable struct RunState
 end
 
 RunState() = RunState(Threads.Atomic{Bool}(false), nothing, nothing, Manager(empty=true), nothing,
-    Dict{Int,WSConn}(), Dict{Ptr{Cvoid},Int}(), Threads.SpinLock(),
+    Dict{Int,Kernel.WSConn}(), Dict{Ptr{Cvoid},Int}(), Threads.SpinLock(),
     Threads.Atomic{UInt64}(0), Threads.Atomic{UInt64}(0),
     Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(),
     Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(),

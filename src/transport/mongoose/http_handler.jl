@@ -165,7 +165,7 @@ end
 # --- Async job builders (worker-pool payloads) ---
 
 """
-    _http_job(server, id, request) → Tagged
+    _http_job(server, id, request) → Kernel.Tagged
 
 Build the reply for a buffered/streamed HTTP request, adding `X-Request-Id`.
 """
@@ -180,20 +180,20 @@ function _http_job(server::AbstractServer, id::Int, req::Request)
         end
         _echo_conn_close!(res, req)
         if res isa StreamResponse
-            return Tagged{Union{Response,StreamResponse,Message}}(id, res)
+            return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, res)
         end
         resp = mergeheaders(res, ["X-Request-Id" => rid])
-        return Tagged{Union{Response,StreamResponse,Message}}(id, resp)
+        return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, resp)
     catch e
         # Anything outside the handler's own try (post-processing) still gets a
         # reply, so the connection entry is cleaned up and the client answered.
         @log_error "Request job error uri=$(req.uri)" e catch_backtrace()
-        return Tagged{Union{Response,StreamResponse,Message}}(id, errorresponse(server.errors, req, 500))
+        return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, errorresponse(server.errors, req, 500))
     end
 end
 
 """
-    _http_job_timed(server, id, request, timeout) → Tagged
+    _http_job_timed(server, id, request, timeout) → Kernel.Tagged
 
 Run `_http_job` under a `request_timeout_ms` deadline; on timeout reply 504 and
 let the still-running task finish in the background. The task is tracked in
@@ -211,12 +211,12 @@ function _http_job_timed(server::AbstractServer, id::Int, req::Request, timeout:
             # A job that failed outside the handler's own try still gets a reply
             # so the connection entry is cleaned up and the client is answered.
             @log_error "Request job failed uri=$(req.uri)" e catch_backtrace()
-            Tagged{Union{Response,StreamResponse,Message}}(id, errorresponse(server.errors, req, 500))
+            Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, errorresponse(server.errors, req, 500))
         end
     end
     bg_track!(server, t)
     @log_warn "Request timeout uri=$(req.uri)"
-    return Tagged{Union{Response,StreamResponse,Message}}(id, errorresponse(server.errors, 504))
+    return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, errorresponse(server.errors, 504))
 end
 
 # --- HTTP dispatch (thin transport wrapper over the core pipeline) ---

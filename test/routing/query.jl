@@ -30,7 +30,7 @@ function Mongoose.matchroute(r::DictRouter, method::Symbol, path::AbstractString
     m = get(r.routes, String(path), nothing)
     m === nothing && return Mongoose.NoMatch()
     ep = Mongoose.getendpoint(m, method)
-    ep === nothing && return Mongoose.NotAllowed(Mongoose.method_bitmask(m))
+    ep === nothing && return Mongoose.MethodMismatch(Mongoose.method_bitmask(m))
     return Mongoose.Matched(ep, m, ())
 end
 

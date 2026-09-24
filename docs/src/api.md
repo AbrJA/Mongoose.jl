@@ -42,7 +42,7 @@ haswsroutes
 getwsendpoint
 Matched
 NoMatch
-NotAllowed
+MethodMismatch
 RouteResult
 MethodMap
 post!
@@ -64,9 +64,9 @@ head!
 ```@docs
 process
 RequestContext
-terminalfor
+getterminal
 invokeendpoint
-endpointmiddleware
+scopedmiddleware
 errorresponse
 runpipeline
 asmiddleware

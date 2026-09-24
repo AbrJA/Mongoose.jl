@@ -439,7 +439,7 @@ four gates plus before/after numbers in the commit message.
 - [x] **A2** Allocation assertions in the test suite: `@allocated` ceilings for
   `process` on a frozen fixed route (target ≤ 384 B), frozen param (≤ 720 B),
   and the middleware tuple path (≤ 1 KB with cors+etag). Fail on regression.
-- [x] **A3** `@inferred` tests for the hot helpers (`matchroute`, `terminalfor`,
+- [x] **A3** `@inferred` tests for the hot helpers (`matchroute`, `getterminal`,
   `mergeheaders`, `asheaders`, `parse_method`, `statusreason`) and a JET
   `report_opt` baseline for `process`/`_resolve_terminal`.
 - [x] **A4** CI job running A1–A3 with generous thresholds (advisory on macOS,

@@ -12,7 +12,7 @@
       `middleware` to a vector before delegating, so a router may assume an
       `AbstractVector`)
     - `matchroute(r::R, method, path)`                → a `RouteResult`
-      (`Matched` / `NoMatch` / `NotAllowed{allowed}` — 404/405 and the
+      (`Matched` / `NoMatch` / `MethodMismatch{allowed}` — 404/405 and the
       `Allow` set are resolved by the router at match time)
     - `hasroute(r::R, path)`                  → `Bool` (path owned, catch-all excluded)
       (no `"*"` fallback — route ownership check for static serving)
@@ -45,7 +45,7 @@ abstract type AbstractRouter end
 
 """
     RouteResult — outcome of `matchroute`: `Matched`, `NoMatch`, or
-    `NotAllowed{allowed}` (the last carries the route's method bitmask,
+    `MethodMismatch{allowed}` (the last carries the route's method bitmask,
     so 405 `Allow` needs no secondary lookup).
 """
 abstract type RouteResult end
@@ -68,13 +68,13 @@ end
 struct NoMatch <: RouteResult end
 
 """
-    NotAllowed{allowed::UInt8} <: RouteResult
+    MethodMismatch{allowed::UInt8} <: RouteResult
 
 The path matched but the method isn't registered; `allowed` is a bitmask of
 served methods (HEAD is implied by GET). Serialize with
 `allow_from_bitmask` for the RFC 9110 §15.5.6 `Allow` header.
 """
-struct NotAllowed <: RouteResult
+struct MethodMismatch <: RouteResult
     allowed::UInt8
 end
 
@@ -133,7 +133,7 @@ Call the matched endpoint's handler with the route parameters. The built-in
 are none) — that method lives in `process.jl`, after `Endpoint` is defined.
 
 Custom routers that carry their own endpoint type implement this method (and
-[`endpointmiddleware`](@ref)) instead of forcing their endpoints into
+[`scopedmiddleware`](@ref)) instead of forcing their endpoints into
 `Mongoose.Endpoint`.
 """
 function invokeendpoint(ep, ::Request, params)
@@ -141,13 +141,13 @@ function invokeendpoint(ep, ::Request, params)
 end
 
 """
-    endpointmiddleware(endpoint) → Tuple
+    scopedmiddleware(endpoint) → Tuple
 
 Scoped middleware owned by a matched endpoint (empty tuple for custom endpoint
 types). Paired with [`invokeendpoint`](@ref) for custom routers; the built-in
 `Endpoint` stores a captured tuple.
 """
-endpointmiddleware(ep) = ()
+scopedmiddleware(ep) = ()
 
 # --- Optional capabilities: safe defaults ---
 
@@ -185,7 +185,7 @@ isfrozen(::AbstractRouter) = false
 # ── Compiled-dispatch capability (optional) ──────────────────────────────
 
 """
-    terminalfor(router, request) → Union{Nothing,Function}
+    getterminal(router, request) → Union{Nothing,Function}
 
 Optional compiled-dispatch capability. A frozen `Router` that compiled its
 route table returns a **pre-built terminal** `(req) → Response` for the
@@ -196,4 +196,4 @@ This is the contract-by-fallback seam that lets the pipeline skip the
 per-request closure/concat allocation when the router is compiled, without
 forcing every router implementation to understand compilation.
 """
-terminalfor(::AbstractRouter, ::Request) = nothing
+getterminal(::AbstractRouter, ::Request) = nothing

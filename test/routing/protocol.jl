@@ -55,7 +55,7 @@ end
 
 @testset "Custom endpoint type (invokeendpoint seam)" begin
     # A router may carry its own endpoint type as long as it implements
-    # `invokeendpoint` (and optionally `endpointmiddleware`).
+    # `invokeendpoint` (and optionally `scopedmiddleware`).
     struct MyEndpoint
         handler::Function
     end
