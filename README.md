@@ -233,6 +233,7 @@ app = App(;
     header_timeout_ms  = 0,          # close conns that stall before headers
     body_timeout_ms    = 0,          # max time to receive a request body
     max_header_bytes   = 64 * 1024,  # request-header cap
+    max_bg_tasks       = 0,          # 0 = auto (4×workers); runaway cap
     max_connections    = 0,          # 0 = unlimited
     ws_max_frame_bytes = 1_048_576,
     ws_idle_timeout_ms = 0,          # 0 = disabled

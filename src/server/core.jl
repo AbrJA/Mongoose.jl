@@ -89,6 +89,7 @@ struct ServerConfig
     header_timeout_ms::Int
     body_timeout_ms::Int
     max_header_bytes::Int
+    max_bg_tasks::Int
     max_connections::Int
     workers::Int
     queue_size::Int
@@ -103,6 +104,7 @@ struct ServerConfig
                           header_timeout_ms::Integer=0,
                           body_timeout_ms::Integer=0,
                           max_header_bytes::Integer=DEFAULT_MAX_HEADER_BYTES,
+                          max_bg_tasks::Integer=0,
                           max_connections::Integer=0,
                           workers::Integer=0,
                           queue_size::Integer=1024)
@@ -120,14 +122,17 @@ struct ServerConfig
         max_header_bytes >= 0 || throw(ServerError("max_header_bytes must be >= 0"))
         max_header_bytes <= C_RECV_CEILING_BYTES ||
             throw(ServerError("max_header_bytes must be <= $C_RECV_CEILING_BYTES bytes"))
+        max_bg_tasks >= 0 || throw(ServerError("max_bg_tasks must be >= 0"))
         max_connections >= 0 || throw(ServerError("max_connections must be >= 0"))
         workers >= 0 || throw(ServerError("workers must be >= 0"))
         workers > 0 && queue_size > 0 || workers == 0 ||
             throw(ServerError("queue_size must be > 0 when workers > 0"))
+        # 0 = auto: four runaways per worker (the concurrency budget).
+        bg_cap = max_bg_tasks == 0 ? 4 * max(Int(workers), 1) : Int(max_bg_tasks)
         new(Int(poll_timeout_ms), Int(max_body_bytes), Int(drain_timeout_ms),
             Int(request_timeout_ms), Int(ws_max_frame_bytes), Int(ws_idle_timeout_ms),
             Int(header_timeout_ms), Int(body_timeout_ms), Int(max_header_bytes),
-            Int(max_connections), Int(workers), Int(queue_size))
+            bg_cap, Int(max_connections), Int(workers), Int(queue_size))
     end
 end
 
@@ -196,6 +201,36 @@ function bg_prune!(server::AbstractServer)
     return nothing
 end
 
+"""
+    bg_count(server) → Int
+
+Number of tracked background tasks (runaway timed-out handlers, `background!`
+tasks). Lock-protected: callable from worker threads.
+"""
+function bg_count(server::AbstractServer)::Int
+    lock(server.runtime.bg_lock)
+    try
+        return length(server.runtime.bg_tasks)
+    finally
+        unlock(server.runtime.bg_lock)
+    end
+end
+
+"""
+    _bg_full(server) → Bool
+
+Admission control for `request_timeout_ms`. Timed-out handlers cannot be
+killed (Julia tasks are cooperative), so they are abandoned and tracked;
+once `max_bg_tasks` runaways accumulate, new timed requests are shed with
+`503` instead of piling up more tasks. Finished runaways are pruned first so
+a transient overrun does not shed.
+"""
+function _bg_full(server::AbstractServer)::Bool
+    server.config.max_bg_tasks > 0 || return false
+    bg_prune!(server)
+    return bg_count(server) >= server.config.max_bg_tasks
+end
+
 function bg_snapshot(server::AbstractServer)
     lock(server.runtime.bg_lock)
     try
@@ -232,6 +267,7 @@ end
     | `header_timeout_ms`    | `0`                | Close conns without complete headers   |
     | `body_timeout_ms`      | `0`                | Max time to receive a request body     |
     | `max_header_bytes`     | `64 KiB`           | Max request header size (0 = unlimited)|
+    | `max_bg_tasks`         | `4×workers`        | Runaway timed-out tasks before 503     |
     | `max_connections`      | `0`                | Max open connections (0 = unlimited)   |
     | `router`               | `Router()`         | Custom router instance                 |
     | `tls`                  | `nothing`          | `TLSConfig` for HTTPS                  |
@@ -311,6 +347,7 @@ function App(;
              header_timeout_ms::Integer=0,
              body_timeout_ms::Integer=0,
              max_header_bytes::Integer=DEFAULT_MAX_HEADER_BYTES,
+             max_bg_tasks::Integer=0,
              max_connections::Integer=0,
              router::R=Router(),
              tls::Union{Nothing,TLSConfig}=nothing,
@@ -320,7 +357,7 @@ function App(;
     cfg = ServerConfig(;
         poll_timeout_ms, max_body_bytes, drain_timeout_ms, request_timeout_ms,
         ws_max_frame_bytes, ws_idle_timeout_ms, header_timeout_ms, body_timeout_ms,
-        max_header_bytes, max_connections, workers, queue_size)
+        max_header_bytes, max_bg_tasks, max_connections, workers, queue_size)
 
     errs = Dict{Int,Union{Response,Function}}(k => v for (k, v) in errors)
     for code in keys(errs)
@@ -610,6 +647,7 @@ function attach!(mw::Metrics, server::AbstractServer)
         streams = length(server.runtime.streams),
         inflight = exec isa AsyncExecutor ? exec.inflight[] : 0,
         queue_depth = exec isa AsyncExecutor ? Base.n_avail(exec.calls) : 0,
+        bg_tasks = bg_count(server),
     )
     return mw
 end

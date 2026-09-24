@@ -192,6 +192,7 @@ function _renderstats(mw::Metrics)
             ("mongoose_active_streams", "In-flight streaming responses", st.streams),
             ("mongoose_executor_inflight", "Jobs currently executing", st.inflight),
             ("mongoose_executor_queue_depth", "Jobs waiting in the executor queue", st.queue_depth),
+            ("mongoose_bg_tasks", "Abandoned timed-out handler tasks", st.bg_tasks),
         )
             println(io, "# HELP ", name, " ", help)
             println(io, "# TYPE ", name, " gauge")
@@ -225,6 +226,7 @@ minimize lock contention under concurrent load.
 | `mongoose_active_streams` | gauge | in-flight streaming responses |
 | `mongoose_executor_inflight` | gauge | jobs currently executing |
 | `mongoose_executor_queue_depth` | gauge | jobs waiting in the executor queue |
+| `mongoose_bg_tasks` | gauge | abandoned timed-out handler tasks |
 
 Gauges are emitted once the middleware is registered (`use!` attaches the
 server); before that only the counter and histogram are exposed.

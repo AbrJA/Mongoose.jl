@@ -296,10 +296,21 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         # marking earlier would close the connection before the reply exists.
         conn_close_requested(req) && push!(server.runtime.pending_close, conn)
         exec = server.executor
+        timeout = server.config.request_timeout_ms
+
+        # Timed-out handlers cannot be killed; once the runaway budget is
+        # exhausted, shed new timed requests rather than accumulate more.
+        if timeout > 0 && _bg_full(server)
+            res = _echo_conn_close!(errorresponse(server.errors, 503), req)
+            _has_conn_header(res.headers) || append!(res.headers, ["Retry-After" => "1"])
+            @log_warn "Request shed: runaway timed-out tasks reached $(server.config.max_bg_tasks)"
+            send_http_response!(conn, res::Response, resolve_request_id(req, server))
+            return nothing
+        end
+
         id = Int(Threads.atomic_add!(server.runtime.conn_seq, UInt64(1)) + UInt64(1))
         server.runtime.connections[id] = conn
 
-        timeout = server.config.request_timeout_ms
         job = if timeout > 0
             () -> _http_job_timed(server, id, req, timeout)
         else

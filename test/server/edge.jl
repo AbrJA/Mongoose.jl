@@ -245,3 +245,43 @@ end
                        retry=false).status == 200
     end
 end
+
+@testset "runaway timed-out tasks are capped and shed" begin
+    gate = Channel{Nothing}(2)
+    app = App(workers=2, request_timeout_ms=100, max_bg_tasks=2, drain_timeout_ms=100)
+    get!(app, "/hang") do req
+        take!(gate)          # blocks until the test releases it
+        text("late")
+    end
+    get!(app, "/ping") do req; text("pong") end
+
+    with_server(app) do port
+        # Two handlers time out (504) and become tracked runaways.
+        for _ in 1:2
+            r = HTTP.get("http://127.0.0.1:$port/hang"; status_exception=false,
+                         retry=false, readtimeout=5)
+            @test r.status == 504
+        end
+        @test wait_until(timeout=5.0) do
+            lock(app.runtime.bg_lock) do
+                length(app.runtime.bg_tasks) >= 2
+            end
+        end
+
+        # Budget exhausted: further timed requests are shed with 503.
+        r = HTTP.get("http://127.0.0.1:$port/ping"; status_exception=false, retry=false)
+        @test r.status == 503
+        @test HTTP.header(r, "Retry-After") == "1"
+
+        # Release the runaways; pruning restores normal service.
+        put!(gate, nothing)
+        put!(gate, nothing)
+        @test wait_until(timeout=6.0) do
+            lock(app.runtime.bg_lock) do
+                all(istaskdone, app.runtime.bg_tasks)
+            end
+        end
+        r2 = HTTP.get("http://127.0.0.1:$port/ping"; status_exception=false, retry=false)
+        @test r2.status == 200
+    end
+end

@@ -66,6 +66,13 @@ start!(app; port=8080)        # binds, then freezes/compiles the route table
   pipeline; route-scoped middleware adds no allocation over an unscoped route.
 - **DI is typed.** `App(services=(db=pool,))` sets a typed `Request` field;
   read it with `withservices(req) do svcs … end` for type-stable access.
+- **Timeouts bound the client, not the handler.** `request_timeout_ms` answers
+  `504` after the deadline, but Julia tasks cannot be killed: the handler keeps
+  running and is tracked as a runaway. Once `max_bg_tasks` (default: 4×workers)
+  runaways accumulate, new timed requests are shed with `503` +
+  `Retry-After`. Make handlers self-bounding (DB/HTTP client timeouts,
+  cancellation flags) for real resource limits; `mongoose_bg_tasks` exposes the
+  runaway gauge.
 - **Limits protect the loop.** `header_timeout_ms` closes clients that stall
   before sending a request; `max_connections` refuses beyond the cap; bodies
   over `max_body_bytes` answer `413`. Configured body limits above the C

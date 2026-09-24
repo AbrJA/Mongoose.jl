@@ -35,6 +35,9 @@ end
     limits = App(body_timeout_ms=500, max_header_bytes=2048)
     @test limits.config.body_timeout_ms == 500
     @test limits.config.max_header_bytes == 2048
+    @test App(workers=2).config.max_bg_tasks == 8          # auto: 4×workers
+    @test App(workers=3, max_bg_tasks=5).config.max_bg_tasks == 5
+    @test_throws Mongoose.ServerError App(max_bg_tasks=-1)
     @test App().config.max_header_bytes == Mongoose.DEFAULT_MAX_HEADER_BYTES
     @test_throws Mongoose.ServerError App(body_timeout_ms=-1)
     @test_throws Mongoose.ServerError App(max_header_bytes=-1)

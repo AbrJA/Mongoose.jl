@@ -525,6 +525,12 @@ four gates plus before/after numbers in the commit message.
 
 ## Changelog
 
+- **Sep 23 — Runaway-task fix (#5)**: `_http_job_timed` abandons over-deadline
+  handlers (Julia tasks cannot be killed). Added `max_bg_tasks` (default auto
+  `4×workers`) admission control: once the runaway budget is reached, new timed
+  requests get `503` + `Retry-After`; `mongoose_bg_tasks` gauge added; the
+  timeout contract documented (client latency, not handler resources).
+  Tests: cap + shed + recovery. *commit: this one*
 - **Sep 23 — Post-campaign hardening (#2/#3)**: `body_timeout_ms` bounds
   stalled request bodies (swept like the header timeout; `MG_EV_HTTP_HDRS`
   fires on every poll while a body is pending, so the handler is idempotent

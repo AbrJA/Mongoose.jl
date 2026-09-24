@@ -63,6 +63,13 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - `Logger` access-logs throwing handlers as 500 and writes each line atomically.
 
 ### Changed
+- `request_timeout_ms` now bounds the **client's** wait only: timed-out
+  handlers cannot be killed (Julia tasks are cooperative), so they are
+  abandoned and tracked. `max_bg_tasks` (default auto: 4×workers) caps the
+  runaways; once reached, new timed requests are shed with `503` +
+  `Retry-After` instead of exhausting the thread pool. The
+  `mongoose_bg_tasks` gauge exposes the current count. Handlers should be
+  self-bounding (DB/HTTP client timeouts) for real resource limits.
 - New hardening knobs: `body_timeout_ms` (0 = disabled) bounds how long a
   client may take to deliver a request body, and `max_header_bytes`
   (default **64 KiB**, 0 = unlimited) caps request headers — oversized
