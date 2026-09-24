@@ -525,6 +525,17 @@ four gates plus before/after numbers in the commit message.
 
 ## Changelog
 
+- **Sep 24 — Tier-1 hardening (WS backpressure)**: proved and fixed two WS
+  defects of the same class as the SSE bug — (1) `send_ws_frame!` had no cap,
+  so a slow reader buffered 20 MB for 20 MB of pushes; (2) `broadcastws`
+  blocked on the bounded reply queue (5.7 s for 20k frames). Pushes now use
+  `send_buffer_bytes` (renamed from `stream_buffer_bytes`, covers streams + WS)
+  and drop with `mongoose_ws_frames_dropped`; `_offer_reply!` is non-blocking
+  (`Base.n_avail` vs capacity — `isready` is a consumer predicate, the bug that
+  also silently dropped every example EventBus event). Verified: normal reader
+  receives all frames / 0 drops; slow reader pinned at the cap, 19,968 drops,
+  flood 0.02 s. 3816 ×2 tests + 81 acceptance + Aqua/JET + docs.
+  *commit: this one*
 - **Sep 23 — Application-layer campaign (round 2)**: independently probed
   static traversal, WS fragmentation/limits/broadcast/origin, SSE slow
   consumers, multipart fuzzing, IPv6, per-IP ratelimit, sustained overload

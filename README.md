@@ -204,6 +204,10 @@ ws!(app, "/chat";
 broadcastws(app, "/chat", "Server announcement")
 ```
 
+> Slow WS readers are protected too: pushes beyond `send_buffer_bytes`
+> (default 1 MiB) unsent are dropped (not buffered), and
+> `mongoose_ws_frames_dropped` counts them — clients resync on reconnect.
+>
 > Note: unmasked client frames are tolerated (Mongoose's parser does not
 > enforce RFC 6455 §5.1 masking). Browsers always mask and there is no
 > server-side security impact.
@@ -233,6 +237,7 @@ app = App(;
     header_timeout_ms  = 0,          # close conns that stall before headers
     body_timeout_ms    = 0,          # max time to receive a request body
     max_header_bytes   = 64 * 1024,  # request-header cap
+    send_buffer_bytes  = 1_048_576,  # unsent bytes/conn (streams + WS)
     max_bg_tasks       = 0,          # 0 = auto (4×workers); runaway cap
     max_connections    = 0,          # 0 = unlimited
     ws_max_frame_bytes = 1_048_576,

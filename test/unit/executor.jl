@@ -63,3 +63,12 @@ end
     end
     @test ok == :ok
 end
+
+@testset "AsyncExecutor reply offer is non-blocking" begin
+    exec = AsyncExecutor(1, 1)                      # no workers: fully deterministic
+    tagged = Mongoose.Kernel.Tagged{Union{Response,StreamResponse,Message}}(1, Message("x"))
+    @test Mongoose._offer_reply!(exec, tagged) === true
+    @test Mongoose._offer_reply!(exec, tagged) === false   # full → caller drops
+    @test take!(exec.replies) === tagged
+    @test Mongoose._offer_reply!(exec, tagged) === true
+end

@@ -13,6 +13,16 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- **WebSocket pushes are bounded and non-blocking**: a slow reader used to grow
+  the connection's send buffer without bound (measured: 20 MB buffered for
+  20 MB of pushes) and `broadcastws` stalled on the bounded reply queue
+  (measured: 5.7 s for 20k frames). Pushes now respect `send_buffer_bytes`
+  (formerly `stream_buffer_bytes`, now covering streams **and** WS) and are
+  dropped with a `mongoose_ws_frames_dropped` gauge when the queue is full or
+  the cap is reached (measured: 0.02 s, buffer pinned at the cap).
+- **Producer-side channel checks**: `_offer_reply!`/the example EventBus used
+  `isready` (a *consumer* predicate) to test put-ability, silently dropping
+  every queued reply/event. Both now compare `Base.n_avail` to capacity.
 - **Static file serving no longer exposes dotfiles** (`.env`, `.git`, …);
   `.well-known` stays allowed (ACME/`security.txt`). Path checks now decode
   percent-escapes first, so encoded traversal and encoded dotfiles are
@@ -89,8 +99,9 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   `Retry-After` instead of exhausting the thread pool. The
   `mongoose_bg_tasks` gauge exposes the current count. Handlers should be
   self-bounding (DB/HTTP client timeouts) for real resource limits.
-- `stream_buffer_bytes` (default 1 MiB, 0 = unlimited) caps unsent streamed
-  data per connection; queue-full and shed `503`s now carry `Retry-After: 1`.
+- `send_buffer_bytes` (default 1 MiB, 0 = unlimited; renamed from
+  `stream_buffer_bytes`) caps unsent data per connection for **streams and
+  WebSocket pushes**; queue-full and shed `503`s carry `Retry-After: 1`.
 - New hardening knobs: `body_timeout_ms` (0 = disabled) bounds how long a
   client may take to deliver a request body, and `max_header_bytes`
   (default **64 KiB**, 0 = unlimited) caps request headers — oversized

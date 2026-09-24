@@ -68,3 +68,13 @@ end
         @test contains(body, "http_requests_total{method=\"GET\",status=\"418\"} 1")
     end
 end
+
+@testset "WS drop gauge is exposed" begin
+    s = App()
+    get!(s, "/") do req; text("ok") end
+    use!(s, metrics())
+    with_server(s) do port
+        body = String(HTTP.get("http://127.0.0.1:$port/metrics"; retry=false).body)
+        @test contains(body, "mongoose_ws_frames_dropped 0")
+    end
+end

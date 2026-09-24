@@ -283,3 +283,32 @@ end
         close(sock)
     end
 end
+
+@testset "slow WS reader: pushes are capped and counted" begin
+    cap = 64 * 1024
+    s = App(workers=2, send_buffer_bytes=cap)
+    ws!(s, "/ws"; on_message=msg -> Message(msg.data))
+    get!(s, "/flood") do req
+        for _ in 1:500
+            broadcastws(s, "/ws", "x"^1024)
+        end
+        text("ok")
+    end
+
+    with_server(s) do port
+        sock = Sockets.connect("127.0.0.1", port)
+        write(sock, "GET /ws HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\n" *
+                    "Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" *
+                    "Sec-WebSocket-Version: 13\r\n\r\n")
+        @test contains(readuntil(sock, "\r\n\r\n"), "101")
+        # Do not read: 500 KB of pushes must not grow the send buffer without bound.
+        r = HTTP.get("http://127.0.0.1:$port/flood"; status_exception=false, retry=false)
+        @test r.status == 200
+        @test wait_until(timeout=5.0) do
+            s.runtime.ws_dropped[] > 0
+        end
+        conn = first(keys(s.runtime.ws_gen_ids))
+        @test Mongoose._send_buffered(conn) <= cap + 64 * 1024
+        close(sock)
+    end
+end

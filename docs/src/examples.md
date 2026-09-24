@@ -555,6 +555,7 @@ app = App(;
     header_timeout_ms  = 10_000,          # close conns that stall before headers
     body_timeout_ms    = 30_000,          # max time to receive a request body
     max_header_bytes   = 64 * 1024,       # request-header cap
+    send_buffer_bytes  = 1_048_576,       # unsent bytes/conn (streams + WS)
     max_bg_tasks       = 0,               # 0 = auto (4×workers)
     max_connections    = 10_000,          # refuse beyond this many open conns
 )

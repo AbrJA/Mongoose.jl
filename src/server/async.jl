@@ -170,6 +170,17 @@ end
 dispatch_replies!(app::App)::Bool = _dispatch_replies!(app.executor, app)
 _dispatch_replies!(::SyncExecutor, app::App)::Bool = false
 
+# Non-blocking offer: true when the reply was queued, false when the bounded
+# queue is full. Callers (broadcastws) drop the frame instead of stalling the
+# caller on a full queue. Note `isready` is a *consumer* predicate (a value is
+# available to take!); producers must compare the buffered count to capacity.
+@inline function _offer_reply!(exec::AsyncExecutor, reply)::Bool
+    isopen(exec.replies) || return false
+    Base.n_avail(exec.replies) < exec.queue_size || return false
+    put!(exec.replies, reply)
+    return true
+end
+
 function _dispatch_replies!(exec::AsyncExecutor, app::App)::Bool
     did_ws = false
     while isopen(exec.replies) && isready(exec.replies)
@@ -188,11 +199,19 @@ function _dispatch_replies!(exec::AsyncExecutor, app::App)::Bool
             try send_stream_response!(app, conn, reply.payload) catch e; @log_error "Stream error" e catch_backtrace() end
             delete!(app.runtime.connections, reply.id)
         else  # Message (WebSocket)
-            try
-                send_ws_frame!(conn, reply.payload)
-                did_ws = true
-            catch e
-                @log_error "WebSocket send error" e catch_backtrace()
+            cap = app.config.send_buffer_bytes
+            if cap > 0 && _send_buffered(conn) >= cap
+                # Slow reader: drop the frame instead of growing the send
+                # buffer without bound. The client resyncs on reconnect and
+                # `mongoose_ws_frames_dropped` makes it observable.
+                Threads.atomic_add!(app.runtime.ws_dropped, UInt64(1))
+            else
+                try
+                    send_ws_frame!(conn, reply.payload)
+                    did_ws = true
+                catch e
+                    @log_error "WebSocket send error" e catch_backtrace()
+                end
             end
         end
     end

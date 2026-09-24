@@ -228,8 +228,11 @@ function broadcastws(server::AbstractServer, path::AbstractString, data::Abstrac
     end
     frame = Message(String(data))
     for id in ids
-        isopen(exec.replies) || break
-        put!(exec.replies, Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, frame))
+        tagged = Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, frame)
+        # Non-blocking: a full reply queue drops the frame for that client
+        # rather than stalling the caller (which may be a request handler).
+        _offer_reply!(exec, tagged) ||
+            Threads.atomic_add!(server.runtime.ws_dropped, UInt64(1))
     end
     return nothing
 end

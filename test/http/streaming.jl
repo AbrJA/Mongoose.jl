@@ -130,7 +130,7 @@ end
 
 @testset "slow consumer backpressure caps buffered bytes" begin
     cap = 64 * 1024
-    s = App(workers=2, stream_buffer_bytes=cap)
+    s = App(workers=2, send_buffer_bytes=cap)
     get!(s, "/events") do req
         sse(req) do w
             for i in 1:20000

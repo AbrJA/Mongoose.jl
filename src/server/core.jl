@@ -89,7 +89,7 @@ struct ServerConfig
     header_timeout_ms::Int
     body_timeout_ms::Int
     max_header_bytes::Int
-    stream_buffer_bytes::Int
+    send_buffer_bytes::Int
     max_bg_tasks::Int
     max_connections::Int
     workers::Int
@@ -105,7 +105,7 @@ struct ServerConfig
                           header_timeout_ms::Integer=0,
                           body_timeout_ms::Integer=0,
                           max_header_bytes::Integer=DEFAULT_MAX_HEADER_BYTES,
-                          stream_buffer_bytes::Integer=DEFAULT_STREAM_BUFFER_BYTES,
+                          send_buffer_bytes::Integer=DEFAULT_SEND_BUFFER_BYTES,
                           max_bg_tasks::Integer=0,
                           max_connections::Integer=0,
                           workers::Integer=0,
@@ -124,7 +124,7 @@ struct ServerConfig
         max_header_bytes >= 0 || throw(ServerError("max_header_bytes must be >= 0"))
         max_header_bytes <= C_RECV_CEILING_BYTES ||
             throw(ServerError("max_header_bytes must be <= $C_RECV_CEILING_BYTES bytes"))
-        stream_buffer_bytes >= 0 || throw(ServerError("stream_buffer_bytes must be >= 0"))
+        send_buffer_bytes >= 0 || throw(ServerError("send_buffer_bytes must be >= 0"))
         max_bg_tasks >= 0 || throw(ServerError("max_bg_tasks must be >= 0"))
         max_connections >= 0 || throw(ServerError("max_connections must be >= 0"))
         workers >= 0 || throw(ServerError("workers must be >= 0"))
@@ -135,7 +135,7 @@ struct ServerConfig
         new(Int(poll_timeout_ms), Int(max_body_bytes), Int(drain_timeout_ms),
             Int(request_timeout_ms), Int(ws_max_frame_bytes), Int(ws_idle_timeout_ms),
             Int(header_timeout_ms), Int(body_timeout_ms), Int(max_header_bytes),
-            Int(stream_buffer_bytes), bg_cap, Int(max_connections), Int(workers), Int(queue_size))
+            Int(send_buffer_bytes), bg_cap, Int(max_connections), Int(workers), Int(queue_size))
     end
 end
 
@@ -169,6 +169,7 @@ mutable struct RunState
     conn_addr::Dict{Ptr{Cvoid},String}   # formatted peer IP, one per connection
     pending_close::Set{Ptr{Cvoid}}       # async replies to mark draining after send
     early_rejected::Set{Ptr{Cvoid}}      # oversize requests already answered (413)
+    ws_dropped::Threads.Atomic{UInt64}   # WS pushes dropped (queue full / send cap)
     bg_tasks::Vector{Task}
     bg_lock::Threads.SpinLock            # guards bg_tasks (workers push)
 end
@@ -178,7 +179,8 @@ RunState() = RunState(Threads.Atomic{Bool}(false), nothing, nothing, Manager(emp
     Threads.Atomic{UInt64}(0), Threads.Atomic{UInt64}(0),
     Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(),
     Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(),
-    Dict{Ptr{Cvoid},String}(), Set{Ptr{Cvoid}}(), Set{Ptr{Cvoid}}(), Task[], Threads.SpinLock())
+    Dict{Ptr{Cvoid},String}(), Set{Ptr{Cvoid}}(), Set{Ptr{Cvoid}}(),
+    Threads.Atomic{UInt64}(0), Task[], Threads.SpinLock())
 
 # --- Background task tracking ---
 # Workers push timed-out request tasks; the event loop prunes completed ones on
@@ -270,7 +272,7 @@ end
     | `header_timeout_ms`    | `0`                | Close conns without complete headers   |
     | `body_timeout_ms`      | `0`                | Max time to receive a request body     |
     | `max_header_bytes`     | `64 KiB`           | Max request header size (0 = unlimited)|
-    | `stream_buffer_bytes`  | `1 MiB`            | Unsent stream bytes before backpressure|
+    | `send_buffer_bytes`    | `1 MiB`            | Unsent bytes per conn (streams + WS)   |
     | `max_bg_tasks`         | `4×workers`        | Runaway timed-out tasks before 503     |
     | `max_connections`      | `0`                | Max open connections (0 = unlimited)   |
     | `router`               | `Router()`         | Custom router instance                 |
@@ -351,7 +353,7 @@ function App(;
              header_timeout_ms::Integer=0,
              body_timeout_ms::Integer=0,
              max_header_bytes::Integer=DEFAULT_MAX_HEADER_BYTES,
-             stream_buffer_bytes::Integer=DEFAULT_STREAM_BUFFER_BYTES,
+             send_buffer_bytes::Integer=DEFAULT_SEND_BUFFER_BYTES,
              max_bg_tasks::Integer=0,
              max_connections::Integer=0,
              router::R=Router(),
@@ -362,7 +364,7 @@ function App(;
     cfg = ServerConfig(;
         poll_timeout_ms, max_body_bytes, drain_timeout_ms, request_timeout_ms,
         ws_max_frame_bytes, ws_idle_timeout_ms, header_timeout_ms, body_timeout_ms,
-        max_header_bytes, stream_buffer_bytes, max_bg_tasks, max_connections,
+        max_header_bytes, send_buffer_bytes, max_bg_tasks, max_connections,
         workers, queue_size)
 
     errs = Dict{Int,Union{Response,Function}}(k => v for (k, v) in errors)
@@ -654,6 +656,7 @@ function attach!(mw::Metrics, server::AbstractServer)
         inflight = exec isa AsyncExecutor ? exec.inflight[] : 0,
         queue_depth = exec isa AsyncExecutor ? Base.n_avail(exec.calls) : 0,
         bg_tasks = bg_count(server),
+        ws_dropped = server.runtime.ws_dropped[],
     )
     return mw
 end

@@ -39,7 +39,7 @@ const WS_OP_PONG = Cint(10)
 # Default limits
 const MAX_BODY_BYTES = 1_048_576  # 1 MB default max body size
 const DEFAULT_MAX_HEADER_BYTES = 64 * 1024  # 64 KiB default request-header cap
-const DEFAULT_STREAM_BUFFER_BYTES = 1_048_576  # 1 MiB unsent stream data per conn
+const DEFAULT_SEND_BUFFER_BYTES = 1_048_576  # 1 MiB unsent data per connection (streams + WS)
 const DRAIN_TIMEOUT_MS = 5000    # 5s shutdown drain timeout
 
 # Empirically verified ceiling of the C receive buffer on the current

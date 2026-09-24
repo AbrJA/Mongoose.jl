@@ -190,7 +190,7 @@ must run on the poll thread only (C connections are not thread-safe).
 function drain_streams!(server::AbstractServer)
     streams = server.runtime.streams
     isempty(streams) && return
-    cap = server.config.stream_buffer_bytes
+    cap = server.config.send_buffer_bytes
     done = Int[]
     for (id, st) in streams
         chan = st.channel

@@ -37,6 +37,7 @@ app = App(;
     header_timeout_ms  = 10_000,              # slowloris guard
     body_timeout_ms    = 30_000,              # bound body uploads
     max_header_bytes   = 64 * 1024,           # header-size cap
+    send_buffer_bytes  = 1_048_576,           # unsent bytes/conn (streams + WS)
     max_connections    = 10_000,
 )
 
