@@ -197,6 +197,9 @@ stop!
 FakeExecutor
 run!
 AbstractTransport
+canws
+cantls
+canstream
 FakeTransport
 close!
 validate

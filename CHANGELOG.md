@@ -47,14 +47,25 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   (`*_ms`/`*_seconds`/`*_bytes`), `cors(allow_methods=, allow_headers=,
   max_age_seconds=)`, `security()` disabled with `nothing`, app-first
   registration, `serve!(app, dir; uri_prefix=)`, `ws!(app, path, handler)`,
-  `validate(req, T; on_error=)`, `parsejson`, `NotAllowed`, `getwsendpoint`,
-  `setcookie`, `FakeTransport`, `mergeheaders`/`asheaders`/`asstrings`/
-  `asmiddlewares`, App-level router introspection (`freeze!(app)` …).
+  `validate(req, T; on_error=)`, `parsejson`, `MethodMismatch`,
+  `getwsendpoint`, `setcookie`, `FakeTransport`, `mergeheaders`/`asheaders`/
+  `asstrings`/`asmiddlewares`, App-level router introspection (`freeze!(app)` …).
+- Naming pass 2 (0.5 window): parsers unified as `parse*` — `parseform`,
+  `parsemultipart`, `parsecookies`, and `querydict` folded into
+  `parsequery(req)`; `terminalfor` → `getterminal`, `endpointmiddleware` →
+  `scopedmiddleware`; transport capability traits `supportsws`/`supportstls`/
+  `supportsstream` → `canws`/`cantls`/`canstream` (routers keep
+  `haswsroutes`).
 - Header/path/middleware/origin inputs accept `Headers`, tuples, single
   strings, and vectors uniformly.
 - `stop!(AsyncExecutor; timeout)` is bounded and drains replies while joining.
 
 ### Added
+- Complete `HTTPError` alias coverage for 400–511 (incl. `ProxyAuthRequiredError`,
+  `MisdirectedRequestError`, `RequestHeaderFieldsTooLargeError`,
+  `HTTPVersionNotSupportedError`, `VariantAlsoNegotiatesError`,
+  `InsufficientStorageError`, `LoopDetectedError`, `NotExtendedError`,
+  `NetworkAuthRequiredError`) plus `statusreason` for the full range.
 - `BadGatewayError`, `ServiceUnavailableError`, `GatewayTimeoutError`.
 
 ### Known limitations

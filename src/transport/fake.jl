@@ -32,7 +32,7 @@ Base.showerror(io::IO, e::StreamClosedError) = print(io, "StreamClosedError: ", 
     A `FakeTransport` really is a fake transport: it dispatches requests directly
     through the middleware pipeline and router (`process`), bypassing
     the C event loop entirely. It declares its capabilities via the ability
-    traits (`supportsws`, `supportstls`, `supportsstream`): no WebSocket,
+    traits (`canws`, `cantls`, `canstream`): no WebSocket,
     no TLS, streaming supported. It can
     drive a full request cycle without a running server — including on systems
     where `Mongoose_jll` was never loaded.
@@ -66,9 +66,9 @@ end
 
 FakeTransport(app::App) = FakeTransport(app, 0, Dict{Int,FakeStream}(), false)
 
-supportsws(::FakeTransport) = false
-supportstls(::FakeTransport) = false
-supportsstream(::FakeTransport) = true
+canws(::FakeTransport) = false
+cantls(::FakeTransport) = false
+canstream(::FakeTransport) = true
 
 # --- Owner-aware stream writer (replaces the old stateless StreamWriterBuffer) ---
 

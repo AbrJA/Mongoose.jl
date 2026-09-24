@@ -32,7 +32,7 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
     service!, service, services, withservices, background!,
     AbstractExecutor, SyncExecutor, AsyncExecutor, submit!, stop!, haspending,
     AbstractTransport, FakeTransport, close!,
-    supportsws, supportstls, supportsstream,
+    canws, cantls, canstream,
     AbstractMiddleware,
     group, group!, RouteGroup, mount!,
     freeze!, isfrozen,
@@ -51,7 +51,7 @@ using .Kernel
 # Server/transport layers extend these core generics; `using` alone is read-only.
 import .Kernel: route!, ws!, post!, patch!, options!, head!,
     submit!, start!, stop!, haspending,
-    supportsws, supportstls, supportsstream,
+    canws, cantls, canstream,
     freeze!, isfrozen, matchroute, hasroute, haswsroutes, getwsendpoint,
     attach!, getterminal
 

@@ -73,9 +73,10 @@
       - De-underscored protocol names: `match_route` → `matchroute`,
         `match_route_exact` → `hasroute(router, path)::Bool` (ownership check,
         catch-all excluded), `route_count` → `Base.length(router)`,
-        `has_ws_routes` → `haswsroutes`, `supports_websocket` → `supportsws`,
-        `supports_tls` → `supportstls`, `supports_streaming` →
-        `supportsstream`; `to_lower` unexported (internal only).
+        `has_ws_routes` → `haswsroutes`, `supports_websocket` →
+        `canws`, `supports_tls` → `cantls`, `supports_streaming` →
+        `canstream` (transport capability only — routers report
+        `haswsroutes`); `to_lower` unexported (internal only).
       - `MongooseCore` → `Kernel` (`Core` would shadow the Julia language
         core — e.g. `Core.stdout` in `util/log.jl`; `Kernel` is
         collision-free).
@@ -524,6 +525,18 @@ four gates plus before/after numbers in the commit message.
 
 ## Changelog
 
+- **Sep 23 — Naming pass 2 (groups D–G) shipped**: group D (`2a8d9a4`) —
+  `terminalfor`→`getterminal`, `endpointmiddleware`→`scopedmiddleware`,
+  `NotAllowed`→`MethodMismatch`, unexported `Intent`/`Tagged`/`WSConn`.
+  Group E (`362ad08`) — every parser is a `parse*` verb: `parseform`,
+  `parsemultipart`, `parsecookies`, and `querydict` folded into
+  `parsequery(req)` (facade-exported). Group F (`0bb8904`) — complete
+  `HTTPError` alias coverage 400–511 + `statusreason`; 501 deliberately
+  unaliased (`Base.NotImplementedError` clash, use `HTTPError{501}`).
+  Group G — capability traits `supportsws`/`supportstls`/`supportsstream`
+  → `canws`/`cantls`/`canstream`, docstrings added, router-side duplicate
+  dropped (routers use `haswsroutes`). 3722 tests + 81 acceptance +
+  Aqua/JET baseline + docs green.
 - **Sep 17 — SIGTERM mechanism corrected**: the custom C handler added in
   batch 8 was dead code — Julia blocks SIGTERM process-wide (`SigBlk` bit 15)
   and handles it in its runtime, which runs `atexit` callbacks. Graceful

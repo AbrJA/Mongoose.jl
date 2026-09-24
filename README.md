@@ -313,7 +313,7 @@ resp = client(:get, "/hello")
 
 Each boundary is a replacement point: `App(router=my_router)`,
 `App(workers=n)` chooses the executor, and `AbstractTransport` declares its
-capabilities (`supportsws`, `supportstls`, `supportsstream`). Custom routers
+capabilities (`canws`, `cantls`, `canstream`). Custom routers
 implement `route!`/`matchroute`/`hasroute` and may carry their own endpoint
 type via `invokeendpoint`. See the API reference for the exact contracts.
 

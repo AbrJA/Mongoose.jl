@@ -78,7 +78,7 @@ export AbstractRequest, Request, Headers, asheaders, mergeheaders, context, pars
     invokeendpoint, scopedmiddleware,
     AbstractMiddleware, PathFilter, runpipeline, FunctionMiddleware, asmiddleware, asmiddlewares, attach!,
     AbstractExecutor, SyncExecutor, FakeExecutor, run!, submit!, start!, stop!,
-    AbstractTransport, supportsws, supportstls, supportsstream,
+    AbstractTransport, canws, cantls, canstream,
     Cors, Bearer, ApiKey, BasicAuth, RateLimit, Compress, Logger, Health,
     Metrics, Security, Etag,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
