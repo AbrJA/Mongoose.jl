@@ -52,9 +52,11 @@ end
 end
 
 @testset "Router display" begin
+    @test isempty(Router())
     r = Router()
     route!(r, :get, "/a", req -> text(""))
     route!(r, :get, "/b", req -> text(""))
+    @test !isempty(r)
     io = IOBuffer()
     show(io, r)
     s = String(take!(io))

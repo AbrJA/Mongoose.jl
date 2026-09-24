@@ -313,3 +313,15 @@ end
     @test Mongoose.statusreason(999) == ""
 end
 
+
+@testset "Response display" begin
+    r = Response(201, Headers(["X" => "y"]), "hi")
+    s = sprint(show, r)
+    @test contains(s, "Response(201 Created")
+    @test contains(s, "1 header, 2-byte body")
+    @test contains(sprint(show, Response(299, Pair{String,String}[], "")),
+                   "Response(299, 0 headers, 0-byte body)")
+
+    sr = StreamResponse(_ -> nothing, 200; content_type="text/event-stream")
+    @test contains(sprint(show, sr), "StreamResponse(200 OK, text/event-stream, 0 headers)")
+end

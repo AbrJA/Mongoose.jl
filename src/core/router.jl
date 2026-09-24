@@ -211,6 +211,7 @@ table compiled). Custom `AbstractRouter`s default to `false`.
 @inline getwsendpoint(r::Router, uri::String) = get(r.ws_routes, uri, nothing)
 
 Base.length(r::Router)::Int = length(r.fixed) + length(r.param_routes)
+Base.isempty(r::Router)::Bool = isempty(r.fixed) && isempty(r.param_routes)
 
 # --- Supported parameter types (extensible) ---
 

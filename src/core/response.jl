@@ -29,6 +29,15 @@ end
 Base.:(==)(a::Response, b::Response) =
     a.status == b.status && a.headers == b.headers && a.body == b.body
 
+function Base.show(io::IO, resp::Response)
+    print(io, "Response(", resp.status)
+    reason = statusreason(resp.status)
+    isempty(reason) || print(io, " ", reason)
+    n = length(resp.headers)
+    print(io, ", ", n, n == 1 ? " header, " : " headers, ",
+          sizeof(resp.body), "-byte body)")
+end
+
 # --- Non-mutating header merging ---
 
 """
@@ -222,6 +231,14 @@ function StreamResponse(producer::Function, status::Int=200;
                         content_type::String="application/octet-stream",
                         headers=Headers())
     return StreamResponse(status, content_type, asheaders(headers), producer)
+end
+
+function Base.show(io::IO, resp::StreamResponse)
+    print(io, "StreamResponse(", resp.status)
+    reason = statusreason(resp.status)
+    isempty(reason) || print(io, " ", reason)
+    n = length(resp.headers)
+    print(io, ", ", resp.content_type, ", ", n, n == 1 ? " header)" : " headers)")
 end
 
 # --- Cookie support in responses ---

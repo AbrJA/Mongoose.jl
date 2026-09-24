@@ -525,6 +525,11 @@ four gates plus before/after numbers in the commit message.
 
 ## Changelog
 
+- **Sep 23 — Base integrations (group I)**: `isempty(::Router)` /
+  `isempty(::App)`; ordered `keys`/`values`/`pairs(::Headers)` (duplicates
+  preserved, `pairs` zero-copy); terse one-line `show` for `Request`,
+  `Response`, `StreamResponse`. Docs prose + tests added (3740 total).
+  *commit: this one*
 - **Sep 23 — Testing surface (group H)**: `FakeExecutor`/`run!` promoted from
   `Mongoose.Kernel`-only to facade exports (symmetry with `FakeTransport`;
   documented workflow no longer needs the internal module path). Tests now

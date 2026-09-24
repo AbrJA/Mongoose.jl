@@ -376,3 +376,20 @@ end
         @test mresult
     end
 end
+
+@testset "Headers dict views + Request display" begin
+    h = Headers(["Content-Type" => "text/plain", "Set-Cookie" => "a=1", "Set-Cookie" => "b=2"])
+    @test collect(keys(h)) == ["Content-Type", "Set-Cookie", "Set-Cookie"]
+    @test collect(values(h)) == ["text/plain", "a=1", "b=2"]
+    @test pairs(h) === h.data
+    @test Dict(pairs(h))["Content-Type"] == "text/plain"
+    @test Dict(h)["Set-Cookie"] == "b=2"   # last wins, like Dict iteration
+
+    req = Request(; method=:post, uri="/x?a=1", headers=h, body="hello")
+    s = sprint(show, req)
+    @test contains(s, "POST /x?a=1")
+    @test contains(s, "3 headers")
+    @test contains(s, "5-byte body")
+    @test !contains(sprint(show, Request(; method=:get, uri="/y")), "body")
+    @test contains(sprint(show, Request(; method=:get, uri="/y", headers=["A" => "b"])), "1 header")
+end

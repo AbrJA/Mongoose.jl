@@ -56,6 +56,13 @@ _headerpair(p) = throw(ArgumentError("headers must be Pairs of strings, got $(ty
 @inline Base.iterate(h::Headers)   = iterate(h.data)
 @inline Base.iterate(h::Headers, s) = iterate(h.data, s)
 
+# Dict-like views. Header names may repeat (e.g. `Set-Cookie`), so `keys` and
+# `values` are ordered lazy views that preserve duplicates; `pairs` exposes the
+# underlying ordered pair list without copying.
+@inline Base.keys(h::Headers)   = (kv.first for kv in h.data)
+@inline Base.values(h::Headers) = (kv.second for kv in h.data)
+@inline Base.pairs(h::Headers)  = h.data
+
 # Mutable helpers (used by middleware and the transport when augmenting
 # response headers after construction).
 @inline Base.push!(h::Headers, kv::Pair{String,String}) = (push!(h.data, kv); h)
@@ -197,6 +204,14 @@ function Request(; method::Symbol, uri::String,
                  remote_addr::Union{Nothing,String}=nothing)
     path = String(stripquery(uri))
     return Request(method, uri, path, query, asheaders(headers), body, context, remote_addr)
+end
+
+function Base.show(io::IO, req::Request)
+    n = length(req.headers)
+    print(io, "Request(", uppercase(string(req.method)), " ", req.uri,
+          ", ", n, n == 1 ? " header" : " headers")
+    sizeof(req.body) > 0 && print(io, ", ", sizeof(req.body), "-byte body")
+    print(io, ")")
 end
 
 """

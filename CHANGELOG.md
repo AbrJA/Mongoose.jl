@@ -61,6 +61,9 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - `stop!(AsyncExecutor; timeout)` is bounded and drains replies while joining.
 
 ### Added
+- Base integrations: `isempty(::Router)` / `isempty(::App)`,
+  `keys`/`values`/`pairs` on `Headers` (ordered, duplicates preserved), and
+  terse one-line `show` for `Request`, `Response`, and `StreamResponse`.
 - `FakeExecutor` and `run!` are now exported from the facade (previously
   `Mongoose.Kernel`-only), matching `FakeTransport` as the testing doubles
   for the two extension seams.

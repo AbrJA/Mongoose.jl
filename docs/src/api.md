@@ -206,6 +206,15 @@ validate
 ValidationError
 ```
 
+## Base integrations
+
+Framework types implement the standard Base protocols where it makes sense:
+`length`/`isempty` on `Router` and `App`, ordered dict-like views on
+`Headers` (`pairs`, `keys`, `values`, plus `getindex`, `haskey`, `get`,
+`iterate`, `push!`/`append!`/`delete!`), `==` on `Headers` and `Response`,
+and terse one-line `show` for `Router`, `App`, `Request`, `Response`, and
+`StreamResponse`.
+
 ## Content Formats
 
 ```@docs

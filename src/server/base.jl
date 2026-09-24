@@ -31,6 +31,7 @@ Whether the server's route table has been closed by `freeze!`.
 isfrozen(server::AbstractServer) = isfrozen(server.router)
 
 Base.length(server::AbstractServer) = length(server.router)
+Base.isempty(server::AbstractServer) = length(server.router) == 0
 
 """
     matchroute(server, method, path) → RouteResult

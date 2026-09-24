@@ -50,6 +50,8 @@ end
     ws!(app, "/ws", m -> nothing)
 
     @test length(app) == 1
+    @test !isempty(app)
+    @test isempty(App())
     @test Mongoose.hasroute(app, "/a")
     @test !Mongoose.hasroute(app, "/b")
     @test Mongoose.matchroute(app, :get, "/a") isa Mongoose.Matched
