@@ -125,6 +125,18 @@ function on_headers(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvo
         return nothing
     end
 
+    # RFC 9112 §6.1: a message carrying BOTH Content-Length and
+    # Transfer-Encoding is a request-smuggling vector (front-ends may frame it
+    # differently than this server). Reject and close.
+    if mg_http_get_header_ptr(ev_data, "Content-Length") != C_NULL &&
+       mg_http_get_header_ptr(ev_data, "Transfer-Encoding") != C_NULL
+        rid = resolve_request_id(server, _header_value_string(ev_data, "X-Request-Id"))
+        send_http_response!(conn, _close_response(errorresponse(server.errors, 400)), rid)
+        push!(server.runtime.early_rejected, conn)
+        mark_draining!(conn)              # flush the 400, then close
+        return nothing
+    end
+
     p = mg_http_get_header_ptr(ev_data, "Content-Length")
     if p != C_NULL
         len = _parse_content_length(unsafe_load(p))

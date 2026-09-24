@@ -91,9 +91,36 @@ end
 
 # --- WS Control Frames (Ping/Pong/Close) ---
 
+# Send a Close frame with a code and drain-close the socket (RFC 6455 §7.4.1).
+# Used for protocol violations mongoose's parser tolerates (RSV bits,
+# fragmented/oversized control frames, invalid UTF-8, too-big messages).
+function ws_close!(server::AbstractServer, conn::MgConnection, code::Int)
+    payload = UInt8[UInt8((code >> 8) & 0xff), UInt8(code & 0xff)]
+    mg_ws_send(conn, payload, WS_OP_CLOSE)
+    id = ws_id_of(server, conn)
+    if id != 0
+        lock(server.runtime.ws_lock) do
+            entry = get(server.runtime.ws_clients, id, nothing)
+            entry !== nothing && (entry.closing = true)
+        end
+    end
+    mark_draining!(conn)                 # flush the Close, then close
+    return nothing
+end
+
 function on_ws_control(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
     msg = MgWsMessage(ev_data)
     op = msg.flags & 0x0F
+    fin = (msg.flags & 0x80) != 0
+    rsv = (msg.flags & 0x70) != 0
+    len = Int(msg.data.len)
+    println(stderr, "WSCTL flags=", string(msg.flags, base=2, pad=8), " op=", op, " fin=", fin, " rsv=", rsv, " len=", len)
+    # RFC 6455 §5.5: control frames must be unfragmented, ≤125 bytes, RSV=0;
+    # a CLOSE payload is 0 or ≥2 bytes.
+    if rsv || !fin || len > 125 || (op == WS_OP_CLOSE && len == 1)
+        ws_close!(server, conn, WS_CLOSE_PROTOCOL_ERROR)
+        return nothing
+    end
     # Keep-alive bookkeeping only. Mongoose's WS layer already auto-replies:
     # PING → PONG and CLOSE → CLOSE echo + drain (see `ws_process` in the C
     # library), so replying here would send every control frame twice.
@@ -111,16 +138,19 @@ function on_ws_message(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
     conn_id == 0 && return
     ws_touch!(server, conn_id)
 
+    (msg.flags & 0x70) != 0 && return ws_close!(server, conn, WS_CLOSE_PROTOCOL_ERROR)
+
     if msg.data.len > server.config.ws_max_frame_bytes
-        mg_ws_send(conn, UInt8[], WS_OP_CLOSE)
-        lock(server.runtime.ws_lock) do
-            entry = get(server.runtime.ws_clients, conn_id, nothing)
-            entry !== nothing && (entry.closing = true)
-        end
+        ws_close!(server, conn, WS_CLOSE_MESSAGE_TOO_BIG)
         return
     end
 
     ws_msg = parse_ws_message(msg)
+    # RFC 6455 §5.6: text frames must carry valid UTF-8.
+    if (msg.flags & 0x0F) == 0x01 && ws_msg.data isa String && !isvalid(ws_msg.data)
+        ws_close!(server, conn, WS_CLOSE_INVALID_PAYLOAD)
+        return
+    end
     uri = lock(server.runtime.ws_lock) do
         let e = get(server.runtime.ws_clients, conn_id, nothing); e === nothing ? "" : e.uri end
     end

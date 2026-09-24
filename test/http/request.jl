@@ -119,3 +119,30 @@ end
         close(sock)
     end
 end
+
+@testset "CL+TE request smuggling is rejected" begin
+    s = App()
+    post!(s, "/echo") do req; text("len=$(sizeof(body(req)))") end
+    with_server(s) do port
+        # Both framing headers present: reject with 400 and close (RFC 9112 §6.1).
+        sock = Sockets.connect("127.0.0.1", port)
+        write(sock, "POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 6\r\n" *
+                    "Transfer-Encoding: chunked\r\n\r\n6\r\nhello!\r\n0\r\n\r\n")
+        line = readline(sock)
+        @test contains(line, "400")
+        # The server closes after flushing the 400: `read` returns only then.
+        drained = @async read(sock)
+        @test timedwait(() -> istaskdone(drained), 3.0; pollint=0.05) == :ok
+        @test istaskdone(drained)
+        close(sock)
+
+        # Plain chunked still works.
+        sock2 = Sockets.connect("127.0.0.1", port)
+        write(sock2, "POST /echo HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n" *
+                     "Connection: close\r\n\r\n5\r\nhello\r\n0\r\n\r\n")
+        resp = String(read(sock2))
+        @test contains(resp, "200 OK")
+        @test contains(resp, "len=5")
+        close(sock2)
+    end
+end

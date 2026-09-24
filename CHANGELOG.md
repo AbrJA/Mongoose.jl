@@ -13,6 +13,15 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- **WebSocket protocol violations now close with the right code** (mongoose's
+  parser tolerates them): RSV bits and fragmented/oversized control frames →
+  `1002`, invalid UTF-8 text → `1007`, messages over `ws_max_frame_bytes` →
+  `1009`. (Mongoose may auto-pong a bad PING before the Close; the client sees
+  Close then FIN.)
+- **Request smuggling**: a message carrying both `Content-Length` and
+  `Transfer-Encoding` was parsed with TE semantics, leaving a smuggled request
+  queued behind it. It is now rejected with `400` + `Connection: close`
+  (RFC 9112 §6.1).
 - **Log-injection hardening**: the plain-text access logger replaced control
   bytes in the request target (a hostile URI could forge log lines or inject
   terminal escapes); structured mode already escaped them.
@@ -158,6 +167,12 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   fails the verifier (62 unresolved dynamic calls in startup/registration) and
   a `--trim=unsafe` build crashes constructing a parametric route. The
   required design work is tracked in `WORKLOG.md`.
+- **Cookie parsing semantics**: duplicate names keep the last value, quoted
+  values keep their quotes (RFC 6265), and values are not percent-decoded.
+- **Chunk extensions and trailers are rejected**: the bundled parser closes
+  the connection on `size;ext` chunks or a trailer section (RFC 9112 allows
+  both; most clients never send them). Documented rather than worked around —
+  re-framing in Julia would defeat the in-place parser.
 - **TLS is 1.3-only** (Mongoose's built-in TLS in the `Mongoose_jll` build).
   TLS 1.2 clients cannot connect; terminate at a reverse proxy or rebuild the
   JLL with OpenSSL. Setting `TLSConfig.ca` enables mutual TLS (a client

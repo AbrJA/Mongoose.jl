@@ -525,6 +525,20 @@ four gates plus before/after numbers in the commit message.
 
 ## Changelog
 
+- **Sep 24 — Tier-2 campaign (HTTP edges + WS protocol)**: 38/38 raw-HTTP and
+  7/7 WS probes. Found + fixed: **CL+TE request smuggling** (both framing
+  headers accepted with TE semantics, leaving a smuggled request queued — now
+  `400` + close per RFC 9112 §6.1); **WS protocol laxity** (RSV bits,
+  fragmented/oversized control frames, invalid UTF-8, bad close payload were
+  echoed — now Close `1002`/`1007`, oversized messages `1009`). Clean:
+  duplicate/bogus/negative Content-Length rejected; absolute/asterisk forms;
+  lowercase/unknown methods; LF-only; folded headers (closed); 100 headers;
+  `%2F`/UTF-8/overlong params; `//`, trailing slash, dot segments; 8KB paths;
+  204/304 body-less; 200k-deep JSON (400, no crash); 100KB multipart filename;
+  X-Request-Id sanitization; CORS reflection; redirect CTL injection; cookies
+  (last duplicate wins, quotes kept); 1000-ping flood. Documented: chunk
+  extensions/trailers rejected by the bundled parser. 3831 ×2 tests + 81
+  acceptance + Aqua/JET + docs. *commit: this one*
 - **Sep 24 — Tier-1 hardening (TLS / ABI / logs)**: TLS matrix run with a real
   CA + client certs: verified TLS 1.3, mutual TLS (setting `TLSConfig.ca`
   requires a client cert), hostname verification, keep-alive reuse, 64 KB

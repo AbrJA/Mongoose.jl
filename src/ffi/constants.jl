@@ -36,6 +36,11 @@ const WS_OP_CLOSE = Cint(8)
 const WS_OP_PING = Cint(9)
 const WS_OP_PONG = Cint(10)
 
+# RFC 6455 §7.4.1 close codes used by the framework for protocol violations.
+const WS_CLOSE_PROTOCOL_ERROR = 1002
+const WS_CLOSE_INVALID_PAYLOAD = 1007
+const WS_CLOSE_MESSAGE_TOO_BIG = 1009
+
 # Default limits
 const MAX_BODY_BYTES = 1_048_576  # 1 MB default max body size
 const DEFAULT_MAX_HEADER_BYTES = 64 * 1024  # 64 KiB default request-header cap
