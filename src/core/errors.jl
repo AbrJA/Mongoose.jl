@@ -59,11 +59,14 @@ A thrown `HTTPError` is mapped to
 unless a more specific `onerror!` handler (checked first) or a custom
 `onerror!(app, status, …)` error page takes precedence.
 
-Named aliases are provided for common statuses: `BadRequestError`,
-`UnauthorizedError`, `ForbiddenError`, `NotFoundError`, `MethodNotAllowedError`,
-`RequestTimeoutError`, `ConflictError`, `PayloadTooLargeError`,
+Named aliases are provided for every standard status from 400 to 511 (RFC 9110
+plus the common extensions): `BadRequestError`, `UnauthorizedError`,
+`ForbiddenError`, `NotFoundError`, `MethodNotAllowedError`,
+`RequestHeaderFieldsTooLargeError`, `PayloadTooLargeError`,
 `UnsupportedMediaTypeError`, `UnprocessableEntityError`, `TooManyRequestsError`,
-`InternalServerError`, …
+`InternalServerError`, `HTTPVersionNotSupportedError`, … One deliberate gap:
+501 has no alias because `NotImplementedError` is a `Base` type — use
+`HTTPError{501}`.
 """
 struct HTTPError{status} <: Exception
     message::String
@@ -103,6 +106,7 @@ const ForbiddenError = HTTPError{403}
 const NotFoundError = HTTPError{404}
 const MethodNotAllowedError = HTTPError{405}
 const NotAcceptableError = HTTPError{406}
+const ProxyAuthenticationRequiredError = HTTPError{407}
 const RequestTimeoutError = HTTPError{408}
 const ConflictError = HTTPError{409}
 const GoneError = HTTPError{410}
@@ -114,6 +118,7 @@ const UnsupportedMediaTypeError = HTTPError{415}
 const RangeNotSatisfiableError = HTTPError{416}
 const ExpectationFailedError = HTTPError{417}
 const ImATeapotError = HTTPError{418}
+const MisdirectedRequestError = HTTPError{421}
 const UnprocessableEntityError = HTTPError{422}
 const LockedError = HTTPError{423}
 const FailedDependencyError = HTTPError{424}
@@ -121,6 +126,7 @@ const TooEarlyError = HTTPError{425}
 const UpgradeRequiredError = HTTPError{426}
 const PreconditionRequiredError = HTTPError{428}
 const TooManyRequestsError = HTTPError{429}
+const RequestHeaderFieldsTooLargeError = HTTPError{431}
 const UnavailableForLegalReasonsError = HTTPError{451}
 
 # ── Named status aliases (5xx server errors) ────────────────────────────────
@@ -129,3 +135,9 @@ const InternalServerError = HTTPError{500}
 const BadGatewayError = HTTPError{502}
 const ServiceUnavailableError = HTTPError{503}
 const GatewayTimeoutError = HTTPError{504}
+const HTTPVersionNotSupportedError = HTTPError{505}
+const VariantAlsoNegotiatesError = HTTPError{506}
+const InsufficientStorageError = HTTPError{507}
+const LoopDetectedError = HTTPError{508}
+const NotExtendedError = HTTPError{510}
+const NetworkAuthenticationRequiredError = HTTPError{511}

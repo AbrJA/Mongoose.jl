@@ -208,3 +208,36 @@ end
     @test occursin("application/json", String(resp.body))
 end
 
+
+@testset "HTTPError alias coverage" begin
+    aliases = (
+        (BadRequestError, 400), (UnauthorizedError, 401), (PaymentRequiredError, 402),
+        (ForbiddenError, 403), (NotFoundError, 404), (MethodNotAllowedError, 405),
+        (NotAcceptableError, 406), (ProxyAuthenticationRequiredError, 407),
+        (RequestTimeoutError, 408), (ConflictError, 409), (GoneError, 410),
+        (LengthRequiredError, 411), (PreconditionFailedError, 412),
+        (PayloadTooLargeError, 413), (URITooLongError, 414),
+        (UnsupportedMediaTypeError, 415), (RangeNotSatisfiableError, 416),
+        (ExpectationFailedError, 417), (ImATeapotError, 418),
+        (MisdirectedRequestError, 421), (UnprocessableEntityError, 422),
+        (LockedError, 423), (FailedDependencyError, 424), (TooEarlyError, 425),
+        (UpgradeRequiredError, 426), (PreconditionRequiredError, 428),
+        (TooManyRequestsError, 429), (RequestHeaderFieldsTooLargeError, 431),
+        (UnavailableForLegalReasonsError, 451), (InternalServerError, 500),
+        (BadGatewayError, 502), (ServiceUnavailableError, 503),
+        (GatewayTimeoutError, 504), (HTTPVersionNotSupportedError, 505),
+        (VariantAlsoNegotiatesError, 506), (InsufficientStorageError, 507),
+        (LoopDetectedError, 508), (NotExtendedError, 510),
+        (NetworkAuthenticationRequiredError, 511),
+    )
+    for (T, code) in aliases
+        @test errorstatus(T("m")) == code
+        @test !isempty(Mongoose.statusreason(code))
+        @test occursin(string(code), sprint(showerror, T("m")))
+    end
+    # 501 deliberately has no alias (Base owns NotImplementedError); the
+    # parametric form still works and carries a reason phrase.
+    @test :NotImplementedError ∉ names(Mongoose)
+    @test errorstatus(HTTPError{501}("m")) == 501
+    @test Mongoose.statusreason(501) == "Not Implemented"
+end
