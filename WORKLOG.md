@@ -525,6 +525,17 @@ four gates plus before/after numbers in the commit message.
 
 ## Changelog
 
+- **Sep 24 — Tier-2 crumbs + Tier-3 endurance**: HTTP/1.0 `Connection:
+  keep-alive` verified (two requests, one socket); a handler returning 1xx is
+  sent as-is (documented). Shutdown variants 4/4 (WS client reaped, SSE
+  stream drained, throwing `onstop!` still stops, 100 start/shutdown cycles
+  with no fd/thread growth). fd exhaustion under `ulimit -n 256`: 366 conns,
+  server healthy after. Soak (150 s, mixed HTTP keep-alive + WS echo + SSE +
+  metrics scrapes): 4.9 M HTTP requests, 196 k WS echoes, 3.8 k SSE streams,
+  0 errors, RSS +30 MB (GC high-water), fds/threads flat; a 3-minute
+  HTTP-only soak reached 6.9 M requests. Structured logger: 20 k sampled
+  lines all valid JSON under load. Not tested: nginx interop (not installed),
+  worker-death respawn (hard to trigger). *commit: this one*
 - **Sep 24 — Dead-code sweep (policy follow-up)**: removed `decode_chunked`
   (a Julia reimplementation of mongoose's in-place chunked decoder, used only
   by its own tests) and the receive-buffer byte cap (`on_read` + CRLF scan +

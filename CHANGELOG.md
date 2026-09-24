@@ -193,6 +193,8 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   the connection on `size;ext` chunks or a trailer section (RFC 9112 allows
   both; most clients never send them). Documented rather than worked around —
   re-framing in Julia would defeat the in-place parser.
+- **Handler-returned 1xx statuses are sent as-is** (a 1xx is interim by
+  definition); return 2xx+ for final responses.
 - **No early request rejection**: an oversized declared body is answered with
   413 only after it is buffered (bounded by mongoose's 8 MiB ceiling ×
   `max_connections`). `header_timeout_ms`/`body_timeout_ms` still reclaim
