@@ -26,8 +26,9 @@ against.
    struct Bearer{F}; validator::F; end
    ```
    Done: `Endpoint{F}`, `WSEndpoint{M,O,C}`, `Bearer{F}`, `RateLimit{F}`,
-   `Logger{O}`, `SSEWriter{W}`, `PathFilter{M}`. Remaining: `App.context` and
-   `App.executor` (accepted dynamic hops; C2/DESIGN T6).
+   `Logger{O}`, `SSEWriter{W}`, `PathFilter{M}`, `App{R,E}`. Remaining:
+   `App.context` (one accepted dynamic hop, DESIGN T6) and the transport's
+   `AbstractServer` callbacks (the C boundary).
 
 3. **Function barriers for type-erased containers.** A `Dict`/`Vector` of
    abstract elements erases types; recover specialization by passing the value

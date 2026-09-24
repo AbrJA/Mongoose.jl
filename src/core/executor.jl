@@ -33,7 +33,7 @@ abstract type AbstractExecutor end
 """
 struct SyncExecutor <: AbstractExecutor end
 
-submit!(::SyncExecutor, job::Function) = job()::Any
+submit!(::SyncExecutor, job::F) where {F<:Function} = job()
 start!(::SyncExecutor, app) = nothing
 stop!(::SyncExecutor) = nothing
 
@@ -66,7 +66,7 @@ stop!(fe::FakeExecutor) = (empty!(fe.jobs); empty!(fe.results); fe)
 haspending(fe::FakeExecutor) = !isempty(fe.jobs)
 
 # Queued jobs are never run implicitly: submit! only enqueues (accepted=true).
-submit!(fe::FakeExecutor, job::Function) = (push!(fe.jobs, job); true)
+submit!(fe::FakeExecutor, job::F) where {F<:Function} = (push!(fe.jobs, job); true)
 
 """
     run!(fe::FakeExecutor) → Vector{Any}

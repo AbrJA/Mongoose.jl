@@ -85,7 +85,7 @@ haspending(exec::AsyncExecutor) =
 
 # --- Submission ---
 
-@inline function submit!(exec::AsyncExecutor, job::Function)
+@inline function submit!(exec::AsyncExecutor, job::F) where {F<:Function}
     isopen(exec.calls) || return false
     Base.n_avail(exec.calls) >= exec.queue_size && return false
     try
@@ -130,11 +130,14 @@ function supervise_workers!(exec::AsyncExecutor)
     return nothing
 end
 
+# Async executor shutdown uses the configured drain budget.
+_stop_executor(exec::AsyncExecutor, timeout::Real) = stop!(exec; timeout=timeout)
+
 # --- App wiring (server-level orchestration) ---
 
 function init_server!(app::App)
     app.runtime.manager = Manager()
-    app.executor isa AsyncExecutor && init_executor!(app.executor)
+    _init_executor!(app.executor)
     empty!(app.runtime.connections)
     empty!(app.runtime.streams)
     empty!(app.runtime.ws_clients)
@@ -144,10 +147,14 @@ function init_server!(app::App)
     empty!(app.runtime.conn_addr)
 end
 
-function haspending(app::App)
-    app.executor isa AsyncExecutor && haspending(app.executor) && return true
-    return !isempty(app.runtime.streams)
-end
+# Executor-specific barriers: `App{R,E}` carries the concrete executor, so
+# these resolve statically instead of an `isa` branch per call.
+_init_executor!(::SyncExecutor) = nothing
+_init_executor!(exec::AsyncExecutor) = init_executor!(exec)
+
+haspending(app::App) = _haspending(app.executor, app)
+_haspending(::SyncExecutor, app::App) = !isempty(app.runtime.streams)
+_haspending(exec::AsyncExecutor, app::App) = haspending(exec) || !isempty(app.runtime.streams)
 
 function drain_poll!(app::App)
     mg_mgr_poll(app.runtime.manager.ptr, 10)
@@ -157,9 +164,10 @@ function drain_poll!(app::App)
     drain_streams!(app)
 end
 
-function dispatch_replies!(app::App)::Bool
-    exec = app.executor
-    exec isa AsyncExecutor || return false
+dispatch_replies!(app::App)::Bool = _dispatch_replies!(app.executor, app)
+_dispatch_replies!(::SyncExecutor, app::App)::Bool = false
+
+function _dispatch_replies!(exec::AsyncExecutor, app::App)::Bool
     did_ws = false
     while isopen(exec.replies) && isready(exec.replies)
         reply = try take!(exec.replies) catch e; e isa InvalidStateException && break; rethrow(e) end

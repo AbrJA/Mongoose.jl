@@ -94,10 +94,7 @@ function shutdown!(server::AbstractServer)
     end
 
     drain!(server)
-    exec = server.executor
-    exec isa AsyncExecutor ?
-        stop!(exec; timeout=server.config.drain_timeout_ms / 1000.0) :
-        stop!(exec)
+    _stop_executor(server.executor, server.config.drain_timeout_ms / 1000.0)
     drain_bg_tasks!(server)
     stop_event_loop!(server)
     unregister_server!(server)
@@ -105,6 +102,10 @@ function shutdown!(server::AbstractServer)
     teardown!(server)
     log_server_stopped(server)
 end
+
+# Executor shutdown barrier: sync is a no-op; the async specialization (drain
+# budget) is defined in async.jl, after AsyncExecutor exists.
+_stop_executor(exec::AbstractExecutor, ::Real) = stop!(exec)
 
 # --- Internal lifecycle helpers ---
 

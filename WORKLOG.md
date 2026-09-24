@@ -474,14 +474,16 @@ four gates plus before/after numbers in the commit message.
   captured; `@nospecialize(handler::Function)` removed from registration so
   the types are actually captured. Generic path 320→304 B / 704→688 B; no
   regressions. *commit: (this one)*
-- [ ] **C2** Parametric `App{R,E<:AbstractExecutor}` with executor function
-  barriers (`_executor_start(::E, app)`, `dispatch_replies!(app, ::AsyncExecutor)`)
-  and a typed context bundle; remove the abstract `App.context`/`executor`
-  dynamic calls from the per-request path.
-- [ ] **C3** Typed executor jobs: `submit!(exec, job::F) where F`; the sync
-  path specializes; async keeps one boxing point per job but no `Function`
-  signature erasure. Replace `Tagged{Union{…}}` with concrete reply structs if
-  the union boxing shows up in profiles.
+- [x] **C2** `App{R,E<:AbstractExecutor}` with `executor::E`; executor barriers
+  (`_init_executor!`, `_haspending`, `_dispatch_replies!`, `_stop_executor`)
+  replace the `isa AsyncExecutor` branches. Construction goes through a
+  `_build_app` type barrier (fixes a JET finding from `typeof(union)`).
+  `App.context` stays one accepted dynamic hop (DESIGN T6); the transport
+  callbacks take `AbstractServer` (C boundary). *commit: this one*
+- [x] **C3** Typed executor jobs: `submit!(exec, job::F) where {F<:Function}`
+  (sync specializes; async keeps the queue boxing). Ambiguity with the
+  `AbstractExecutor` fallback fixed via the `F<:Function` bound. *commit: this
+  one*
 - [x] **C4** Typed DI: `Request.services` field set by `process` (208 B/op with
   services vs 192 without; was ~496 with the eager Dict). `service`/
   `services`/`withservices` read the field; `context(req)` is user-data-only.

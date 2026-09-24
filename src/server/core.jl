@@ -230,7 +230,7 @@ end
       build-phase state; registration after `start!` throws `ServerError`.
     - `app.executor` — `SyncExecutor` or `AsyncExecutor` (the worker pool).
 """
-mutable struct App{R<:AbstractRouter} <: AbstractServer
+mutable struct App{R<:AbstractRouter,E<:AbstractExecutor} <: AbstractServer
     # ── Immutable configuration ────────────────────────────────────────────────
     const config::ServerConfig
 
@@ -252,60 +252,76 @@ mutable struct App{R<:AbstractRouter} <: AbstractServer
     const hooks_stop::Vector{Function}
 
     # ── Execution strategy: SyncExecutor (inline) or AsyncExecutor ───────────
-    const executor::AbstractExecutor
+    const executor::E
 
     # ── Request-processing seam bundle (mirrors the build-phase containers) ──
     context::RequestContext
 
-    function App(;
-                 workers::Integer=0,
-                 queue_size::Integer=1024,
-                 poll_timeout_ms::Integer=1,
-                 max_body_bytes::Integer=MAX_BODY_BYTES,
-                 drain_timeout_ms::Integer=DRAIN_TIMEOUT_MS,
-                 request_timeout_ms::Integer=0,
-                 ws_max_frame_bytes::Integer=MAX_BODY_BYTES,
-                 ws_idle_timeout_ms::Integer=0,
-                 header_timeout_ms::Integer=0,
-                 max_connections::Integer=0,
-                 router::R=Router(),
-                 tls::Union{Nothing,TLSConfig}=nothing,
-                 errors::Dict{Int,<:Any}=Dict{Int,Union{Response,Function}}(),
-                 services::NamedTuple=NamedTuple()) where {R<:AbstractRouter}
-
-        cfg = ServerConfig(;
-            poll_timeout_ms, max_body_bytes, drain_timeout_ms, request_timeout_ms,
-            ws_max_frame_bytes, ws_idle_timeout_ms, header_timeout_ms, max_connections,
-            workers, queue_size)
-
-        errs = Dict{Int,Union{Response,Function}}(k => v for (k, v) in errors)
-        for code in keys(errs)
-            (100 <= code <= 599) || throw(ServerError("Error status code must be in [100,599], got $code"))
-        end
-
-        exec = cfg.workers > 0 ? AsyncExecutor(cfg.workers, cfg.queue_size) : SyncExecutor()
-        rs = RunState()
-        rs.tls = tls   # raw TLSConfig material; normalized at start!
-        ex_handlers = Dict{DataType,Function}()
-        used_mw = AbstractMiddleware[]
-        ctx = RequestContext(router; middlewares=used_mw,
-                             errors=errs, services=services,
-                             exception_handlers=ex_handlers)
-        return new{R}(
-            cfg,
-            rs,
-            router,
-            used_mw,
-            Tuple{String,String}[],
-            errs,
-            ex_handlers,
-            ServiceRegistry(services),
-            Function[],
-            Function[],
-            exec,
-            ctx
-        )
+    # Positional inner constructor: `E` comes from the executor value via the
+    # `_build_app` barrier below, so the field is concretely typed.
+    function App{R,E}(config::ServerConfig, runtime::RunState, router::R,
+                      middlewares::Vector{AbstractMiddleware},
+                      mounts::Vector{Tuple{String,String}},
+                      errors::Dict{Int,Union{Response,Function}},
+                      exception_handlers::Dict{DataType,Function},
+                      services::ServiceRegistry,
+                      hooks_start::Vector{Function}, hooks_stop::Vector{Function},
+                      executor::E, context::RequestContext) where {R<:AbstractRouter,E<:AbstractExecutor}
+        return new{R,E}(config, runtime, router, middlewares, mounts, errors,
+                        exception_handlers, services, hooks_start, hooks_stop,
+                        executor, context)
     end
+end
+
+# Type barrier: a concrete `exec` selects the concrete `E`, so construction is
+# statically typed (and JET-clean) instead of `typeof(union)`.
+function _build_app(config::ServerConfig, runtime::RunState, router::R,
+                    middlewares::Vector{AbstractMiddleware},
+                    errors::Dict{Int,Union{Response,Function}},
+                    exception_handlers::Dict{DataType,Function},
+                    services::ServiceRegistry, context::RequestContext,
+                    executor::E) where {R<:AbstractRouter,E<:AbstractExecutor}
+    return App{R,E}(config, runtime, router, middlewares, Tuple{String,String}[],
+                    errors, exception_handlers, services, Function[], Function[],
+                    executor, context)
+end
+
+function App(;
+             workers::Integer=0,
+             queue_size::Integer=1024,
+             poll_timeout_ms::Integer=1,
+             max_body_bytes::Integer=MAX_BODY_BYTES,
+             drain_timeout_ms::Integer=DRAIN_TIMEOUT_MS,
+             request_timeout_ms::Integer=0,
+             ws_max_frame_bytes::Integer=MAX_BODY_BYTES,
+             ws_idle_timeout_ms::Integer=0,
+             header_timeout_ms::Integer=0,
+             max_connections::Integer=0,
+             router::R=Router(),
+             tls::Union{Nothing,TLSConfig}=nothing,
+             errors::Dict{Int,<:Any}=Dict{Int,Union{Response,Function}}(),
+             services::NamedTuple=NamedTuple()) where {R<:AbstractRouter}
+
+    cfg = ServerConfig(;
+        poll_timeout_ms, max_body_bytes, drain_timeout_ms, request_timeout_ms,
+        ws_max_frame_bytes, ws_idle_timeout_ms, header_timeout_ms, max_connections,
+        workers, queue_size)
+
+    errs = Dict{Int,Union{Response,Function}}(k => v for (k, v) in errors)
+    for code in keys(errs)
+        (100 <= code <= 599) || throw(ServerError("Error status code must be in [100,599], got $code"))
+    end
+
+    exec = cfg.workers > 0 ? AsyncExecutor(cfg.workers, cfg.queue_size) : SyncExecutor()
+    rs = RunState()
+    rs.tls = tls   # raw TLSConfig material; normalized at start!
+    ex_handlers = Dict{DataType,Function}()
+    used_mw = AbstractMiddleware[]
+    ctx = RequestContext(router; middlewares=used_mw,
+                         errors=errs, services=services,
+                         exception_handlers=ex_handlers)
+    return _build_app(cfg, rs, router, used_mw, errs, ex_handlers,
+                      ServiceRegistry(services), ctx, exec)
 end
 
 # --- Teardown ---
