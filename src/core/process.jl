@@ -188,10 +188,9 @@ the 404/405 producers — so interception middleware (CORS, health,
 metrics) observes all requests.
 """
 function process(ctx::RequestContext, request::Request)::Union{Response,StreamResponse}
-    if !isempty(ctx.services)
-        c = context(request)
-        c[:_services] = ctx.services
-    end
+    # Typed DI: a field assignment, not a Dict allocation. `service` and
+    # `withservices` read it; `context(req)` stays user-data-only.
+    request.services = ctx.services
     try
         terminal, scoped = _resolve_terminal(ctx.router, request)
         result = if scoped === nothing

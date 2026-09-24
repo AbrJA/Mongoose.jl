@@ -20,7 +20,7 @@ function adapt_request(msg::MgHttpMessage;
     path = stripquery(uri)
     # Query is parsed lazily from the raw string on first access.
     return Request(method, uri, String(path), nothing, to_string(msg.query),
-                   headers, body, nothing, remote_addr)
+                   headers, body, nothing, nothing, remote_addr)
 end
 
 """
@@ -34,7 +34,7 @@ function adapt_request(msg::MgHttpMessage, method::Symbol, uri::String;
     body = body_of(msg)
     path = String(stripquery(uri))
     return Request(method, uri, path, nothing, to_string(msg.query),
-                   headers, body, nothing, remote_addr)
+                   headers, body, nothing, nothing, remote_addr)
 end
 
 # --- Request body extraction ---

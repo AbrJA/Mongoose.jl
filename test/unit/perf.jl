@@ -26,6 +26,21 @@
     @test @allocated(with_mw()) <= 2200         # baseline ~1088 B
 end
 
+@testset "Typed DI does not allocate a context" begin
+    frozen = Router()
+    route!(frozen, :get, "/", r -> text("ok"))
+    freeze!(frozen)
+    ctx = RequestContext(frozen; services=(db="pool",))
+    req = Request(:get, "/", Dict{String,String}(), Pair{String,String}[], "")
+    f() = process(ctx, req)
+    f()
+    # Setting the services field must not allocate a Dict{Symbol,Any} (the old
+    # eager injection cost ~304 B/op).
+    @test @allocated(f()) <= 400
+    @test req.services.db == "pool"
+    @test service(req, Val(:db)) == "pool"
+end
+
 @testset "Method token parsing" begin
     for (wire, sym) in (("GET", :get), ("POST", :post), ("PUT", :put),
                         ("DELETE", :delete), ("PATCH", :patch),

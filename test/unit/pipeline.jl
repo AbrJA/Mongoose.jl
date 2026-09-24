@@ -24,9 +24,13 @@
     @test res3.body == "custom 404"
 
     req4 = Request(:get, "/hi", Dict{String,String}(), Pair{String,String}[], "")
-    ctx4 = context(req4)
     Mongoose.process(ctx2, req4)
-    @test ctx4[:_services].db == "pool"
+    # Typed DI: `process` sets the request's services field directly — no
+    # Dict{Symbol,Any} is allocated and `context(req)` stays untouched.
+    @test req4.services.db == "pool"
+    @test Mongoose.services(req4).db == "pool"
+    @test Mongoose.service(req4, Val(:db)) == "pool"
+    @test req4.context === nothing
 end
 
 

@@ -450,20 +450,16 @@ db = service(req, Val(:db))   # convenient, dynamically typed
 ```
 """
 function service(req::Request, name::Symbol)
-    ctx = req.context
-    ctx === nothing && return nothing
-    svcs = get(ctx, :_services, nothing)
-    svcs isa NamedTuple || return nothing
+    svcs = req.services
+    svcs === nothing && return nothing
     hasproperty(svcs, name) || return nothing
     v = getproperty(svcs, name)
     return v isa Function ? v() : v
 end
 
 @inline function service(req::Request, ::Val{name}) where {name}
-    ctx = req.context
-    ctx === nothing && return nothing
-    svcs = get(ctx, :_services, nothing)
-    svcs isa NamedTuple || return nothing
+    svcs = req.services
+    svcs === nothing && return nothing
     hasproperty(svcs, name) || return nothing
     v = getfield(svcs, name)
     return v isa Function ? v() : v
@@ -484,10 +480,8 @@ Dynamically typed at this boundary; use [`withservices`](@ref) for
 type-stable access.
 """
 function services(req::Request)
-    ctx = req.context
-    ctx === nothing && return NamedTuple()
-    svcs = get(ctx, :_services, nothing)
-    return svcs isa NamedTuple ? svcs : NamedTuple()
+    svcs = req.services
+    return svcs === nothing ? NamedTuple() : svcs
 end
 
 """
@@ -495,7 +489,7 @@ end
 
 Function-barrier access to DI services: the closure receives the concrete
 NamedTuple, so field access inside it specializes — unlike
-`service(req, Val(:x))`, which reads through the dynamic request context.
+`service(req, Val(:x))`, which returns a dynamically typed value.
 
 # Example
 ```julia

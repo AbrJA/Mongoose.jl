@@ -160,10 +160,9 @@ per-request dynamic dispatch.
 - `@nospecialize(handler::Function)` at registration: keeps compile time down
   but guarantees a dynamic call in the generic path. Acceptable only because
   the compiled path re-captures types — don't add more.
-- Eager parsing per request: the query is now lazy (`querydict`), DI services
-  are still injected into a `Dict{Symbol,Any}` eagerly when registered
-  (`context(req)` — 304 B/op), and typed DI via handler wrapping is the
-  planned fix (batch 12 C4).
+- Eager parsing per request is gone: the query is lazy (`querydict`) and DI
+  services are set as a typed `Request` field (`process`), so a services app
+  costs 208 B/op vs 192 B/op without — no `Dict{Symbol,Any}`, no boxing.
 - Recomputing per-connection values per request (`remote_addr`, request id)
   when they could be cached on the connection record.
 - Copying headers into a fresh `Headers` for every middleware

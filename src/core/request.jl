@@ -111,6 +111,10 @@ end
     that never read the query pay only the raw-string copy (nothing at all when
     there is no query). `context` is allocated on first access the same way.
 
+    `services` is the app's DI NamedTuple, set by `process` before dispatch (no
+    dict allocation, no boxing); [`service`](@ref)/[`withservices`](@ref) read
+    it directly.
+
     `remote_addr` is the transport-provided peer address (the client's IP as a
     string, or `nothing` when the transport does not supply one — e.g. the
     standalone pipeline or `FakeTransport`-constructed requests).
@@ -124,6 +128,7 @@ mutable struct Request <: AbstractRequest
     const headers::Headers
     const body::String
     context::Union{Nothing,Dict{Symbol,Any}}
+    services::Union{Nothing,NamedTuple}         # DI, set by `process`
     const remote_addr::Union{Nothing,String}
 
     # Primary constructor — all fields explicit
@@ -131,8 +136,9 @@ mutable struct Request <: AbstractRequest
                      query::Union{Nothing,Dict{String,String}}, query_raw::String,
                      headers::Headers, body::String,
                      context::Union{Nothing,Dict{Symbol,Any}}=nothing,
+                     services::Union{Nothing,NamedTuple}=nothing,
                      remote_addr::Union{Nothing,String}=nothing)
-        return new(method, uri, path, query, query_raw, headers, body, context, remote_addr)
+        return new(method, uri, path, query, query_raw, headers, body, context, services, remote_addr)
     end
 end
 
@@ -141,7 +147,7 @@ function Request(method::Symbol, uri::String, path::String,
                  query::Union{Nothing,Dict{String,String}}, headers::Headers,
                  body::String, context::Union{Nothing,Dict{Symbol,Any}}=nothing,
                  remote_addr::Union{Nothing,String}=nothing)
-    return Request(method, uri, path, query, "", headers, body, context, remote_addr)
+    return Request(method, uri, path, query, "", headers, body, context, nothing, remote_addr)
 end
 
 # Convenience overload: accept raw pair vectors/tuples and normalize

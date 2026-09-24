@@ -480,10 +480,10 @@ four gates plus before/after numbers in the commit message.
   path specializes; async keeps one boxing point per job but no `Function`
   signature erasure. Replace `Tagged{Union{…}}` with concrete reply structs if
   the union boxing shows up in profiles.
-- [ ] **C4** Typed DI: store services on the `Request` (field set by `process`)
-  instead of eagerly allocating `Dict{Symbol,Any}` (304 B/op); `service` reads
-  the field, `withservices` remains the type-stable barrier; `context(req)`
-  becomes user-data-only.
+- [x] **C4** Typed DI: `Request.services` field set by `process` (208 B/op with
+  services vs 192 without; was ~496 with the eager Dict). `service`/
+  `services`/`withservices` read the field; `context(req)` is user-data-only.
+  *commit: (this one)*
 - [ ] **C5** Tuple middleware as the only pipeline representation: `use!`
   builds a builder-style chain (or `App(middleware=(…))`); remove the
   `Vector{AbstractMiddleware}` per-request path and the `PathFilter` wrapper
