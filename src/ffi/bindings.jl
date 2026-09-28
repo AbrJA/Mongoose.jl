@@ -39,7 +39,14 @@ in handler.jl — `mg_http_reply` uses printf/strlen internally and truncates
 at the first 0x00 byte.
 """
 function mg_http_reply(conn::MgConnection, status::Integer, headers::String, body::String)
-    ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring, Cstring), conn, Cint(status), headers, "%s", body)
+    # `body_fmt` is the last *fixed* C parameter; `body` is a C vararg. The
+    # trailing `Cstring...` is required: on Apple Silicon (arm64 macOS) C
+    # varargs are stack-passed, and a call without the vararg marker passes
+    # the body in a register that `va_arg` never reads — the callee then
+    # runs `strlen` on stack garbage (seen as a segfault in `_platform_strlen`).
+    ccall((:mg_http_reply, libmongoose), Cvoid,
+          (Ptr{Cvoid}, Cint, Cstring, Cstring, Cstring...),
+          conn, Cint(status), headers, "%s", body)
 end
 
 """
@@ -97,7 +104,9 @@ wedges on a freed connection). `mg_error` only marks; the poll loop closes.
 `msg` is passed as a `%s` argument, so it may contain arbitrary text.
 """
 @inline function mg_error(conn::MgConnection, msg::AbstractString)
-    ccall((:mg_error, libmongoose), Cvoid, (Ptr{Cvoid}, Cstring, Cstring),
+    # Variadic C call: see `mg_http_reply` for why the trailing `Cstring...`
+    # marker is required on Apple Silicon.
+    ccall((:mg_error, libmongoose), Cvoid, (Ptr{Cvoid}, Cstring, Cstring...),
           conn, "%s", msg)
     return nothing
 end

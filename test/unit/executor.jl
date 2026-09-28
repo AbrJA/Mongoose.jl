@@ -55,7 +55,7 @@ end
     exec2 = AsyncExecutor(1, 1)
     start!(exec2, nothing)
     for i in 1:6
-        submit!(exec2, () -> i)
+        submit!(exec2, () -> Mongoose.Kernel.Tagged{Union{Response,StreamResponse,Message}}(i, Message("x")))
     end
     ok = timedwait(10.0; pollint=0.05) do
         stop!(exec2; timeout=2.0)
