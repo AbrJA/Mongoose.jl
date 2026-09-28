@@ -347,7 +347,6 @@ function parsemultipart(req::Request)::Dict{String,Union{String,MultipartFile}}
     startswith(ct, "multipart/form-data") ||
         throw(UnsupportedMediaTypeError("parsemultipart() requires Content-Type: multipart/form-data, got \"$ct\""))
 
-    # Extract boundary
     boundary = _extract_boundary(ct)
     isempty(boundary) && throw(BadRequestError("No boundary found in Content-Type header"))
 
@@ -392,7 +391,6 @@ function _parse_multipart(data::AbstractVector{UInt8}, boundary::String)::Dict{S
         headers_str = part[1:prevind(part, first(header_end))]
         body_content = part[nextind(part, last(header_end)):end]
 
-        # Remove trailing \r\n from body
         body_content = rstrip(body_content, ['\r', '\n'])
 
         # Parse Content-Disposition

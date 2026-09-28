@@ -129,7 +129,6 @@ function _construct_from_dict(::Type{T}, data::Dict)::T where {T}
         end
 
         raw = data[key]
-        # Handle null for optional fields
         actual_type = _is_optional_type(ftype) ? _unwrap_optional(ftype) : ftype
         if raw === nothing && _is_optional_type(ftype)
             push!(args, nothing)
@@ -170,7 +169,6 @@ function _is_optional_type(T::Type)::Bool
 end
 
 function _unwrap_optional(T::Type)::Type
-    # For Union{Nothing, X}, return X
     T === Nothing && return Nothing
     if T isa Union
         T.a === Nothing && return T.b

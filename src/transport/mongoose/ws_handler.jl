@@ -144,7 +144,6 @@ function on_ws_message(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
     end
 
     if server.executor isa AsyncExecutor
-        # Async: submit the dispatch as a job to the worker pool
         exec = server.executor
         server.runtime.connections[conn_id] = conn
         tagged = Kernel.Tagged(conn_id, Kernel.Intent(ws_msg, uri))
@@ -152,7 +151,6 @@ function on_ws_message(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
             @log_warn "WebSocket message dropped: worker queue full conn_id=$conn_id"
         end
     else
-        # Sync: handle inline
         tagged = Kernel.Tagged(conn_id, Kernel.Intent(ws_msg, uri))
         result = invoke_ws(server, tagged)
         if result !== nothing

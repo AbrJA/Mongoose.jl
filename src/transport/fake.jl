@@ -153,7 +153,6 @@ function (client::FakeTransport)(method::Symbol, path::String;
                                  query::Dict{String,String}=Dict{String,String}(),
                                  remote_addr::Union{Nothing,String}="127.0.0.1")
     client.closed && throw(StreamClosedError("transport is closed"))
-    # Build URI with query string
     uri = if isempty(query)
         path
     else
@@ -161,7 +160,6 @@ function (client::FakeTransport)(method::Symbol, path::String;
         "$path?$params"
     end
 
-    # Merge query from path if present
     parsed_query = parsequery(stripquery(uri) == uri ? "" : String(uri[length(stripquery(uri))+2:end]))
     merge!(parsed_query, query)
 

@@ -32,7 +32,6 @@ function _escape(s::AbstractString)
         elseif c == '\t'
             write(io, "\\t")
         elseif c < ' '
-            # Control characters as \\uXXXX
             write(io, "\\u")
             write(io, string(UInt16(c); base=16, pad=4))
         else

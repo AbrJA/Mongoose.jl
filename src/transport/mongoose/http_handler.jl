@@ -186,7 +186,6 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
     req === nothing && return
 
     if !(server.executor isa AsyncExecutor)
-        # Sync path: handle inline
         res = try
             invoke_http(server, req)
         catch e

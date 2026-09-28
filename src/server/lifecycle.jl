@@ -88,7 +88,6 @@ function shutdown!(server::AbstractServer)
     Threads.atomic_xchg!(server.runtime.running, false) || return
     log_server_stop(server)
 
-    # Run lifecycle stop hooks
     for hook in server.hooks_stop
         try hook() catch e; @log_error "onstop! hook error" e catch_backtrace() end
     end
