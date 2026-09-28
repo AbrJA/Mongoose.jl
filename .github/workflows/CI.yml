@@ -1,17 +1,13 @@
 name: CI
 on:
   pull_request:
-    branches:
-      - main
   push:
-    branches:
-      - main
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
 jobs:
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -23,14 +19,11 @@ jobs:
           - ubuntu-latest
           - macos-latest
           - windows-latest
-        arch:
-          - x64
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
-          arch: ${{ matrix.arch }}
       - uses: actions/cache@v6
         env:
           cache-name: cache-artifacts
@@ -43,6 +36,15 @@ jobs:
             ${{ runner.os }}-
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
+      - name: Dev package into the test env
+        run: julia --project=test -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
+      - name: Acceptance suite (wire-level)
+        run: julia --project=test test/acceptance/production.jl
+      - name: Quality gates (Aqua + JET baseline)
+        run: julia --project=test test/quality/quality.jl
+      - name: Performance smoke (advisory)
+        run: julia --project=. bench/dispatch.jl
+        continue-on-error: true
   docs:
       name: Documentation
       runs-on: ubuntu-latest

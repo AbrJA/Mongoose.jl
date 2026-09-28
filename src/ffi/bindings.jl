@@ -34,12 +34,16 @@ end
 """
     mg_http_reply(conn, status, headers, body) — Send an HTTP response.
 
-String bodies only.  Binary (`Vector{UInt8}`) bodies must go through `_send!`
-in handler.jl — `mg_http_reply` uses printf/strlen internally and truncates
-at the first 0x00 byte.
+String bodies only. Binary (`Vector{UInt8}`) bodies must go through
+`_send_binary_response!` in connection.jl — `mg_http_reply` uses printf/strlen
+internally and truncates at the first 0x00 byte.
 """
 function mg_http_reply(conn::MgConnection, status::Integer, headers::String, body::String)
-    ccall((:mg_http_reply, libmongoose), Cvoid, (Ptr{Cvoid}, Cint, Cstring, Cstring, Cstring), conn, Cint(status), headers, "%s", body)
+    # `body` is a C vararg; the `Cstring...` marker is required on Apple
+    # Silicon, where varargs are stack-passed (otherwise: segfault in strlen).
+    ccall((:mg_http_reply, libmongoose), Cvoid,
+          (Ptr{Cvoid}, Cint, Cstring, Cstring, Cstring...),
+          conn, Cint(status), headers, "%s", body)
 end
 
 """
@@ -80,6 +84,53 @@ end
 """
 function mg_conn_get_fn_data(conn::MgConnection)
     ccall((:mg_conn_get_fn_data, libmongoose), Ptr{Cvoid}, (Ptr{Cvoid},), conn)
+end
+
+"""
+    mg_error(conn, msg) — Mark a connection as closing (`c->is_closing = 1`).
+
+This is the safe way to drop a connection from outside the C callback. The
+next `mg_mgr_poll` reaps it through the internal close path: deregister the fd
+from epoll, `closesocket`, fire `MG_EV_CLOSE`, free the struct.
+
+Do NOT use [`mg_close_conn`](@ref) for this: it frees the struct immediately
+WITHOUT closing the fd or removing it from the epoll set, which leaks the
+socket and leaves a dangling epoll registration (the poll loop then spins or
+wedges on a freed connection). `mg_error` only marks; the poll loop closes.
+
+`msg` is passed as a `%s` argument, so it may contain arbitrary text.
+"""
+@inline function mg_error(conn::MgConnection, msg::AbstractString)
+    # Variadic call: see `mg_http_reply` for the Apple Silicon `Cstring...`
+    # requirement.
+    ccall((:mg_error, libmongoose), Cvoid, (Ptr{Cvoid}, Cstring, Cstring...),
+          conn, "%s", msg)
+    return nothing
+end
+
+"""
+    mg_close_conn(conn) — Free a connection struct immediately.
+
+INTERNAL/FFI escape hatch only. It does not close the socket fd nor deregister
+it from epoll, so calling it on a live connection leaks the fd and corrupts the
+poll loop. Use [`mg_error`](@ref) to drop a live connection; this binding is
+kept for completeness (e.g. connections already detached from the manager).
+"""
+function mg_close_conn(conn::MgConnection)
+    ccall((:mg_close_conn, libmongoose), Cvoid, (Ptr{Cvoid},), conn)
+end
+
+"""
+    mg_http_get_header_ptr(msg_ptr, name) → Ptr{MgStr}
+
+Look up a request header by name (case-insensitive, as Mongoose does) without
+materializing the whole header list or allocating. Returns `C_NULL` when the
+header is absent; otherwise a pointer to the value span, valid only for the
+duration of the current event.
+"""
+@inline function mg_http_get_header_ptr(msg_ptr::Ptr{Cvoid}, name::AbstractString)::Ptr{MgStr}
+    ccall((:mg_http_get_header, libmongoose), Ptr{MgStr},
+          (Ptr{Cvoid}, Cstring), msg_ptr, name)
 end
 
 """

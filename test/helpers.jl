@@ -1,33 +1,88 @@
 # Shared test helpers — included by runtests.jl inside the outer @testset.
 
-function greet(request)
-    body = "{\"message\":\"Hello World from Julia!\"}"
-    Response(Json, body)
+# --- Test logging ---
+const TEST_VERBOSE = get(ENV, "MONGOOSE_TEST_VERBOSE", "0") == "1"
+
+function test_log(msg::String)
+    TEST_VERBOSE && println("  [TEST] ", msg)
 end
 
-function echo(request, name)
-    body = "Hello $name from Julia!"
-    Response(body)
+# --- Dynamic port allocation (avoids port conflicts between tests) ---
+const PORT_COUNTER = Threads.Atomic{Int}(15000 + (getpid() % 10000))
+
+"""
+    fresh_port() → Int
+
+Return a unique port number for each test server. Thread-safe, monotonically increasing.
+"""
+function fresh_port()
+    return Int(Threads.atomic_add!(PORT_COUNTER, 1))
 end
 
-function error_handler(request, args...)
-    error("Something went wrong!")
+"""
+    with_server(server; host="127.0.0.1", kwargs...) do port ... end
+
+Start a server on a fresh port, wait for it to be ready, yield the port,
+and guarantee shutdown in the finally block. Logs port allocation for debugging hangs.
+"""
+function with_server(f::Function, server; host::String="127.0.0.1", timeout::Float64=15.0, kwargs...)
+    port = fresh_port()
+    test_log("Starting server on port $port ($(typeof(server).name.name))")
+    start!(server; host=host, port=port, blocking=false, kwargs...)
+    try
+        wait_for_server("http://$host:$port/"; timeout=timeout)
+        test_log("Server ready on port $port")
+        f(port)
+    finally
+        shutdown!(server)
+        sleep(0.05)
+        test_log("Server stopped on port $port")
+    end
+end
+
+"""
+    signal(c::Channel) — non-blocking one-shot event signal.
+
+    Puts `nothing` into `c` only when it is open and empty (never blocks, never
+    throws). Used by tests to handshake from producer/callback code into the
+    test body (SSE producers, WS callbacks).
+"""
+function signal(c::Channel)
+    isopen(c) && !isready(c) && put!(c, nothing)
+    return c
+end
+
+"""
+    wait_until(f; timeout=10.0, interval=0.05) → Bool
+
+Poll `f()` every `interval` seconds until it returns `true` (exceptions while
+the condition is not ready are treated as `false`), or until `timeout`
+elapses. This is the only sanctioned way to wait for transport-level readiness
+(sockets, TLS handshakes): wait on a *condition*, never on a fixed wall-clock
+duration to assert mid-flight state (use `Channel`/`Event` handshakes for that,
+see test/http/streaming.jl).
+"""
+function wait_until(f::Function; timeout::Float64=10.0, interval::Float64=0.05)
+    deadline = time() + timeout
+    while true
+        ok = try
+            f()
+        catch
+            false
+        end
+        ok && return true
+        time() >= deadline && return false
+        sleep(interval)
+    end
 end
 
 # Wait until the server is actually accepting connections.
-# A fixed sleep is unreliable on Windows where task scheduling is non-deterministic.
-function wait_for_server(url; timeout=10.0, interval=0.05, kwargs...)
-    deadline = time() + timeout
-    while time() < deadline
-        try
-            # status_exception=false: any HTTP response (even 404) means server is up
-            HTTP.get(url; readtimeout=1, connect_timeout=1, status_exception=false, kwargs...)
-            return  # server is reachable
-        catch
-            sleep(interval)
-        end
+function wait_for_server(url; timeout=10.0, kwargs...)
+    ready = wait_until(timeout=Float64(timeout)) do
+        HTTP.get(url; readtimeout=2, connect_timeout=2, status_exception=false, kwargs...)
+        true
     end
-    error("Server at $url did not become ready within $(timeout)s")
+    ready || error("Server at $url did not become ready within $(timeout)s")
 end
 
 function make_test_certificates(dir::String)

@@ -1,3 +1,19 @@
 Manifest*.toml
+AGENTS.md
 zzz/
 build/
+examples/
+perf/
+scripts/
+ideas/
+
+# Internal development files (local only; not part of the library)
+binary
+certs/
+khttp/
+.vscode/
+.opencode/
+WORKLOG.md
+RULES.md
+ARCHITECTURE_REPORT.md
+ROADMAP.md
