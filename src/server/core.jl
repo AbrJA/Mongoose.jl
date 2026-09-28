@@ -29,11 +29,6 @@ end
 
 # --- TLS Configuration ---
 
-"""
-    TLSConfig — TLS options for HTTPS/WSS servers.
-
-    `cert`, `key`, and `ca` accept: file paths, PEM strings, or raw bytes.
-"""
 Base.@kwdef struct TLSConfig
     cert::Union{String,Vector{UInt8}} = ""
     key::Union{String,Vector{UInt8}} = ""
@@ -45,10 +40,13 @@ end
 @doc """
     TLSConfig(; cert, key, ca="", name="", skip_verification=false)
 
-TLS material for `start!(app; tls=...)`. The `Mongoose_jll` build uses
-Mongoose's built-in TLS, which is **TLS 1.3 only** — clients pinned to TLS 1.2
-(older runtimes, some corporate proxies) cannot connect; terminate at a
-reverse proxy or rebuild the JLL against OpenSSL if you need 1.2.
+TLS options for HTTPS/WSS servers, passed to `start!(app; tls=TLSConfig(...))`.
+`cert`, `key`, and `ca` accept file paths, PEM strings, or raw bytes.
+
+The `Mongoose_jll` build uses Mongoose's built-in TLS, which is **TLS 1.3
+only** — clients pinned to TLS 1.2 (older runtimes, some corporate proxies)
+cannot connect; terminate at a reverse proxy or rebuild the JLL against
+OpenSSL if you need 1.2.
 
 Setting `ca` enables **mutual TLS**: the server then requires a client
 certificate signed by that CA (a handshake without one fails). TLS handshakes
