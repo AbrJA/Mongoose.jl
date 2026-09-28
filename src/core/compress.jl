@@ -20,7 +20,6 @@ function (mw::Compress)(request::Request, next::Function)
     response = next()
     response isa Response || return response
 
-    # Check if response is compressible content type
     ct = ""
     for (k, v) in response.headers
         if k == "Content-Type" || k == "content-type"
@@ -30,7 +29,6 @@ function (mw::Compress)(request::Request, next::Function)
     end
     compressible = _is_compressible(ct)
 
-    # Already encoded?
     already_encoded = any(h -> h.first == "Content-Encoding" || h.first == "content-encoding",
                           response.headers)
 
@@ -43,20 +41,15 @@ function (mw::Compress)(request::Request, next::Function)
         end
     end
 
-    # Skip small responses
     body_data = response.body
     body_size = body_data isa String ? ncodeunits(body_data) : length(body_data)
     body_size < mw.min_size_bytes && return response
 
-    # Check if client accepts gzip
     accept_enc = get(request.headers, "accept-encoding", "")
     contains(accept_enc, "gzip") || return response
     (compressible && !already_encoded) || return response
 
-    # Compress
     compressed = transcode(GzipCompressor, body_data isa String ? Vector{UInt8}(body_data) : body_data)
-
-    # Only use compressed if it's actually smaller
     length(compressed) >= body_size && return response
 
     new_headers = mergeheaders(response.headers, ["Content-Encoding" => "gzip"])
@@ -65,7 +58,6 @@ end
 
 @inline function _is_compressible(ct::String)::Bool
     isempty(ct) && return false
-    # Check base type without parameters
     semi = findfirst(';', ct)
     base = semi === nothing ? ct : ct[1:semi-1]
     base = strip(base)
