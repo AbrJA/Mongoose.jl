@@ -108,8 +108,7 @@ mount!(app, api)
 
 **Compiled dispatch** — register everything, then `freeze!` to close and compile
 the route table (later registration throws). The closed table is the foundation
-for AOT builds; `juliac --trim` compatibility is still in progress (tracked in
-`WORKLOG.md`):
+for AOT builds; `juliac --trim` compatibility is still in progress:
 
 ```julia
 freeze!(app)     # or freeze!(router) before App(router=router)
@@ -252,7 +251,7 @@ durations, `_bytes` for sizes. Optional values are disabled with `nothing`.
 HTTPS is native:
 
 ```julia
-app = App(; tls = TLSConfig(cert="certs/server.crt", key="certs/server.key"))
+app = App(; tls = TLSConfig(cert="path/to/cert.pem", key="path/to/key.pem"))
 start!(app; port=8443)
 ```
 

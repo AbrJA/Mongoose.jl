@@ -110,5 +110,5 @@ numbers in the commit message and update the baseline table above plus the
 
 `freeze!` and the compiled route table are the foundation for AOT builds, but
 `juliac --trim` support is **not complete yet**: the trim verifier still finds
-dynamic dispatch in startup/registration (see `WORKLOG.md`, "AOT / trimming
-readiness"). Use the standard Julia runtime until that lands.
+dynamic dispatch in startup/registration. Use the standard Julia runtime until
+that lands.

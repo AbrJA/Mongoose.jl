@@ -10,17 +10,16 @@
     traits (`canws`, `cantls`, `canstream`), and the server
     drives the one C implementation
     (`transport/mongoose`). A reference fake (`FakeTransport`, in
-    `testing.jl`) drives the whole pipeline with no FFI, which is what
-    `FakeTransport` uses.
+    `testing.jl`) drives the whole pipeline with no FFI.
 
     The C transport's concrete lifecycle entry points (used by `start!` /
     `shutdown!`) are `init_server!`, `bind_server!`,
     `spawn_event_loop!`/`stop_event_loop!`, and its send path is
     `send_http_response!`/`send_ws_frame!`/`send_stream_response!` in
     `transport/mongoose`. Extracting a full `init!/listen!/poll!/send!`
-    interface behind `AbstractTransport` is tracked as deferred work
-    (see WORKLOG, T9): there is a single real implementation today, and the
-    trait seam already delivers the replaceability guarantee.
+    interface behind `AbstractTransport` is deferred: there is a single real
+    implementation today, and the trait seam already delivers the
+    replaceability guarantee.
 
     # Capability traits
 

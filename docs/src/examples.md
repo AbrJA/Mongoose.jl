@@ -20,7 +20,7 @@ using Mongoose
 router = Router()
 route!(router, :get, "/secure", req -> text("secure ok"))
 
-app = App(; router=router, tls=TLSConfig(cert="certs/server.crt", key="certs/server.key"))
+app = App(; router=router, tls=TLSConfig(cert="path/to/cert.pem", key="path/to/key.pem"))
 start!(app; port=8443)
 ```
 
@@ -80,9 +80,8 @@ start!(app; port=8080)
 Freezing also provides the closed-table guarantee AOT builds need: with no
 runtime registration, the route table can be compiled once and pruned. Note
 that `juliac --trim` compatibility is **not complete yet** — the trim
-verifier still finds dynamic dispatch in startup/registration (see
-`WORKLOG.md`, "AOT / trimming readiness"). Call `freeze!` after the last
-registration and before starting the app.
+verifier still finds dynamic dispatch in startup/registration. Call `freeze!`
+after the last registration and before starting the app.
 
 ## Query Parameters
 

@@ -185,8 +185,7 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - **AOT/`juliac --trim` is not supported yet.** `freeze!` and the compiled
   route table are the foundation, but a real `--trim=safe` build currently
   fails the verifier (62 unresolved dynamic calls in startup/registration) and
-  a `--trim=unsafe` build crashes constructing a parametric route. The
-  required design work is tracked in `WORKLOG.md`.
+  a `--trim=unsafe` build crashes constructing a parametric route.
 - **Cookie parsing semantics**: duplicate names keep the last value, quoted
   values keep their quotes (RFC 6265), and values are not percent-decoded.
 - **Chunk extensions and trailers are rejected**: the bundled parser closes
@@ -214,5 +213,4 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 
 ## [0.4.0] and earlier
 
-Earlier releases predate this changelog. See `WORKLOG.md` for the detailed
-history of the modular/hardening series.
+Earlier releases predate this changelog.
