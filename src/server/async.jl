@@ -103,11 +103,8 @@ function worker_loop(exec::AsyncExecutor)
     for job in exec.calls
         Threads.atomic_add!(exec.inflight, 1)
         try
-            # Workers are long-lived tasks and therefore pinned to the world age
-            # at `spawn_workers!` time; jobs (closures) submitted later would
-            # otherwise fail with "method too new". `invokelatest` lifts the
-            # world-age restriction (the call is already dynamic — `job` is
-            # read from a `Channel{Function}`).
+            # Long-lived workers are pinned to their spawn world age;
+            # `invokelatest` lets them run jobs submitted later.
             reply = Base.invokelatest(job)
             reply === nothing && continue
             isopen(exec.replies) && put!(exec.replies, reply)

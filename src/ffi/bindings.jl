@@ -34,16 +34,13 @@ end
 """
     mg_http_reply(conn, status, headers, body) — Send an HTTP response.
 
-String bodies only.  Binary (`Vector{UInt8}`) bodies must go through `_send!`
-in handler.jl — `mg_http_reply` uses printf/strlen internally and truncates
-at the first 0x00 byte.
+String bodies only. Binary (`Vector{UInt8}`) bodies must go through
+`_send_binary_response!` in connection.jl — `mg_http_reply` uses printf/strlen
+internally and truncates at the first 0x00 byte.
 """
 function mg_http_reply(conn::MgConnection, status::Integer, headers::String, body::String)
-    # `body_fmt` is the last *fixed* C parameter; `body` is a C vararg. The
-    # trailing `Cstring...` is required: on Apple Silicon (arm64 macOS) C
-    # varargs are stack-passed, and a call without the vararg marker passes
-    # the body in a register that `va_arg` never reads — the callee then
-    # runs `strlen` on stack garbage (seen as a segfault in `_platform_strlen`).
+    # `body` is a C vararg; the `Cstring...` marker is required on Apple
+    # Silicon, where varargs are stack-passed (otherwise: segfault in strlen).
     ccall((:mg_http_reply, libmongoose), Cvoid,
           (Ptr{Cvoid}, Cint, Cstring, Cstring, Cstring...),
           conn, Cint(status), headers, "%s", body)
@@ -104,8 +101,8 @@ wedges on a freed connection). `mg_error` only marks; the poll loop closes.
 `msg` is passed as a `%s` argument, so it may contain arbitrary text.
 """
 @inline function mg_error(conn::MgConnection, msg::AbstractString)
-    # Variadic C call: see `mg_http_reply` for why the trailing `Cstring...`
-    # marker is required on Apple Silicon.
+    # Variadic call: see `mg_http_reply` for the Apple Silicon `Cstring...`
+    # requirement.
     ccall((:mg_error, libmongoose), Cvoid, (Ptr{Cvoid}, Cstring, Cstring...),
           conn, "%s", msg)
     return nothing
