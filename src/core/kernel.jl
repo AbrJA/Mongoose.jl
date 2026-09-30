@@ -16,7 +16,7 @@
 module Kernel
 
 import JSON
-using CodecZlib
+using LibDeflate
 using Base64
 
 include("base.jl")          # AbstractRequest

@@ -3,7 +3,6 @@ module Mongoose
 using Mongoose_jll
 using PrecompileTools
 import JSON
-using CodecZlib
 
 # The facade exports the user-facing surface only. Extension protocols (router:
 # matchroute/gethandler/…; pipeline: getterminal/runpipeline/…; formats:

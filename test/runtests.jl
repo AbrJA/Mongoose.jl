@@ -1,6 +1,7 @@
 using Test
 using HTTP
 import JSON
+import CodecZlib
 using Mongoose
 
 @testset "Mongoose.jl" begin

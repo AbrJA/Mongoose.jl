@@ -14,6 +14,7 @@
 using Test
 using HTTP
 import JSON
+import CodecZlib
 using Logging
 
 using Mongoose

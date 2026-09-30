@@ -1,5 +1,12 @@
-struct Compress <: AbstractMiddleware
+mutable struct Compress <: AbstractMiddleware
     min_size_bytes::Int  # Minimum body size to compress (bytes)
+    init_lock::ReentrantLock
+    compressors::Vector{Union{Nothing,Compressor}}
+
+    function Compress(min_size_bytes::Int)
+        compressors = Vector{Union{Nothing,Compressor}}(nothing, Threads.maxthreadid())
+        return new(min_size_bytes, ReentrantLock(), compressors)
+    end
 end
 
 @doc """
@@ -49,11 +56,54 @@ function (mw::Compress)(request::Request, next::Function)
     contains(accept_enc, "gzip") || return response
     (compressible && !already_encoded) || return response
 
-    compressed = transcode(GzipCompressor, body_data isa String ? Vector{UInt8}(body_data) : body_data)
+    compressed = _gzip_compress!(_compressor!(mw),
+                                 body_data isa String ? Vector{UInt8}(body_data) : body_data)
+    compressed === nothing && return response
     length(compressed) >= body_size && return response
 
     new_headers = mergeheaders(response.headers, ["Content-Encoding" => "gzip"])
     return Response(response.status, new_headers, compressed)
+end
+
+# Worst-case gzip size (deflate bound + wrapper) with headroom; trimmed by the
+# resize after compression.
+@inline _gzip_bound(n::Int)::Int = n + 5 * max(cld(n, 10_000), 1) + 64
+
+# libdeflate compressors are not thread-safe and allocating one costs ~8 µs, so
+# each thread lazily creates its own. Tasks cannot migrate inside the
+# non-yielding compression ccall, so a per-thread index is safe to reuse.
+# The slot vector is sized by `Threads.maxthreadid()`, not `nthreads()`: with an
+# interactive thread pool, `@spawn` tasks can run on a thread id above
+# `nthreads()`, which would index out of bounds. It also grows under the lock
+# if a thread id ever exceeds the initial bound.
+@inline function _compressor!(mw::Compress)::Compressor
+    tid = Threads.threadid()
+    if tid <= length(mw.compressors)
+        c = @inbounds mw.compressors[tid]
+        c isa Compressor && return c
+    end
+    return lock(mw.init_lock) do
+        while length(mw.compressors) < tid
+            push!(mw.compressors, nothing)
+        end
+        c = @inbounds mw.compressors[tid]
+        if !(c isa Compressor)
+            c = Compressor(UInt8(6))
+            @inbounds mw.compressors[tid] = c
+        end
+        return c::Compressor
+    end
+end
+
+# LibDeflate 0.4 resizes the output in place and returns it; 1.x returns the
+# number of bytes written.
+@inline function _gzip_compress!(compressor::Compressor,
+                                 data::Vector{UInt8})::Union{Vector{UInt8},Nothing}
+    out = Vector{UInt8}(undef, _gzip_bound(length(data)))
+    result = gzip_compress!(compressor, out, data)
+    result isa LibDeflateError && return nothing
+    result isa Vector{UInt8} && return result
+    return resize!(out, result)
 end
 
 @inline function _is_compressible(ct::String)::Bool

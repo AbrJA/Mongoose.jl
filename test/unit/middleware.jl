@@ -21,6 +21,10 @@
         @test resp.status == 200
         @test any(p -> p.first == "Content-Encoding" && p.second == "gzip", resp.headers)
         @test resp.body isa Vector{UInt8}
+        # The wire format must be valid gzip (cross-checked with CodecZlib).
+        inflated = String(CodecZlib.transcode(CodecZlib.GzipDecompressor, resp.body))
+        @test inflated == large_body
+        @test mw.compressors[Threads.threadid()] !== nothing
     end
 
     @testset "Skips if no Accept-Encoding" begin
