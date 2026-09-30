@@ -51,36 +51,12 @@ end
 """
     remote_addr_of(conn::MgConnection) → Union{Nothing,String}
 
-Resolve the peer's bare IP (host only, port stripped) by reading `rem` from the
-C `mg_connection` (Mongoose 7.21: `rem` at offset 40). Returns `nothing` when no
-address could be read. The port is deliberately excluded so rate-limit buckets
-key on the client host, not on the ephemeral TCP port each connection binds.
+Resolve the peer's bare IP (host only, port stripped). The port is
+deliberately excluded so rate-limit buckets key on the client host, not on the
+ephemeral TCP port each connection binds.
 """
-@inline function remote_addr_of(conn::MgConnection)::Union{Nothing,String}
-    conn == C_NULL && return nothing
-    ptr = Ptr{MgAddr}(reinterpret(UInt, conn) + _MG_CONN_REM_OFFSET)
-    rem = unsafe_load(ptr)
-    return rem.is_ip6 != 0 ? _fmt_ip6(rem) : _fmt_ip4(rem.ip0)
-end
-
-# IPv4: octets 0-3 of the union in network byte order; a little-endian 64-bit
-# load puts octet 1 in the least-significant byte.
-@inline function _fmt_ip4(v::UInt64)::String
-    return string(v & 0xff, ".",
-                  (v >> 8) & 0xff, ".",
-                  (v >> 16) & 0xff, ".",
-                  (v >> 24) & 0xff)
-end
-
-# IPv6: full expanded form ("abcd:ef01:…:1234"), no :: compression — stable
-# and unambiguous as a bucket key.
-@inline function _fmt_ip6(rem::MgAddr)::String
-    v0 = bswap(rem.ip0)
-    v1 = bswap(rem.ip1)
-    groups = ntuple(i -> (v0 >> (16 * (4 - i))) & 0xffff, 4)
-    groups2 = ntuple(i -> (v1 >> (16 * (4 - i))) & 0xffff, 4)
-    return join((string(g, base=16, pad=4) for g in (groups..., groups2...)), ":")
-end
+@inline remote_addr_of(conn::MgConnection)::Union{Nothing,String} =
+    mgjl_conn_get_remote_ip(conn)
 
 """
     cached_remote_addr(server, conn) → Union{Nothing,String}
@@ -89,10 +65,6 @@ Peer IP formatted once per connection (the formatting allocates a String) and
 cached until `MG_EV_CLOSE`. Poll-thread only.
 """
 @inline function cached_remote_addr(server::AbstractServer, conn::MgConnection)::Union{Nothing,String}
-    # The peer-address offset is the only pinned layout left; if the ABI check
-    # failed, serve `nothing` (ratelimit falls back to its shared bucket)
-    # instead of a wrong address.
-    server.runtime.abi_ok || return nothing
     cached = get(server.runtime.conn_addr, conn, nothing)
     cached !== nothing && return isempty(cached) ? nothing : cached
     addr = remote_addr_of(conn)

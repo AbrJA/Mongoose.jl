@@ -25,7 +25,7 @@ Recovers the Julia server via registry lookup (GC-safe).
 """
 function c_event_callback(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
     is_handled_event(ev) || return nothing
-    fn_data = mg_conn_get_fn_data(conn)
+    fn_data = mgjl_conn_get_fn_data(conn)
     fn_data == C_NULL && return nothing
     server = lookup_server(UInt(fn_data))
     server === nothing && return nothing
@@ -77,9 +77,9 @@ function on_accept(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
     maxc = server.config.max_connections
     if maxc > 0 && length(server.runtime.conn_times) >= maxc
         # Refuse the connection before mongoose parses anything from it.
-        # `mg_error` only marks it; the poll loop runs the real close path
-        # (epoll DEL + closesocket). `mg_close_conn` would leak the fd.
-        mg_error(conn, "max connections reached")
+        # `mgjl_conn_error` only marks it; the poll loop runs the real close
+        # path (epoll DEL + closesocket). `mg_close_conn` would leak the fd.
+        mgjl_conn_error(conn, "max connections reached")
         return nothing
     end
     now = time()

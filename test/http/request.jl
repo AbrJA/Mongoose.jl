@@ -85,10 +85,10 @@
 end
 
 
-@testset "Async Connection: close stays usable (client closes)" begin
-    # The framework no longer writes mongoose connection state: a pool reply
-    # cannot flush-and-close asynchronously through the public API, so the
-    # header is not echoed and the client closes its side (it asked to).
+@testset "Async Connection: close is echoed and drained" begin
+    # `_http_job` echoes the client's close onto the reply; the drain loop
+    # marks the connection draining afterwards, so the server flushes and
+    # closes its side (RFC 7230 §6.3).
     s = App(workers=2)
     get!(s, "/close") do req; text("bye") end
     with_server(s) do port
@@ -96,9 +96,10 @@ end
         write(sock, "GET /close HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
         head = readuntil(sock, "\r\n\r\n")
         @test contains(head, "200 OK")
-        @test !contains(lowercase(head), "connection: close")
+        @test contains(lowercase(head), "connection: close")
         len = parse(Int, match(r"content-length: (\d+)"i, head).captures[1])
         @test String(read(sock, len)) == "bye"
+        @test eof(sock)   # server closed its side after draining
         close(sock)
     end
 end
@@ -121,8 +122,9 @@ end
     s = App()
     post!(s, "/echo") do req; text("len=$(sizeof(body(req)))") end
     with_server(s) do port
-        # Both framing headers present: the connection is dropped (there is no
-        # public API to send a response and close cleanly).
+        # Both framing headers present: the request is rejected at the HDRS
+        # stage and the connection dropped without a response (replying there
+        # would still dispatch the message to the handler, see `on_headers`).
         sock = Sockets.connect("127.0.0.1", port)
         write(sock, "POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 6\r\n" *
                     "Transfer-Encoding: chunked\r\n\r\n6\r\nhello!\r\n0\r\n\r\n")

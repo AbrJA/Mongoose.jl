@@ -67,7 +67,7 @@ function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
     if !isempty(endpoint.allowed_origins)
         origin = get(headers, "origin", "")
         if !any(o -> o == origin, endpoint.allowed_origins)
-            mg_http_reply(conn, 403, "", "Forbidden")
+            mgjl_http_reply_bin(conn, 403, "", "Forbidden")
             return
         end
     end
@@ -81,7 +81,7 @@ function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
             true
         end
         if !accepted
-            mg_http_reply(conn, 403, "", "Forbidden")
+            mgjl_http_reply_bin(conn, 403, "", "Forbidden")
             return
         end
     end
@@ -97,13 +97,11 @@ function on_ws_control(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
     fin = (msg.flags & 0x80) != 0
     rsv = (msg.flags & 0x70) != 0
     len = Int(msg.data.len)
-    println(stderr, "WSCTL flags=", string(msg.flags, base=2, pad=8), " op=", op, " fin=", fin, " rsv=", rsv, " len=", len)
     # RFC 6455 §5.5: control frames must be unfragmented, ≤125 bytes, RSV=0;
     # a CLOSE payload is 0 or ≥2 bytes.
     if rsv || !fin || len > 125 || (op == WS_OP_CLOSE && len == 1)
-        # RFC 6455 §5.5 violation: drop the connection (no public Mongoose API
-        # to flush a Close frame and then close cleanly).
-        mg_error(conn, "WebSocket control-frame violation")
+        # RFC 6455 §5.5 violation: send a protocol-error Close frame and drain.
+        mgjl_ws_close(conn, 1002, "WebSocket control-frame violation")
         return nothing
     end
     # Keep-alive bookkeeping only. Mongoose's WS layer already auto-replies:
@@ -124,19 +122,19 @@ function on_ws_message(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
     ws_touch!(server, conn_id)
 
     if (msg.flags & 0x70) != 0
-        mg_error(conn, "WebSocket RSV bit set")
+        mgjl_ws_close(conn, 1002, "WebSocket RSV bit set")
         return
     end
 
     if msg.data.len > server.config.ws_max_frame_bytes
-        mg_error(conn, "WebSocket frame too large")
+        mgjl_ws_close(conn, 1009, "WebSocket frame too large")
         return
     end
 
     ws_msg = parse_ws_message(msg)
     # RFC 6455 §5.6: text frames must carry valid UTF-8.
     if (msg.flags & 0x0F) == 0x01 && ws_msg.data isa String && !isvalid(ws_msg.data)
-        mg_error(conn, "WebSocket invalid UTF-8")
+        mgjl_ws_close(conn, 1007, "WebSocket invalid UTF-8")
         return
     end
     uri = lock(server.runtime.ws_lock) do
@@ -215,10 +213,9 @@ function ws_idle_sweep!(server::AbstractServer)
     for id in to_close
         conn = get(server.runtime.connections, id, nothing)
         conn === nothing && continue
-        # Drop the idle peer. `mg_error` marks it closing; the poll loop runs
-        # the real close path (epoll DEL + closesocket). `mg_close_conn`
-        # would leak the fd and corrupt epoll.
-        mg_error(conn, "WebSocket idle timeout")
+        # Send a proper Close frame (1001 "going away") and drain. The poll
+        # loop then runs the real close path (epoll DEL + closesocket).
+        mgjl_ws_close(conn, 1001, "WebSocket idle timeout")
     end
 end
 

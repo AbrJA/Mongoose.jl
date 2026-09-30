@@ -213,16 +213,7 @@ function normalize_tls(tls::TLSConfig)
     )
 end
 
-@inline _to_mgstr(s::String) = isempty(s) ? MgStr(C_NULL, 0) : MgStr(pointer(s), Csize_t(ncodeunits(s)))
-@inline _to_mgstr(bytes::Vector{UInt8}) = isempty(bytes) ? MgStr(C_NULL, 0) : MgStr(pointer(bytes), Csize_t(length(bytes)))
-
-function init_tls!(conn::MgConnection, tls::TLSConfig)
-    cert, key, ca, name = tls.cert, tls.key, tls.ca, tls.name
-    opts = Ref(MgTlsOpts(
-        _to_mgstr(ca), _to_mgstr(cert), _to_mgstr(key), _to_mgstr(name),
-        tls.skip_verification ? Cint(1) : Cint(0)
-    ))
-    GC.@preserve cert key ca name begin
-        mg_tls_init(conn, opts)
-    end
+@inline function init_tls!(conn::MgConnection, tls::TLSConfig)
+    mgjl_tls_init_mem(conn, tls.ca, tls.cert, tls.key, tls.name, tls.skip_verification)
+    return nothing
 end

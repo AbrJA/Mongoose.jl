@@ -11,7 +11,7 @@ mutable struct Manager
     ptr::Ptr{Cvoid}
     function Manager(; empty::Bool=false)
         empty && return new(C_NULL)
-        ptr = Libc.calloc(1, Csize_t(MG_MGR_SIZE))
+        ptr = Libc.calloc(1, Csize_t(mgjl_sizeof_mgr()))
         ptr == C_NULL && throw(ServerError("Failed to allocate manager memory"))
         mg_log_set_level(MG_LL_NONE)
         mg_mgr_init!(ptr)
@@ -181,8 +181,6 @@ mutable struct RunState
     awaiting_body::Dict{Ptr{Cvoid},Float64}     # conns whose headers arrived, body pending
     conn_addr::Dict{Ptr{Cvoid},String}   # formatted peer IP, one per connection
     ws_dropped::Threads.Atomic{UInt64}   # WS pushes dropped (queue full / send cap)
-    abi_ok::Bool                         # struct-layout sanity (false ⇒ degrade)
-    abi_checked::Bool                    # one-time check performed
     bg_tasks::Vector{Task}
     bg_lock::Threads.SpinLock            # guards bg_tasks (workers push)
 end
@@ -193,7 +191,7 @@ RunState() = RunState(Threads.Atomic{Bool}(false), nothing, nothing, Manager(emp
     Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(),
     Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(),
     Dict{Ptr{Cvoid},String}(),
-    Threads.Atomic{UInt64}(0), true, false, Task[], Threads.SpinLock())
+    Threads.Atomic{UInt64}(0), Task[], Threads.SpinLock())
 
 # --- Background task tracking ---
 # Workers push timed-out request tasks; the event loop prunes completed ones on

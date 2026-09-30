@@ -37,7 +37,7 @@ function _sweep!(server::AbstractServer, track::Dict{Ptr{Cvoid},Float64},
     end
     for c in stale
         delete!(track, c)
-        mg_error(c, reason)
+        mgjl_conn_error(c, reason)
     end
     return nothing
 end
@@ -52,8 +52,9 @@ body is still arriving. Two jobs:
    so a slow upload longer than `header_timeout_ms` is not killed mid-body.
 2. Reject a message carrying BOTH `Content-Length` and `Transfer-Encoding`
    (RFC 9112 §6.1): front-ends may frame it differently than this server, so
-   it is a request-smuggling vector. There is no public Mongoose API to send a
-   response and close cleanly, so the connection is dropped (`mg_error`).
+   it is a request-smuggling vector. Mongoose still dispatches the message
+   after HDRS, so a reply here would race the real handler; the connection is
+   dropped instead (`mgjl_conn_error`).
 """
 function on_headers(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
     delete!(server.runtime.awaiting_headers, conn)
@@ -65,7 +66,7 @@ function on_headers(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvo
 
     if mg_http_get_header_ptr(ev_data, "Content-Length") != C_NULL &&
        mg_http_get_header_ptr(ev_data, "Transfer-Encoding") != C_NULL
-        mg_error(conn, "Content-Length with Transfer-Encoding")
+        mgjl_conn_error(conn, "Content-Length with Transfer-Encoding")
         return nothing
     end
 
@@ -128,21 +129,6 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
     delete!(server.runtime.awaiting_headers, conn)
     delete!(server.runtime.awaiting_body, conn)
 
-    # One-time ABI sanity check (read-only): the peer-address offset is the
-    # only pinned layout left. On a mismatch, degrade loudly instead of
-    # serving wrong addresses.
-    if !server.runtime.abi_checked
-        flags = unsafe_load(Ptr{UInt32}(reinterpret(UInt, conn) + _MG_CONN_FLAGS_OFFSET))
-        ip6 = unsafe_load(Ptr{UInt8}(reinterpret(UInt, conn) + _MG_CONN_REM_OFFSET + 19))
-        if ((flags >> 2) & 0x1) == 0 || msg.head.len == 0 || ip6 > 1
-            @log_error "Mongoose ABI mismatch: pinned struct offsets do not match " *
-                       "this build ($(Sys.MACHINE)); remote_addr is disabled. " *
-                       "Re-verify _MG_CONN_* offsets for this platform."
-            server.runtime.abi_ok = false
-        end
-        server.runtime.abi_checked = true
-    end
-
     # Header-size cap: complete-but-oversized headers get a clean 431 (the
     # incomplete case is dropped by the sweep before more is buffered).
     if server.config.max_header_bytes > 0 && Int(msg.head.len) > server.config.max_header_bytes
@@ -198,13 +184,12 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
             send_stream_response!(server, conn, res)
         else
             send_http_response!(conn, res::Response, rid)
+            _response_wants_close(res) && mgjl_conn_close_after_send(conn)
         end
     else
-        # Async path: enqueue a job to the worker pool. A client-requested
-        # `Connection: close` is honored by the client closing its side; the
-        # server cannot flush-and-close asynchronously through mongoose's
-        # public API (only synchronous replies set `is_draining`), so the
-        # header is not echoed here and the connection stays reusable.
+        # Async path: enqueue a job to the worker pool. `_http_job` echoes a
+        # client-requested `Connection: close` onto the response; the drain
+        # loop then marks the connection draining after the reply is sent.
         exec = server.executor
         timeout = server.config.request_timeout_ms
 
@@ -212,8 +197,10 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         # exhausted, shed new timed requests rather than accumulate more.
         if timeout > 0 && _bg_full(server)
             res = _add_header_once(errorresponse(server.errors, 503), "Retry-After", "1")
+            res = _echo_conn_close!(res, req)
             @log_warn "Request shed: runaway timed-out tasks reached $(server.config.max_bg_tasks)"
             send_http_response!(conn, res::Response, resolve_request_id(req, server))
+            _response_wants_close(res) && mgjl_conn_close_after_send(conn)
             return nothing
         end
 
@@ -228,7 +215,9 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         if !submit!(exec, job)
             delete!(server.runtime.connections, id)
             res = _add_header_once(errorresponse(server.errors, 503), "Retry-After", "1")
+            res = _echo_conn_close!(res, req)
             send_http_response!(conn, res::Response, resolve_request_id(req, server))
+            _response_wants_close(res) && mgjl_conn_close_after_send(conn)
         end
     end
 end
@@ -253,12 +242,13 @@ function _http_job(server::AbstractServer, id::Int, req::Request)
             return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, res)
         end
         resp = mergeheaders(res, ["X-Request-Id" => rid])
-        return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, resp)
+        return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, _echo_conn_close!(resp, req))
     catch e
         # Anything outside the handler's own try (post-processing) still gets a
         # reply, so the connection entry is cleaned up and the client answered.
         @log_error "Request job error uri=$(req.uri)" e catch_backtrace()
-        return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, errorresponse(server.errors, req, 500))
+        resp = errorresponse(server.errors, req, 500)
+        return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, _echo_conn_close!(resp, req))
     end
 end
 
@@ -281,12 +271,14 @@ function _http_job_timed(server::AbstractServer, id::Int, req::Request, timeout:
             # A job that failed outside the handler's own try still gets a reply
             # so the connection entry is cleaned up and the client is answered.
             @log_error "Request job failed uri=$(req.uri)" e catch_backtrace()
-            Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, errorresponse(server.errors, req, 500))
+            resp = errorresponse(server.errors, req, 500)
+            Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, _echo_conn_close!(resp, req))
         end
     end
     bg_track!(server, t)
     @log_warn "Request timeout uri=$(req.uri)"
-    return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, errorresponse(server.errors, 504))
+    resp = errorresponse(server.errors, req, 504)
+    return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, _echo_conn_close!(resp, req))
 end
 
 # --- HTTP dispatch (thin transport wrapper over the core pipeline) ---

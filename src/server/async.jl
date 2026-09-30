@@ -138,6 +138,7 @@ _stop_executor(exec::AsyncExecutor, timeout::Real) = stop!(exec; timeout=timeout
 # --- App wiring (server-level orchestration) ---
 
 function init_server!(app::App)
+    verify_abi!()
     app.runtime.manager = Manager()
     _init_executor!(app.executor)
     empty!(app.runtime.connections)
@@ -189,6 +190,7 @@ function _dispatch_replies!(exec::AsyncExecutor, app::App)::Bool
         conn === nothing && continue
         if reply.payload isa Response
             send_http_response!(conn, reply.payload)
+            _response_wants_close(reply.payload) && mgjl_conn_close_after_send(conn)
             delete!(app.runtime.connections, reply.id)
         elseif reply.payload isa StreamResponse
             try send_stream_response!(app, conn, reply.payload) catch e; @log_error "Stream error" e catch_backtrace() end
