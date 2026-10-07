@@ -51,6 +51,7 @@ using Mongoose
         include("routing/query.jl")
         include("routing/pluggable.jl")
         include("routing/compiled.jl")
+        include("routing/static_router.jl")
     end
 
     # ── Middleware: each component against a live server ──

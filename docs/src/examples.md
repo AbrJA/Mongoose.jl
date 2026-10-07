@@ -395,11 +395,11 @@ route!(router, :get, "/", req -> json(Dict("ok" => true)))
 app = App(; router=router, workers=4)
 
 # Static error responses
-onerror!(app, 500, json(Dict("error" => "Internal Server Error"); status=500))
-onerror!(app, 413, json(Dict("error" => "Payload too large"); status=413))
+app = onerror!(app, 500, json(Dict("error" => "Internal Server Error"); status=500))
+app = onerror!(app, 413, json(Dict("error" => "Payload too large"); status=413))
 
 # Dynamic error handler (handler receives the request)
-onerror!(app, 404) do req
+app = onerror!(app, 404) do req
     json(Dict("error" => "Not found", "path" => req.uri); status=404)
 end
 
@@ -568,9 +568,9 @@ app = use(app, compress(min_size_bytes=1024))
 app = use(app, logger())
 
 # Error responses
-onerror!(app, 500, json(Dict("error" => "Internal error"); status=500))
-onerror!(app, 413, json(Dict("error" => "Too large"); status=413))
-onerror!(app, 503, json(Dict("error" => "Overloaded"); status=503))
+app = onerror!(app, 500, json(Dict("error" => "Internal error"); status=500))
+app = onerror!(app, 413, json(Dict("error" => "Too large"); status=413))
+app = onerror!(app, 503, json(Dict("error" => "Overloaded"); status=503))
 
 # Services
 app = provide(app, :env, get(ENV, "APP_ENV", "production"))

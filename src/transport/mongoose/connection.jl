@@ -115,7 +115,7 @@ producer runs on its own task and writes chunks to a bounded channel which
 the event loop drains (`drain_streams!`). The poll thread never runs user
 code, so one slow stream cannot stall the server.
 """
-function send_stream_response!(server::AbstractServer, conn::MgConnection, resp::StreamResponse)
+function send_stream_response!(server::AbstractServer, conn::MgConnection, resp::StreamResponse{P}) where {P}
     io = IOBuffer(sizehint=192)
     print(io, "HTTP/1.1 ", resp.status, " ", statusreason(resp.status), "\r\n",
         "Content-Type: ", resp.content_type, "\r\n")
@@ -132,7 +132,7 @@ function send_stream_response!(server::AbstractServer, conn::MgConnection, resp:
     return nothing
 end
 
-function _run_stream(chan::Channel{Union{Vector{UInt8},Nothing}}, producer::Function)
+function _run_stream(chan::Channel{Union{Vector{UInt8},Nothing}}, producer::P) where {P}
     writer = StreamWriter(chan, true)
     try
         producer(writer)

@@ -283,7 +283,7 @@ end
     # Structure (DESIGN G4)
     - `app.config` — immutable `ServerConfig`.
     - `app.runtime` — mutable `RunState` (connections, manager, loop, TLS…).
-    - `app.router`, `app.errors`, `app.hooks_*` — build-phase state; registration
+    - `app.router`, `app.hooks_*` — build-phase state; registration
       after `start!` throws `ServerError`.
     - `app.context` — typed request bundle (middleware tuple, DI services, error
       pages, exception handlers).
@@ -294,8 +294,6 @@ struct App{R<:AbstractRouter,E<:AbstractExecutor,C<:RequestContext} <: AbstractS
     runtime::RunState
     router::R
     mounts::Vector{Tuple{String,String}}
-    errors::Dict{Int,Union{Response,Function}}
-    exception_handlers::Dict{DataType,Function}
     hooks_start::Vector{Function}
     hooks_stop::Vector{Function}
     executor::E
@@ -303,12 +301,10 @@ struct App{R<:AbstractRouter,E<:AbstractExecutor,C<:RequestContext} <: AbstractS
 
     function App{R,E,C}(config::ServerConfig, runtime::RunState, router::R,
                         mounts::Vector{Tuple{String,String}},
-                        errors::Dict{Int,Union{Response,Function}},
-                        exception_handlers::Dict{DataType,Function},
                         hooks_start::Vector{Function}, hooks_stop::Vector{Function},
                         executor::E, context::C) where {R<:AbstractRouter,E<:AbstractExecutor,C<:RequestContext}
-        return new{R,E,C}(config, runtime, router, mounts, errors,
-                          exception_handlers, hooks_start, hooks_stop, executor, context)
+        return new{R,E,C}(config, runtime, router, mounts,
+                          hooks_start, hooks_stop, executor, context)
     end
 end
 
@@ -316,12 +312,10 @@ end
 # statically typed (and JET-clean) instead of `typeof(union)`.
 function _build_app(config::ServerConfig, runtime::RunState, router::R,
                     mounts::Vector{Tuple{String,String}},
-                    errors::Dict{Int,Union{Response,Function}},
-                    exception_handlers::Dict{DataType,Function},
                     hooks_start::Vector{Function}, hooks_stop::Vector{Function},
                     context::C, executor::E) where {R<:AbstractRouter,E<:AbstractExecutor,C<:RequestContext}
-    return App{R,E,C}(config, runtime, router, mounts, errors,
-                      exception_handlers, hooks_start, hooks_stop, executor, context)
+    return App{R,E,C}(config, runtime, router, mounts,
+                      hooks_start, hooks_stop, executor, context)
 end
 
 function App(;
@@ -341,7 +335,7 @@ function App(;
              max_connections::Integer=0,
              router::R=Router(),
              tls::Union{Nothing,TLSConfig}=nothing,
-             errors::Dict{Int,<:Any}=Dict{Int,Union{Response,Function}}(),
+             errors::AbstractDict{Int,<:Response}=Dict{Int,Response}(),
              middleware=nothing,
              services::NamedTuple=NamedTuple()) where {R<:AbstractRouter}
 
@@ -351,19 +345,16 @@ function App(;
         max_header_bytes, send_buffer_bytes, max_bg_tasks, max_connections,
         workers, queue_size)
 
-    errs = Dict{Int,Union{Response,Function}}(k => v for (k, v) in errors)
-    for code in keys(errs)
+    for code in keys(errors)
         (100 <= code <= 599) || throw(ServerError("Error status code must be in [100,599], got $code"))
     end
 
     exec = cfg.workers > 0 ? AsyncExecutor(cfg.workers, cfg.queue_size) : SyncExecutor()
     rs = RunState()
     rs.tls = tls   # raw TLSConfig material; normalized at start!
-    ex_handlers = Dict{DataType,Function}()
     mws = asmiddlewaretuple(middleware)
-    ctx = RequestContext(router; middlewares=mws, errors=errs, services=services,
-                         exception_handlers=ex_handlers)
-    app = _build_app(cfg, rs, router, Tuple{String,String}[], errs, ex_handlers,
+    ctx = RequestContext(router; middlewares=mws, errors=errors, services=services)
+    app = _build_app(cfg, rs, router, Tuple{String,String}[],
                      Function[], Function[], ctx, exec)
     for mw in mws
         attach!(mw, app)
@@ -391,52 +382,69 @@ end
 # --- Registration helpers ---
 
 """
-    onerror!(app, status, handler)
-    onerror!(handler, app, status)
+    onerror!(app, status, handler) → App
+    onerror!(handler, app, status) → App
 
-Register a custom error handler for a specific HTTP status code.
-`handler` may be a `Response` (static) or `Function(req) → Response` (dynamic).
-Both argument orders are accepted; the `(handler, app, status)` form exists so
-a do-block works.
+Register a custom error handler for a status code, returning the rebuilt App
+(the argument is not mutated). `handler` may be a static `Response` or a
+dynamic `Function(req) → Response`. Both argument orders are accepted; the
+`(handler, app, status)` form exists so a do-block works.
 
 # Example
 ```julia
-onerror!(app, 404) do req
+app = onerror!(app, 404) do req
     json(Dict("error" => "not found", "path" => req.uri); status=404)
 end
 ```
 """
-function onerror!(server::AbstractServer, status::Int, handler::Union{Response,Function})
-    (100 <= status <= 599) || throw(ServerError("Status code must be in [100,599]"))
-    _ensure_registratable(server, "error responses")
-    server.errors[status] = handler
-    return server
+function onerror!(app::App, status::Int, handler::Response)
+    _register_error!(app, status)
+    pages = copy(app.context.errors)
+    pages[status] = handler
+    return _with_context(app, Kernel._rebuild_context(app.context, pages,
+                                               app.context.error_handlers,
+                                               app.context.exception_handlers))
 end
-onerror!(f::Function, server::AbstractServer, status::Int) = onerror!(server, status, f)
+
+function onerror!(app::App, status::Int, handler::F) where {F<:Function}
+    _register_error!(app, status)
+    handlers = (app.context.error_handlers..., Kernel.ErrorPage(status, handler))
+    return _with_context(app, Kernel._rebuild_context(app.context, app.context.errors,
+                                               handlers,
+                                               app.context.exception_handlers))
+end
+onerror!(f::Function, app::App, status::Int) = onerror!(app, status, f)
+
+@inline function _register_error!(app::App, status::Int)
+    (100 <= status <= 599) || throw(ServerError("Status code must be in [100,599]"))
+    _ensure_registratable(app, "error responses")
+    return nothing
+end
 
 """
-    onerror!(app, ::Type{E}, handler)
+    onerror!(app, ::Type{E}, handler) → App
 
 Register a typed exception handler: `handler(req, e)` returns the `Response`
-for any handler/middleware error that is a `E` (or subtype). Handlers are
-tried in registration order; unhandled exceptions fall through to the default
-500 path.
+for any handler/middleware error that is a `E` (or subtype), returning the
+rebuilt App. Handlers are tried in registration order; unhandled exceptions
+fall through to the default 500 path.
 
 # Example
 ```julia
 struct NoMatch <: Exception end
-onerror!(app, NoMatch) do req, e
+app = onerror!(app, NoMatch) do req, e
     json(Dict("error" => "not found"); status=404)
 end
 ```
 """
-function onerror!(server::AbstractServer, ::Type{E}, handler::Function) where {E<:Exception}
-    _ensure_registratable(server, "exception handlers")
-    server.exception_handlers[E] = handler
-    return server
+function onerror!(app::App, ::Type{E}, handler::F) where {E<:Exception,F<:Function}
+    _ensure_registratable(app, "exception handlers")
+    handlers = (app.context.exception_handlers..., Kernel.ExceptionHandler{E,F}(handler))
+    return _with_context(app, Kernel._rebuild_context(app.context, app.context.errors,
+                                               app.context.error_handlers, handlers))
 end
-onerror!(handler::Function, server::AbstractServer, ::Type{E}) where {E<:Exception} =
-    onerror!(server, E, handler)
+onerror!(handler::F, app::App, ::Type{E}) where {E<:Exception,F<:Function} =
+    onerror!(app, E, handler)
 
 """
     onstart!(app, f)
@@ -493,17 +501,23 @@ end
 
 function _provide(app::App{R,E,C}, services::S) where {R,E,C,S<:NamedTuple}
     ctx = RequestContext(app.router; middlewares=app.context.middlewares,
-                         errors=app.errors, services=services,
-                         exception_handlers=app.exception_handlers)
+                         errors=app.context.errors, services=services,
+                         error_handlers=app.context.error_handlers,
+                         exception_handlers=app.context.exception_handlers)
     return _with_context(app, ctx)
 end
 
 # Rebuild an App with a new RequestContext; all other state is shared.
 function _with_context(app::App{R,E}, ctx::C) where {R,E,C<:RequestContext}
     return App{R,E,C}(app.config, app.runtime, app.router, app.mounts,
-                      app.errors, app.exception_handlers,
                       app.hooks_start, app.hooks_stop, app.executor, ctx)
 end
+
+# Transport convenience: resolve an error page from the server's context.
+@inline errorresponse(server::AbstractServer, req::Union{Request,Nothing}, status::Int)::Response =
+    errorresponse(server.context, req, status)
+@inline errorresponse(server::AbstractServer, status::Int)::Response =
+    errorresponse(server.context, status)
 
 """
     service(req, name) → Any
@@ -650,9 +664,10 @@ end
 
 function _compose(app::App{R,E,C}, wrapped::M) where {R,E,C,M<:AbstractMiddleware}
     mws = (app.context.middlewares..., wrapped)
-    ctx = RequestContext(app.router; middlewares=mws, errors=app.errors,
+    ctx = RequestContext(app.router; middlewares=mws, errors=app.context.errors,
                          services=app.context.services,
-                         exception_handlers=app.exception_handlers)
+                         error_handlers=app.context.error_handlers,
+                         exception_handlers=app.context.exception_handlers)
     newapp = _with_context(app, ctx)
     attach!(wrapped, newapp)
     return newapp

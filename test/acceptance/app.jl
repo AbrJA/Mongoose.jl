@@ -136,10 +136,10 @@ function buildapp(; token::String="test-token", workers::Integer=2)
     app = use(app, bearer(t -> t == token); paths=["/api"])
 
     # Custom error pages + typed exceptions.
-    onerror!(app, 404) do req
+    app = onerror!(app, 404) do req
         json(Dict("error" => "Not found", "path" => req.uri); status=404)
     end
-    onerror!(app, ApiNotFound) do req, e
+    app = onerror!(app, ApiNotFound) do req, e
         json(Dict("error" => "API: $(e.resource)"); status=404)
     end
 

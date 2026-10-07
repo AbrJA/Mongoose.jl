@@ -114,7 +114,7 @@ end
     @testset "onerror! registration beats the automatic mapping" begin
         ae = App()
         get!(ae, "/g") do req; throw(NotFoundError("boom")) end
-        onerror!(ae, NotFoundError) do req, e
+        ae = onerror!(ae, NotFoundError) do req, e
             text("custom: $(e.message)"; status=404)
         end
         c = Mongoose.FakeTransport(ae)

@@ -81,12 +81,11 @@ end
         while length(mw.compressors) < tid
             push!(mw.compressors, nothing)
         end
-        c = @inbounds mw.compressors[tid]
-        if !(c isa Compressor)
-            c = Compressor(UInt8(6))
-            @inbounds mw.compressors[tid] = c
-        end
-        return c::Compressor
+        existing = @inbounds mw.compressors[tid]
+        existing isa Compressor && return existing
+        created = Compressor(UInt8(6))
+        @inbounds mw.compressors[tid] = created
+        return created
     end
 end
 

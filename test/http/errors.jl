@@ -59,7 +59,7 @@
     @testset "Custom error handler via onerror!" begin
         s = App()
         get!(s, "/") do req; text("ok") end
-        onerror!(s, 404) do req
+        s = onerror!(s, 404) do req
             text("custom 404"; status=404)
         end
         with_server(s) do port
@@ -81,7 +81,7 @@
         get!(s, "/conflict") do req; throw(ConflictError("duplicate")) end
         post!(s, "/valid") do req; validate(req, ErrUser) end
 
-        onerror!(s, 409) do req
+        s = onerror!(s, 409) do req
             json(Dict("err" => "custom conflict page"); status=409)
         end
 
@@ -111,7 +111,7 @@
 
     @testset "onerror! beats automatic HTTPError" begin
         s = App()
-        onerror!(s, NotFoundError) do req, e
+        s = onerror!(s, NotFoundError) do req, e
             json(Dict("err" => "custom: $(e.message)"); status=404)
         end
         get!(s, "/boom") do req; throw(NotFoundError("oops")) end

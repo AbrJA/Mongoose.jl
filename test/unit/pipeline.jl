@@ -14,10 +14,11 @@
     @test res2.body == "user 7"
 
     # Custom error response + middleware + services all apply without a server.
-    errs = Dict{Int,Union{Response,Function}}(404 => req -> Response(404, Pair{String,String}[], "custom 404"))
+    errs = Dict{Int,Response}()
+    eh = (Mongoose.Kernel.ErrorPage(404, req -> Response(404, Pair{String,String}[], "custom 404")),)
     svcs = (db="pool",)
     mws = Mongoose.AbstractMiddleware[logger(threshold_ms=0, output=devnull)]
-    ctx2 = Mongoose.RequestContext(r; middlewares=mws, errors=errs, services=svcs)
+    ctx2 = Mongoose.RequestContext(r; middlewares=mws, errors=errs, error_handlers=eh, services=svcs)
     res3 = Mongoose.process(ctx2,
         Request(:get, "/nope", Dict{String,String}(), Pair{String,String}[], ""))
     @test res3.status == 404
@@ -64,7 +65,7 @@ end
         get!(r, "/raw", req -> "raw text")
         get!(r, "/dict", req -> Dict("k" => 1))
         get!(r, "/nil", req -> nothing)
-        rs = Dict{Int,Union{Response,Function}}()
+        rs = Dict{Int,Response}()
         mk(p) = Request(:get, p, Dict{String,String}(), Pair{String,String}[], "")
 
         resp = Mongoose.process(Mongoose.RequestContext(r; errors=rs), mk("/raw"))
@@ -83,7 +84,7 @@ end
             r = Router()
             get!(r, "/dict", req -> Dict("k" => 1))
             frozen && freeze!(r)
-            rs = Dict{Int,Union{Response,Function}}()
+            rs = Dict{Int,Response}()
 
             resp = Mongoose.process(Mongoose.RequestContext(r; errors=rs),
                 Request(:head, "/dict", Dict{String,String}(), Pair{String,String}[], ""))
@@ -101,7 +102,7 @@ end
     @testset "Explicit HEAD route: handler body preserved at the seam" begin
         r = Router()
         head!(r, "/ping", req -> text("pong"))
-        rs = Dict{Int,Union{Response,Function}}()
+        rs = Dict{Int,Response}()
         resp = Mongoose.process(Mongoose.RequestContext(r; errors=rs),
             Request(:head, "/ping", Dict{String,String}(), Pair{String,String}[], ""))
         # The seam preserves what the handler returned; the transport strips

@@ -214,23 +214,23 @@ end
     end
     ```
 """
-struct StreamResponse
+struct StreamResponse{P}
     status::Int
     content_type::String
     headers::Headers
-    producer::Function  # (writer::StreamWriter) -> nothing
+    producer::P  # (writer::StreamWriter) -> nothing
 end
 
-function StreamResponse(producer::Function, status::Int, content_type::String;
-                        headers=Headers())
-    return StreamResponse(status, content_type, asheaders(headers), producer)
+function StreamResponse(producer::P, status::Int, content_type::String;
+                        headers=Headers()) where {P}
+    return StreamResponse{P}(status, content_type, asheaders(headers), producer)
 end
 
 # Convenience: StreamResponse(200, "text/event-stream") do writer ... end
-function StreamResponse(producer::Function, status::Int=200;
+function StreamResponse(producer::P, status::Int=200;
                         content_type::String="application/octet-stream",
-                        headers=Headers())
-    return StreamResponse(status, content_type, asheaders(headers), producer)
+                        headers=Headers()) where {P}
+    return StreamResponse{P}(status, content_type, asheaders(headers), producer)
 end
 
 function Base.show(io::IO, resp::StreamResponse)

@@ -178,11 +178,11 @@ Errors can be thrown or handled by status/type:
 ```julia
 throw(NotFoundError("user 7"))            # → 404 automatically
 
-onerror!(app, 404) do req
+app = onerror!(app, 404) do req
     json(Dict("error" => "not found"); status=404)
 end
 
-onerror!(app, AccountGone) do req, e      # typed exception handler
+app = onerror!(app, AccountGone) do req, e      # typed exception handler
     json(Dict("error" => "gone"); status=410)
 end
 ```

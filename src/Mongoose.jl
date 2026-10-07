@@ -6,6 +6,7 @@ import JSON
 
 # Facade exports the user surface only; extension protocols live in Kernel.
 export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
+    StaticRouter, StaticRoute, @router,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, isrunning, url, route!, use, serve!, onerror!, onstart!, onstop!,
     context, Cookie, Headers, setcookie, parsecookies, parseform, header,
@@ -48,7 +49,7 @@ import .Kernel: route!, ws!, post!, patch!, options!, head!,
     submit!, start!, stop!, haspending,
     canws, cantls, canstream,
     freeze!, isfrozen, matchroute, hasroute, haswsroutes, getwsendpoint,
-    attach!, getterminal
+    attach!, getterminal, errorresponse
 
 # --- FFI layer (C constants, structs, bindings) ---
 include("ffi/constants.jl")
@@ -144,7 +145,7 @@ end
         app = use(app, cors())
         get!(app, "/") do r; json(Dict("ok" => true)) end
         post!(app, "/data") do r; text("ok") end
-        errorresponse(app.errors, req, 500)
+        errorresponse(app, req, 500)
 
         # --- HTTPError hierarchy + transport fallback ---
         err404 = NotFoundError("user missing")

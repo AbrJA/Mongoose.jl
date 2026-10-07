@@ -48,7 +48,7 @@ struct _PassMw <: AbstractMiddleware
 end
 (mw::_PassMw)(req::Request, next::Function) = (push!(mw.sink, mw.tag); next())
 
-const ERRORS = Dict{Int,Union{Response,Function}}()
+const ERRORS = Dict{Int,Response}()
 
 @testset "Compiled dispatch: 404/405/HEAD parity (frozen vs generic)" begin
     # Same routes: one frozen (compiled), one open (generic dispatch).
@@ -200,7 +200,7 @@ end
         mkreq(:get, "/svc"))
     @test String(resp.body) == "42"
 
-    errs = Dict{Int,Union{Response,Function}}(
+    errs = Dict{Int,Response}(
         404 => Response(Plain, "custom 404"; status=404))
     resp = process(mkctx(r; errs=errs),
         mkreq(:get, "/missing"))

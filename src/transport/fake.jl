@@ -124,7 +124,7 @@ end
 
 # --- Stream execution: one response, bound to one stream ---
 
-function _run_fake_stream(transport::FakeTransport, resp::StreamResponse)::Response
+function _run_fake_stream(transport::FakeTransport, resp::StreamResponse{P})::Response where {P}
     transport.stream_seq += 1
     id = transport.stream_seq
     stream = FakeStream(IOBuffer(), true, false, nothing)
@@ -175,7 +175,7 @@ function (client::FakeTransport)(method::Symbol, path::String;
     result = try
         invoke_http(client.app, req)
     catch e
-        errorresponse(client.app.errors, req, 500)
+        errorresponse(client.app, req, 500)
     end
 
     if result isa StreamResponse

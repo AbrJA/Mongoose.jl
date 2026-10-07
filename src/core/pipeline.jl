@@ -146,6 +146,30 @@ dispatch path passes pre-baked terminal functors.
 @inline runpipeline(middlewares::Tuple, req::Request, handler) =
     Next(middlewares, handler, req)()
 
+"""
+    Next2 — immutable continuation over two tuple stacks (global + scoped).
+
+    The four-argument tuple pipeline (`global → scoped → handler`) walks both
+    stacks with one typed continuation and no per-request closure or cursor.
+"""
+struct Next2{G,S,H} <: Function
+    globals::G
+    scoped::S
+    handler::H
+    req::Request
+end
+
+@inline _run_next(n::Next2{Tuple{},Tuple{}}) = n.handler(n.req)
+@inline _run_next(n::Next2{Tuple{},S}) where {S<:Tuple} =
+    first(n.scoped)(n.req, Next2((), Base.tail(n.scoped), n.handler, n.req))
+@inline _run_next(n::Next2{G,S}) where {G<:Tuple,S<:Tuple} =
+    first(n.globals)(n.req, Next2(Base.tail(n.globals), n.scoped, n.handler, n.req))
+
+@inline (n::Next2)() = _run_next(n)
+
+@inline runpipeline(globals::Tuple, scoped::Tuple, req::Request, handler) =
+    _run_next(Next2(globals, scoped, handler, req))
+
 # Fallback for vector stacks (e.g. a compiled route's scoped wrapper): same
 # onion with one closure + cursor per request.
 @inline function runpipeline(middlewares, req::Request, handler)
