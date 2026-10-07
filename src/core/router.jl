@@ -240,9 +240,9 @@ OpenAPI-style tooling.
 Overlapping parametric routes resolve first-registered-first at dispatch;
 static routes always take precedence over parametric ones.
 """
-function route!(router::Router, method::Symbol, path::AbstractString, handler::Function;
+function route!(router::Router, method::Symbol, path::AbstractString, handler::F;
                 middleware=nothing,
-                metadata=nothing)
+                metadata=nothing) where {F<:Function}
     m = _normalize_method(method)
     router.frozen && throw(RouteError("router is frozen: registration is closed"))
     _register_route!(router, m, String(path),
@@ -250,9 +250,9 @@ function route!(router::Router, method::Symbol, path::AbstractString, handler::F
     return router
 end
 
-function route!(router::Router, method::AbstractString, path::AbstractString, handler::Function;
+function route!(router::Router, method::AbstractString, path::AbstractString, handler::F;
                 middleware=nothing,
-                metadata=nothing)
+                metadata=nothing) where {F<:Function}
     route!(router, _normalize_method(Symbol(method)), path, handler;
            middleware=middleware, metadata=metadata)
 end

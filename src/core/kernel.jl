@@ -76,7 +76,7 @@ export AbstractRequest, Request, Headers, asheaders, mergeheaders, context, pars
     route!, ws!, group, group!, RouteGroup, mount!, post!, patch!, options!, head!,
     Endpoint, errorresponse, process, RequestContext, freeze!, isfrozen, getterminal,
     invokeendpoint, scopedmiddleware,
-    AbstractMiddleware, PathFilter, runpipeline, FunctionMiddleware, asmiddleware, asmiddlewares, attach!,
+    AbstractMiddleware, PathFilter, runpipeline, FunctionMiddleware, asmiddleware, asmiddlewares, asmiddlewaretuple, attach!,
     AbstractExecutor, SyncExecutor, FakeExecutor, run!, submit!, start!, stop!,
     AbstractTransport, canws, cantls, canstream,
     Cors, Bearer, ApiKey, BasicAuth, RateLimit, Compress, Logger, Health,

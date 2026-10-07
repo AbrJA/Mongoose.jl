@@ -291,6 +291,7 @@ end
     | `max_connections`      | `0`                | Max open connections (0 = unlimited)   |
     | `router`               | `Router()`         | Custom router instance                 |
     | `tls`                  | `nothing`          | `TLSConfig` for HTTPS                  |
+    | `middleware`           | `nothing`          | Static middleware tuple (`use!` adds dynamically) |
 
     # Structure (DESIGN G4)
     - `app.config` — immutable `ServerConfig`.
@@ -373,6 +374,7 @@ function App(;
              router::R=Router(),
              tls::Union{Nothing,TLSConfig}=nothing,
              errors::Dict{Int,<:Any}=Dict{Int,Union{Response,Function}}(),
+             middleware=nothing,
              services::NamedTuple=NamedTuple()) where {R<:AbstractRouter}
 
     cfg = ServerConfig(;
@@ -390,12 +392,17 @@ function App(;
     rs = RunState()
     rs.tls = tls   # raw TLSConfig material; normalized at start!
     ex_handlers = Dict{DataType,Function}()
-    used_mw = AbstractMiddleware[]
-    ctx = RequestContext(router; middlewares=used_mw,
+    mws = asmiddlewaretuple(middleware)
+    used_mw = AbstractMiddleware[mws...]
+    ctx = RequestContext(router; middlewares=mws,
                          errors=errs, services=services,
                          exception_handlers=ex_handlers)
-    return _build_app(cfg, rs, router, used_mw, errs, ex_handlers,
-                      ServiceRegistry(services), ctx, exec)
+    app = _build_app(cfg, rs, router, used_mw, errs, ex_handlers,
+                     ServiceRegistry(services), ctx, exec)
+    for mw in mws
+        attach!(mw, app)
+    end
+    return app
 end
 
 # --- Teardown ---

@@ -46,5 +46,21 @@
             @test String(resp.body) == "blocked"
         end
     end
+
+    @testset "Static middleware composition via App(middleware=…)" begin
+        s = App(middleware=(cors(origins="*"), security()))
+        get!(s, "/") do req; text("ok") end
+        @test length(s.middlewares) == 2
+
+        client = FakeTransport(s)
+        r = client(:get, "/"; headers=["Origin" => "http://example.com"])
+        @test r.status == 200
+        @test get(r.headers, "access-control-allow-origin", "") == "*"
+        @test get(r.headers, "x-content-type-options", "") == "nosniff"
+
+        use!(s, etag())
+        @test length(s.middlewares) == 3
+        @test get(client(:get, "/").headers, "etag", "") != ""
+    end
 end
 
