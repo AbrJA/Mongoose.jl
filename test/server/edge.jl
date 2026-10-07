@@ -256,7 +256,7 @@ end
         # Two handlers time out (504) and become tracked runaways.
         for _ in 1:2
             r = HTTP.get("http://127.0.0.1:$port/hang"; status_exception=false,
-                         retry=false, readtimeout=5)
+                         retry=false, read_idle_timeout=5)
             @test r.status == 504
         end
         @test wait_until(timeout=5.0) do

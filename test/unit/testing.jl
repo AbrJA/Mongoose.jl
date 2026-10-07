@@ -53,7 +53,7 @@
 end
 
 @testset "HTTPError via FakeTransport" begin
-    struct ErrUser
+    struct ErrUserUnit
         name::String
         age::Int
     end
@@ -69,10 +69,10 @@ end
         throw(ConflictError("duplicate email"))
     end
     post!(app, "/valid") do req
-        validate(req, ErrUser)
+        validate(req, ErrUserUnit)
     end
     post!(app, "/valid/json") do req
-        json(validate(req, ErrUser))
+        json(validate(req, ErrUserUnit))
     end
 
     client = Mongoose.FakeTransport(app)

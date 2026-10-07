@@ -79,7 +79,7 @@ end
 # Wait until the server is actually accepting connections.
 function wait_for_server(url; timeout=10.0, kwargs...)
     ready = wait_until(timeout=Float64(timeout)) do
-        HTTP.get(url; readtimeout=2, connect_timeout=2, status_exception=false, kwargs...)
+        HTTP.get(url; read_idle_timeout=2, connect_timeout=2, status_exception=false, kwargs...)
         true
     end
     ready || error("Server at $url did not become ready within $(timeout)s")

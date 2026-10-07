@@ -24,7 +24,7 @@ using Sockets
                 ready = wait_until(timeout=10.0, interval=0.1) do
                     HTTP.get("https://127.0.0.1:$port/secure";
                         require_ssl_verification=false,
-                        readtimeout=2,
+                        read_idle_timeout=2,
                         connect_timeout=2,
                         status_exception=false)
                     true
@@ -91,7 +91,7 @@ using Sockets
                 ready = wait_until(timeout=10.0, interval=0.1) do
                     HTTP.get("https://127.0.0.1:$port/data";
                         require_ssl_verification=false,
-                        readtimeout=2,
+                        read_idle_timeout=2,
                         connect_timeout=2,
                         status_exception=false)
                     true
