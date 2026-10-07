@@ -4,10 +4,7 @@ using Mongoose_jll
 using PrecompileTools
 import JSON
 
-# The facade exports the user-facing surface only. Extension protocols (router:
-# matchroute/gethandler/…; pipeline: getterminal/runpipeline/…; formats:
-# encode/decode/mime; string utilities) live in Kernel — implementers use
-# `import Mongoose: X` or `Mongoose.Kernel.X`.
+# Facade exports the user surface only; extension protocols live in Kernel.
 export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, isrunning, url, route!, use!, serve!, onerror!, onstart!, onstop!,
@@ -43,9 +40,7 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
     query, parsequery, body, parsemultipart, MultipartFile,
     validate, ValidationError
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 1. Core layer (transport-agnostic; loads standalone, no FFI)
-# ══════════════════════════════════════════════════════════════════════════════
+# --- Core layer (transport-agnostic, no FFI) ---
 include("core/kernel.jl")      # nested module: protocol, router, middleware
 using .Kernel
 # Server/transport layers extend these core generics; `using` alone is read-only.
@@ -55,21 +50,15 @@ import .Kernel: route!, ws!, post!, patch!, options!, head!,
     freeze!, isfrozen, matchroute, hasroute, haswsroutes, getwsendpoint,
     attach!, getterminal
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 2. FFI Layer (C constants, structs, bindings)
-# ══════════════════════════════════════════════════════════════════════════════
+# --- FFI layer (C constants, structs, bindings) ---
 include("ffi/constants.jl")
 include("ffi/structs.jl")
 include("ffi/bindings.jl")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 3. Utilities (server-aware: lifecycle banners / logging)
-# ══════════════════════════════════════════════════════════════════════════════
+# --- Utilities (server-aware logging) ---
 include("util/log.jl")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 4. Server Layer (AbstractServer, App, registry, lifecycle, workers)
-# ══════════════════════════════════════════════════════════════════════════════
+# --- Server layer (AbstractServer, App, registry, lifecycle) ---
 include("server/base.jl")            # abstract type AbstractServer
 include("server/core.jl")            # App, Manager, ServerConfig, TLSConfig
 include("server/registry.jl")        # Global server registry (GC-safe callback recovery)
@@ -77,9 +66,7 @@ include("server/lifecycle.jl")       # start!, shutdown!, TLS, bind, drain
 include("server/sync.jl")            # Server event loop
 include("server/async.jl")           # Async worker pool
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 5. Transport Layer (Mongoose C library adapter)
-# ══════════════════════════════════════════════════════════════════════════════
+# --- Transport layer (Mongoose C adapter) ---
 include("transport/mongoose/adapter.jl")      # FFI → Request conversion
 include("transport/mongoose/connection.jl")    # send_http_response!, send_ws_frame!, StreamWriter
 include("transport/mongoose/ws_handler.jl")    # WS event handlers (upgrade, message, close)
@@ -87,17 +74,13 @@ include("transport/mongoose/events.jl")        # C callback dispatch
 include("transport/mongoose/http_handler.jl")  # HTTP request processing hot path
 include("transport/fake.jl")                    # FakeTransport — reference transport
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Module initialization
-# ══════════════════════════════════════════════════════════════════════════════
+# --- Module initialization ---
 function __init__()
     init_tty!()
     atexit(_shutdown_registered!)
 end
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 10. Precompilation
-# ══════════════════════════════════════════════════════════════════════════════
+# --- Precompilation ---
 @setup_workload begin
     @compile_workload begin
         # --- Router setup ---

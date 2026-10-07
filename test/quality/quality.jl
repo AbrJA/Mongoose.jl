@@ -1,7 +1,4 @@
-# Quality gates — Aqua + JET over the whole package.
-#
-# Run with:
-#     julia --project=test test/quality/quality.jl
+# Quality gates (Aqua + JET): julia --project=test test/quality/quality.jl
 
 using Test
 using Aqua
@@ -13,11 +10,8 @@ println("═══ Aqua ═══")
 Aqua.test_all(Mongoose)
 
 println("═══ JET ═══")
-# JET's package analysis carries a pinned baseline of known findings. Most are
-# false positives from the ergonomic normalizers (untyped `headers=`/`middleware=`
-# kwargs) and from `Base` internals; `JSON` is ignored because its parser
-# findings are third-party. The gate FAILS when the count grows — lower the
-# baseline whenever a finding is fixed.
+# Pinned JET baseline (mostly normalizer/Base false positives); the gate fails
+# when findings grow — lower it when one is fixed.
 const JET_BASELINE = 36
 result = JET.report_package(Mongoose; ignored_modules=(JSON,), toplevel_logger=nothing)
 findings = length(JET.get_reports(result))

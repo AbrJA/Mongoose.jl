@@ -168,9 +168,7 @@ function drain_streams!(server::AbstractServer)
     for (id, st) in streams
         chan = st.channel
         while isopen(chan) && isready(chan)
-            # Backpressure: stop feeding a connection whose unsent buffer is
-            # full. Chunks stay in the bounded channel (the producer blocks),
-            # so a slow reader cannot grow server memory without bound.
+            # Backpressure: full send buffer stops feeding; chunks stay in the channel.
             cap > 0 && _send_buffered(st.conn) >= cap && break
             chunk = take!(chan)
             if chunk === nothing

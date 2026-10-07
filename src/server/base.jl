@@ -10,9 +10,7 @@
 """
 abstract type AbstractServer end
 
-# --- Router introspection on the server ---
-# Mutation is server-level (`route!`, `ws!`, `use!`); mirror the read-only
-# protocol here so callers never need `server.router`.
+# --- Router introspection on the server (mutation stays server-level) ---
 
 """
     freeze!(server) → server

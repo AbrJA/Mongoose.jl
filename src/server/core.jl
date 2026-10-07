@@ -191,9 +191,7 @@ RunState() = RunState(Threads.Atomic{Bool}(false), nothing, nothing, Manager(emp
     Dict{Ptr{Cvoid},String}(),
     Threads.Atomic{UInt64}(0), Task[], Threads.SpinLock())
 
-# --- Background task tracking ---
-# Workers push timed-out request tasks; the event loop prunes completed ones on
-# its health tick so the vector does not grow for the server's lifetime.
+# --- Background task tracking (workers push, loop prunes) ---
 
 @inline function bg_track!(server::AbstractServer, t::Task)
     lock(server.runtime.bg_lock)
@@ -616,9 +614,7 @@ function Base.show(io::IO, app::App)
     print(io, "App($mode, $(length(app)) routes, $(length(app.middlewares)) middleware)")
 end
 
-# --- use! (add middleware to an app) ---
-# The middleware protocol (AbstractMiddleware, before/after) lives in
-# Kernel; this server-layer method wires it onto an App.
+# --- use! (wires the Kernel middleware protocol onto an App) ---
 
 """
     use!(app, middleware; paths=[])

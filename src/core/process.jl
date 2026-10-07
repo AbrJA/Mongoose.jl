@@ -84,9 +84,7 @@ end
 
 # --- Auto-serialization of non-Response handler returns ---
 
-# A handler may return anything; these methods turn the common shapes into a
-# Response so `return Dict(...)`/`return "text"` just work (only the default
-# fallback allocates) and raw returns can never silently 500.
+# Turn common handler returns into a Response (only the default fallback allocates).
 @inline format_response(r::Response) = r
 @inline format_response(s::StreamResponse) = s
 @inline format_response(x::AbstractString) = Response(Plain, String(x))

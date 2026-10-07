@@ -71,9 +71,7 @@ using Sockets
             start!(s; host="127.0.0.1", port=port, blocking=false, tls=tls)
             try
                 sock = Sockets.connect("127.0.0.1", port)
-                # Send nothing: the handshake never starts. The connection is
-                # tracked from accept, so the slowloris sweep must reclaim it
-                # (TLS handshakes have no C-level timeout of their own).
+                # No handshake: the accept-time sweep must reclaim it (no C TLS timeout).
                 eof_task = @async eof(sock)
                 @test timedwait(() -> istaskdone(eof_task), 5.0; pollint=0.05) == :ok
                 @test istaskdone(eof_task) && fetch(eof_task) === true

@@ -1,9 +1,4 @@
-# Hot-path performance guards: allocation ceilings and inference checks.
-#
-# Ceilings are deliberately loose (~2x the measured baseline) so they survive
-# Julia version differences (CI runs lts and release) while catching gross
-# regressions. Tighten them alongside each optimization. Baselines and rules:
-# `.opencode/skills/julia-performance/SKILL.md`.
+# Hot-path perf guards: loose (~2x) allocation ceilings; baselines in julia-performance skill.
 
 @testset "Hot-path allocation ceilings" begin
     frozen = Router()

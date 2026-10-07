@@ -76,9 +76,7 @@ end
 function on_accept(server::AbstractServer, conn::MgConnection, ::Ptr{Cvoid})
     maxc = server.config.max_connections
     if maxc > 0 && length(server.runtime.conn_times) >= maxc
-        # Refuse the connection before mongoose parses anything from it.
-        # `mgjl_conn_error` only marks it; the poll loop runs the real close
-        # path (epoll DEL + closesocket). `mg_close_conn` would leak the fd.
+        # Refuse early: mgjl_conn_error marks; the poll loop closes (mg_close_conn leaks).
         mgjl_conn_error(conn, "max connections reached")
         return nothing
     end

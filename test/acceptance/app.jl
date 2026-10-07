@@ -1,12 +1,4 @@
-# Kitchen-sink application builder — every Mongoose.jl capability.
-#
-# Used by:
-#   test/acceptance/production.jl  — the acceptance test suite (table-driven
-#                                    feature matrix over ONE live server)
-#   test/acceptance/serve.jl       — playable HTML-dashboard server
-#
-# Not wired into `test/runtests.jl` yet: it becomes the last CI gate before
-# the next release.
+# Kitchen-sink app builder (acceptance suite + dashboard server).
 
 using Mongoose
 using Base64

@@ -69,13 +69,8 @@ end
 # resize after compression.
 @inline _gzip_bound(n::Int)::Int = n + 5 * max(cld(n, 10_000), 1) + 64
 
-# libdeflate compressors are not thread-safe and allocating one costs ~8 µs, so
-# each thread lazily creates its own. Tasks cannot migrate inside the
-# non-yielding compression ccall, so a per-thread index is safe to reuse.
-# The slot vector is sized by `Threads.maxthreadid()`, not `nthreads()`: with an
-# interactive thread pool, `@spawn` tasks can run on a thread id above
-# `nthreads()`, which would index out of bounds. It also grows under the lock
-# if a thread id ever exceeds the initial bound.
+# Per-thread compressors (not thread-safe); slots sized by maxthreadid() so
+# @spawn on the interactive pool cannot index out of bounds.
 @inline function _compressor!(mw::Compress)::Compressor
     tid = Threads.threadid()
     if tid <= length(mw.compressors)

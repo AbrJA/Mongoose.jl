@@ -56,9 +56,7 @@ function (mw::Logger)(request::Request, next::Function)
     response = try
         next()
     catch
-        # A throwing handler still gets an access-log line (mapped to 500 by
-        # the transport); build a single write so concurrent workers cannot
-        # interleave partial lines.
+        # Throwing handlers still get one access-log line (single write, no interleave).
         elapsed_ns = time_ns() - t0
         elapsed_ns >= mw.threshold_ns &&
             _log_request(mw, request, 500, elapsed_ns / 1_000_000, "")

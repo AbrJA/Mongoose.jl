@@ -36,9 +36,7 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
         url = bind_server!(server, host, port)
         server.runtime.url = url
 
-        # Bound successfully: close and compile the route table so production
-        # runs the statically-typed dispatch by default. (Done after bind so a
-        # failed start does not permanently freeze the router.)
+        # Bound: freeze the route table (after bind, so a failed start does not freeze).
         freeze!(server.router)
 
         # Run lifecycle start hooks and background tasks
@@ -50,12 +48,8 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
         log_server_start(server, url)
 
         if blocking
-            # Run the loop on its own task and wait on the task from here. The
-            # loop spends most of its time inside the raw `mg_mgr_poll` ccall,
-            # which Julia cannot preempt; driving it from the calling task (as
-            # before) left Ctrl+C undeliverable. Waiting on the task keeps this
-            # thread at a Julia safe point where a received SIGINT can surface
-            # as `InterruptException` and unwind to graceful shutdown.
+            # Loop on its own task: the raw mg_mgr_poll ccall cannot be
+            # preempted, so waiting here keeps Ctrl+C deliverable.
             spawn_event_loop!(server)
             try
                 wait(server.runtime.master)
@@ -127,10 +121,7 @@ function spawn_event_loop!(server::AbstractServer)
         catch e
             e isa InterruptException || @log_error "Event loop error" e catch_backtrace()
         finally
-            # If the loop exits while the server is still marked running, it was
-            # a termination signal (SIGTERM) or an error: run the graceful path.
-            # A normal `shutdown!` sets `running=false` first, so its loop exit
-            # skips this and there is no double shutdown.
+            # Loop exit while running=true ⇒ SIGTERM/error: graceful shutdown (no double).
             server.runtime.running[] && shutdown!(server)
         end
     end
@@ -157,10 +148,8 @@ function drain!(server::AbstractServer)
     drain_poll!(server)
 end
 
-# Background tasks get the same one-shot `drain_timeout_ms` budget as streams:
-# a `background!` loop usually never finishes, so the wait is a grace period,
-# not a join. Called after `stop!(executor)` so no worker can push a new
-# timed-out request task while the snapshot is taken.
+# One-shot drain_timeout_ms grace period (not a join) for background tasks;
+# called after stop!(executor) so no new task can be pushed.
 function drain_bg_tasks!(server::AbstractServer)
     tasks = bg_snapshot(server)
     isempty(tasks) && return

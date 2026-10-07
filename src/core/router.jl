@@ -61,9 +61,7 @@ mutable struct MethodMap
     MethodMap() = new(nothing, nothing, nothing, nothing, nothing, nothing, nothing)
 end
 
-# Explicit per-method branches instead of `getfield(mm, symbol)`: the compiler
-# sees every field directly (no dynamic field lookup) and each branch is
-# type-stable. Invalid methods still fail loudly.
+# Per-method branches (no getfield): type-stable; invalid methods fail loudly.
 """
     getendpoint(mm, method) → Union{Nothing, Endpoint}
 
@@ -416,9 +414,8 @@ end
 
 # --- RouteResult helpers ---
 
-# Method bitmask: GET=1, POST=2, PUT=4, DELETE=8, PATCH=16, OPTIONS=32, HEAD=64.
-# `HEAD` is included only when an explicit `head!` route exists (no auto-HEAD
-# fallback), so `Allow` reflects exactly what the route serves.
+# Method bitmask GET=1…HEAD=64; HEAD only with an explicit head! route, so
+# `Allow` reflects exactly what the route serves.
 @inline function method_bitmask(mm::MethodMap)::UInt8
     mask = UInt8(0)
     mm.get     === nothing || (mask |= 0x01)

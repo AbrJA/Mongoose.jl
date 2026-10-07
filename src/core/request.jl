@@ -56,9 +56,7 @@ _headerpair(p) = throw(ArgumentError("headers must be Pairs of strings, got $(ty
 @inline Base.iterate(h::Headers)   = iterate(h.data)
 @inline Base.iterate(h::Headers, s) = iterate(h.data, s)
 
-# Dict-like views. Header names may repeat (e.g. `Set-Cookie`), so `keys` and
-# `values` are ordered lazy views that preserve duplicates; `pairs` exposes the
-# underlying ordered pair list without copying.
+# Ordered lazy views preserving duplicate headers (e.g. Set-Cookie); pairs is uncopied.
 @inline Base.keys(h::Headers)   = (kv.first for kv in h.data)
 @inline Base.values(h::Headers) = (kv.second for kv in h.data)
 @inline Base.pairs(h::Headers)  = h.data

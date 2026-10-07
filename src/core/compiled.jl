@@ -65,9 +65,7 @@ end
 
 # --- Compile-time action baking ---
 
-# Wrap a 0-arity terminal in its route-scoped middleware (once, at freeze).
-# The middleware tuple is captured in the closure's type; per request the
-# pipeline runs through the allocation-free `Next` continuation.
+# Wrap a terminal in route-scoped middleware at freeze (allocation-free Next).
 @inline function _wrap_scoped(inner::F, mws::M)::Function where {F,M<:Tuple}
     isempty(mws) && return inner
     return (req) -> runpipeline(mws, req, inner)
@@ -87,11 +85,8 @@ end
 @inline _bake_head_slot(ep::Endpoint, ::Any) = _bake_action(ep)
 @inline _bake_head_slot(::Nothing, ::Any) = nothing
 
-# Bake a parametric action slot. Runs once per route at freeze time: `PC` is
-# the route's concrete call tuple type (dispatched dynamically, e.g.
-# `Tuple{Int,String}`), and `typeof(ep.handler)` is folded into
-# `ParamCall{...}` so the resulting `BoundParams` terminal is statically typed
-# even though `Endpoint.handler` is stored as `Function`.
+# Bake a parametric action slot at freeze: `PC` is the route's concrete call
+# tuple; folding `typeof(handler)` keeps `BoundParams` statically typed.
 @inline function _bake_param_slot(ep::Endpoint, ::Type{P})::Function where {P}
     call = ParamCall{typeof(ep.handler), P}(ep.handler)
     plain = (req, p::P) -> call(req, p)
@@ -165,9 +160,7 @@ struct CompiledParam{P,N}
     head::Union{Nothing,Function}
 end
 
-# The concrete param tuple type produced at match time. `route.param_types`
-# holds the *types as values* (e.g. `(Int, String)`), so the concrete call type
-# is `Tuple{Int,String}`; wildcard captures collapse to `String`.
+# Concrete param tuple at match time: types-as-values; wildcards are String.
 @inline _parse_result_type(::Type{String}) = String
 @inline _parse_result_type(::Type{T}) where {T} = T
 @inline _parse_result_type(::Type{WildcardParam}) = String
@@ -223,10 +216,7 @@ end
 
 # --- Index-walking path matcher (no Vector{String} split) ---
 
-# Per-segment compiled ops (heterogeneous tuple per route). The parse closure
-# of a `CaptureOp` is baked at freeze time with the segment's concrete param
-# type, so the walk below is fully static per route (no runtime dispatch on
-# `Type` values).
+# Per-segment ops; each CaptureOp parse closure is baked at freeze, so the walk is static.
 struct LitOp
     text::String
 end
@@ -235,9 +225,7 @@ struct CaptureOp{F}
 end
 struct WildOp end
 
-# Bake a parse closure specialized on the concrete param type `T`. The dynamic
-# dispatch on the `::Type` value happens once per route at freeze time; the
-# returned closure body is statically typed.
+# Bake a parse closure for param type T (dispatch on Type once, at freeze).
 @inline function _make_parser(::Type{String})
     # `s` is an owned String and the span [j0, j1) is char-aligned, so the
     # zero-copy decode fast path applies when the segment is plain.
@@ -265,10 +253,7 @@ function _build_ops(segs::Vector{PatternSegment})
     return ops
 end
 
-# Locate the next non-empty segment of `s` starting at byte index `i`.
-# Returns `(j0, j1, next_i)` where the segment spans `j0:j1-1` (j0 == 0 when
-# exhausted). No SubString is created, so literal comparison and typed parsing
-# work on byte spans of the original path (zero allocation).
+# Next non-empty byte segment as (j0, j1, next_i); no SubString, zero allocation.
 @inline function _next_seg(s::AbstractString, i::Int)
     n = ncodeunits(s)
     while i <= n && codeunit(s, i) == UInt8('/')
@@ -331,10 +316,7 @@ end
     return String(buf)
 end
 
-# Walk the compiled ops against `s`, building the typed param tuple.
-# Fully static per route: the ops tuple is heterogeneous, each op carries a
-# baked (statically-typed) action, and the growing result tuple stays concrete.
-# Returns `Union{Nothing, <:Tuple}`; `nothing` = no match.
+# Walk ops building the typed param tuple; `nothing` = no match.
 @inline _walk_ops(::Tuple{}, s::AbstractString, i::Int, out) =
     _only_slashes(s, i) ? out : nothing
 @inline function _walk_ops(ops::Tuple, s::AbstractString, i::Int, out)
@@ -342,10 +324,7 @@ end
     rest = Base.tail(ops)
     if op isa LitOp
         j0, j1, ni = _next_seg(s, i)
-        # A j0 == 0 here means the path is exhausted: a literal segment must
-        # match a real segment, never the end of the string (otherwise a
-        # shorter request could alias a longer route, e.g. `/api/orders/1`
-        # matching `/api/orders/:id::Int/payments`).
+        # j0 == 0 means path exhausted: a literal must not match the end (route aliasing).
         (j0 != 0 && _bytes_eq(s, j0, j1, op.text)) || return nothing
         return _walk_ops(rest, s, ni, out)
     elseif op isa CaptureOp

@@ -41,9 +41,7 @@ end
     return id
 end
 
-# Generation id for a live WS connection (0 when unknown). Reply routing uses
-# this id instead of the raw pointer, so a stale worker reply can never be
-# delivered to a new client that happens to reuse the same address.
+# Generation id for reply routing: a stale worker reply cannot hit a reused pointer.
 @inline function ws_id_of(server::AbstractServer, conn::MgConnection)::Int
     return lock(server.runtime.ws_lock) do
         get(server.runtime.ws_gen_ids, conn, 0)
@@ -54,9 +52,7 @@ end
 
 function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
     headers = parse_headers(msg)
-    # Mongoose accepts the upgrade whenever `Sec-WebSocket-Key` is present and
-    # replies 426 otherwise, so gate on exactly that: every connection mongoose
-    # would upgrade runs the user hooks and gets tracked.
+    # Gate on Sec-WebSocket-Key: mongoose's own acceptance criterion (else 426).
     is_upgrade = haskey(headers, "sec-websocket-key")
     if !is_upgrade
         mg_ws_upgrade(conn, ev_data, C_NULL)
@@ -103,9 +99,7 @@ function on_ws_control(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
         mgjl_ws_close(conn, 1002, "WebSocket control-frame violation")
         return nothing
     end
-    # Keep-alive bookkeeping only. Mongoose's WS layer already auto-replies:
-    # PING → PONG and CLOSE → CLOSE echo + drain (see `ws_process` in the C
-    # library), so replying here would send every control frame twice.
+    # Keep-alive bookkeeping only; mongoose already auto-replies PING/CLOSE.
     if op == WS_OP_PING || op == WS_OP_PONG
         id = ws_id_of(server, conn); id != 0 && ws_touch!(server, id)
     end

@@ -23,10 +23,8 @@ function conn_sweep!(server::AbstractServer)
     return nothing
 end
 
-# Close connections whose entry is older than `timeout_ms` (0 = disabled).
-# `mg_error` only marks closing; the poll loop deregisters the fd and closes
-# the socket. Calling `mg_close_conn` would leak the fd and leave a dangling
-# epoll registration (event-loop wedge).
+# Close entries older than timeout_ms (0 = disabled); mgjl_conn_error marks,
+# the poll loop closes (mg_close_conn leaks the fd/epoll).
 function _sweep!(server::AbstractServer, track::Dict{Ptr{Cvoid},Float64},
                  timeout_ms::Int, now::Float64, reason::String)
     timeout_ms <= 0 && return nothing
@@ -58,10 +56,7 @@ body is still arriving. Two jobs:
 """
 function on_headers(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid})
     delete!(server.runtime.awaiting_headers, conn)
-    # Mongoose fires HDRS on *every poll* while a body is still pending, so
-    # this handler must be idempotent per connection: `awaiting_body` doubles
-    # as the "headers already processed" marker (its timestamp is the body
-    # start).
+    # HDRS fires every poll while a body pends; awaiting_body doubles as processed-marker.
     haskey(server.runtime.awaiting_body, conn) && return nothing
 
     if mg_http_get_header_ptr(ev_data, "Content-Length") != C_NULL &&
@@ -74,9 +69,7 @@ function on_headers(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvo
     return nothing
 end
 
-# Add a header to a response without mutating it: `errorresponse` may return
-# the shared `DEFAULT_*` objects (or a user-registered `Response`), so
-# in-place appends would accumulate across requests.
+# Copy-on-write: errorresponse may return shared DEFAULT_* responses.
 @inline function _add_header_once(res::Response, key::String, value::String)::Response
     get(res.headers, key, nothing) === nothing || return res
     h = copy(res.headers)
@@ -100,11 +93,8 @@ end
 
 # --- Connection: close echo (RFC 7230 §6.3) ---
 
-# Mongoose honors a client's `Connection: close` by closing the socket after
-# the response, but it does NOT announce that in the response headers — a
-# client-side pool that saw a keep-alive-looking reply then hands out the
-# dead connection, and the next request on it hangs. Echo the header so
-# clients tear the connection down themselves.
+# Mongoose closes on request `Connection: close` but does not echo it; echo
+# the header so pooling clients do not reuse a dead socket.
 
 @inline function conn_close_requested(req::Request)::Bool
     value = get(req.headers, "connection", "")
@@ -187,9 +177,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
             _response_wants_close(res) && mgjl_conn_close_after_send(conn)
         end
     else
-        # Async path: enqueue a job to the worker pool. `_http_job` echoes a
-        # client-requested `Connection: close` onto the response; the drain
-        # loop then marks the connection draining after the reply is sent.
+        # Async: enqueue to workers; _http_job echoes close and drain marks draining.
         exec = server.executor
         timeout = server.config.request_timeout_ms
 
@@ -285,10 +273,7 @@ end
 
 function invoke_http(server::AbstractServer, req::Request)::Union{Response,StreamResponse}
     res = process(server.context, req)
-    # HEAD responses must not carry a body (RFC 9110 §3.1). An explicit HEAD
-    # endpoint may return a body from its handler, which would be sent as-is —
-    # strip it here and let mongoose frame the empty body natively
-    # (Content-Length: 0).
+    # HEAD must not carry a body (RFC 9110 §3.1); strip, mongoose frames CL:0.
     if req.method === :head && res isa Response
         return Kernel._apply_head_semantics(res)
     end
@@ -338,9 +323,7 @@ end
     return false
 end
 
-# Dotfiles are not served (`.env`, `.git`, editor backups); `.well-known` is
-# the standardized exception (ACME challenges, security.txt). Every other
-# dot-segment rejects the path, including `..`-normalized attempts.
+# Deny dot-segments except .well-known (ACME/security.txt); blocks normalized .. too.
 function _has_hidden_segment(rel::String)::Bool
     isempty(rel) && return false
     first_seg = true

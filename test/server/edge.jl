@@ -151,9 +151,7 @@ end
             isempty(app.runtime.awaiting_headers)
         end
         @test closed
-        # Regression: the sweep must actually close the TCP socket. The old
-        # `mg_close_conn` path leaked the fd and left a dangling epoll
-        # registration, which wedged the event loop for later requests.
+        # Regression: the sweep must close the TCP socket (old path leaked fd/epoll).
         eof_task = @async eof(sock)
         @test timedwait(() -> istaskdone(eof_task), 3.0; pollint=0.05) == :ok
         @test istaskdone(eof_task) && fetch(eof_task) === true
@@ -214,9 +212,7 @@ end
 end
 
 @testset "max_header_bytes caps request headers" begin
-    # `header_timeout_ms` reclaims headers that never complete; the byte cap
-    # applies to complete header blocks (431). Incomplete headers are bounded
-    # by mongoose's receive ceiling plus this timeout.
+    # header_timeout_ms reclaims incomplete headers; the byte cap 431s complete blocks.
     app = App(max_header_bytes=1024, header_timeout_ms=200)
     get!(app, "/ping") do req; text("pong") end
 

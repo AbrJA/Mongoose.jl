@@ -171,10 +171,8 @@ end
 dispatch_replies!(app::App)::Bool = _dispatch_replies!(app.executor, app)
 _dispatch_replies!(::SyncExecutor, app::App)::Bool = false
 
-# Non-blocking offer: true when the reply was queued, false when the bounded
-# queue is full. Callers (broadcastws) drop the frame instead of stalling the
-# caller on a full queue. Note `isready` is a *consumer* predicate (a value is
-# available to take!); producers must compare the buffered count to capacity.
+# Non-blocking offer: false when full (callers drop frames). `isready` is a
+# consumer predicate; producers compare n_avail to capacity.
 @inline function _offer_reply!(exec::AsyncExecutor, reply)::Bool
     isopen(exec.replies) || return false
     Base.n_avail(exec.replies) < exec.queue_size || return false
@@ -198,9 +196,7 @@ function _dispatch_replies!(exec::AsyncExecutor, app::App)::Bool
         else  # Message (WebSocket)
             cap = app.config.send_buffer_bytes
             if cap > 0 && _send_buffered(conn) >= cap
-                # Slow reader: drop the frame instead of growing the send
-                # buffer without bound. The client resyncs on reconnect and
-                # `mongoose_ws_frames_dropped` makes it observable.
+                # Slow reader: drop the frame (observable via mongoose_ws_frames_dropped).
                 Threads.atomic_add!(app.runtime.ws_dropped, UInt64(1))
             else
                 try

@@ -47,9 +47,7 @@ function (mw::Cors)(request::Request, next::Function)
     origin = get(request.headers, "origin", nothing)
     allowed = origin !== nothing && _origin_allowed(mw, origin)
 
-    # Preflight (RFC 9110 §9.3.7 / Fetch): OPTIONS + Origin +
-    # Access-Control-Request-Method. A bare OPTIONS is a regular request and
-    # must reach the route; only real preflights are answered here.
+    # Preflight (RFC 9110 §9.3.7): OPTIONS + Origin + ACRM; bare OPTIONS reaches the route.
     if request.method === :options && origin !== nothing &&
        haskey(request.headers, "access-control-request-method")
         if !allowed ||

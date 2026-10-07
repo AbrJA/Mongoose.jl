@@ -47,10 +47,7 @@ Uses explicit lock/unlock (no closure) to avoid allocation on hot path.
 end
 
 # --- Process-exit shutdown ---
-# Julia blocks SIGTERM and handles it in its runtime, which runs `atexit`
-# callbacks before terminating; SIGINT is delivered as an exception. A custom
-# C signal handler cannot intercept SIGTERM (the signal is blocked process-
-# wide), so graceful shutdown on SIGTERM/exit goes through this `atexit` hook.
+# SIGTERM is blocked process-wide, so graceful shutdown goes through atexit.
 
 # Best-effort graceful shutdown of every registered server at process exit.
 function _shutdown_registered!()

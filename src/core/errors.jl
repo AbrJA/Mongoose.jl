@@ -28,13 +28,8 @@ struct BindError <: MongooseError
 end
 Base.showerror(io::IO, e::BindError) = print(io, "BindError: ", e.msg)
 
-# ── HTTPError: status-carrying exceptions ────────────────────────────────────
-#
-# A single parametric struct, `HTTPError{status}`, where the HTTP status code
-# is a compile-time constant embedded in the type. This makes the wire status
-# free to extract (`e isa HTTPError{T} → T`, constant-folded), lets users
-# dispatch on the exact type (`onerror!(app, NotFoundError) do req, e ...`),
-# and keeps the "carrier" minimal — no union fields, no boxing.
+# HTTPError{status}: status is a compile-time type parameter (free to extract,
+# dispatchable, unboxed).
 
 """
     HTTPError{status} <: Exception

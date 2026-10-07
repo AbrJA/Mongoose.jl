@@ -39,11 +39,8 @@ end
 
 # --- Request body extraction ---
 
-# Mongoose strips chunked framing in place before firing `MG_EV_HTTP_MSG`, so
-# `msg.body` already holds the decoded payload (verified against Mongoose 7.21).
-# Do NOT decode again: a second decode is a parser differential (a payload that
-# itself looks chunked would be decoded twice), and the previous call site was
-# an unbound name that made every chunked request hang.
+# Mongoose de-chunks in place before MG_EV_HTTP_MSG; never decode msg.body
+# again (double decode is a parser differential).
 @inline body_of(msg::MgHttpMessage)::String = to_string(msg.body)
 
 # --- Remote address (peer IP for per-client rate limiting, logs, …) ---
@@ -79,9 +76,7 @@ end
     return unsafe_string(str.buf, str.len)
 end
 
-# HTTP method tokens are case-sensitive (RFC 9110 §9.1), so a byte comparison
-# against the supported set is enough. The length check rejects most candidates
-# before the `memcmp`, and `bytesequal` allocates nothing.
+# Method tokens are case-sensitive (RFC 9110 §9.1); byte compare, zero allocation.
 const _METHODS = (("GET", :get), ("POST", :post), ("PUT", :put),
                   ("DELETE", :delete), ("PATCH", :patch),
                   ("OPTIONS", :options), ("HEAD", :head))

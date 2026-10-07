@@ -45,10 +45,8 @@ end
     return mw.shards[mod1(hash(key), length(mw.shards))]
 end
 
-# Default bucket key: first X-Forwarded-For entry, or X-Real-IP, when proxy
-# headers are trusted (for deployments behind an overwriting proxy); otherwise
-# the request's transport-provided remote address (per-client host). Falls back
-# to a shared "unknown" bucket only when no address is available.
+# Key: first X-Forwarded-For/X-Real-IP when proxies are trusted, else the
+# remote address; shared "unknown" bucket only when no address is available.
 function _default_key_fn(trust::Bool)
     return function (request)
         if trust

@@ -1,10 +1,4 @@
-# Playable kitchen-sink server: every Mongoose.jl capability behind one port,
-# with an interactive HTML dashboard.
-#
-#     julia --project=test test/acceptance/serve.jl
-#     open http://127.0.0.1:8080/
-#
-# Exit with Ctrl+C.
+# Kitchen-sink server + HTML dashboard: julia --project=test test/acceptance/serve.jl
 
 using Mongoose
 include(joinpath(@__DIR__, "app.jl"))

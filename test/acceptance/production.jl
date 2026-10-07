@@ -1,9 +1,4 @@
-# Acceptance suite: ONE production-flavored server, every feature, table-driven.
-#
-#     julia --project=test test/acceptance/production.jl
-#
-# Wired into CI as the wire-level gate (in addition to the main suite).
-# It doubles as the executable version of the README/docs demo.
+# Acceptance suite: one live server, table-driven wire checks (CI gate).
 
 using Test
 using HTTP
@@ -14,9 +9,7 @@ using CodecZlib
 include(joinpath(@__DIR__, "..", "helpers.jl"))
 include(joinpath(@__DIR__, "app.jl"))
 
-# One server, many requests: the C server handles keep-alive reuse fine (curl
-# proves it), but HTTP.jl's client pooling can wedge a connection after the
-# multipart exchange — so the suite uses fresh connections (Connection: close).
+# Fresh connection per request: HTTP.jl pooling can wedge after multipart.
 const AUTH = ["Authorization" => "Bearer test-token", "Connection" => "close"]
 const CLOSE = ["Connection" => "close"]
 
@@ -119,9 +112,7 @@ const CLOSE = ["Connection" => "close"]
 
         progress("GZip compression (wire)")
         @testset "GZip compression (wire)" begin
-            # Small JSON bodies (< minsize) are correctly skipped — the
-            # ~1.1KB text route is the gzip wire target. (Static files are
-            # served by the C layer and bypass middleware by design.)
+            # ~1.1KB text is the gzip target; small JSON is skipped by min size.
             plain = HTTP.get("$base/api/quote"; status_exception=false, headers=AUTH, read_idle_timeout=10)
             expected = String(plain.body)
             @test ncodeunits(expected) > 1024
@@ -255,11 +246,8 @@ const CLOSE = ["Connection" => "close"]
             allow = HTTP.header(r, "Allow")
             @test occursin("GET", allow) && !occursin("HEAD", allow)
 
-            # RFC 9112 §7.1: chunked request bodies are decoded by the adapter
-            # (mongoose decodes chunked in place; the adapter does not re-decode). A
-            # wire-level curl probe is deliberately omitted: raw-body clients
-            # wedging the C connection — the same keep-alive interaction as the
-            # old multipart hang — costs far more than it proves.
+            # RFC 9112 §7.1: mongoose de-chunks in place; the adapter never
+            # re-decodes. Raw-socket probes are omitted (wedging risk).
         end
 
         @testset "Cookies + typed validation" begin
@@ -316,9 +304,7 @@ end
     end
     start!(app; port=$port, blocking=true)
     """)
-    # A marker file (not stdout) proves the hook ran: reading the child's pipe
-    # races the async reader on slower runners (observed on macOS CI), while a
-    # written file is visible as soon as the hook returns.
+    # Marker file (not stdout): pipe reads race the async reader on slow runners.
     proc = run(pipeline(`$(Base.julia_cmd()) --project=$(Base.active_project()) $script`;
                         stdout=devnull, stderr=devnull); wait=false)
     ready = wait_until(timeout=90.0) do

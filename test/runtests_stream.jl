@@ -1,15 +1,5 @@
-# Streaming test runner.
-#
-# Reports each topic file live (▶ … ✓ / ✗) with flush, so a hang or failure
-# pinpoints the exact file as it happens — no waiting for the final summary.
-#
-# Usage:
-#   julia --project=test test/runtests_stream.jl             # fail-fast
-#   MONGOOSE_TEST_CONTINUE=1 julia --project=test test/runtests_stream.jl
-#   MONGOOSE_TEST_VERBOSE=1 julia --project=test test/runtests_stream.jl
-#
-# MONGOOSE_TEST_CONTINUE: keep going after a file fails (report and continue).
-# MONGOOSE_TEST_VERBOSE: also print each @testset as it starts (helpers.jl).
+# Streaming test runner: live per-file progress (fail-fast).
+# MONGOOSE_TEST_CONTINUE=1 continues after failures; MONGOOSE_TEST_VERBOSE=1 logs testsets.
 
 using Test
 using HTTP

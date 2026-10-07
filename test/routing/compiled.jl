@@ -1,6 +1,4 @@
-# Compiled frozen-route dispatch: semantic parity with the generic dispatch
-# path, plus the AOT/trim-friendly contract (freeze! → per-route codegen via
-# `getterminal`).
+# Compiled dispatch: parity with generic dispatch + freeze!/getterminal codegen contract.
 
 import Mongoose: AbstractMiddleware, matchroute, freeze!, process,
     getterminal, isfrozen, RouteError, RequestContext
@@ -97,10 +95,7 @@ const ERRORS = Dict{Int,Union{Response,Function}}()
 end
 
 @testset "Compiled dispatch: trailing literal cannot match an exhausted path" begin
-    # Regression: a request whose path ends before a route's trailing literal
-    # segment must NOT alias that route. Before the fix, `/api/orders/1` (GET)
-    # was mis-matched by the earlier `/api/orders/:id::Int/payments` (POST)
-    # node, answering 405 instead of the GET endpoint.
+    # Regression: a shorter path must not alias a longer route's trailing literal.
     r = Router()
     post!(r, "/api/orders/:id::Int/payments") do req, id; text("pay:$id") end
     get!(r, "/api/orders/:id::Int") do req, id; text("get:$id") end

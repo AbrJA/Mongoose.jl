@@ -86,9 +86,7 @@ end
 
 
 @testset "Async Connection: close is echoed and drained" begin
-    # `_http_job` echoes the client's close onto the reply; the drain loop
-    # marks the connection draining afterwards, so the server flushes and
-    # closes its side (RFC 7230 §6.3).
+    # _http_job echoes close; the drain loop marks draining (RFC 7230 §6.3).
     s = App(workers=2)
     get!(s, "/close") do req; text("bye") end
     with_server(s) do port
@@ -122,9 +120,7 @@ end
     s = App()
     post!(s, "/echo") do req; text("len=$(sizeof(body(req)))") end
     with_server(s) do port
-        # Both framing headers present: the request is rejected at the HDRS
-        # stage and the connection dropped without a response (replying there
-        # would still dispatch the message to the handler, see `on_headers`).
+        # CL+TE: dropped at HDRS (a reply there would still dispatch the message).
         sock = Sockets.connect("127.0.0.1", port)
         write(sock, "POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 6\r\n" *
                     "Transfer-Encoding: chunked\r\n\r\n6\r\nhello!\r\n0\r\n\r\n")

@@ -116,18 +116,14 @@ function (mw::Metrics)(request::Request, next::Function)
     response = try
         next()
     catch e
-        # Handler exceptions bypass the response path; record the failure
-        # (the transport maps it to the `HTTPError` status or 500) so error
-        # rates stay visible, then let the normal error mapping proceed.
+        # Record handler exceptions (transport maps to HTTPError/500) for error rates.
         _record!(mw, request, e isa HTTPError ? errorstatus(e) : 500,
                  (time_ns() - t0) * 1e-9)
         rethrow()
     end
     elapsed_s = (time_ns() - t0) * 1e-9
 
-    # Record both buffered responses and completed streams (SSE). The
-    # streaming status is only known at dispatch (200), so streams are
-    # bucketed as their nominal status — still visible in the histogram.
+    # Record buffered and streamed responses; streams bucket as nominal 200.
     if response isa Response || response isa StreamResponse
         _record!(mw, request, response isa Response ? response.status : 200, elapsed_s)
     end

@@ -195,10 +195,7 @@ end
     end
 
     @testset "Idle timeout closes the client" begin
-        # The sweep compares seconds against the *_ms config and must drop the
-        # server-side registration (on_close + bookkeeping) for an idle client.
-        # Client-side close-frame delivery depends on the peer's read loop, so
-        # the assertion is on the server-observable contract.
+        # Idle sweep drops server-side registration; assert the server-observable contract.
         s = App(workers=2, ws_idle_timeout_ms=200)
         closed = Ref(false)
         ws!(s, "/ws/idle";

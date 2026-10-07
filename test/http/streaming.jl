@@ -48,12 +48,8 @@
     end
 
     @testset "Slow stream does not block the event loop" begin
-        # Worst case: sync mode, single poll thread. A producer that sleeps
-        # between events must not stall unrelated HTTP requests.
-        #
-        # Deterministic sync: the producer signals a Channel after its FIRST
-        # emitted event, so the test knows the stream is genuinely mid-flight
-        # (no fixed sleep to guess "the stream is halfway done").
+        # Sync, single poll thread: a sleeping producer must not stall other
+        # requests; a Channel signal after the first event avoids fixed sleeps.
         s = App()
         mid_stream = Channel{Nothing}(1)
         get!(s, "/events") do req
