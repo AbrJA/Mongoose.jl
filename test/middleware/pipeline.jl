@@ -20,8 +20,8 @@
 
         s = App()
         get!(s, "/") do req; push!(order, "handler"); text("ok") end
-        use!(s, MW1())
-        use!(s, MW2())
+        s = use(s, MW1())
+        s = use(s, MW2())
 
         with_server(s) do port
             empty!(order)
@@ -38,7 +38,7 @@
 
         s = App()
         get!(s, "/") do req; text("should not reach") end
-        use!(s, BlockAll())
+        s = use(s, BlockAll())
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
@@ -50,7 +50,7 @@
     @testset "Static middleware composition via App(middleware=…)" begin
         s = App(middleware=(cors(origins="*"), security()))
         get!(s, "/") do req; text("ok") end
-        @test length(s.middlewares) == 2
+        @test length(s.context.middlewares) == 2
 
         client = FakeTransport(s)
         r = client(:get, "/"; headers=["Origin" => "http://example.com"])
@@ -58,9 +58,9 @@
         @test get(r.headers, "access-control-allow-origin", "") == "*"
         @test get(r.headers, "x-content-type-options", "") == "nosniff"
 
-        use!(s, etag())
-        @test length(s.middlewares) == 3
-        @test get(client(:get, "/").headers, "etag", "") != ""
+        s = use(s, etag())
+        @test length(s.context.middlewares) == 3
+        @test get(FakeTransport(s)(:get, "/").headers, "etag", "") != ""
     end
 end
 

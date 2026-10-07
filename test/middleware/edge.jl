@@ -19,8 +19,8 @@
         order = String[]
         s = App()
         get!(s, "/") do req; text(join(order, ",")) end
-        use!(s, OrderMWF("A", order))
-        use!(s, OrderMWF("B", order))
+        s = use(s, OrderMWF("A", order))
+        s = use(s, OrderMWF("B", order))
 
         with_server(s) do port
             empty!(order)
@@ -33,7 +33,7 @@
     @testset "Middleware short-circuit" begin
         s = App()
         get!(s, "/") do req; text("handler") end
-        use!(s, BlockMWF())
+        s = use(s, BlockMWF())
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
@@ -45,7 +45,7 @@
     @testset "Rate limit window expiry" begin
         s = App()
         get!(s, "/") do req; text("ok") end
-        use!(s, ratelimit(max_requests=1, window_seconds=1; trust_proxies=true))
+        s = use(s, ratelimit(max_requests=1, window_seconds=1; trust_proxies=true))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/";
@@ -70,7 +70,7 @@
     @testset "Bearer auth flow" begin
         s = App()
         get!(s, "/protected") do req; text("secret") end
-        use!(s, bearer(token -> token == "my-secret-token"))
+        s = use(s, bearer(token -> token == "my-secret-token"))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/protected"; status_exception=false)
@@ -92,7 +92,7 @@
     @testset "API key middleware" begin
         s = App()
         get!(s, "/data") do req; text("data") end
-        use!(s, apikey(keys=Set(["secret123"])))
+        s = use(s, apikey(keys=Set(["secret123"])))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/data"; status_exception=false)

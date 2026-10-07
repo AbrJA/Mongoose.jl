@@ -124,7 +124,7 @@ statusreason
 ## Middleware
 
 ```@docs
-use!
+use
 cors
 ratelimit
 bearer
@@ -172,7 +172,7 @@ broadcastws
 onerror!
 onstart!
 onstop!
-service!
+provide
 background!
 serve!
 ```

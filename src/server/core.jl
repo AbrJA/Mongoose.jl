@@ -60,20 +60,6 @@ sweep reclaims stalled handshakes) and `max_connections` on public TLS
 listeners.
 """ TLSConfig
 
-# --- Dependency injection registry ---
-
-"""
-    ServiceRegistry — mutable container for typed NamedTuple services.
-
-    `App(services=(db=pool, ...))` stores its services here; `service!` mutates
-    `deps` in place (a cold, pre-start operation). Handlers access services with
-    `service(req, Val(:db))` for convenient retrieval, or `withservices(req) do svcs … end` for type-stable access.
-"""
-mutable struct ServiceRegistry
-    deps::NamedTuple
-end
-ServiceRegistry() = ServiceRegistry(NamedTuple())
-
 # --- Active streaming responses (chunk channels drained by the event loop) ---
 
 """
@@ -291,69 +277,51 @@ end
     | `max_connections`      | `0`                | Max open connections (0 = unlimited)   |
     | `router`               | `Router()`         | Custom router instance                 |
     | `tls`                  | `nothing`          | `TLSConfig` for HTTPS                  |
-    | `middleware`           | `nothing`          | Static middleware tuple (`use!` adds dynamically) |
+    | `middleware`           | `nothing`          | Static middleware tuple (`use` adds incrementally) |
+    | `services`             | `NamedTuple()`     | DI services (`provide` adds incrementally) |
 
     # Structure (DESIGN G4)
     - `app.config` — immutable `ServerConfig`.
     - `app.runtime` — mutable `RunState` (connections, manager, loop, TLS…).
-    - `app.router`, `app.middlewares`, `app.errors`, `app.services`, … —
-      build-phase state; registration after `start!` throws `ServerError`.
+    - `app.router`, `app.errors`, `app.hooks_*` — build-phase state; registration
+      after `start!` throws `ServerError`.
+    - `app.context` — typed request bundle (middleware tuple, DI services, error
+      pages, exception handlers).
     - `app.executor` — `SyncExecutor` or `AsyncExecutor` (the worker pool).
 """
-mutable struct App{R<:AbstractRouter,E<:AbstractExecutor} <: AbstractServer
-    # ── Immutable configuration ────────────────────────────────────────────────
-    const config::ServerConfig
+struct App{R<:AbstractRouter,E<:AbstractExecutor,C<:RequestContext} <: AbstractServer
+    config::ServerConfig
+    runtime::RunState
+    router::R
+    mounts::Vector{Tuple{String,String}}
+    errors::Dict{Int,Union{Response,Function}}
+    exception_handlers::Dict{DataType,Function}
+    hooks_start::Vector{Function}
+    hooks_stop::Vector{Function}
+    executor::E
+    context::C
 
-    # ── Mutable runtime (connections, loop, TLS, background tasks) ────────────
-    const runtime::RunState
-
-    # ── Build-phase routing & middleware ──────────────────────────────────────
-    const router::R
-    const middlewares::Vector{AbstractMiddleware}
-    const mounts::Vector{Tuple{String,String}}
-
-    # ── Build-phase error handling & DI ───────────────────────────────────────
-    const errors::Dict{Int,Union{Response,Function}}
-    const exception_handlers::Dict{DataType,Function}
-    const services::ServiceRegistry
-
-    # ── Build-phase lifecycle hooks ───────────────────────────────────────────
-    const hooks_start::Vector{Function}
-    const hooks_stop::Vector{Function}
-
-    # ── Execution strategy: SyncExecutor (inline) or AsyncExecutor ───────────
-    const executor::E
-
-    # ── Request-processing seam bundle (mirrors the build-phase containers) ──
-    context::RequestContext
-
-    # Positional inner constructor: `E` comes from the executor value via the
-    # `_build_app` barrier below, so the field is concretely typed.
-    function App{R,E}(config::ServerConfig, runtime::RunState, router::R,
-                      middlewares::Vector{AbstractMiddleware},
-                      mounts::Vector{Tuple{String,String}},
-                      errors::Dict{Int,Union{Response,Function}},
-                      exception_handlers::Dict{DataType,Function},
-                      services::ServiceRegistry,
-                      hooks_start::Vector{Function}, hooks_stop::Vector{Function},
-                      executor::E, context::RequestContext) where {R<:AbstractRouter,E<:AbstractExecutor}
-        return new{R,E}(config, runtime, router, middlewares, mounts, errors,
-                        exception_handlers, services, hooks_start, hooks_stop,
-                        executor, context)
+    function App{R,E,C}(config::ServerConfig, runtime::RunState, router::R,
+                        mounts::Vector{Tuple{String,String}},
+                        errors::Dict{Int,Union{Response,Function}},
+                        exception_handlers::Dict{DataType,Function},
+                        hooks_start::Vector{Function}, hooks_stop::Vector{Function},
+                        executor::E, context::C) where {R<:AbstractRouter,E<:AbstractExecutor,C<:RequestContext}
+        return new{R,E,C}(config, runtime, router, mounts, errors,
+                          exception_handlers, hooks_start, hooks_stop, executor, context)
     end
 end
 
 # Type barrier: a concrete `exec` selects the concrete `E`, so construction is
 # statically typed (and JET-clean) instead of `typeof(union)`.
 function _build_app(config::ServerConfig, runtime::RunState, router::R,
-                    middlewares::Vector{AbstractMiddleware},
+                    mounts::Vector{Tuple{String,String}},
                     errors::Dict{Int,Union{Response,Function}},
                     exception_handlers::Dict{DataType,Function},
-                    services::ServiceRegistry, context::RequestContext,
-                    executor::E) where {R<:AbstractRouter,E<:AbstractExecutor}
-    return App{R,E}(config, runtime, router, middlewares, Tuple{String,String}[],
-                    errors, exception_handlers, services, Function[], Function[],
-                    executor, context)
+                    hooks_start::Vector{Function}, hooks_stop::Vector{Function},
+                    context::C, executor::E) where {R<:AbstractRouter,E<:AbstractExecutor,C<:RequestContext}
+    return App{R,E,C}(config, runtime, router, mounts, errors,
+                      exception_handlers, hooks_start, hooks_stop, executor, context)
 end
 
 function App(;
@@ -393,12 +361,10 @@ function App(;
     rs.tls = tls   # raw TLSConfig material; normalized at start!
     ex_handlers = Dict{DataType,Function}()
     mws = asmiddlewaretuple(middleware)
-    used_mw = AbstractMiddleware[mws...]
-    ctx = RequestContext(router; middlewares=mws,
-                         errors=errs, services=services,
+    ctx = RequestContext(router; middlewares=mws, errors=errs, services=services,
                          exception_handlers=ex_handlers)
-    app = _build_app(cfg, rs, router, used_mw, errs, ex_handlers,
-                     ServiceRegistry(services), ctx, exec)
+    app = _build_app(cfg, rs, router, Tuple{String,String}[], errs, ex_handlers,
+                     Function[], Function[], ctx, exec)
     for mw in mws
         attach!(mw, app)
     end
@@ -502,24 +468,41 @@ end
 onstop!(f::Function, server::AbstractServer) = onstop!(server, f)
 
 """
-    service!(app, name, value)
+    provide(app, name, value) → App
+    provide(app, services::NamedTuple) → App
 
-Register a service for dependency injection.
+Register one or more dependency-injection services, returning the rebuilt App
+(the argument is not mutated). Retrieve them with [`service`](@ref),
+[`services`](@ref), or [`withservices`](@ref).
 
+# Example
 ```julia
-service!(app, :db, MyDB.connect())
-service(req, :db)      # retrieve inside handler
+app = provide(app, :db, MyDB.connect())
+app = provide(app, (cache=redis, queue=ch))
 ```
 """
-function service!(app::App, name::Symbol, value)
+function provide(app::App{R,E,C}, name::Symbol, value) where {R,E,C}
     _ensure_registratable(app, "services")
-    old = app.services.deps
-    app.services.deps = (; old..., name => value)
-    # Services changed → refresh the seam's snapshot (build-phase only).
-    app.context = RequestContext(app.router; middlewares=app.middlewares,
-                                 errors=app.errors, services=app.services.deps,
-                                 exception_handlers=app.exception_handlers)
-    return app
+    return _provide(app, merge(app.context.services, (; name => value)))
+end
+
+function provide(app::App{R,E,C}, services::NamedTuple) where {R,E,C}
+    _ensure_registratable(app, "services")
+    return _provide(app, merge(app.context.services, services))
+end
+
+function _provide(app::App{R,E,C}, services::S) where {R,E,C,S<:NamedTuple}
+    ctx = RequestContext(app.router; middlewares=app.context.middlewares,
+                         errors=app.errors, services=services,
+                         exception_handlers=app.exception_handlers)
+    return _with_context(app, ctx)
+end
+
+# Rebuild an App with a new RequestContext; all other state is shared.
+function _with_context(app::App{R,E}, ctx::C) where {R,E,C<:RequestContext}
+    return App{R,E,C}(app.config, app.runtime, app.router, app.mounts,
+                      app.errors, app.exception_handlers,
+                      app.hooks_start, app.hooks_stop, app.executor, ctx)
 end
 
 """
@@ -625,45 +608,46 @@ background!(f::Function, server::AbstractServer) = background!(server, f)
 
 function Base.show(io::IO, app::App)
     mode = app.config.workers == 0 ? "sync" : "async($(app.config.workers) workers)"
-    print(io, "App($mode, $(length(app)) routes, $(length(app.middlewares)) middleware)")
+    print(io, "App($mode, $(length(app)) routes, $(length(app.context.middlewares)) middleware)")
 end
 
-# --- use! (wires the Kernel middleware protocol onto an App) ---
+# --- use (wires the Kernel middleware protocol onto an App) ---
 
 """
-    use!(app, middleware; paths=[])
+    use(app, middleware; paths=nothing) → App
 
-Add middleware to an app. `middleware` may be any callable
-`(req, next) → Response` or an `AbstractMiddleware` subtype; plain functions
-are wrapped automatically. When `paths` is non-empty, the middleware only
-applies to requests whose URI starts with one of the given prefixes.
+Compose middleware into the app, returning the rebuilt App (the argument is not
+mutated). `middleware` may be any callable `(req, next) → Response` or an
+`AbstractMiddleware` subtype; plain functions are wrapped automatically. When
+`paths` is non-empty, the middleware only applies to requests whose URI starts
+with one of the given prefixes.
 
 # Example
 ```julia
-use!(app, cors())
-use!(app, bearer(validate_token); paths=["/api"])
-use!(app, (req, next) -> (req.headers ...; next()))
+app = use(app, cors())
+app = use(app, bearer(validate_token); paths=["/api"])
+app = use(app) do req, next
+    next()
+end
 ```
 """
-function use!(server::AbstractServer, @nospecialize(mw); paths=nothing)
-    _ensure_registratable(server, "middleware")
+function use(app::App{R,E,C}, mw; paths=nothing) where {R,E,C}
+    _ensure_registratable(app, "middleware")
     inner = asmiddleware(mw)
     prefixes = String[rstrip(p, '/') for p in asstrings(paths)]
     filter!(!isempty, prefixes)
     wrapped = isempty(prefixes) ? inner : PathFilter(inner, prefixes)
-    attach!(wrapped, server)
-    push!(server.middlewares, wrapped)
-    # Refresh the seam's baked tuple stack (registration is build-phase only).
-    server.context = RequestContext(server.router; middlewares=server.middlewares,
-                                    errors=server.errors,
-                                    services=server.services.deps,
-                                    exception_handlers=server.exception_handlers)
-    return server
+    mws = (app.context.middlewares..., wrapped)
+    ctx = RequestContext(app.router; middlewares=mws, errors=app.errors,
+                         services=app.context.services,
+                         exception_handlers=app.exception_handlers)
+    newapp = _with_context(app, ctx)
+    attach!(wrapped, newapp)
+    return newapp
 end
 
-# Do-block convenience: use!(app) do req, next ... end
-use!(f::Function, server::AbstractServer; paths=nothing) =
-    use!(server, f; paths=paths)
+# Do-block convenience: app = use(app) do req, next ... end
+use(f::Function, app::App; paths=nothing) = use(app, f; paths=paths)
 
 # Metrics gauges: capture the server so `/metrics` can report live counts.
 function attach!(mw::Metrics, server::AbstractServer)
@@ -683,7 +667,6 @@ end
 Base.show(io::IO, c::ServerConfig) =
     print(io, "ServerConfig(workers=", c.workers, ", poll_timeout_ms=", c.poll_timeout_ms,
           ", max_body_bytes=", c.max_body_bytes, ")")
-Base.show(io::IO, r::ServiceRegistry) = print(io, "ServiceRegistry(", length(r.deps), " services)")
 Base.show(io::IO, s::RunState) =
     print(io, "RunState(running=", s.running[], ", connections=", length(s.connections),
           ", streams=", length(s.streams), ")")

@@ -239,14 +239,14 @@ minimize lock contention under concurrent load.
 | `mongoose_bg_tasks` | gauge | abandoned timed-out handler tasks |
 | `mongoose_ws_frames_dropped` | gauge | WebSocket pushes dropped (slow readers) |
 
-Gauges are emitted once the middleware is registered (`use!` attaches the
+Gauges are emitted once the middleware is registered (`use` attaches the
 server); before that only the counter and histogram are exposed.
 
 # Example
 ```julia
 app = App(workers=4)
-use!(app, health())
-use!(app, metrics())   # exposes GET /metrics
+app = use(app, health())
+app = use(app, metrics())   # exposes GET /metrics
 
 start!(app; port=8080)
 ```

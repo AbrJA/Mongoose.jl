@@ -130,8 +130,8 @@ when the client sends `Accept-Encoding: gzip`.
 
 # Example
 ```julia
-use!(app, compress())
-use!(app, compress(min_size_bytes=256))  # More aggressive compression
+app = use(app, compress())
+app = use(app, compress(min_size_bytes=256))  # More aggressive compression
 ```
 """
 compress(; min_size_bytes::Int=1024) = Compress(min_size_bytes)

@@ -10,7 +10,7 @@
     get!(app, "/hi") do req
         json((msg = "hi",))
     end
-    use!(app, cors())
+    app = use(app, cors())
 
     client = FakeTransport(app)
     @test client isa AbstractTransport

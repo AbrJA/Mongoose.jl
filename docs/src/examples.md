@@ -176,14 +176,14 @@ route!(router, :get, "/api/data", req -> json(Dict("data" => [1,2,3])))
 app = App(; router=router, workers=4)
 
 # Middleware runs in registration order
-use!(app, security())                                        # Security headers
-use!(app, health())                                          # /healthz, /readyz, /livez
-use!(app, metrics())                                         # GET /metrics
-use!(app, cors(origins="*"))                                 # CORS headers
-use!(app, compress(min_size_bytes=1024))                           # GZip compression
-use!(app, logger())                                          # Access logs
-use!(app, ratelimit(max_requests=100, window_seconds=60))    # Rate limiting
-use!(app, bearer(t -> t == "secret"); paths=["/api"])        # Auth on /api only
+app = use(app, security())                                     # Security headers
+app = use(app, health())                                       # /healthz, /readyz, /livez
+app = use(app, metrics())                                      # GET /metrics
+app = use(app, cors(origins="*"))                              # CORS headers
+app = use(app, compress(min_size_bytes=1024))                  # GZip compression
+app = use(app, logger())                                       # Access logs
+app = use(app, ratelimit(max_requests=100, window_seconds=60)) # Rate limiting
+app = use(app, bearer(t -> t == "secret"); paths=["/api"])     # Auth on /api only
 
 start!(app; port=8080)
 ```
@@ -207,7 +207,7 @@ router = Router()
 route!(router, :get, "/", req -> text("hello"))
 
 app = App(; router=router, workers=4)
-use!(app, RequestTimer())
+app = use(app, RequestTimer())
 start!(app; port=8080)
 ```
 
@@ -428,7 +428,7 @@ route!(router, :get, "/users/:id::Int", (req, id) -> begin
 end)
 
 app = App(; router=router, workers=4)
-service!(app, :db, FakeDB(Dict(1 => "Alice", 2 => "Bob")))
+app = provide(app, :db, FakeDB(Dict(1 => "Alice", 2 => "Bob")))
 
 start!(app; port=8080)
 ```
@@ -477,7 +477,7 @@ end)
 app = App(; router=router, workers=4)
 
 # Compress responses larger than 1KB when client accepts gzip
-use!(app, compress(min_size_bytes=1024))
+app = use(app, compress(min_size_bytes=1024))
 
 start!(app; port=8080)
 ```
@@ -500,7 +500,7 @@ route!(router, :post, "/echo", req -> begin
 end)
 
 app = App(; router=router)
-use!(app, cors())
+app = use(app, cors())
 
 client = FakeTransport(app)   # or: FakeTransport(app)
 
@@ -560,12 +560,12 @@ app = App(;
 )
 
 # Full middleware stack
-use!(app, security())
-use!(app, health(ready_check = () -> true))
-use!(app, metrics())
-use!(app, cors(origins=get(ENV, "CORS_ORIGINS", "*")))
-use!(app, compress(min_size_bytes=1024))
-use!(app, logger())
+app = use(app, security())
+app = use(app, health(ready_check = () -> true))
+app = use(app, metrics())
+app = use(app, cors(origins=get(ENV, "CORS_ORIGINS", "*")))
+app = use(app, compress(min_size_bytes=1024))
+app = use(app, logger())
 
 # Error responses
 onerror!(app, 500, json(Dict("error" => "Internal error"); status=500))
@@ -573,7 +573,7 @@ onerror!(app, 413, json(Dict("error" => "Too large"); status=413))
 onerror!(app, 503, json(Dict("error" => "Overloaded"); status=503))
 
 # Services
-service!(app, :env, get(ENV, "APP_ENV", "production"))
+app = provide(app, :env, get(ENV, "APP_ENV", "production"))
 
 # Static assets
 serve!(app, "public"; uri_prefix="/static")

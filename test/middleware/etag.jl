@@ -9,7 +9,7 @@
     get!(app, "/pre") do req
         Response(200, ["etag" => "\"custom\""], "x")
     end
-    use!(app, etag())
+    app = use(app, etag())
     client = Mongoose.FakeTransport(app)
 
     @testset "ETag generation" begin
@@ -85,7 +85,7 @@ end
     head!(s, "/data") do req
         text("etag me")
     end
-    use!(s, etag())
+    s = use(s, etag())
     with_server(s) do port
         r = HTTP.get("http://127.0.0.1:$port/data"; status_exception=false)
         @test r.status == 200
@@ -122,8 +122,8 @@ end
     head!(s, "/payload") do req
         text(repeat("All partial functions are structured transformations. ", 20))
     end
-    use!(s, etag())          # registered outside compress: hashes wire bytes
-    use!(s, compress(min_size_bytes=64))
+    s = use(s, etag())          # registered outside compress: hashes wire bytes
+    s = use(s, compress(min_size_bytes=64))
     with_server(s) do port
         # Fresh connection per probe (HTTP.jl gzip pooling wedges otherwise).
         g = HTTP.get("http://127.0.0.1:$port/payload"; status_exception=false,

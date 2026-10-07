@@ -52,8 +52,8 @@ When called with a string, uses constant-time comparison to prevent timing attac
 
 # Example
 ```julia
-use!(server, bearer("my-secret-token"))
-use!(server, bearer(token -> token in valid_tokens))
+server = use(server, bearer("my-secret-token"))
+server = use(server, bearer(token -> token in valid_tokens))
 ```
 """
 bearer(validator::Function) = Bearer(validator)
@@ -89,9 +89,9 @@ equivalent.
 
 # Example
 ```julia
-use!(server, apikey("key-123"))
-use!(server, apikey(Set(["key-123", "key-456"])))
-use!(server, apikey(["key-123"]); header_name="x-api-key")
+server = use(server, apikey("key-123"))
+server = use(server, apikey(Set(["key-123", "key-456"])))
+server = use(server, apikey(["key-123"]); header_name="x-api-key")
 ```
 """
 apikey(keys::Union{AbstractString,AbstractSet{<:AbstractString},AbstractVector{<:AbstractString}};
@@ -135,7 +135,7 @@ comparison.
 
 # Example
 ```julia
-use!(server, basicauth("admin", ENV["ADMIN_PASSWORD"]))
+server = use(server, basicauth("admin", ENV["ADMIN_PASSWORD"]))
 ```
 """
 basicauth(user::String, password::String; realm::String="restricted") =

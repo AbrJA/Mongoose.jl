@@ -2,7 +2,7 @@
     @testset "Default healthy" begin
         s = App()
         get!(s, "/") do req; text("app") end
-        use!(s, health())
+        s = use(s, health())
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/healthz"; status_exception=false)
@@ -20,7 +20,7 @@
     @testset "Unhealthy returns 503" begin
         s = App()
         get!(s, "/") do req; text("app") end
-        use!(s, health(health_check=() -> false))
+        s = use(s, health(health_check=() -> false))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/healthz"; status_exception=false)
@@ -32,7 +32,7 @@
     @testset "Not ready returns 503" begin
         s = App()
         get!(s, "/") do req; text("app") end
-        use!(s, health(ready_check=() -> false))
+        s = use(s, health(ready_check=() -> false))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/readyz"; status_exception=false)
@@ -44,7 +44,7 @@
     @testset "Non-health routes pass through" begin
         s = App()
         get!(s, "/app") do req; text("hello") end
-        use!(s, health())
+        s = use(s, health())
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/app"; status_exception=false)

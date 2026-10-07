@@ -41,11 +41,11 @@ app = App(;
     max_connections    = 10_000,
 )
 
-use!(app, security())
-use!(app, etag())
-use!(app, compress(min_size_bytes=1024))
-use!(app, metrics())          # /metrics with counters, histogram, live gauges
-use!(app, health())           # /healthz /readyz /livez
+app = use(app, security())
+app = use(app, etag())
+app = use(app, compress(min_size_bytes=1024))
+app = use(app, metrics()) # /metrics with counters, histogram, live gauges
+app = use(app, health())  # /healthz /readyz /livez
 
 get!(app, "/users/:id::Int") do req, id
     json((id=id,))
@@ -63,7 +63,7 @@ start!(app; port=8080)        # binds, then freezes/compiles the route table
   backpressure, per-request timeouts, and thread-safe reply delivery. Use
   async when handlers do I/O.
 - **Scoped middleware is cheap.** `route!(...; middleware=(a, b))`,
-  `group(...)`, and `use!(...; paths=["/api"])` all run through the tuple
+  `group(...)`, and `use(...; paths=["/api"])` all run through the tuple
   pipeline; route-scoped middleware adds no allocation over an unscoped route.
 - **DI is typed.** `App(services=(db=pool,))` sets a typed `Request` field;
   read it with `withservices(req) do svcs … end` for type-stable access.

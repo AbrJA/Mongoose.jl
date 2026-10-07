@@ -122,24 +122,24 @@ Any callable `(req, next) → Response` is middleware — no subtyping needed.
 Built-ins cover the common production stack:
 
 ```julia
-use!(app, security())                                   # OWASP headers
-use!(app, health())                                     # /healthz /readyz /livez
-use!(app, metrics())                                    # Prometheus /metrics
-use!(app, cors(origins="https://myapp.com"))            # CORS + preflight
-use!(app, compress(min_size_bytes=1024))                # gzip
-use!(app, etag())                                       # ETag + 304/412
-use!(app, logger())                                     # access logs
-use!(app, ratelimit(max_requests=100, window_seconds=60))
-use!(app, bearer("secret"); paths=["/api"])             # path-scoped auth
-use!(app, apikey(["key-abc", "key-xyz"]))
-use!(app, basicauth("admin", ENV["ADMIN_PASSWORD"]))
+app = use(app, security())                        # OWASP headers
+app = use(app, health())                          # /healthz /readyz /livez
+app = use(app, metrics())                         # Prometheus /metrics
+app = use(app, cors(origins="https://myapp.com")) # CORS + preflight
+app = use(app, compress(min_size_bytes=1024))     # gzip
+app = use(app, etag())                            # ETag + 304/412
+app = use(app, logger())                          # access logs
+app = use(app, ratelimit(max_requests=100, window_seconds=60))
+app = use(app, bearer("secret"); paths=["/api"]) # path-scoped auth
+app = use(app, apikey(["key-abc", "key-xyz"]))
+app = use(app, basicauth("admin", ENV["ADMIN_PASSWORD"]))
 serve!(app, "public"; uri_prefix="/static")             # C-level static files
 ```
 
 Custom middleware — a closure or a small type:
 
 ```julia
-use!(app) do req, next
+app = use(app) do req, next
     t = time()
     res = next()
     @info "$(req.method) $(req.uri)" status=res.status ms=round((time()-t)*1000; digits=1)
@@ -311,7 +311,7 @@ using Test, Mongoose
 
 app = App()
 get!(app, "/hello", req -> json(Dict("msg" => "hi")))
-use!(app, cors())
+app = use(app, cors())
 
 client = FakeTransport(app)
 resp = client(:get, "/hello")

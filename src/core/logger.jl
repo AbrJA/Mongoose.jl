@@ -126,9 +126,9 @@ Create a request-logging middleware.
 
 # Example
 ```julia
-use!(server, logger())                         # plain text, all requests
-use!(server, logger(threshold_ms=100))         # only slow requests
-use!(server, logger(structured=true))          # JSON structured logs
+server = use(server, logger())                         # plain text, all requests
+server = use(server, logger(threshold_ms=100))         # only slow requests
+server = use(server, logger(structured=true))          # JSON structured logs
 ```
 """
 logger(; threshold_ms::Int=0, output::IO=stderr, structured::Bool=false) =

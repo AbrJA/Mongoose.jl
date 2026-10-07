@@ -1,10 +1,10 @@
-@testset "service!/inject" begin
+@testset "provide/inject" begin
     @testset "Service retrieved per request" begin
         s = App()
-        @test service!(s, :version, "1.0.0") === s
-        service!(s, :region, "us-east")
-        @test s.services.deps.version == "1.0.0"
-        @test s.services.deps.region == "us-east"
+        s = provide(s, :version, "1.0.0")
+        s = provide(s, :region, "us-east")
+        @test s.context.services.version == "1.0.0"
+        @test s.context.services.region == "us-east"
         get!(s, "/version") do req
             v = service(req, :version)
             text("v=$v")
@@ -19,7 +19,7 @@ end
 @testset "Typed NamedTuple services" begin
     @testset "Val-typed access + missing service" begin
         s = App(services=(db="pool", retries=3))
-        @test s.services.deps.db == "pool"
+        @test s.context.services.db == "pool"
         get!(s, "/svc") do req
             db = service(req, Val(:db))       # type-stable access
             retries = service(req, Val(:retries))
@@ -41,7 +41,7 @@ end
 @testset "Typed Services" begin
     @testset "service(req, name, T) returns typed value" begin
         app = App()
-        service!(app, :version, "1.0.0")
+        app = provide(app, :version, "1.0.0")
 
         get!(app, "/test") do req
             v = service(req, :version, String)
@@ -56,7 +56,7 @@ end
 
     @testset "service(req, name, T) throws on type mismatch" begin
         app = App()
-        service!(app, :count, 42)
+        app = provide(app, :count, 42)
 
         get!(app, "/test") do req
             service(req, :count, String)  # Wrong type
@@ -80,9 +80,9 @@ end
     end
 end
 
-@testset "service!/inject integration" begin
+@testset "provide/inject integration" begin
     app = App()
-    service!(app, :db, () -> "database_connection")
+    app = provide(app, :db, () -> "database_connection")
     get!(app, "/svc") do req
         db = service(req, :db)
         text(db)

@@ -125,15 +125,15 @@ function buildapp(; token::String="test-token", workers::Integer=2)
               services=(version="0.4.0-acceptance", db="memory"))
 
     # Middleware stack (global).
-    use!(app, security())
-    use!(app, health())
-    use!(app, metrics())
-    use!(app, cors(origins="*"))
-    use!(app, etag())                       # before compress: validates what is sent
-    use!(app, compress(min_size_bytes=64))
-    use!(app, logger())
-    use!(app, ratelimit(max_requests=100_000, window_seconds=60))
-    use!(app, bearer(t -> t == token); paths=["/api"])
+    app = use(app, security())
+    app = use(app, health())
+    app = use(app, metrics())
+    app = use(app, cors(origins="*"))
+    app = use(app, etag())                       # before compress: validates what is sent
+    app = use(app, compress(min_size_bytes=64))
+    app = use(app, logger())
+    app = use(app, ratelimit(max_requests=100_000, window_seconds=60))
+    app = use(app, bearer(t -> t == token); paths=["/api"])
 
     # Custom error pages + typed exceptions.
     onerror!(app, 404) do req

@@ -52,7 +52,7 @@ end
     handlers.
 
     The global middleware stack is stored as a **baked tuple snapshot** (built
-    once by `App`/`use!` and immutable afterward), so the per-request pipeline
+    once by `App`/`use` and immutable afterward), so the per-request pipeline
     never re-grows or re-walks a mutable vector and needs no
     `[global; scoped]` concatenation.
 

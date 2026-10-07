@@ -21,7 +21,7 @@
     end
     ```
 
-    Plain closures/functions work too: `use!`/`route!` wrap them via
+    Plain closures/functions work too: `use`/`route!` wrap them via
     `asmiddleware` (see `FunctionMiddleware`). The tag type exists so the
     pipeline can hold a typed stack (`Vector{AbstractMiddleware}`).
 """
@@ -32,7 +32,7 @@ abstract type AbstractMiddleware end
 """
     attach!(middleware, server) → middleware
 
-Optional lifecycle hook: `use!` calls it when middleware is registered, so
+Optional lifecycle hook: `use` calls it when middleware is registered, so
 middleware that needs server state (metrics gauges, readiness checks) can
 capture a reference. Default is a no-op.
 """
@@ -62,7 +62,7 @@ end
     FunctionMiddleware{F} — adapter that lets any callable `f(req, next)` act
     as a middleware without subtyping `AbstractMiddleware`.
 
-    User code rarely needs this directly: `use!` and `route!(; middleware=...)`
+    User code rarely needs this directly: `use` and `route!(; middleware=...)`
     accept plain closures/functions and wrap them automatically.
 """
 struct FunctionMiddleware{F} <: AbstractMiddleware
@@ -78,7 +78,7 @@ end
 
 Normalize any middleware into an `AbstractMiddleware`: `AbstractMiddleware`
 instances pass through; any other callable `f(req, next)` is wrapped in a
-`FunctionMiddleware`. This is the single admission point used by `use!`, by
+`FunctionMiddleware`. This is the single admission point used by `use`, by
 `route!`/`group` `middleware=` metadata, and by `Endpoint`s.
 """
 asmiddleware(mw::AbstractMiddleware) = mw

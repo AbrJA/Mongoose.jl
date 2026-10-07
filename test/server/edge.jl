@@ -86,7 +86,7 @@ end
     with_server(s) do port
         @test_throws Mongoose.ServerError get!(s, "/late", req -> text("x"))
         @test_throws Mongoose.ServerError route!(s, :get, "/late2", req -> text("x"))
-        @test_throws Mongoose.ServerError use!(s, cors())
+        @test_throws Mongoose.ServerError s = use(s, cors())
         @test_throws Mongoose.ServerError onerror!(s, 404, req -> text("x"))
         @test_throws Mongoose.ServerError ws!(s, "/ws"; on_message=req -> nothing)
         # pre-start registration still fine

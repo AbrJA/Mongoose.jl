@@ -2,7 +2,7 @@
     @testset "Exposes /metrics endpoint" begin
         s = App()
         get!(s, "/") do req; text("ok") end
-        use!(s, metrics())
+        s = use(s, metrics())
 
         with_server(s) do port
             for _ in 1:3
@@ -24,7 +24,7 @@
     @testset "Custom metrics path" begin
         s = App()
         get!(s, "/") do req; text("ok") end
-        use!(s, metrics(path="/stats"))
+        s = use(s, metrics(path="/stats"))
 
         with_server(s) do port
             HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
@@ -43,7 +43,7 @@ end
             emit(writer; data="one")
         end
     end
-    use!(app, metrics())
+    app = use(app, metrics())
 
     with_server(app) do port
         HTTP.get("http://127.0.0.1:$port/events"; status_exception=false)
@@ -57,7 +57,7 @@ end
     s = App()
     get!(s, "/boom") do req; error("boom") end
     get!(s, "/teapot") do req; throw(ImATeapotError("short and stout")) end
-    use!(s, metrics())
+    s = use(s, metrics())
 
     with_server(s) do port
         base = "http://127.0.0.1:$port"
@@ -72,7 +72,7 @@ end
 @testset "WS drop gauge is exposed" begin
     s = App()
     get!(s, "/") do req; text("ok") end
-    use!(s, metrics())
+    s = use(s, metrics())
     with_server(s) do port
         body = String(HTTP.get("http://127.0.0.1:$port/metrics"; retry=false).body)
         @test contains(body, "mongoose_ws_frames_dropped 0")

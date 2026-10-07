@@ -7,7 +7,7 @@ import JSON
 # Facade exports the user surface only; extension protocols live in Kernel.
 export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
     Plain, Html, Json, Css, Js, Xml, Binary,
-    start!, shutdown!, isrunning, url, route!, use!, serve!, onerror!, onstart!, onstop!,
+    start!, shutdown!, isrunning, url, route!, use, serve!, onerror!, onstart!, onstop!,
     context, Cookie, Headers, setcookie, parsecookies, parseform, header,
     ws!, broadcastws, Message,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
@@ -25,7 +25,7 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
     HTTPVersionNotSupportedError, VariantAlsoNegotiatesError, InsufficientStorageError,
     LoopDetectedError, NotExtendedError, NetworkAuthenticationRequiredError,
     TLSConfig,
-    service!, service, services, withservices, background!,
+    provide, service, services, withservices, background!,
     AbstractExecutor, SyncExecutor, AsyncExecutor, FakeExecutor, run!,
     submit!, stop!, haspending,
     AbstractTransport, FakeTransport, close!,
@@ -141,7 +141,7 @@ end
 
         # --- App construction ---
         app = App()
-        use!(app, cors())
+        app = use(app, cors())
         get!(app, "/") do r; json(Dict("ok" => true)) end
         post!(app, "/data") do r; text("ok") end
         errorresponse(app.errors, req, 500)
