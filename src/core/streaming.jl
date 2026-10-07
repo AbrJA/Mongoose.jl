@@ -24,6 +24,8 @@ struct SSEWriter{W}
     writer::W                        # StreamWriter (live) or a test buffer
 end
 
+Base.show(io::IO, ::SSEWriter) = print(io, "SSEWriter()")
+
 """
     emit(sse; data, event="", id="", retry_ms=nothing)
 

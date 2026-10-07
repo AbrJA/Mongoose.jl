@@ -60,6 +60,8 @@ mutable struct FakeExecutor <: AbstractExecutor
 end
 FakeExecutor() = FakeExecutor(Function[], Any[])
 
+Base.show(io::IO, fe::FakeExecutor) = print(io, "FakeExecutor(", length(fe.jobs), " jobs)")
+
 start!(fe::FakeExecutor, app) = fe
 stop!(fe::FakeExecutor) = (empty!(fe.jobs); empty!(fe.results); fe)
 

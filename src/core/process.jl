@@ -74,6 +74,9 @@ struct RequestContext{R<:AbstractRouter,
     exception_handlers::H
 end
 
+Base.show(io::IO, ctx::RequestContext) =
+    print(io, "RequestContext(", length(ctx.middlewares), " middleware, ", length(ctx.services), " services)")
+
 function RequestContext(router::AbstractRouter;
                         middlewares::Union{AbstractVector{<:AbstractMiddleware},Tuple}=(),
                         errors::AbstractDict{Int}=Dict{Int,Union{Response,Function}}(),

@@ -325,6 +325,9 @@ struct MultipartFile
     data::Vector{UInt8}    # File content
 end
 
+Base.show(io::IO, f::MultipartFile) =
+    print(io, "MultipartFile(filename=", repr(f.filename), ", ", length(f.data), " bytes)")
+
 """
     parsemultipart(req) → Dict{String, Union{String, MultipartFile}}
 

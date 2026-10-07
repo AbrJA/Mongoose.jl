@@ -30,6 +30,9 @@ function AsyncExecutor(workers::Int, queue_size::Int)
         Threads.Atomic{Int}(0), Threads.Atomic{Bool}(false))
 end
 
+Base.show(io::IO, e::AsyncExecutor) =
+    print(io, "AsyncExecutor(", e.workers, " workers, queue ", e.queue_size, ")")
+
 # --- Lifecycle ---
 
 function init_executor!(exec::AsyncExecutor)

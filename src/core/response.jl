@@ -278,6 +278,9 @@ function Cookie(name::String, value::String;
     return Cookie(name, value, path, domain, max_age, secure, httponly, samesite)
 end
 
+Base.show(io::IO, c::Cookie) =
+    print(io, "Cookie(name=", repr(c.name), ", value=", repr(c.value), ")")
+
 """
     setcookie(cookie) → String
 

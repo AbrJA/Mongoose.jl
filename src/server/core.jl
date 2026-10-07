@@ -672,3 +672,11 @@ function attach!(mw::Metrics, server::AbstractServer)
     )
     return mw
 end
+
+Base.show(io::IO, c::ServerConfig) =
+    print(io, "ServerConfig(workers=", c.workers, ", poll_timeout_ms=", c.poll_timeout_ms,
+          ", max_body_bytes=", c.max_body_bytes, ")")
+Base.show(io::IO, r::ServiceRegistry) = print(io, "ServiceRegistry(", length(r.deps), " services)")
+Base.show(io::IO, s::RunState) =
+    print(io, "RunState(running=", s.running[], ", connections=", length(s.connections),
+          ", streams=", length(s.streams), ")")

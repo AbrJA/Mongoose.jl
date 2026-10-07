@@ -64,6 +64,9 @@ mutable struct FakeTransport <: AbstractTransport
     closed::Bool
 end
 
+Base.show(io::IO, t::FakeTransport) =
+    print(io, "FakeTransport(", t.app, ", ", length(t.streams), " streams)")
+
 FakeTransport(app::App) = FakeTransport(app, 0, Dict{Int,FakeStream}(), false)
 
 canws(::FakeTransport) = false
