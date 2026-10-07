@@ -1,0 +1,71 @@
+"""
+    Server-Sent Events (SSE) support.
+
+    Provides a high-level API for streaming real-time events to clients
+    using the W3C EventSource protocol.
+"""
+
+"""
+    SSEWriter — Writes Server-Sent Events to a connection.
+
+    Used within a `StreamResponse` producer:
+    ```julia
+    function sse_handler(req)
+        sse(req) do writer
+            for i in 1:10
+                emit(writer; data="tick \$i", event="heartbeat", id=string(i))
+                sleep(1.0)
+            end
+        end
+    end
+    ```
+"""
+struct SSEWriter{W}
+    writer::W                        # StreamWriter (live) or a test buffer
+end
+
+Base.show(io::IO, ::SSEWriter) = print(io, "SSEWriter()")
+
+"""
+    emit(sse; data, event="", id="", retry_ms=nothing)
+
+Send a single SSE event to the client. Fields:
+- `data::String` — event payload (required). Multi-line data is handled correctly.
+- `event::String` — event type/name (optional).
+- `id::String` — event ID for reconnection (optional).
+- `retry_ms::Union{Nothing,Int}` — reconnection interval in ms (optional).
+"""
+function emit(sse::SSEWriter; data::String, event::String="", id::String="", retry_ms::Union{Nothing,Int}=nothing)
+    io = IOBuffer(sizehint=64 + ncodeunits(data))
+    !isempty(id) && (print(io, "id: ", id, "\n"))
+    !isempty(event) && (print(io, "event: ", event, "\n"))
+    retry_ms !== nothing && (print(io, "retry: ", retry_ms, "\n"))
+    for line in eachsplit(data, '\n')
+        print(io, "data: ", line, "\n")
+    end
+    print(io, "\n")  # blank line terminates the event
+    write(sse.writer, String(take!(io)))
+end
+
+"""
+    sse([req,] producer; headers=[]) → StreamResponse
+
+Convenience constructor for SSE responses with correct headers.
+
+```julia
+function stream_events(req)
+    sse(req) do writer
+        emit(writer; data="hello", event="greeting")
+    end
+end
+```
+"""
+function sse(producer::Function;
+             headers=[ "Cache-Control"     => "no-cache",
+                       "X-Accel-Buffering" => "no" ])
+    wrapped = (stream_writer) -> producer(SSEWriter(stream_writer))
+    return StreamResponse(wrapped, 200; content_type="text/event-stream", headers=headers)
+end
+
+# do-block form: `sse(req) do writer … end` splices the producer first.
+sse(producer::Function, ::Request; kwargs...) = sse(producer; kwargs...)

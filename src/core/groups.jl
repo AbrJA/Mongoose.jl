@@ -1,0 +1,164 @@
+"""
+    Route groups — hierarchical route organization with scoped middleware.
+
+    Groups provide:
+    - Path prefix nesting
+    - Scoped middleware (only applies to routes in the group)
+    - Clean API for organizing large applications
+"""
+
+"""
+    RouteGroup — A collection of routes sharing a prefix and middleware stack.
+"""
+struct RouteGroup
+    prefix::String
+    middleware::Vector{AbstractMiddleware}
+    routes::Vector{Tuple{Symbol,String,Function}}
+    ws_routes::Vector{Tuple{String,NamedTuple}}
+    children::Vector{RouteGroup}
+end
+
+"""
+    group(prefix; middleware=[]) → RouteGroup
+
+Create a new route group with the given path prefix.
+
+# Example
+```julia
+api = group("/api/v1", middleware=[bearer(validate_token)]) do g
+    route!(g, :get, "/users", list_users)
+    route!(g, :post, "/users", create_user)
+
+    group!(g, "/admin", middleware=[require_role("admin")]) do admin
+        route!(admin, :delete, "/users/:id::Int", delete_user)
+    end
+end
+```
+"""
+function group(f::Function, prefix::String; middleware=nothing)
+    g = RouteGroup(
+        rstrip(prefix, '/'),
+        asmiddlewares(middleware),
+        Tuple{Symbol,String,Function}[],
+        Tuple{String,NamedTuple}[],
+        RouteGroup[]
+    )
+    f(g)
+    return g
+end
+
+# Non-block version
+function group(prefix::String; middleware=nothing)
+    return RouteGroup(
+        rstrip(prefix, '/'),
+        asmiddlewares(middleware),
+        Tuple{Symbol,String,Function}[],
+        Tuple{String,NamedTuple}[],
+        RouteGroup[]
+    )
+end
+
+"""
+    route!(group, method, path, handler)
+
+Add a route to a group. Path is relative to the group's prefix.
+"""
+function route!(g::RouteGroup, method::Symbol, path::String, handler::Function)
+    push!(g.routes, (method, path, handler))
+    return g
+end
+
+"""
+    ws!(group, path; kwargs...)
+    ws!(group, path, handler; kwargs...)
+
+Add a WebSocket route to a group. The handler may be positional (shorthand
+for `on_message=handler`) or passed as the `on_message` keyword.
+"""
+function ws!(g::RouteGroup, path::AbstractString; kwargs...)
+    push!(g.ws_routes, (String(path), values(kwargs)))
+    return g
+end
+
+function ws!(g::RouteGroup, path::AbstractString, handler::Function; kwargs...)
+    nt = (; on_message=handler, kwargs...)
+    push!(g.ws_routes, (String(path), nt))
+    return g
+end
+
+# Method helpers for RouteGroup (extend Base where applicable)
+Base.get!(g::RouteGroup, path::AbstractString, h::Function) = (push!(g.routes, (:get, path, h)); g)
+post!(g::RouteGroup, path::AbstractString, h::Function) = (push!(g.routes, (:post, path, h)); g)
+Base.put!(g::RouteGroup, path::AbstractString, h::Function) = (push!(g.routes, (:put, path, h)); g)
+patch!(g::RouteGroup, path::AbstractString, h::Function) = (push!(g.routes, (:patch, path, h)); g)
+Base.delete!(g::RouteGroup, path::AbstractString, h::Function) = (push!(g.routes, (:delete, path, h)); g)
+options!(g::RouteGroup, path::AbstractString, h::Function) = (push!(g.routes, (:options, path, h)); g)
+head!(g::RouteGroup, path::AbstractString, h::Function) = (push!(g.routes, (:head, path, h)); g)
+
+Base.get!(f::Function, g::RouteGroup, path::AbstractString) = Base.get!(g, path, f)
+post!(f::Function, g::RouteGroup, path::AbstractString) = post!(g, path, f)
+Base.put!(f::Function, g::RouteGroup, path::AbstractString) = Base.put!(g, path, f)
+patch!(f::Function, g::RouteGroup, path::AbstractString) = patch!(g, path, f)
+Base.delete!(f::Function, g::RouteGroup, path::AbstractString) = Base.delete!(g, path, f)
+options!(f::Function, g::RouteGroup, path::AbstractString) = options!(g, path, f)
+head!(f::Function, g::RouteGroup, path::AbstractString) = head!(g, path, f)
+
+"""
+    group!(parent, prefix; middleware=[]) do g ... end
+
+Add a nested group to a parent group.
+"""
+function group!(f::Function, parent::RouteGroup, prefix::String;
+                middleware=nothing)
+    child = group(f, prefix; middleware=middleware)
+    push!(parent.children, child)
+    return parent
+end
+
+# --- Registration: flatten groups into a Router ---
+
+"""
+    mount!(router_or_app, group)
+
+Mount a `RouteGroup` into a router or app, registering all its routes with
+the group's prefix applied and its middleware attached as **scoped route
+metadata**. The runtime composes scoped middleware with app-global
+middleware at dispatch time — no per-route closures are created.
+
+# Example
+```julia
+api = group("/api/v1") do g
+    get!(g, "/users", list_users)
+    post!(g, "/users", create_user)
+end
+mount!(app, api)
+```
+"""
+function mount!(router, g::RouteGroup, parent_prefix::String="",
+                parent_middleware::Vector{AbstractMiddleware}=AbstractMiddleware[])
+    full_prefix = parent_prefix * g.prefix
+    combined_mw = vcat(parent_middleware, g.middleware)
+
+    for (method, path, handler) in g.routes
+        full_path = full_prefix * path
+        route!(router, method, full_path, handler; middleware=combined_mw)
+    end
+
+    for (path, kwargs) in g.ws_routes
+        full_path = full_prefix * path
+        ws!(router, full_path; kwargs...)
+    end
+
+    for child in g.children
+        mount!(router, child, full_prefix, combined_mw)
+    end
+
+    return router
+end
+
+function Base.show(io::IO, g::RouteGroup)
+    print(io, "RouteGroup(", repr(g.prefix), ", ", length(g.routes), " routes")
+    length(g.ws_routes) > 0 && print(io, ", ", length(g.ws_routes), " ws")
+    length(g.children) > 0 && print(io, ", ", length(g.children), " groups")
+    print(io, ")")
+end

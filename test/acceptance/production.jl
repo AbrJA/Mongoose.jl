@@ -1,0 +1,332 @@
+# Acceptance suite: one live server, table-driven wire checks (CI gate).
+
+using Test
+using HTTP
+using Mongoose
+import JSON
+using CodecZlib
+
+include(joinpath(@__DIR__, "..", "helpers.jl"))
+include(joinpath(@__DIR__, "app.jl"))
+
+# Fresh connection per request: HTTP.jl pooling can wedge after multipart.
+const AUTH = ["Authorization" => "Bearer test-token", "Connection" => "close"]
+const CLOSE = ["Connection" => "close"]
+
+@testset "Acceptance: kitchen-sink server" begin
+    app = buildapp(workers=parse(Int, get(ENV, "ACCEPT_WORKERS", "2")))
+    port = fresh_port()
+    # blocking=false: the event loop runs on its own task; the test thread
+    # drives HTTP requests (with_server does the same).
+    start!(app; port=port, blocking=false)
+    try
+        base = "http://127.0.0.1:$port"
+        wait_for_server("$base/healthz"; timeout=10)
+
+        progress(name) = println("▶ ", rpad(name, 34), " …"); flush(stdout)
+
+        progress("REST CRUD + typed params")
+        @testset "REST CRUD + typed params" begin
+            r = HTTP.get("$base/api/users"; status_exception=false, headers=AUTH, read_idle_timeout=10)
+            @test r.status == 200
+            @test JSON.parse(String(r.body))["users"][2]["name"] == "Bob"
+
+            r = HTTP.get("$base/api/users/42"; status_exception=false, headers=AUTH, read_idle_timeout=10)
+            @test r.status == 200
+            @test JSON.parse(String(r.body))["id"] == 42
+
+            # Typed param mismatch → custom 404 page, not 500.
+            r = HTTP.get("$base/api/users/abc"; status_exception=false, headers=AUTH, read_idle_timeout=10)
+            @test r.status == 404
+            @test contains(String(r.body), "Not found")
+
+            r = HTTP.post("$base/api/users"; status_exception=false, headers=AUTH,
+                body=JSON.json(Dict("name" => "Carol")))
+            @test r.status == 201
+            @test JSON.parse(String(r.body))["created"] == "Carol"
+
+            r = HTTP.request("DELETE", "$base/api/users/7"; status_exception=false, headers=AUTH, read_idle_timeout=10)
+            @test r.status == 200
+            @test String(r.body) == "deleted 7"
+        end
+
+        progress("Query + form features")
+        @testset "Echo (raw body round-trip)" begin
+            body_str = "raw echo body"
+            r = HTTP.post("$base/api/echo"; status_exception=false, read_idle_timeout=10,
+                headers=AUTH, body=body_str)
+            @test r.status == 200
+            @test String(r.body) == body_str
+        end
+
+        @testset "Query + form features" begin
+            r = HTTP.get("$base/api/search?q=julia&page=2&limit=5"; status_exception=false, headers=AUTH, read_idle_timeout=10)
+            @test JSON.parse(String(r.body)) == Dict("q" => "julia", "page" => 2, "limit" => 5)
+
+            r = HTTP.post("$base/api/form"; status_exception=false,
+                headers=["Content-Type" => "application/x-www-form-urlencoded",
+                         "Authorization" => "Bearer test-token"],
+                body="a=1&b=hello")
+            @test r.status == 200
+            @test JSON.parse(String(r.body))["received"] == Dict("a" => "1", "b" => "hello")
+        end
+
+        progress("Multipart upload (wire)")
+        @testset "Multipart upload (wire)" begin
+            boundary = "----AcceptanceBoundary"
+            raw = "--$boundary\r\n" *
+                  "Content-Disposition: form-data; name=\"file\"; filename=\"a.bin\"\r\n" *
+                  "Content-Type: application/octet-stream\r\n\r\nfile-body\r\n--$boundary--\r\n"
+            r = HTTP.post("$base/api/upload"; status_exception=false, read_idle_timeout=10,
+                headers=["Content-Type" => "multipart/form-data; boundary=$boundary",
+                         "Authorization" => "Bearer test-token",
+                         "Connection" => "close"],
+                body=raw)
+            @test r.status == 200
+            j = JSON.parse(String(r.body))
+            @test j["filename"] == "a.bin"
+            @test j["bytes"] == 9
+            @test j["head"] == "file-bod"
+
+            # Malformed upload without a multipart Content-Type → 415 (was 500).
+            r = HTTP.post("$base/api/upload"; status_exception=false, headers=AUTH,
+                body="--no-boundary--garbage", read_idle_timeout=10)
+            @test r.status == 415
+        end
+
+        progress("Binary + media (wire)")
+        @testset "Binary + media (wire)" begin
+            r = HTTP.get("$base/api/binary"; status_exception=false, headers=AUTH, read_idle_timeout=10)
+            @test r.status == 200
+            @test r.headers["Content-Type"] == "application/octet-stream"
+            @test Vector{UInt8}(r.body) == UInt8[0x00, 0x01, 0x02, 0xff, 0x00, 0x80, 0x7f]
+            @test HTTP.header(r, "Content-Length") == "7"
+
+            r = HTTP.get("$base/api/png"; status_exception=false, headers=AUTH, read_idle_timeout=10)
+            @test r.status == 200
+            @test r.headers["Content-Type"] == "image/png"
+            bytes = Vector{UInt8}(r.body)
+            @test bytes == PNG_1X1
+            @test bytes[1:8] == UInt8[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+        end
+
+        progress("GZip compression (wire)")
+        @testset "GZip compression (wire)" begin
+            # ~1.1KB text is the gzip target; small JSON is skipped by min size.
+            plain = HTTP.get("$base/api/quote"; status_exception=false, headers=AUTH, read_idle_timeout=10)
+            expected = String(plain.body)
+            @test ncodeunits(expected) > 1024
+
+            meta = HTTP.get("$base/api/meta"; status_exception=false, headers=AUTH, read_idle_timeout=10)
+            @test JSON.parse(String(meta.body))["version"] == "0.4.0-acceptance"
+
+            gz = HTTP.get("$base/api/quote"; status_exception=false, decompress=false, read_idle_timeout=10,
+                headers=["Accept-Encoding" => "gzip", "Authorization" => "Bearer test-token",
+                         "Connection" => "close"])
+            @test HTTP.header(gz, "Content-Encoding") == "gzip"
+            inflated = String(CodecZlib.transcode(CodecZlib.GzipDecompressor, gz.body))
+            @test inflated == expected
+        end
+
+        progress("SSE (wire framing)")
+        @testset "SSE (wire framing)" begin
+            r = HTTP.get("$base/api/events"; status_exception=false, headers=AUTH, read_idle_timeout=10)
+            @test r.status == 200
+            body = String(r.body)
+            @test length(findall("event: heartbeat", body)) == 3
+            @test contains(body, "data: tick 1")
+            @test contains(body, "data: tick 3")
+            @test endswith(body, "\n\n")
+        end
+
+        progress("WebSocket echo (text + binary)")
+        @testset "WebSocket echo (text + binary)" begin
+            HTTP.WebSockets.open("ws://127.0.0.1:$port/ws"; headers=["Origin" => "http://127.0.0.1"]) do ws
+                HTTP.WebSockets.send(ws, "hello")
+                @test String(HTTP.WebSockets.receive(ws)) == "hello"
+
+                HTTP.WebSockets.send(ws, UInt8[0x00, 0xff, 0x42])
+                echo = HTTP.WebSockets.receive(ws)
+                echo_bytes = echo isa Vector{UInt8} ? echo : Vector{UInt8}(codeunits(String(echo)))
+                @test echo_bytes == UInt8[0x00, 0xff, 0x42]
+            end
+        end
+
+        progress("Middleware integration")
+        @testset "Middleware integration" begin
+            r = HTTP.get("$base/healthz"; status_exception=false, headers=CLOSE, read_idle_timeout=10)
+            @test r.status == 200
+
+            r = HTTP.get("$base/metrics"; status_exception=false, headers=CLOSE, read_idle_timeout=10)
+            @test r.status == 200
+            @test contains(String(r.body), "http_requests_total")
+
+            # Bearer is path-scoped to /api: no token → 401; outside → open.
+            r = HTTP.get("$base/api/users"; status_exception=false, read_idle_timeout=10)
+            @test r.status == 401
+            r = HTTP.get("$base/healthz"; status_exception=false, headers=CLOSE, read_idle_timeout=10)
+            @test r.status == 200
+
+            # CORS preflight.
+            r = HTTP.options("$base/api/users"; status_exception=false,
+                headers=["Origin" => "https://example.com",
+                         "Access-Control-Request-Method" => "POST",
+                         "Connection" => "close"])
+            @test r.status == 204 || r.status == 200
+            @test get(Dict(r.headers), "Access-Control-Allow-Origin", "") == "*"
+
+            # Security headers on every response.
+            r = HTTP.get("$base/healthz"; status_exception=false, headers=CLOSE, read_idle_timeout=10)
+            @test HTTP.hasheader(r, "X-Content-Type-Options")
+        end
+
+        progress("Error handling")
+        @testset "Error handling" begin
+            r = HTTP.get("$base/missing"; status_exception=false, headers=AUTH, read_idle_timeout=10)
+            @test r.status == 404
+            @test occursin("Not found", String(r.body))
+
+            r = HTTP.get("$base/api/boom"; status_exception=false, headers=AUTH, read_idle_timeout=10)
+            @test r.status == 404
+            @test contains(String(r.body), "everything")
+
+            # Built-in HTTPError{418}: automatic mapping, no onerror! needed.
+            r = HTTP.get("$base/api/http-error"; status_exception=false, headers=AUTH, read_idle_timeout=10)
+            @test r.status == 418
+            @test String(r.body) == "short and stout"
+
+            # Body limit → 413.
+            r = HTTP.post("$base/api/echo"; status_exception=false, headers=AUTH,
+                body=repeat("x", 2_000_000))
+            @test r.status == 413
+            @test HTTP.hasheader(r, "X-Request-Id")
+        end
+
+        progress("Static dashboard + route precedence")
+        @testset "Static dashboard + route precedence" begin
+            r = HTTP.get("$base/"; status_exception=false, headers=CLOSE, read_idle_timeout=10)
+            @test r.status == 200
+            @test contains(String(r.body), "acceptance dashboard")
+
+            # Static files never shadow routes.
+            r = HTTP.get("$base/api/users"; status_exception=false, headers=AUTH, read_idle_timeout=10)
+            @test r.status == 200
+            @test contains(String(r.body), "Alice")
+        end
+
+        progress("ETag + conditional requests (wire)")
+        @testset "ETag + conditional requests (wire)" begin
+            r = HTTP.get("$base/api/users"; status_exception=false, headers=AUTH,
+                read_idle_timeout=10, decompress=false)
+            @test r.status == 200
+            etag_v = HTTP.header(r, "ETag")
+            @test startswith(etag_v, "\"")
+
+            r2 = HTTP.get("$base/api/users"; status_exception=false,
+                headers=[AUTH; "If-None-Match" => etag_v],
+                read_idle_timeout=10, decompress=false)
+            @test r2.status == 304
+            @test isempty(r2.body)
+            @test HTTP.header(r2, "ETag") == etag_v
+
+            # A stale tag gets the full 200 again.
+            r3 = HTTP.get("$base/api/users"; status_exception=false,
+                headers=[AUTH; "If-None-Match" => "\"stale\""],
+                read_idle_timeout=10, decompress=false)
+            @test r3.status == 200
+        end
+
+        progress("Frozen router guardrails + request id")
+        @testset "HTTP semantics: 405 Allow + raw chunked" begin
+            # RFC 9110 §15.5.6: 405 must carry the Allow header. (/api/quote is
+            # GET-only — with no auto-HEAD fallback, Allow names GET but not HEAD.)
+            r = HTTP.request("POST", "$base/api/quote"; status_exception=false,
+                headers=AUTH, read_idle_timeout=10)
+            @test r.status == 405
+            allow = HTTP.header(r, "Allow")
+            @test occursin("GET", allow) && !occursin("HEAD", allow)
+
+            # RFC 9112 §7.1: mongoose de-chunks in place; the adapter never
+            # re-decodes. Raw-socket probes are omitted (wedging risk).
+        end
+
+        @testset "Cookies + typed validation" begin
+            # Set a cookie, then read it back on the next request.
+            r = HTTP.get("$base/api/cookie"; status_exception=false,
+                headers=AUTH, read_idle_timeout=10)
+            @test r.status == 200
+            @test contains(String(r.body), "cookie=none")
+            set_cookie = HTTP.header(r, "Set-Cookie")
+            @test occursin("session=abc123", set_cookie)
+            @test occursin("HttpOnly", set_cookie)
+
+            r = HTTP.get("$base/api/cookie"; status_exception=false,
+                headers=[AUTH; "Cookie" => "session=abc123"], read_idle_timeout=10)
+            @test contains(String(r.body), "cookie=abc123")
+
+            # Typed validation: valid body parses, invalid body rejects.
+            r = HTTP.post("$base/api/validate"; status_exception=false, read_idle_timeout=10,
+                headers=["Content-Type" => "application/json", "Authorization" => "Bearer test-token",
+                         "Connection" => "close"],
+                body=JSON.json(Dict("name" => "Alice", "age" => 30)))
+            @test r.status == 200
+            @test JSON.parse(String(r.body))["age"] == 30
+
+            r = HTTP.post("$base/api/validate"; status_exception=false, read_idle_timeout=10,
+                headers=["Content-Type" => "application/json", "Authorization" => "Bearer test-token",
+                         "Connection" => "close"],
+                body=JSON.json(Dict("name" => "Bob", "age" => "old")))
+            @test r.status == 422  # ValidationError → 422 (was 500 pre-HTTPError)
+        end
+
+        @testset "Frozen router guardrails + request id" begin
+            @test Mongoose.isfrozen(app.router)
+            @test_throws Mongoose.RouteError Mongoose.route!(app.router, :get, "/late", req -> text("x"))
+
+            r = HTTP.get("$base/healthz"; status_exception=false, headers=CLOSE, read_idle_timeout=10)
+            @test HTTP.hasheader(r, "X-Request-Id")
+        end
+    finally
+        shutdown!(app)
+    end
+end
+@testset "SIGTERM graceful shutdown (child process)" begin
+    Sys.isunix() || return
+    port = fresh_port()
+    marker = tempname()
+    script = tempname() * ".jl"
+    write(script, """
+    using Mongoose
+    app = App()
+    get!(app, "/") do req; text("ok") end
+    onstop!(app) do
+        write($(repr(marker)), "ONSTOP-RAN")
+    end
+    start!(app; port=$port, blocking=true)
+    """)
+    # Marker file (not stdout): pipe reads race the async reader on slow runners.
+    proc = run(pipeline(`$(Base.julia_cmd()) --project=$(Base.active_project()) $script`;
+                        stdout=devnull, stderr=devnull); wait=false)
+    ready = wait_until(timeout=90.0) do
+        try
+            HTTP.get("http://127.0.0.1:$port/"; status_exception=false, retry=false).status == 200
+        catch
+            false
+        end
+    end
+    if !ready
+        kill(proc, 9)
+        @test false
+    else
+        kill(proc, 15)          # SIGTERM: Julia runs atexit → drain + onstop!
+        wait(proc)
+        ran = wait_until(timeout=5.0) do
+            isfile(marker) && read(marker, String) == "ONSTOP-RAN"
+        end
+        @test ran
+        # The process exits with the signal status by design (Julia's runtime
+        # handles SIGTERM after running atexit hooks).
+    end
+    rm(script; force=true)
+    rm(marker; force=true)
+end

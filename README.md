@@ -5,8 +5,8 @@
 <h1 align="center">Mongoose.jl</h1>
 
 <p align="center">
-    <strong>Production-ready HTTP &amp; WebSocket framework for Julia</strong><br>
-    Built on the battle-tested <a href="https://github.com/cesanta/mongoose">Mongoose C library</a>
+    <strong>Production-ready HTTP & WebSocket framework for Julia</strong><br>
+    Powered by the battle-tested <a href="https://github.com/cesanta/mongoose">Mongoose C library</a>
 </p>
 
 <p align="center">
@@ -18,438 +18,335 @@
 
 ---
 
-## Why Mongoose.jl? 🚀
+## ✨ Why Mongoose.jl?
 
-| Category | Highlights |
-|---|---|
-| **Performance** | Sub-100ms TTFR via precompilation. Zero-allocation static router. C-level static file serving with Range, ETag, gzip. |
-| **Architecture** | Sync (`Server`) and async (`Async`) modes. Multi-worker pool with backpressure. Per-request timeouts with thread starvation protection. |
-| **HTTPS/TLS** | Native TLS support via `TLSConfig` and `start!(...; tls=...)` for HTTPS listeners (requires `Mongoose_jll` `v7.21.0+`, which provides `mg_tls_init`/`mg_tls_opts`). |
-| **Routing** | Trie-based O(1) matching. Typed path parameters (`:id::Int`). Wildcards (`*path`). Automatic HEAD from GET handlers. |
-| **WebSocket** | Same port as HTTP. Frame size limits. Idle timeout. Upgrade rejection. Ping/pong (RFC 6455). |
-| **Middleware** | CORS, rate limiting, bearer/API key auth, structured logging, Prometheus metrics, health checks. Path-scoped via `paths=`. |
-| **Production** | Graceful shutdown with drain. 503 backpressure on overload. Custom error responses. `X-Request-Id` propagation. |
-| **AOT** | Full `juliac --trim=safe` support via `@router` macro. Zero startup time compiled binaries. |
-| **Minimal** | Only `Mongoose_jll` + `PrecompileTools`. No HTTP.jl, no Sockets.jl. JSON via optional one-line extension (see [JSON](#json)). |
-
----
-
-## Installation 📦
-
-```julia
-] add Mongoose
-```
-
-For JSON support:
-
-```julia
-] add JSON
-```
+- ⚡ **Fast** — precompiled cold start; `freeze!` compiles the route table so
+  warm dispatch stays at ~100 ns (fixed routes) / ~400 ns (typed params) with
+  minimal allocation.
+- 🧪 **Testable without FFI** — `FakeTransport` drives the full pipeline in pure
+  Julia: no ports, no C library, deterministic tests.
+- 🧩 **Batteries included** — CORS, rate limiting, bearer/API-key/basic auth,
+  gzip, ETag, security headers, structured logs, Prometheus metrics, health
+  checks, static files.
+- 📡 **Real-time built in** — WebSocket (including server-initiated push) and
+  Server-Sent Events on the same port, with backpressure and graceful drain.
+- 🔌 **Replaceable parts** — router, executor, and transport sit behind small
+  protocols; the core has no FFI dependency and can be swapped or embedded.
+- 🛡️ **Production defaults** — graceful shutdown on SIGINT **and SIGTERM**,
+  request timeouts, header timeouts, connection caps, 503 backpressure, typed
+  error handlers, dependency injection.
 
 ---
 
-## Quick Start ⚡
+## 🚀 Quick Start
+
+```julia
+using Pkg; Pkg.add("Mongoose")
+```
 
 ```julia
 using Mongoose
 
-router = Router()
+app = App(workers=4)
 
-route!(router, :get, "/", req -> Response(Plain, "Hello from Mongoose.jl!"))
+get!(app, "/") do req
+    text("Hello from Mongoose.jl!")
+end
 
-route!(router, :get, "/users/:id::Int", (req, id) ->
-    Response(Json, """{"id": $id, "name": "User $id"}""")
-)
+get!(app, "/users/:id::Int") do req, id
+    json(Dict("id" => id, "name" => "User $id"))
+end
 
-route!(router, :post, "/echo", req -> Response(Plain, req.body))
+post!(app, "/echo") do req
+    json(parsejson(req); status=201)
+end
 
-server = Async(router; nworkers=4)
-start!(server, port=8080, blocking=false)
-
-# Graceful shutdown when done
-shutdown!(server)
+start!(app; port=8080)
 ```
 
 ---
 
-## Routing 🧭
-
-### HTTP Methods 🌐
+## 🧭 Routing
 
 ```julia
-route!(router, :get,    "/items",     req -> ...)
-route!(router, :post,   "/items",     req -> ...)
-route!(router, :put,    "/items/:id", (req, id) -> ...)
-route!(router, :patch,  "/items/:id", (req, id) -> ...)
-route!(router, :delete, "/items/:id", (req, id) -> ...)
+get!(app, "/items",        req -> ...)
+post!(app, "/items",       req -> ...)
+put!(app, "/items/:id",    (req, id) -> ...)
+patch!(app, "/items/:id",  (req, id) -> ...)
+delete!(app, "/items/:id", (req, id) -> ...)
+route!(app, :get, "/search", req -> ...)
 ```
 
-GET routes automatically handle HEAD requests (body stripped, headers preserved).
-
-### Typed Path Parameters 🔢
-
-Append `::Type` to a segment for automatic parsing. Invalid values return 404 (e.g. `/users/abc` when `Int` is expected):
+Typed path parameters use `:name::Type` and arrive as a typed tuple (invalid
+values are 404s). Wildcards capture the rest of the path:
 
 ```julia
-route!(router, :get, "/users/:id::Int",       (req, id)   -> ...)  # id::Int
-route!(router, :get, "/price/:val::Float64",  (req, val)  -> ...)  # val::Float64
-route!(router, :get, "/posts/:slug",          (req, slug) -> ...)  # slug::String
+get!(app, "/users/:id::Int",       (req, id)   -> ...)   # id::Int
+get!(app, "/price/:val::Float64",  (req, val)  -> ...)   # val::Float64
+get!(app, "/posts/:slug",          (req, slug) -> ...)   # slug::String
+get!(app, "/files/*path",          (req, path) -> ...)   # wildcard
 ```
 
-### Query String 🔍
-
-Access query parameters via `req.query`, which is a `Dict{String,String}`:
+**Groups** share a prefix and scoped middleware (composed as
+`global → group → route` at dispatch time):
 
 ```julia
-route!(router, :get, "/search", req -> begin
-    q     = get(req.query, "q", "")
-    page  = tryparse(Int, get(req.query, "page", "1"))
-    limit = tryparse(Int, get(req.query, "limit", ""))
-    Response(Plain, "Searching: $q, page $page")
-end)
+api = group("/api/v1", middleware=[
+    ratelimit(max_requests=100, window_seconds=60),
+    apikey("key-abc"; header_name="x-api-key"),
+])
+
+get!(api, "/users", list_users)
+post!(api, "/users", create_user)
+
+group!(api, "/admin", middleware=[bearer("admin-token")]) do admin
+    delete!(admin, "/users/:id::Int", delete_user)
+end
+
+mount!(app, api)
 ```
 
-### Request Helpers 🛠️
-
-| Expression | Returns | Description |
-|---|---|---|
-| `req.body` | `String` | Raw request body |
-| `get(req.headers, "authorization", nothing)` | `String \| nothing` | Case-insensitive header lookup |
-| `req.query` | `Dict{String,String}` | Parsed query map (e.g. `Dict("q" => "test", "page" => "2")`) |
-| `context!(req)` | `Dict{Symbol,Any}` | Lazily-allocated context dict (set by middleware) |
-
----
-
-## Server Types 🖥️
-
-| Type | Model | Best for |
-|---|---|---|
-| `Async` | Event loop + N worker tasks via channels | Production APIs |
-| `Server` | Blocking event loop on caller's thread | Scripts, AOT binaries |
+**Compiled dispatch** — register everything, then `freeze!` to close and compile
+the route table (later registration throws). The closed table is the foundation
+for AOT builds; `juliac --trim` compatibility is still in progress:
 
 ```julia
-# Production: 4 workers, 5s per-request timeout, 4 MB body limit, 60s WS idle timeout
-server = Async(router;
-    nworkers        = 4,
-    nqueue          = 1024,
-    request_timeout = 5000,
-    max_body        = 4 * 1024 * 1024,
-    ws_idle_timeout = 60,
-)
-
-# AOT / simple scripts
-server = Server(router)
-```
-
-### Config ⚙️
-
-Consolidate all options into a `Config` struct — particularly useful for environment-driven configuration:
-
-```julia
-config = Config(
-    nworkers        = parse(Int, get(ENV, "NWORKERS", "4")),
-    max_body        = parse(Int, get(ENV, "MAX_BODY", "1048576")),
-    request_timeout = parse(Int, get(ENV, "REQ_TIMEOUT", "0")),
-    ws_idle_timeout = 60,
-    drain_timeout   = 10_000,
-)
-
-server = Async(router, config)   # or Server(router, config)
-```
-
-### HTTPS / TLS
-
-Enable HTTPS by passing `TLSConfig` to `start!`:
-
-```julia
-using Mongoose
-
-router = Router()
-route!(router, :get, "/secure", req -> Response(Plain, "hello over tls"))
-
-server = Server(router)
-start!(server;
-        host = "0.0.0.0",
-        port = 8443,
-        tls = TLSConfig(
-            cert = "certs/server.crt",   # path, PEM string, or Vector{UInt8} bytes
-            key  = "certs/server.key",   # path, PEM string, or Vector{UInt8} bytes
-            # Optional:
-            # ca = "certs/ca.crt",       # CA chain/trust bundle for TLS verification
-            # name = "localhost",        # hostname verification name
-            # skip_verification = false,
-        ),
-        blocking = false,
-)
-```
-
-### Custom Error Responses 🧯
-
-Register pre-built responses for specific status codes — no function callbacks, fully trim-safe:
-
-```julia
-fail!(server, 500, Response(Json, """{"error":"Internal error"}"""; status=500))
-fail!(server, 413, Response(Json, """{"error":"Body too large"}"""; status=413))
-fail!(server, 503, Response(Json, """{"error":"Service overloaded"}"""; status=503))
-fail!(server, 504, Response(Json, """{"error":"Timed out"}"""; status=504))
-
-# Custom 404 — add a catch-all route
-route!(router, :get, "*", req -> Response(Html, read("404.html", String); status=404))
+freeze!(app)     # or freeze!(router) before App(router=router)
 ```
 
 ---
 
-## Responses 📬
+## 🧩 Middleware
+
+Any callable `(req, next) → Response` is middleware — no subtyping needed.
+Built-ins cover the common production stack:
 
 ```julia
-Response(Plain, "Hello!")                    # text/plain, status 200
-Response(Json, """{"ok": true}""")          # application/json, status 200
-Response(Html, "<p>ok</p>")                 # text/html, status 200
-Response(Json, body; status=201)            # custom status
-Response(Html, body; status=404)            # custom status
-Response(Json, body; headers=["X-Custom" => "value"])  # extra headers
+use!(app, security())                                   # OWASP headers
+use!(app, health())                                     # /healthz /readyz /livez
+use!(app, metrics())                                    # Prometheus /metrics
+use!(app, cors(origins="https://myapp.com"))            # CORS + preflight
+use!(app, compress(min_size_bytes=1024))                # gzip
+use!(app, etag())                                       # ETag + 304/412
+use!(app, logger())                                     # access logs
+use!(app, ratelimit(max_requests=100, window_seconds=60))
+use!(app, bearer("secret"); paths=["/api"])             # path-scoped auth
+use!(app, apikey(["key-abc", "key-xyz"]))
+use!(app, basicauth("admin", ENV["ADMIN_PASSWORD"]))
+serve!(app, "public"; uri_prefix="/static")             # C-level static files
 ```
 
-The format type sets the `Content-Type` header automatically:
-
-| Format | Content-Type |
-|---|---|
-| `Plain` | `text/plain; charset=utf-8` |
-| `Html` | `text/html; charset=utf-8` |
-| `Json` | `application/json; charset=utf-8` |
-| `Xml` | `application/xml; charset=utf-8` |
-| `Css` | `text/css; charset=utf-8` |
-| `Js` | `application/javascript; charset=utf-8` |
-| `Binary` | `application/octet-stream` |
-
----
-
-## Middleware 🧩
-
-Middleware runs in registration order. Each middleware can inspect and modify the request, short-circuit with a response, or pass through to the next handler.
+Custom middleware — a closure or a small type:
 
 ```julia
-server = Async(router)
-
-# Structured JSON access logs
-plug!(server, logger(structured=true))
-
-# CORS — allow a specific origin
-plug!(server, cors(origins="https://myapp.com"))
-
-# Rate limiting — 200 requests per 60s per client IP
-plug!(server, ratelimit(max_requests=200, window_seconds=60))
-
-# Auth — scoped to /api routes only
-plug!(server, bearer(token -> token == "my-secret"); paths=["/api"])
-
-# API key auth
-plug!(server, apikey(header_name="X-API-Key", keys=Set(["key-abc", "key-xyz"])))
-
-# Serve static files from the "public/" directory (C-level, with Range/ETag/gzip)
-mount!(server, "public")
-
-# Prometheus-compatible metrics at GET /metrics
-plug!(server, metrics())
-
-# Built-in health check at GET /healthz
-plug!(server, health())
-```
-
-### Path-Scoped Middleware 🎯
-
-The `paths` keyword limits a middleware to specific URL prefixes only:
-
-```julia
-plug!(server, bearer(t -> t == "secret"); paths=["/api", "/admin"])
-plug!(server, ratelimit(max_requests=10);       paths=["/api/expensive"])
-```
-
-### Custom Middleware 🧪
-
-Subtype `AbstractMiddleware` and implement the call operator:
-
-```julia
-struct RequestTimer <: Mongoose.AbstractMiddleware end
-
-function (::RequestTimer)(req::Request, params, next)
+use!(app) do req, next
     t = time()
     res = next()
-    elapsed = round((time() - t) * 1000, digits=1)
-    @info "$(req.method) $(req.uri)" status=res.status ms=elapsed
-    return res
-end
-
-plug!(server, RequestTimer())
-```
-
----
-
-## WebSocket Support 🔌
-
-```julia
-ws!(router, "/chat",
-    on_message = (msg::Message) -> Message("Echo: $(msg.data)"),
-    on_open    = (req::Request) -> begin
-        # Return false to reject the upgrade (sends 403)
-        auth = get(req.headers, "authorization", nothing)
-        auth === nothing && return false
-        @info "WS connected" uri=req.uri
-    end,
-    on_close   = () -> @info "WS disconnected"
-)
-```
-
-| Callback | Signature | Notes |
-|---|---|---|
-| `on_open` | `(req::Request) → Any` | Return `false` to reject upgrade with 403. Optional. |
-| `on_message` | `(msg::Message) → Message \| String \| Vector{UInt8} \| nothing` | Called per frame. Return `nothing` for no reply. |
-| `on_close` | `() → Any` | No arguments — connection is already gone. Optional. |
-
-**Production features:**
-- **Frame size limit** — enforced via `max_body` (same limit as HTTP). Oversized frames close the connection.
-- **Idle timeout** — set `ws_idle_timeout` (seconds) to auto-close stale connections.
-- **Upgrade rejection** — return `false` from `on_open` to refuse the connection with 403.
-- **Ping/pong** — automatic RFC 6455 control frame handling.
-
-💡 **Tip:** start with `ws_idle_timeout=60` and tune based on your client behavior.
-
----
-
-## JSON 🧾
-
-Install `JSON.jl` and extend `encode` once at startup:
-
-```julia
-using Mongoose, JSON
-
-Mongoose.encode(::Type{Json}, body) = JSON.json(body)
-```
-
-Then use `Response(Json, value)` anywhere — Content-Type is set automatically:
-
-```julia
-route!(router, :get, "/users/:id::Int", (req, id) ->
-    Response(Json, Dict("id" => id, "name" => "User $id"))
-)
-
-route!(router, :post, "/users", req -> begin
-    data = JSON.parse(req.body)
-    Response(Json, Dict("created" => get(data, "name", "")); status=201)
-end)
-```
-
----
-
-## AOT Compilation with `juliac` 🧊
-
-Use the `@router` macro to generate a **zero-allocation, compile-time dispatch function** — required for `juliac --trim=safe`. No dynamic dispatch, no closures, no allocations on the hot path.
-
-```julia
-# app.jl
-using Mongoose
-
-@router MyApp begin
-    get("/", req -> Response(Plain, "Hello!"))
-    get("/users/:id::Int", (req, id) -> Response(Plain, "User $id"))
-    post("/echo", req -> Response(Plain, req.body))
-    ws("/live", on_message = msg -> Message("Echo: $(msg.data)"))
-end
-
-(@main)(ARGS) = begin
-    server = Server(MyApp)
-    start!(server, port=8080, blocking=true)
-    return 0
+    @info "$(req.method) $(req.uri)" status=res.status ms=round((time()-t)*1000; digits=1)
+    res
 end
 ```
 
-Compile and run:
-
-```bash
-juliac --trim=safe --project . --output-exe myapp app.jl
-./myapp   # starts instantly — no JIT warmup
-```
-
 ---
 
-## Logging 📋
-
-By default, Mongoose.jl routes `@log_info`, `@log_warn`, and `@log_error` macros to **Julia's native `@info`, `@warn`, `@error`** — integrating seamlessly with ConsoleLogger, TeeLogger, and log filtering.
-
-**For `juliac --trim=safe` binaries**, set `LOG_TRIMMABLE=true` to force concrete `print()`-based logging instead (recommended because Base/CoreLogging dispatch can be trimmed or unreliable in `--trim=safe` builds):
-
-```bash
-# Native logging (default, works in JIT and AOT binary)
-julia --project app.jl
-
-# For trim-safe binaries, use concrete logging
-LOG_TRIMMABLE=true juliac --trim=safe --project . --output-exe binary app.jl
-./binary                              # @log_* routes to concrete print() logging
-```
-
----
-
-## Full Example 🏗️
-
-A complete app with REST API, WebSocket, middleware stack, and custom errors:
+## 📨 Request & Response
 
 ```julia
-using Mongoose, JSON
+body(req)                  # raw body
+parsejson(req)             # JSON → Dict/Array/...
+parseform(req)             # urlencoded body → Dict
+parsemultipart(req)        # multipart body → Dict/MultipartFile
+parsecookies(req)          # Cookie header → Dict
+parsequery(req)            # whole query Dict (query(req, k) for typed lookups)
+validate(req, CreateUser)  # parse + coerce + validate into a struct
+query(req, "page", 1)      # typed query param with default
+header(req, "authorization")
+context(req)               # per-request Dict{Symbol,Any}
+```
 
-Mongoose.encode(::Type{Json}, body) = JSON.json(body)
+```julia
+json(Dict("ok" => true))                  # 200, application/json
+json(data; status=201, headers=["X-H" => "v"])
+text("Hello!")                            # text/plain
+html("<h1>Hi</h1>")
+redirect("/new"; status=301)
+Response(Json, """{"raw":true}""")        # pre-serialized body
+```
 
-router = Router()
+Errors can be thrown or handled by status/type:
 
-# Health check
-route!(router, :get, "/health", req -> Response(Plain, "ok"))
+```julia
+throw(NotFoundError("user 7"))            # → 404 automatically
 
-# REST API
-route!(router, :get, "/api/users/:id::Int", (req, id) ->
-    Response(Json, Dict("id" => id, "name" => "User $id"))
-)
+onerror!(app, 404) do req
+    json(Dict("error" => "not found"); status=404)
+end
 
-route!(router, :post, "/api/users", req -> begin
-    data = JSON.parse(req.body)
-    Response(Json, Dict("created" => get(data, "name", "")); status=201)
-end)
-
-# WebSocket
-ws!(router, "/ws",
-    on_message = (msg::Message) -> Message("""{"ack":true}"""),
-    on_open = (req::Request) -> @info "WS connected" uri=req.uri,
-    on_close = () -> @info "WS disconnected"
-)
-
-# Custom 404
-route!(router, :get, "*", req -> Response(Html, "<h1>Not Found</h1>"; status=404))
-
-# Server
-server = Async(router; nworkers=4, request_timeout=10_000, ws_idle_timeout=60)
-
-plug!(server, logger(structured=true))
-plug!(server, cors(origins="https://myapp.com"))
-plug!(server, ratelimit(max_requests=30, window_seconds=60))
-plug!(server, bearer(t -> t == get(ENV, "API_TOKEN", "secret")); paths=["/api"])
-mount!(server, "public")
-
-fail!(server, 500, Response(Json, Dict("error" => "Internal error"); status=500))
-
-# blocking=true: start! handles Ctrl+C automatically and shuts down gracefully
-start!(server, port=8080)
+onerror!(app, AccountGone) do req, e      # typed exception handler
+    json(Dict("error" => "gone"); status=410)
+end
 ```
 
 ---
 
-## Deployment 🌐
+## 📡 WebSocket & SSE
 
-Mongoose.jl supports native HTTPS via `TLSConfig`. For production, you may either use built-in TLS directly or terminate TLS at a reverse proxy.
+```julia
+ws!(app, "/chat";
+    allowed_origins = ["https://myapp.com"],   # optional
+    on_open         = req -> true,             # false → 403
+    on_message      = msg -> Message("Echo: $(msg.data)"),
+    on_close        = () -> @info "disconnected",
+)
+
+# Server-initiated push to every client of a path (thread-safe, any task):
+broadcastws(app, "/chat", "Server announcement")
+```
+
+> Slow WS readers are protected too: pushes beyond `send_buffer_bytes`
+> (default 1 MiB) unsent are dropped (not buffered), and
+> `mongoose_ws_frames_dropped` counts them — clients resync on reconnect.
+>
+> Note: unmasked client frames are tolerated (Mongoose's parser does not
+> enforce RFC 6455 §5.1 masking). Browsers always mask and there is no
+> server-side security impact.
+
+```julia
+get!(app, "/events") do req
+    sse(req) do writer
+        for i in 1:10
+            emit(writer; data="Tick $i", event="update", id=string(i))
+            sleep(1)
+        end
+    end
+end
+```
 
 ---
 
-## Documentation 📚
+## ⚙️ Configuration
 
-Full API reference and examples: **[AbrJA.github.io/Mongoose.jl](https://AbrJA.github.io/Mongoose.jl/dev)**
+```julia
+app = App(;
+    workers            = 4,          # 0 = sync (inline); N = worker pool
+    queue_size         = 1024,       # pending requests before 503
+    request_timeout_ms = 5_000,      # 0 = disabled (async mode)
+    drain_timeout_ms   = 5_000,      # graceful shutdown budget
+    max_body_bytes     = 1_048_576,
+    header_timeout_ms  = 0,          # close conns that stall before headers
+    body_timeout_ms    = 0,          # max time to receive a request body
+    max_header_bytes   = 64 * 1024,  # request-header cap
+    send_buffer_bytes  = 1_048_576,  # unsent bytes/conn (streams + WS)
+    max_bg_tasks       = 0,          # 0 = auto (4×workers); runaway cap
+    max_connections    = 0,          # 0 = unlimited
+    ws_max_frame_bytes = 1_048_576,
+    ws_idle_timeout_ms = 0,          # 0 = disabled
+    tls                = nothing,    # TLSConfig(cert=…, key=…)
+)
+```
 
-## License ⚖️
+Units are explicit in every name: `_ms` for timeouts, `_seconds` for protocol
+durations, `_bytes` for sizes. Optional values are disabled with `nothing`.
+
+HTTPS is native:
+
+```julia
+app = App(; tls = TLSConfig(cert="path/to/cert.pem", key="path/to/key.pem"))
+start!(app; port=8443)
+```
+
+---
+
+## 🛡️ Production
+
+- **Graceful shutdown** — SIGINT and SIGTERM drain in-flight requests and SSE
+  streams, run `onstop!` hooks, and stop workers (SIGTERM and normal exits go
+  through Julia's `atexit` path; SIGINT is caught while `start!` blocks).
+- **Backpressure** — the async executor bounds its queue and answers `503` when
+  full; `max_connections`, `header_timeout_ms`, `body_timeout_ms`, and
+  `max_header_bytes` protect against slow clients and oversized requests.
+- **Observability** — `logger()` access logs, `metrics()` (request counters,
+  latency histogram, and live gauges: connections, WS clients, streams,
+  executor depth), and `health()` probes for Kubernetes.
+- **Errors** — `onerror!` per status or per exception type; typed
+  `HTTPError{status}` aliases map to responses automatically.
+- **Introspection** — `isrunning(app)`, `url(app)`, `length(app)`,
+  `matchroute(app, …)`, `hasroute(app, path)`.
+
+```julia
+onstart!(app) do; @info "starting"; connect_database!() end
+onstop!(app)  do; @info "stopping"; close_database!() end
+
+background!(app) do
+    while true
+        cleanup_expired_sessions!()
+        sleep(60)
+    end
+end
+```
+
+Dependency injection is a typed NamedTuple; `withservices` gives type-stable
+access inside the closure:
+
+```julia
+app = App(; services=(db=connect_to_database(), cache=RedisPool()))
+
+get!(app, "/users") do req
+    users = withservices(req) do svcs
+        fetch_users(svcs.db)
+    end
+    json(users)
+end
+```
+
+---
+
+## 🧪 Testing Without a Server
+
+`FakeTransport` runs the full pipeline — middleware, routing, serialization —
+with no network and no FFI:
+
+```julia
+using Test, Mongoose
+
+app = App()
+get!(app, "/hello", req -> json(Dict("msg" => "hi")))
+use!(app, cors())
+
+client = FakeTransport(app)
+resp = client(:get, "/hello")
+@test resp.status == 200
+@test contains(resp.body, "\"msg\"")
+```
+
+For deterministic async tests, `FakeExecutor` queues jobs on `submit!` and
+runs them only when you call `run!`, in submission order:
+
+```julia
+fe = FakeExecutor()
+submit!(fe, () -> "work")   # enqueued, not run
+@test run!(fe) == ["work"]  # FIFO, inline, no threads
+```
+
+---
+
+## 🔌 Pluggable Components
+
+Each boundary is a replacement point: `App(router=my_router)`,
+`App(workers=n)` chooses the executor, and `AbstractTransport` declares its
+capabilities (`canws`, `cantls`, `canstream`). Custom routers
+implement `route!`/`matchroute`/`hasroute` and may carry their own endpoint
+type via `invokeendpoint`. See the API reference for the exact contracts.
+
+---
+
+## 📚 Documentation & Examples
+
+- **API reference**: [AbrJA.github.io/Mongoose.jl](https://AbrJA.github.io/Mongoose.jl/dev)
+- **Examples**: [docs/src/examples.md](docs/src/examples.md) — REST, auth,
+  streaming, WebSocket, middleware stacks, deployment patterns.
+- **Changelog**: [CHANGELOG.md](CHANGELOG.md)
+
+## License
 
 Distributed under the GPL-2 License. See [`LICENSE`](LICENSE) for details.

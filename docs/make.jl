@@ -11,6 +11,7 @@ makedocs(
     pages = [
         "Introduction" => "index.md",
         "Examples" => "examples.md",
+        "Performance & Deployment" => "performance.md",
         "API" => "api.md",
     ],
     repo = Remotes.GitHub("AbrJA", "Mongoose.jl"),

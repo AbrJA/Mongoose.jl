@@ -1,42 +1,102 @@
-using HTTP
-using JSON
-using Mongoose
 using Test
-
-Mongoose.encode(::Type{Json}, body) = JSON.json(body)
-
-# Module-level @router definitions must live at top level (macro expands to module decls).
-# They are referenced by routing and websocket tests included below.
-@router Routes begin
-    get("/hello", (req) -> Response(200, "", "Hello Static"))
-    get("/user/:id::Int", (req, id) -> Response(200, "", "User $id"))
-    ws("/chat", on_message=(msg) -> Message("Echo: $(msg.data)"))
-end
-
-@router WildcardApp begin
-    get("/known",  req -> Response(200, "", "known"))
-    get("/*path",  (req, path) -> Response(404, "", "not found: $path"))
-end
-
-@router TypedApp begin
-    get("/item/:id::Int", (req, id) -> Response(200, "", "id=$id type=$(typeof(id))"))
-end
-
-@router PrecedenceApp begin
-    get("/match/exact", req -> Response(200, "", "exact"))
-    get("/match/:id::Int", (req, id) -> Response(200, "", "typed:$id"))
-    get("/*rest", (req, rest) -> Response(404, "", "wild:$rest"))
-end
+using HTTP
+import JSON
+import CodecZlib
+using Mongoose
 
 @testset "Mongoose.jl" begin
     include("helpers.jl")
-    include("server.jl")
-    include("tls.jl")
-    include("routing.jl")
-    include("middleware.jl")
-    include("http.jl")
-    include("websocket.jl")
-    include("static.jl")
-    include("unit.jl")
-end
 
+    # ── Unit: no server, no FFI (protocol, router, middleware, executor) ──
+    @testset "Unit: Request/Response protocol" begin
+        include("unit/response.jl")
+        include("unit/request.jl")
+        include("unit/ws.jl")
+    end
+
+    @testset "Unit: Router core" begin
+        include("unit/router.jl")
+    end
+
+    @testset "Unit: Middleware protocol" begin
+        include("unit/middleware.jl")
+    end
+
+    @testset "Unit: Executor + Transport contracts" begin
+        include("unit/executor.jl")
+        include("unit/transport.jl")
+    end
+
+    @testset "Unit: Pipeline seam + validation" begin
+        include("unit/pipeline.jl")
+        include("unit/validation.jl")
+    end
+
+    @testset "Unit: Performance guards" begin
+        include("unit/perf.jl")
+    end
+
+    @testset "Unit: FakeTransport (FakeTransport)" begin
+        include("unit/testing.jl")
+    end
+
+    # ── Routing: dispatch behavior over live servers ──
+    @testset "Routing" begin
+        include("routing/protocol.jl")
+        include("routing/registration.jl")
+        include("routing/dsl.jl")
+        include("routing/dispatch.jl")
+        include("routing/edge.jl")
+        include("routing/groups.jl")
+        include("routing/query.jl")
+        include("routing/pluggable.jl")
+        include("routing/compiled.jl")
+    end
+
+    # ── Middleware: each component against a live server ──
+    @testset "Middleware" begin
+        include("middleware/cors.jl")
+        include("middleware/ratelimit.jl")
+        include("middleware/auth.jl")
+        include("middleware/logger.jl")
+        include("middleware/health.jl")
+        include("middleware/metrics.jl")
+        include("middleware/security.jl")
+        include("middleware/etag.jl")
+        include("middleware/pipeline.jl")
+        include("middleware/path.jl")
+        include("middleware/edge.jl")
+    end
+
+    # ── Server: lifecycle, errors, services ──
+    @testset "Server" begin
+        include("server/lifecycle.jl")
+        include("server/edge.jl")
+        include("server/errors.jl")
+        include("server/services.jl")
+        include("server/serverconfig.jl")
+    end
+
+    # ── HTTP features ──
+    @testset "HTTP" begin
+        include("http/features.jl")
+        include("http/binary.jl")
+        include("http/request.jl")
+        include("http/errors.jl")
+        include("http/formats.jl")
+        include("http/streaming.jl")
+    end
+
+    @testset "Static Files" begin
+        include("http/static.jl")
+    end
+
+    @testset "WebSocket" begin
+        include("websocket/websocket.jl")
+        include("websocket/edge.jl")
+    end
+
+    @testset "TLS" begin
+        include("tls/tls.jl")
+    end
+end
