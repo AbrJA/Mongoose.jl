@@ -94,7 +94,7 @@ function _validate_body(req::Request, ::Type{T})::T where {T}
     isempty(body_str) && throw(ValidationError("Request body is empty"))
 
     data = try
-        JSON.parse(body_str)
+        decode(Json, body_str)
     catch e
         throw(ValidationError("Invalid JSON: $(sprint(showerror, e))"))
     end

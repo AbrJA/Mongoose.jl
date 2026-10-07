@@ -12,8 +12,8 @@ PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 
 [compat]
 Base64 = "1"
-HTTP = "1"
-JSON = "0.21"
+HTTP = "2"
+JSON = "1"
 LibDeflate = "0.4, 1"
 Mongoose_jll = "7.23.1"
 PrecompileTools = "1"

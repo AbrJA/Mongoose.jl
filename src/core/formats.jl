@@ -96,4 +96,4 @@ Mongoose.decode(::Type{MyFormat}, body::String) = deserialize(body)
 ```
 """
 decode(::Type{T}, body::String) where {T<:AbstractFormat} = error("decode not implemented for $T. Implement `Mongoose.decode(::Type{$T}, body::String)`.")
-decode(::Type{Json}, body::String) = JSON.parse(body)
+decode(::Type{Json}, body::String) = JSON.parse(body; dicttype=Dict{String,Any})

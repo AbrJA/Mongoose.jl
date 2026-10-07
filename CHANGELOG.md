@@ -108,6 +108,8 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - `Logger` access-logs throwing handlers as 500 and writes each line atomically.
 
 ### Changed
+- Dependencies: `JSON` 1.x (parsing still returns plain `Dict`s) and `HTTP`
+  2.x for the test client.
 - Removed dead code that reimplemented C behavior: the Julia
   `decode_chunked` parser (mongoose already decodes chunked bodies in place;
   the function was only exercised by its own unit tests) and the byte-level
