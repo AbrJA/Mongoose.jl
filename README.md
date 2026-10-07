@@ -106,9 +106,22 @@ end
 mount!(app, api)
 ```
 
-**Compiled dispatch** — register everything, then `freeze!` to close and compile
-the route table (later registration throws). The closed table is the foundation
-for AOT builds; `juliac --trim` compatibility is still in progress:
+**Static routing (AOT/trim-safe)** — declare the whole table with `@router` to
+build a `StaticRouter`. Every path segment, capture type, method, and handler is
+a type parameter, so dispatch is fully static and `juliac --trim=safe` builds a
+working executable:
+
+```julia
+router = @router begin
+    get("/users", list_users)
+    get("/users/:id::Int", get_user)
+    get("/files/*path", serve_file)
+end
+app = App(router = router)
+```
+
+**Compiled dispatch** — with the dynamic `Router`, register everything then
+`freeze!` to close and compile the route table (later registration throws):
 
 ```julia
 freeze!(app)     # or freeze!(router) before App(router=router)
@@ -135,6 +148,11 @@ app = use(app, apikey(["key-abc", "key-xyz"]))
 app = use(app, basicauth("admin", ENV["ADMIN_PASSWORD"]))
 serve!(app, "public"; uri_prefix="/static")             # C-level static files
 ```
+
+**Registration rule** — functions that change the app's typed configuration
+return a rebuilt `App`: `use`, `provide`, `trap`. Functions that mutate shared
+build-phase state keep the bang: `route!`, `get!`, `ws!`, `serve!`, `onstart!`,
+`onstop!`, `background!`.
 
 Custom middleware — a closure or a small type:
 
@@ -178,11 +196,11 @@ Errors can be thrown or handled by status/type:
 ```julia
 throw(NotFoundError("user 7"))            # → 404 automatically
 
-app = onerror(app, 404) do req
+app = trap(app, 404) do req
     json(Dict("error" => "not found"); status=404)
 end
 
-app = onerror(app, AccountGone) do req, e      # typed exception handler
+app = trap(app, AccountGone) do req, e      # typed exception handler
     json(Dict("error" => "gone"); status=410)
 end
 ```
@@ -268,7 +286,7 @@ start!(app; port=8443)
 - **Observability** — `logger()` access logs, `metrics()` (request counters,
   latency histogram, and live gauges: connections, WS clients, streams,
   executor depth), and `health()` probes for Kubernetes.
-- **Errors** — `onerror` per status or per exception type; typed
+- **Errors** — `trap` per status or per exception type; typed
   `HTTPError{status}` aliases map to responses automatically.
 - **Introspection** — `isrunning(app)`, `url(app)`, `length(app)`,
   `matchroute(app, …)`, `hasroute(app, path)`.

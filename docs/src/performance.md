@@ -108,7 +108,25 @@ numbers in the commit message and update the baseline table above plus the
 
 ## AOT / `juliac --trim`
 
-`freeze!` and the compiled route table are the foundation for AOT builds, but
-`juliac --trim` support is **not complete yet**: the trim verifier still finds
-dynamic dispatch in startup/registration. Use the standard Julia runtime until
-that lands.
+The **`StaticRouter` profile is trim-safe**: `@router` declares the route table
+at compile time (paths, capture types, methods, handlers are type parameters),
+so dispatch has no runtime `apply_type`, no erased `Function` slots, and no
+dynamic terminal. `juliac --trim=safe` on `bench/trim/trim_core.jl` builds with
+0 verifier errors and the resulting executable runs:
+
+```julia
+router = @router begin
+    get("/hello", req -> json((message = "hello",)))
+    get("/users/:id::Int", (req, id) -> text("user $id"))
+end
+app = App(router = router)
+
+@main function main(args)
+    # ...
+    return 0        # JuliaC calls exit(main(ARGS)); return an exit code
+end
+```
+
+The default `Router` registers routes at runtime, which the trim verifier
+rejects; use it for JIT deployments and `StaticRouter` for AOT. The async
+executor, TLS, and the C transport are not trim-verified yet.

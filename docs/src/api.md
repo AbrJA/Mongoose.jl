@@ -26,6 +26,9 @@ url
 
 ```@docs
 Router
+StaticRouter
+StaticRoute
+@router
 route!
 ws!
 freeze!
@@ -67,6 +70,7 @@ errorresponse
 runpipeline
 asmiddleware
 asmiddlewares
+asmiddlewaretuple
 attach!
 AbstractRequest
 ```
@@ -108,6 +112,7 @@ header
 service
 services
 withservices
+provide
 ```
 
 ## URI & String Utilities
@@ -169,10 +174,8 @@ broadcastws
 ## Lifecycle
 
 ```@docs
-onerror
 onstart!
 onstop!
-provide
 background!
 serve!
 ```
@@ -243,4 +246,5 @@ errorstatus
 RouteError
 ServerError
 BindError
+trap
 ```

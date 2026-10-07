@@ -8,7 +8,7 @@ import JSON
 export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
     StaticRouter, StaticRoute, @router,
     Plain, Html, Json, Css, Js, Xml, Binary,
-    start!, shutdown!, isrunning, url, route!, use, serve!, onerror, onstart!, onstop!,
+    start!, shutdown!, isrunning, url, route!, use, serve!, trap, onstart!, onstop!,
     context, Cookie, Headers, setcookie, parsecookies, parseform, header,
     ws!, broadcastws, Message,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,

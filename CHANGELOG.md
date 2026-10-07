@@ -21,7 +21,7 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   return a rebuilt `App`; middleware and DI services live in the context type.
 
 ### Changed
-- **Breaking**: `onerror` returns the rebuilt `App` (rebind the result). Dynamic
+- **Breaking**: `trap` returns the rebuilt `App` (rebind the result). Dynamic
   error and exception handlers are stored as typed tuples, making error handling
   statically resolvable.
 - `StreamResponse{P}` is parameterized on its producer function.

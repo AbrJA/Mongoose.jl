@@ -151,7 +151,7 @@
             get("/bad", req -> throw(BadRequestError("nope")))
             get("/crash", req -> error("boom"))
         end
-        app = onerror(App(router = router), 404) do req
+        app = trap(App(router = router), 404) do req
             text("custom 404"; status = 404)
         end
         client = FakeTransport(app)

@@ -78,10 +78,32 @@ start!(app; port=8080)
 ```
 
 Freezing also provides the closed-table guarantee AOT builds need: with no
-runtime registration, the route table can be compiled once and pruned. Note
-that `juliac --trim` compatibility is **not complete yet** — the trim
-verifier still finds dynamic dispatch in startup/registration. Call `freeze!`
-after the last registration and before starting the app.
+runtime registration, the route table can be compiled once and pruned. For
+`juliac --trim=safe` builds use `@router`/`StaticRouter`, which declares the
+table at compile time (0 trim-verifier errors — see the AOT section in
+[Performance & Deployment](@ref)); the dynamic `Router` is the JIT profile.
+
+## Static Routes (`@router`)
+
+Declare the whole table up front when you want fully static dispatch or an AOT
+build:
+
+```julia
+router = @router begin
+    get("/hello", req -> text("hello"))
+    get("/users/:id::Int", (req, id) -> json((id = id,)))
+    get("/files/*path", (req, path) -> text("Requested: $path"))
+    post("/echo", req -> text(body(req)); middleware = (cors(),))
+end
+
+app = App(; router = router)
+start!(app; port = 8080)
+```
+
+Semantics match the dynamic `Router`: literal routes win over patterns,
+patterns resolve in declaration order, a bare `"*"` is the final fallback, and
+a path match with the wrong method answers `405` with the `Allow` set. The
+table is closed by construction — `route!`/`ws!` on a `StaticRouter` throw.
 
 ## Query Parameters
 
@@ -395,11 +417,11 @@ route!(router, :get, "/", req -> json(Dict("ok" => true)))
 app = App(; router=router, workers=4)
 
 # Static error responses
-app = onerror(app, 500, json(Dict("error" => "Internal Server Error"); status=500))
-app = onerror(app, 413, json(Dict("error" => "Payload too large"); status=413))
+app = trap(app, 500, json(Dict("error" => "Internal Server Error"); status=500))
+app = trap(app, 413, json(Dict("error" => "Payload too large"); status=413))
 
 # Dynamic error handler (handler receives the request)
-app = onerror(app, 404) do req
+app = trap(app, 404) do req
     json(Dict("error" => "Not found", "path" => req.uri); status=404)
 end
 
@@ -568,9 +590,9 @@ app = use(app, compress(min_size_bytes=1024))
 app = use(app, logger())
 
 # Error responses
-app = onerror(app, 500, json(Dict("error" => "Internal error"); status=500))
-app = onerror(app, 413, json(Dict("error" => "Too large"); status=413))
-app = onerror(app, 503, json(Dict("error" => "Overloaded"); status=503))
+app = trap(app, 500, json(Dict("error" => "Internal error"); status=500))
+app = trap(app, 413, json(Dict("error" => "Too large"); status=413))
+app = trap(app, 503, json(Dict("error" => "Overloaded"); status=503))
 
 # Services
 app = provide(app, :env, get(ENV, "APP_ENV", "production"))

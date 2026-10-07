@@ -382,22 +382,22 @@ end
 # --- Registration helpers ---
 
 """
-    onerror(app, status, handler) → App
-    onerror(handler, app, status) → App
+    trap(app, status, handler) → App
+    trap(handler, app, status) → App
 
-Register a custom error handler for a status code, returning the rebuilt App
-(the argument is not mutated). `handler` may be a static `Response` or a
-dynamic `Function(req) → Response`. Both argument orders are accepted; the
+Register the response used for a status code (404, 405, 500, …), returning the
+rebuilt App (the argument is not mutated). `handler` may be a static `Response`
+or a dynamic `Function(req) → Response`. Both argument orders are accepted; the
 `(handler, app, status)` form exists so a do-block works.
 
 # Example
 ```julia
-app = onerror(app, 404) do req
+app = trap(app, 404) do req
     json(Dict("error" => "not found", "path" => req.uri); status=404)
 end
 ```
 """
-function onerror(app::App, status::Int, handler::Response)
+function trap(app::App, status::Int, handler::Response)
     _register_error!(app, status)
     pages = copy(app.context.errors)
     pages[status] = handler
@@ -406,14 +406,14 @@ function onerror(app::App, status::Int, handler::Response)
                                                app.context.exception_handlers))
 end
 
-function onerror(app::App, status::Int, handler::F) where {F<:Function}
+function trap(app::App, status::Int, handler::F) where {F<:Function}
     _register_error!(app, status)
     handlers = (app.context.error_handlers..., Kernel.ErrorPage(status, handler))
     return _with_context(app, Kernel._rebuild_context(app.context, app.context.errors,
                                                handlers,
                                                app.context.exception_handlers))
 end
-onerror(f::Function, app::App, status::Int) = onerror(app, status, f)
+trap(f::Function, app::App, status::Int) = trap(app, status, f)
 
 @inline function _register_error!(app::App, status::Int)
     (100 <= status <= 599) || throw(ServerError("Status code must be in [100,599]"))
@@ -422,29 +422,28 @@ onerror(f::Function, app::App, status::Int) = onerror(app, status, f)
 end
 
 """
-    onerror(app, ::Type{E}, handler) → App
+    trap(app, ::Type{E}, handler) → App
 
-Register a typed exception handler: `handler(req, e)` returns the `Response`
-for any handler/middleware error that is a `E` (or subtype), returning the
-rebuilt App. Handlers are tried in registration order; unhandled exceptions
-fall through to the default 500 path.
+Trap exceptions of type `E` (or a subtype): `handler(req, e)` returns the
+`Response`, returning the rebuilt App. Handlers are tried in registration
+order; unhandled exceptions fall through to the built-in 500 path.
 
 # Example
 ```julia
 struct NoMatch <: Exception end
-app = onerror(app, NoMatch) do req, e
+app = trap(app, NoMatch) do req, e
     json(Dict("error" => "not found"); status=404)
 end
 ```
 """
-function onerror(app::App, ::Type{E}, handler::F) where {E<:Exception,F<:Function}
+function trap(app::App, ::Type{E}, handler::F) where {E<:Exception,F<:Function}
     _ensure_registratable(app, "exception handlers")
     handlers = (app.context.exception_handlers..., Kernel.ExceptionHandler{E,F}(handler))
     return _with_context(app, Kernel._rebuild_context(app.context, app.context.errors,
                                                app.context.error_handlers, handlers))
 end
-onerror(handler::F, app::App, ::Type{E}) where {E<:Exception,F<:Function} =
-    onerror(app, E, handler)
+trap(handler::F, app::App, ::Type{E}) where {E<:Exception,F<:Function} =
+    trap(app, E, handler)
 
 """
     onstart!(app, f)

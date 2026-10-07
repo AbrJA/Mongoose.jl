@@ -11,9 +11,9 @@
 - **Built-in JSON** via JSON — `parsejson(req)` for parsing, `json(...)` for responses
 - **Typed routing** — exact `Dict` lookup + ordered parametric patterns,
   typed path parameters (`:id::Int`) as typed tuples, wildcards, route groups;
-  `freeze!` compiles a closed route table into statically-typed dispatch
-  (the foundation for AOT builds; `juliac --trim` support is still in
-  progress)
+  `freeze!` compiles a closed route table, and `@router`/`StaticRouter` declares
+  the whole table at compile time for trim-safe AOT builds (`juliac --trim=safe`
+  builds with 0 verifier errors)
 - **Full middleware stack** — CORS, rate limiting, bearer/API-key/basic auth,
   access logs, Prometheus metrics (counters, histogram, live gauges), health
   checks, security headers, gzip, ETag
