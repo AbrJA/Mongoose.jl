@@ -1,12 +1,5 @@
-# Warm-path performance baselines for Mongoose.jl.
-#
-#     julia --project=. bench/dispatch.jl                  # print the table
-#     BENCH_ASSERT=1 julia --project=. bench/dispatch.jl   # fail on regressions
-#
-# Measures allocations (B/op) and latency (ns/op) with warm `@allocated` /
-# `@elapsed` loops. No BenchmarkTools dependency — runnable with the package
-# environment alone. These numbers feed the baselines in
-# `.opencode/skills/julia-performance/SKILL.md`.
+# Warm-path perf baselines: julia --project=. bench/dispatch.jl
+# BENCH_ASSERT=1 fails on regressions; BENCH_N sets iterations.
 
 using Mongoose
 

@@ -17,3 +17,7 @@ WORKLOG.md
 RULES.md
 ARCHITECTURE_REPORT.md
 ROADMAP.md
+
+# OS junk
+.DS_Store
+Thumbs.db
