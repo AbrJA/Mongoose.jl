@@ -71,7 +71,7 @@ end
 end
 
 """
-    ErrorPage{F} — dynamic per-status error handler (`onerror!(app, status, f)`).
+    ErrorPage{F} — dynamic per-status error handler (`onerror(app, status, f)`).
 
     The handler type is a type parameter, so resolving a page is a typed call
     (no abstract `Function` slot, trim-safe).
@@ -82,7 +82,7 @@ struct ErrorPage{F}
 end
 
 """
-    ExceptionHandler{E,F} — typed exception handler (`onerror!(app, E, f)`).
+    ExceptionHandler{E,F} — typed exception handler (`onerror(app, E, f)`).
 """
 struct ExceptionHandler{E<:Exception,F}
     f::F
@@ -202,7 +202,7 @@ function _resolve_terminal(router::AbstractRouter, request::Request)
 end
 
 # Built-in mapping for status-carrying exceptions: a custom error page for that
-# status (onerror!(app, status, …)) wins; otherwise reply with the message.
+# status (onerror(app, status, …)) wins; otherwise reply with the message.
 @inline function _http_error_response(ctx::RequestContext, req::Request,
                                       status::Int, message::String,
                                       headers::Headers=Headers())::Response
@@ -238,7 +238,7 @@ end
 
 Run the full pipeline: attach services to the request context, dispatch the
 request through any middleware then the router, apply custom error responses
-for 4xx/5xx results, and map thrown exceptions (typed `onerror!` handlers
+for 4xx/5xx results, and map thrown exceptions (typed `onerror` handlers
 first, then the built-in `HTTPError`/`ValidationError` mapping).
 
 # Arguments

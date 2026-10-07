@@ -36,7 +36,7 @@ Base.showerror(io::IO, e::BindError) = print(io, "BindError: ", e.msg)
 
 Exception that maps to an HTTP error response. The status code is a
 compile-time constant type parameter, so `errorstatus(e)` is free and
-`onerror!(app, NotFoundError)` (or `onerror!(app, HTTPError{404})`) registers a
+`onerror(app, NotFoundError)` (or `onerror(app, HTTPError{404})`) registers a
 handler for exactly that status.
 
 Throw it inside a handler (or middleware) to signal a non-200 reply with a
@@ -51,8 +51,8 @@ end
 
 A thrown `HTTPError` is mapped to
 `Response(status, headers, message)` automatically at the transport boundary,
-unless a more specific `onerror!` handler (checked first) or a custom
-`onerror!(app, status, …)` error page takes precedence.
+unless a more specific `onerror` handler (checked first) or a custom
+`onerror(app, status, …)` error page takes precedence.
 
 Named aliases are provided for every standard status from 400 to 511 (RFC 9110
 plus the common extensions): `BadRequestError`, `UnauthorizedError`,

@@ -169,7 +169,7 @@ broadcastws
 ## Lifecycle
 
 ```@docs
-onerror!
+onerror
 onstart!
 onstop!
 provide

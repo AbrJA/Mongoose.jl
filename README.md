@@ -178,11 +178,11 @@ Errors can be thrown or handled by status/type:
 ```julia
 throw(NotFoundError("user 7"))            # → 404 automatically
 
-app = onerror!(app, 404) do req
+app = onerror(app, 404) do req
     json(Dict("error" => "not found"); status=404)
 end
 
-app = onerror!(app, AccountGone) do req, e      # typed exception handler
+app = onerror(app, AccountGone) do req, e      # typed exception handler
     json(Dict("error" => "gone"); status=410)
 end
 ```
@@ -268,7 +268,7 @@ start!(app; port=8443)
 - **Observability** — `logger()` access logs, `metrics()` (request counters,
   latency histogram, and live gauges: connections, WS clients, streams,
   executor depth), and `health()` probes for Kubernetes.
-- **Errors** — `onerror!` per status or per exception type; typed
+- **Errors** — `onerror` per status or per exception type; typed
   `HTTPError{status}` aliases map to responses automatically.
 - **Introspection** — `isrunning(app)`, `url(app)`, `length(app)`,
   `matchroute(app, …)`, `hasroute(app, path)`.

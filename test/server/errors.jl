@@ -1,7 +1,7 @@
 @testset "Custom error responses" begin
     app = App()
     get!(app, "/") do req; text("ok") end
-    app = onerror!(app, 404, Response(404, Pair{String,String}[], "Custom Not Found"))
+    app = onerror(app, 404, Response(404, Pair{String,String}[], "Custom Not Found"))
 
     with_server(app) do port
         resp = HTTP.get("http://127.0.0.1:$port/nonexistent"; status_exception=false)
@@ -10,9 +10,9 @@
     end
 end
 
-@testset "onerror! validation" begin
+@testset "onerror validation" begin
     app = App()
-    @test_throws ServerError onerror!(app, 99, Response(99, Pair{String,String}[], "bad"))
-    @test_throws ServerError onerror!(app, 600, Response(600, Pair{String,String}[], "bad"))
+    @test_throws ServerError onerror(app, 99, Response(99, Pair{String,String}[], "bad"))
+    @test_throws ServerError onerror(app, 600, Response(600, Pair{String,String}[], "bad"))
 end
 

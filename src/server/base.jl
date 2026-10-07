@@ -3,7 +3,7 @@
 
     `App` is the built-in implementation; custom server types implement the
     same surface (or subtype `App`). Registration helpers (`route!`, `ws!`,
-    `use`, `serve!`, `onerror!`, `onstart!`, `onstop!`) and the read-side
+    `use`, `serve!`, `onerror`, `onstart!`, `onstop!`) and the read-side
     router protocol (`freeze!`, `isfrozen`, `matchroute`, `hasroute`,
     `haswsroutes`, `getwsendpoint`, `length`) all work without reaching
     through `server.router`.

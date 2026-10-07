@@ -190,7 +190,7 @@ const CLOSE = ["Connection" => "close"]
             @test r.status == 404
             @test contains(String(r.body), "everything")
 
-            # Built-in HTTPError{418}: automatic mapping, no onerror! needed.
+            # Built-in HTTPError{418}: automatic mapping, no onerror needed.
             r = HTTP.get("$base/api/http-error"; status_exception=false, headers=AUTH, read_idle_timeout=10)
             @test r.status == 418
             @test String(r.body) == "short and stout"

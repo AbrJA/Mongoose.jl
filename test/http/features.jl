@@ -338,7 +338,7 @@ end
         struct TeapotError <: Exception end
 
         s = App()
-        s = onerror!(s, TeapotError) do req, e
+        s = onerror(s, TeapotError) do req, e
             Response(418, Pair{String,String}["content-type" => "text/plain"], "teapot")
         end
         get!(s, "/tea") do req; throw(TeapotError()) end
