@@ -140,3 +140,9 @@ use!(server, basicauth("admin", ENV["ADMIN_PASSWORD"]))
 """
 basicauth(user::String, password::String; realm::String="restricted") =
     BasicAuth(user, password, realm)
+
+Base.show(io::IO, ::Bearer) = print(io, "Bearer()")
+Base.show(io::IO, mw::ApiKey) =
+    print(io, "ApiKey(header_name=", repr(mw.header_name), ", ", length(mw.keys), " keys)")
+Base.show(io::IO, mw::BasicAuth) =
+    print(io, "BasicAuth(user=", repr(mw.user), ", realm=", repr(mw.realm), ")")

@@ -110,3 +110,6 @@ function cors(;
 )
     return Cors(asstrings(origins), allow_credentials, allow_methods, allow_headers, max_age_seconds)
 end
+
+Base.show(io::IO, mw::Cors) =
+    print(io, "Cors(origins=", join(mw.origins, ","), ", credentials=", mw.allow_credentials, ")")

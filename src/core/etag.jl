@@ -33,6 +33,8 @@ struct Etag <: AbstractMiddleware end
 """
 etag() = Etag()
 
+Base.show(io::IO, ::Etag) = print(io, "Etag()")
+
 function (mw::Etag)(request::Request, next::Function)
     response = next()
     response isa Response || return response

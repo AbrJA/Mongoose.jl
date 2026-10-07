@@ -133,3 +133,6 @@ use!(server, logger(structured=true))          # JSON structured logs
 """
 logger(; threshold_ms::Int=0, output::IO=stderr, structured::Bool=false) =
     Logger(threshold_ms * 1_000_000, output, structured)
+
+Base.show(io::IO, mw::Logger) =
+    print(io, "Logger(threshold_ms=", mw.threshold_ns ÷ 1_000_000, mw.structured ? ", structured" : "", ")")

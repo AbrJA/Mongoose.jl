@@ -35,6 +35,13 @@ Base.@kwdef struct TLSConfig
     skip_verification::Bool = false
 end
 
+function Base.show(io::IO, t::TLSConfig)
+    print(io, "TLSConfig(cert=", isempty(t.cert) ? "none" : "set",
+          ", key=", isempty(t.key) ? "none" : "set",
+          ", ca=", isempty(t.ca) ? "none" : "set",
+          ", name=", repr(t.name), ", skip_verification=", t.skip_verification, ")")
+end
+
 @doc """
     TLSConfig(; cert, key, ca="", name="", skip_verification=false)
 

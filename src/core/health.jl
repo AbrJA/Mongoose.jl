@@ -73,3 +73,5 @@ function (mw::Health)(request::Request, next::Function)
 
     return next()
 end
+
+Base.show(io::IO, ::Health) = print(io, "Health()")

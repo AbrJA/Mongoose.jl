@@ -263,3 +263,5 @@ function metrics(; path::String="/metrics")
     shards = [_MetricsShard() for _ in 1:_METRICS_SHARDS]
     return Metrics(shards, path, nothing)
 end
+
+Base.show(io::IO, mw::Metrics) = print(io, "Metrics(path=", repr(mw.path), ")")

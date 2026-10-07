@@ -135,3 +135,6 @@ use!(app, compress(min_size_bytes=256))  # More aggressive compression
 ```
 """
 compress(; min_size_bytes::Int=1024) = Compress(min_size_bytes)
+
+Base.show(io::IO, mw::Compress) =
+    print(io, "Compress(min_size_bytes=", mw.min_size_bytes, ")")

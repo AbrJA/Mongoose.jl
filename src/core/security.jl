@@ -46,3 +46,6 @@ function security(;
     csp !== nothing && push!(headers, "Content-Security-Policy" => csp)
     return Security(headers)
 end
+
+Base.show(io::IO, mw::Security) =
+    print(io, "Security(", length(mw.headers), " headers)")

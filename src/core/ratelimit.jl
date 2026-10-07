@@ -153,3 +153,6 @@ function ratelimit(; max_requests::Int=100, window_seconds::Int=60,
         shards, key, trust_proxies
     )
 end
+
+Base.show(io::IO, mw::RateLimit) =
+    print(io, "RateLimit(", mw.max_requests, "/", mw.window_seconds, "s)")
