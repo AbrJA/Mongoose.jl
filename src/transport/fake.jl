@@ -57,8 +57,8 @@ Base.showerror(io::IO, e::StreamClosedError) = print(io, "StreamClosedError: ", 
     @assert contains(resp.body, "Hello World")
     ```
 """
-mutable struct FakeTransport <: AbstractTransport
-    app::App
+mutable struct FakeTransport{A<:AbstractServer} <: AbstractTransport
+    app::A
     stream_seq::Int
     streams::Dict{Int,FakeStream}
     closed::Bool
@@ -67,7 +67,8 @@ end
 Base.show(io::IO, t::FakeTransport) =
     print(io, "FakeTransport(", t.app, ", ", length(t.streams), " streams)")
 
-FakeTransport(app::App) = FakeTransport(app, 0, Dict{Int,FakeStream}(), false)
+FakeTransport(app::A) where {A<:AbstractServer} =
+    FakeTransport{A}(app, 0, Dict{Int,FakeStream}(), false)
 
 canws(::FakeTransport) = false
 cantls(::FakeTransport) = false
@@ -132,6 +133,7 @@ function _run_fake_stream(transport::FakeTransport, resp::StreamResponse)::Respo
     try
         resp.producer(writer)
     catch e
+        e isa Exception || rethrow()
         stream.error = e
     finally
         stream.open = false
