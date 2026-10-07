@@ -7,7 +7,7 @@
 
     Today the transport is a **capability-tagged seam** rather than a callable
     interface: implementations declare what they can do via the ability
-    traits (`canws`, `cantls`, `canstream`), and the server
+    traits (`supportsws`, `supportstls`, `supportsstream`), and the server
     drives the one C implementation
     (`transport/mongoose`). A reference fake (`FakeTransport`, in
     `testing.jl`) drives the whole pipeline with no FFI.
@@ -24,8 +24,8 @@
     # Capability traits
 
     Optional features are detected via trait functions and never assumed
-    by the runtime: `canws`, `cantls`,
-    `canstream`. A transport that cannot do WebSocket simply reports
+    by the runtime: `supportsws`, `supportstls`,
+    `supportsstream`. A transport that cannot do WebSocket simply reports
     `false`; HTTP-only apps keep working.
 """
 abstract type AbstractTransport end
@@ -33,24 +33,24 @@ abstract type AbstractTransport end
 # --- Capability traits (default: not supported) ---
 
 """
-    canws(transport) → Bool
+    supportsws(transport) → Bool
 
 Whether the transport supports WebSocket upgrades. Defaults to `false`;
 implementations override it for their capability set.
 """
-canws(::AbstractTransport) = false
+supportsws(::AbstractTransport) = false
 
 """
-    cantls(transport) → Bool
+    supportstls(transport) → Bool
 
 Whether the transport supports TLS. Defaults to `false`.
 """
-cantls(::AbstractTransport) = false
+supportstls(::AbstractTransport) = false
 
 """
-    canstream(transport) → Bool
+    supportsstream(transport) → Bool
 
 Whether the transport supports streamed (chunked) responses. Defaults to
 `false`.
 """
-canstream(::AbstractTransport) = false
+supportsstream(::AbstractTransport) = false

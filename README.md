@@ -352,9 +352,19 @@ submit!(fe, () -> "work")   # enqueued, not run
 
 Each boundary is a replacement point: `App(router=my_router)`,
 `App(workers=n)` chooses the executor, and `AbstractTransport` declares its
-capabilities (`canws`, `cantls`, `canstream`). Custom routers
-implement `route!`/`matchroute`/`hasroute` and may carry their own endpoint
-type via `invokeendpoint`. See the API reference for the exact contracts.
+capabilities (`supportsws`, `supportstls`, `supportsstream`).
+
+Exports are the consumer surface; to *extend* the framework, import exactly
+what you extend (required to add methods anyway):
+
+```julia
+import Mongoose: AbstractRouter, route!, matchroute, hasroute,
+    Matched, NoMatch, MethodMismatch, Endpoint, SingleEndpoint
+
+struct MyRouter <: AbstractRouter end
+Mongoose.length(::MyRouter) = 0
+# implement the protocol; see test/routing/query.jl for a full example
+```
 
 ---
 

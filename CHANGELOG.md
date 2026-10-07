@@ -24,7 +24,10 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - **Breaking**: `trap` returns the rebuilt `App` (rebind the result). Dynamic
   error and exception handlers are stored as typed tuples, making error handling
   statically resolvable.
+- Transport capability traits renamed to explicit names:
+  `supportsws`/`supportstls`/`supportsstream` (were `canws`/`cantls`/`canstream`).
 - `StreamResponse{P}` is parameterized on its producer function.
+- `StaticRoute` is no longer exported; it is constructed by `@router`.
 
 ### AOT
 - `juliac --trim=safe` builds a working executable with the `StaticRouter`

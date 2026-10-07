@@ -6,7 +6,7 @@ import JSON
 
 # Facade exports the user surface only; extension protocols live in Kernel.
 export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
-    StaticRouter, StaticRoute, @router,
+    StaticRouter, @router,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, isrunning, url, route!, use, serve!, trap, onstart!, onstop!,
     context, Cookie, Headers, setcookie, parsecookies, parseform, header,
@@ -30,7 +30,7 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
     AbstractExecutor, SyncExecutor, AsyncExecutor, FakeExecutor, run!,
     submit!, stop!, haspending,
     AbstractTransport, FakeTransport, close!,
-    canws, cantls, canstream,
+    supportsws, supportstls, supportsstream,
     AbstractMiddleware,
     group, group!, RouteGroup, mount!,
     freeze!, isfrozen,
@@ -47,7 +47,7 @@ using .Kernel
 # Server/transport layers extend these core generics; `using` alone is read-only.
 import .Kernel: route!, ws!, post!, patch!, options!, head!,
     submit!, start!, stop!, haspending,
-    canws, cantls, canstream,
+    supportsws, supportstls, supportsstream,
     freeze!, isfrozen, matchroute, hasroute, haswsroutes, getwsendpoint,
     attach!, getterminal, errorresponse
 

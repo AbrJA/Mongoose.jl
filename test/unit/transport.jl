@@ -14,9 +14,9 @@
 
     client = FakeTransport(app)
     @test client isa AbstractTransport
-    @test Mongoose.canws(client) == false
-    @test Mongoose.cantls(client) == false
-    @test Mongoose.canstream(client) == true
+    @test Mongoose.supportsws(client) == false
+    @test Mongoose.supportstls(client) == false
+    @test Mongoose.supportsstream(client) == true
 
     resp = client(:get, "/hi")
     @test resp.status == 200

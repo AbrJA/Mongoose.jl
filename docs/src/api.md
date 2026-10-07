@@ -27,7 +27,6 @@ url
 ```@docs
 Router
 StaticRouter
-StaticRoute
 @router
 route!
 ws!
@@ -189,6 +188,14 @@ TLSConfig
 
 ## Extensibility
 
+Exports are the consumer surface. Extension code imports exactly what it
+extends (required to add methods anyway):
+
+```julia
+import Mongoose: AbstractRouter, route!, matchroute, hasroute,
+    Matched, NoMatch, MethodMismatch, Endpoint, SingleEndpoint
+```
+
 ```@docs
 AbstractRouter
 SingleEndpoint
@@ -200,9 +207,9 @@ stop!
 FakeExecutor
 run!
 AbstractTransport
-canws
-cantls
-canstream
+supportsws
+supportstls
+supportsstream
 FakeTransport
 close!
 validate
