@@ -121,6 +121,8 @@ end
     post!(s, "/echo") do req; text("len=$(sizeof(body(req)))") end
     with_server(s) do port
         # CL+TE: dropped at HDRS (a reply there would still dispatch the message).
+        # mongoose's C parser hexdumps malformed requests to stdout (not gated
+        # by mg_log level), so a stray dump after the suite is expected here.
         sock = Sockets.connect("127.0.0.1", port)
         write(sock, "POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 6\r\n" *
                     "Transfer-Encoding: chunked\r\n\r\n6\r\nhello!\r\n0\r\n\r\n")

@@ -10,15 +10,19 @@ println("═══ Aqua ═══")
 Aqua.test_all(Mongoose)
 
 println("═══ JET ═══")
-# Pinned JET baseline (normalizer/Base + JSON 1.x internals false positives);
-# the gate fails when findings grow — lower it when one is fixed.
-const JET_BASELINE = 47
-result = JET.report_package(Mongoose; ignored_modules=(JSON,), toplevel_logger=nothing)
-findings = length(JET.get_reports(result))
-println("JET findings: ", findings, " (baseline ", JET_BASELINE, ")")
+# JET findings are Julia-version-dependent and the baseline is pinned to the
+# latest release; LTS legs run Aqua only (JET there is slow and off-baseline).
+if VERSION >= v"1.11"
+    const JET_BASELINE = 47
+    result = JET.report_package(Mongoose; ignored_modules=(JSON,), toplevel_logger=nothing)
+    findings = length(JET.get_reports(result))
+    println("JET findings: ", findings, " (baseline ", JET_BASELINE, ")")
 
-@testset "JET baseline" begin
-    @test findings <= JET_BASELINE
+    @testset "JET baseline" begin
+        @test findings <= JET_BASELINE
+    end
+else
+    println("JET findings: skipped on Julia ", VERSION, " (baseline is version-pinned)")
 end
 
 println("═══ Quality gates passed ═══")

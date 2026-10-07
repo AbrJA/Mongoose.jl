@@ -40,8 +40,10 @@ jobs:
         run: julia --project=test -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
       - name: Acceptance suite (wire-level)
         run: julia --project=test test/acceptance/production.jl
+        timeout-minutes: 20
       - name: Quality gates (Aqua + JET baseline)
         run: julia --project=test test/quality/quality.jl
+        timeout-minutes: 30
       - name: Performance smoke (advisory)
         run: julia --project=. bench/dispatch.jl
         continue-on-error: true
