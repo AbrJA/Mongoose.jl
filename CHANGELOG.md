@@ -150,14 +150,14 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   the public surface); `WsConn`/`WsEndpoint` → `WSConn`/`WSEndpoint` (acronym
   casing); `PrometheusMetrics`/`SecurityHeaders` → `Metrics`/`Security` so
   every middleware builder is the lowercase name of its type.
-- Naming/ergonomics normalization (0.5 window): unit-suffixed kwargs
+- Naming/ergonomics normalization (0.4 window): unit-suffixed kwargs
   (`*_ms`/`*_seconds`/`*_bytes`), `cors(allow_methods=, allow_headers=,
   max_age_seconds=)`, `security()` disabled with `nothing`, app-first
   registration, `serve!(app, dir; uri_prefix=)`, `ws!(app, path, handler)`,
   `validate(req, T; on_error=)`, `parsejson`, `MethodMismatch`,
   `getwsendpoint`, `setcookie`, `FakeTransport`, `mergeheaders`/`asheaders`/
   `asstrings`/`asmiddlewares`, App-level router introspection (`freeze!(app)` …).
-- Naming pass 2 (0.5 window): parsers unified as `parse*` — `parseform`,
+- Naming pass 2 (0.4 window): parsers unified as `parse*` — `parseform`,
   `parsemultipart`, `parsecookies`, and `querydict` folded into
   `parsequery(req)`; `terminalfor` → `getterminal`, `endpointmiddleware` →
   `scopedmiddleware`; transport capability traits `supportsws`/`supportstls`/

@@ -118,7 +118,7 @@ const CLOSE = ["Connection" => "close"]
             @test ncodeunits(expected) > 1024
 
             meta = HTTP.get("$base/api/meta"; status_exception=false, headers=AUTH, read_idle_timeout=10)
-            @test JSON.parse(String(meta.body))["version"] == "0.5.0-acceptance"
+            @test JSON.parse(String(meta.body))["version"] == "0.4.0-acceptance"
 
             gz = HTTP.get("$base/api/quote"; status_exception=false, decompress=false, read_idle_timeout=10,
                 headers=["Accept-Encoding" => "gzip", "Authorization" => "Bearer test-token",

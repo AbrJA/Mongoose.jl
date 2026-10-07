@@ -122,7 +122,7 @@ function buildapp(; token::String="test-token", workers::Integer=2)
 
     # --- Compose the app ---
     app = App(; router=freeze!(router), workers=workers,
-              services=(version="0.5.0-acceptance", db="memory"))
+              services=(version="0.4.0-acceptance", db="memory"))
 
     # Middleware stack (global).
     use!(app, security())
