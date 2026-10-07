@@ -155,3 +155,10 @@ function mount!(router, g::RouteGroup, parent_prefix::String="",
 
     return router
 end
+
+function Base.show(io::IO, g::RouteGroup)
+    print(io, "RouteGroup(", repr(g.prefix), ", ", length(g.routes), " routes")
+    length(g.ws_routes) > 0 && print(io, ", ", length(g.ws_routes), " ws")
+    length(g.children) > 0 && print(io, ", ", length(g.children), " groups")
+    print(io, ")")
+end
