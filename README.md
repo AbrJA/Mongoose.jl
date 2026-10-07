@@ -121,7 +121,9 @@ app = App(router = router)
 ```
 
 **Compiled dispatch** — with the dynamic `Router`, register everything then
-`freeze!` to close and compile the route table (later registration throws):
+`freeze!` to close and compile the route table (later registration throws).
+`start!` freezes automatically after bind, so an explicit `freeze!` is only
+needed to close/compile before starting (fail-fast builds, tests):
 
 ```julia
 freeze!(app)     # or freeze!(router) before App(router=router)
