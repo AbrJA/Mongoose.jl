@@ -10,17 +10,21 @@
 # --- Manager lifecycle ---
 
 """
-    mg_mgr_init!(mgr) — Initialize a Mongoose manager.
+    mgjl_mgr_new() → Ptr{Cvoid}
+
+Allocate and initialize a Mongoose manager. Returns `C_NULL` on allocation
+failure; release it with [`mgjl_mgr_free`](@ref).
 """
-function mg_mgr_init!(mgr::Ptr{Cvoid})
-    ccall((:mg_mgr_init, libmongoose), Cvoid, (Ptr{Cvoid},), mgr)
+function mgjl_mgr_new()::Ptr{Cvoid}
+    return ccall((:mgjl_mgr_new, libmongoose), Ptr{Cvoid}, ())
 end
 
 """
-    mg_mgr_free!(mgr) — Free all resources held by a Mongoose manager.
+    mgjl_mgr_free(mgr) — Tear down a manager allocated by `mgjl_mgr_new`.
 """
-function mg_mgr_free!(mgr::Ptr{Cvoid})
-    ccall((:mg_mgr_free, libmongoose), Cvoid, (Ptr{Cvoid},), mgr)
+function mgjl_mgr_free(mgr::Ptr{Cvoid})
+    ccall((:mgjl_mgr_free, libmongoose), Cvoid, (Ptr{Cvoid},), mgr)
+    return nothing
 end
 
 # --- Listening / polling ---
@@ -156,16 +160,17 @@ function mg_http_write_chunk(conn::MgConnection, chunk::AbstractVector{UInt8})
 end
 
 """
-    mg_http_serve_dir(conn, hm, opts) — Serve static files from a directory.
+    mgjl_http_serve_dir(conn, hm, root_dir) — Serve static files from a directory.
 
-Handles Range, ETag, Last-Modified, pre-compressed .gz files, and directory
-index automatically. Writes directly to `conn`; must be called from the event
-loop thread (not from worker tasks).
+`root_dir` accepts mongoose's mount syntax (`"dir,/prefix=dir"`). Handles
+Range, ETag, Last-Modified, pre-compressed .gz files, and directory index
+automatically. Writes directly to `conn`; must be called from the event loop
+thread (not from worker tasks).
 """
-function mg_http_serve_dir(conn::MgConnection, hm::Ptr{Cvoid}, opts::Ref{MgHttpServeOpts})
-    ccall((:mg_http_serve_dir, libmongoose), Cvoid,
-          (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{MgHttpServeOpts}),
-          conn, hm, opts)
+function mgjl_http_serve_dir(conn::MgConnection, hm::Ptr{Cvoid}, root_dir::AbstractString)
+    ccall((:mgjl_http_serve_dir, libmongoose), Cvoid,
+          (Ptr{Cvoid}, Ptr{Cvoid}, Cstring), conn, hm, root_dir)
+    return nothing
 end
 
 """
@@ -257,8 +262,8 @@ end
     mg_log_set_level(level) — Set the Mongoose C library log level.
 """
 function mg_log_set_level(level::Integer)
-    ptr = cglobal((:mg_log_level, libmongoose), Cint)
-    unsafe_store!(ptr, Cint(level))
+    ccall((:mgjl_set_log_level, libmongoose), Cvoid, (Cint,), Cint(level))
+    return nothing
 end
 
 # --- ABI introspection ---
@@ -274,8 +279,7 @@ function verify_abi!()
     ok = sizeof(MgStr) == mgjl_sizeof_str() &&
          sizeof(MgHttpHeader) == mgjl_sizeof_http_header() &&
          sizeof(MgHttpMessage) == mgjl_sizeof_http_message() &&
-         sizeof(MgWsMessage) == mgjl_sizeof_ws_message() &&
-         sizeof(MgHttpServeOpts) == mgjl_sizeof_serve_opts()
+         sizeof(MgWsMessage) == mgjl_sizeof_ws_message()
     ok || throw(ServerError(
         "Mongoose ABI mismatch: the linked libmongoose does not match this " *
         "build of Mongoose.jl (Mongoose $(mgjl_version())). " *
@@ -287,12 +291,6 @@ mgjl_sizeof_str() = ccall((:mgjl_sizeof_str, libmongoose), Csize_t, ())
 mgjl_sizeof_http_header() = ccall((:mgjl_sizeof_http_header, libmongoose), Csize_t, ())
 mgjl_sizeof_http_message() = ccall((:mgjl_sizeof_http_message, libmongoose), Csize_t, ())
 mgjl_sizeof_ws_message() = ccall((:mgjl_sizeof_ws_message, libmongoose), Csize_t, ())
-mgjl_sizeof_serve_opts() = ccall((:mgjl_sizeof_serve_opts, libmongoose), Csize_t, ())
-
-"""
-    mgjl_sizeof_mgr() → Int — Size of the C `struct mg_mgr`.
-"""
-@inline mgjl_sizeof_mgr()::Int = Int(ccall((:mgjl_sizeof_mgr, libmongoose), Csize_t, ()))
 
 """
     mgjl_version() → String — Mongoose version string of the linked library.

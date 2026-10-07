@@ -11,18 +11,16 @@ mutable struct Manager
     ptr::Ptr{Cvoid}
     function Manager(; empty::Bool=false)
         empty && return new(C_NULL)
-        ptr = Libc.calloc(1, Csize_t(mgjl_sizeof_mgr()))
-        ptr == C_NULL && throw(ServerError("Failed to allocate manager memory"))
         mg_log_set_level(MG_LL_NONE)
-        mg_mgr_init!(ptr)
+        ptr = mgjl_mgr_new()
+        ptr == C_NULL && throw(ServerError("Failed to allocate manager memory"))
         return new(ptr)
     end
 end
 
 function free!(manager::Manager)
     if manager.ptr != C_NULL
-        mg_mgr_free!(manager.ptr)
-        Libc.free(manager.ptr)
+        mgjl_mgr_free(manager.ptr)
         manager.ptr = C_NULL
     end
 end

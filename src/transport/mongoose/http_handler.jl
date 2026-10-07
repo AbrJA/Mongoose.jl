@@ -305,10 +305,7 @@ end
     for (dir, prefix) in server.mounts
         static_file_exists(dir, prefix, uri) || continue
         root_dir = prefix == "/" ? dir : "$dir,$prefix=$dir"
-        opts = Ref(MgHttpServeOpts(Base.unsafe_convert(Cstring, root_dir)))
-        GC.@preserve root_dir begin
-            mg_http_serve_dir(conn, ev_data, opts)
-        end
+        mgjl_http_serve_dir(conn, ev_data, root_dir)
         return true
     end
     return false
