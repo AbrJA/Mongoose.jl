@@ -243,3 +243,17 @@ end
         @test !occursin("HEAD", allow)
     end
 end
+
+@testset "Compiled dispatch: parametric route with explicit head!" begin
+    s = App()
+    get!(s, "/u/:id::Int", (req, id) -> text("g:$id"))
+    head!(s, "/u/:id::Int", (req, id) -> text("h:$id"))
+    with_server(s) do port
+        r = HTTP.get("http://127.0.0.1:$port/u/7"; status_exception=false)
+        @test r.status == 200
+        @test String(r.body) == "g:7"
+        h = HTTP.head("http://127.0.0.1:$port/u/7"; status_exception=false)
+        @test h.status == 200
+        @test isempty(h.body)
+    end
+end

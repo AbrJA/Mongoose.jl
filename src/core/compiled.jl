@@ -98,9 +98,9 @@ end
 @inline _bake_param_slot(::Nothing, ::Type) = nothing
 
 # Parametric HEAD slot: explicit `head!` routes only (no auto-HEAD fallback).
-@inline _bake_param_head_slot(ep::Endpoint, ::Type{P}) where {P} =
+@inline _bake_param_head_slot(ep::Endpoint, ::Union{Nothing,Endpoint}, ::Type{P}) where {P} =
     _bake_param_slot(ep, P)
-@inline _bake_param_head_slot(::Nothing, ::Any, ::Type) = nothing
+@inline _bake_param_head_slot(::Nothing, ::Union{Nothing,Endpoint}, ::Type) = nothing
 
 # Scoped parametric thunk: runs the route-scoped middleware around the plain
 # terminal at request time (middleware list is pre-built per route).
