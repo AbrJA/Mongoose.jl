@@ -102,8 +102,18 @@ end
     out = Vector{UInt8}(undef, _gzip_bound(length(data)))
     result = gzip_compress!(compressor, out, data)
     result isa LibDeflateError && return nothing
-    result isa Vector{UInt8} && return result
-    return resize!(out, result)
+    compressed = result isa Vector{UInt8} ? result : resize!(out, result)
+    # Zero gzip MTIME (bytes 5-8): LibDeflate 0.4 stamps time() there, which
+    # would make wire bytes (and wire-byte ETags) nondeterministic.
+    if length(compressed) >= 10
+        @inbounds begin
+            compressed[5] = 0x00
+            compressed[6] = 0x00
+            compressed[7] = 0x00
+            compressed[8] = 0x00
+        end
+    end
+    return compressed
 end
 
 @inline function _is_compressible(ct::String)::Bool

@@ -24,6 +24,8 @@
         # The wire format must be valid gzip (cross-checked with CodecZlib).
         inflated = String(CodecZlib.transcode(CodecZlib.GzipDecompressor, resp.body))
         @test inflated == large_body
+        # Gzip MTIME (bytes 5-8) must be zero or wire-byte ETags vary.
+        @test resp.body[5:8] == UInt8[0, 0, 0, 0]
         @test mw.compressors[Threads.threadid()] !== nothing
     end
 
