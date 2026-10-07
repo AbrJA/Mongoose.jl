@@ -67,7 +67,6 @@ function log_server_start(server, url::String)
     print(io, _color(_BOLD), _color(_BLUE), "🚀 Mongoose", _color(_RST), " started\n")
     print(io, _color(_DIM), "  URL:     ", _color(_RST), _color(_UNDER), _color(_BLUE), url, _color(_RST), "\n")
     print(io, _color(_DIM), "  API:     ", _color(_RST), _color(_GREEN), s_routes, " routes • ", s_mw, " middleware • ", s_mounts, " mounts", _color(_RST), "\n")
-    print(io, _color(_DIM), "  Type:    ", _color(_RST), _color(_BLUE), String(nameof(typeof(server))), _color(_RST), "\n")
     print(io, _color(_DIM), "  System:  ", _color(_RST), _color(_GREEN), s_workers, " workers • ", s_threads, " threads", _color(_RST), "\n")
     print(io, "\n")
 end

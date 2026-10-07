@@ -48,7 +48,7 @@ end
     submit!(exec, () -> sleep(5.0))
     sleep(0.1)                          # let the worker pick up the job
     t0 = time()
-    stop!(exec; timeout=0.2)
+    @test_logs (:warn, r"still running") stop!(exec; timeout=0.2)
     @test time() - t0 < 3.0
 
     # A full reply queue (worker blocked in put!) must not deadlock the join.
