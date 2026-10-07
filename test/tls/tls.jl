@@ -21,9 +21,12 @@ using Sockets
             try
                 # Wait for TLS server to be ready (skip SSL verification for
                 # self-signed): condition-based, not a fixed sleep.
+                # mongoose is HTTP/1.1-only: pin the client protocol so HTTP.jl
+                # does not attempt an h2 handshake first.
                 ready = wait_until(timeout=10.0, interval=0.1) do
                     HTTP.get("https://127.0.0.1:$port/secure";
                         require_ssl_verification=false,
+                        protocol=:h1,
                         read_idle_timeout=2,
                         connect_timeout=2,
                         status_exception=false)
@@ -33,6 +36,7 @@ using Sockets
                 if ready
                     resp = HTTP.get("https://127.0.0.1:$port/secure";
                         require_ssl_verification=false,
+                        protocol=:h1,
                         status_exception=false)
                     @test resp.status == 200
                     @test String(resp.body) == "secure!"
@@ -91,6 +95,7 @@ using Sockets
                 ready = wait_until(timeout=10.0, interval=0.1) do
                     HTTP.get("https://127.0.0.1:$port/data";
                         require_ssl_verification=false,
+                        protocol=:h1,
                         read_idle_timeout=2,
                         connect_timeout=2,
                         status_exception=false)
@@ -100,6 +105,7 @@ using Sockets
                 if ready
                     resp = HTTP.post("https://127.0.0.1:$port/data";
                         require_ssl_verification=false,
+                        protocol=:h1,
                         body="secret",
                         status_exception=false)
                     @test resp.status == 200
