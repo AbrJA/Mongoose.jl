@@ -32,6 +32,21 @@
     @test @allocated(scoped_call()) <= 400
 end
 
+@testset "Composed middleware tuple is allocation-flat" begin
+    frozen = Router()
+    route!(frozen, :get, "/", r -> text("ok"))
+    freeze!(frozen)
+    noop = (req, next) -> next()
+    ctx1 = RequestContext(frozen; middlewares=(noop,))
+    ctx8 = RequestContext(frozen; middlewares=ntuple(_ -> noop, 8))
+    req = Request(:get, "/", Dict{String,String}(), Pair{String,String}[], "")
+    f1() = process(ctx1, req)
+    f8() = process(ctx8, req)
+    f1(); f8()                                 # warm up
+    @test @allocated(f1()) <= 400              # baseline ~224 B
+    @test @allocated(f8()) <= 400              # baseline ~224 B: no per-middleware alloc
+end
+
 @testset "Typed DI does not allocate a context" begin
     frozen = Router()
     route!(frozen, :get, "/", r -> text("ok"))

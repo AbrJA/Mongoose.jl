@@ -633,10 +633,22 @@ end
 """
 function use(app::App{R,E,C}, mw; paths=nothing) where {R,E,C}
     _ensure_registratable(app, "middleware")
-    inner = asmiddleware(mw)
+    return _use(app, asmiddleware(mw), paths)
+end
+
+# No path scoping: single concrete call site keeps the tuple type trim-safe.
+function _use(app::App{R,E,C}, inner::M, ::Nothing) where {R,E,C,M<:AbstractMiddleware}
+    return _compose(app, inner)
+end
+
+function _use(app::App{R,E,C}, inner::M, paths) where {R,E,C,M<:AbstractMiddleware}
     prefixes = String[rstrip(p, '/') for p in asstrings(paths)]
     filter!(!isempty, prefixes)
-    wrapped = isempty(prefixes) ? inner : PathFilter(inner, prefixes)
+    isempty(prefixes) && return _compose(app, inner)
+    return _compose(app, PathFilter(inner, prefixes))
+end
+
+function _compose(app::App{R,E,C}, wrapped::M) where {R,E,C,M<:AbstractMiddleware}
     mws = (app.context.middlewares..., wrapped)
     ctx = RequestContext(app.router; middlewares=mws, errors=app.errors,
                          services=app.context.services,

@@ -23,7 +23,7 @@
 
     Plain closures/functions work too: `use`/`route!` wrap them via
     `asmiddleware` (see `FunctionMiddleware`). The tag type exists so the
-    pipeline can hold a typed stack (`Vector{AbstractMiddleware}`).
+    pipeline can hold a typed tuple stack.
 """
 abstract type AbstractMiddleware end
 
