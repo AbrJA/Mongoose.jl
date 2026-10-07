@@ -54,11 +54,10 @@ end
 
 function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
     headers = parse_headers(msg)
-    # Only a real upgrade handshake may run user hooks or register a client;
-    # `mg_ws_upgrade` replies 426 to anything else.
-    is_upgrade = occursin("websocket", lowercase(get(headers, "upgrade", ""))) &&
-                 occursin("upgrade", lowercase(get(headers, "connection", ""))) &&
-                 haskey(headers, "sec-websocket-key")
+    # Mongoose accepts the upgrade whenever `Sec-WebSocket-Key` is present and
+    # replies 426 otherwise, so gate on exactly that: every connection mongoose
+    # would upgrade runs the user hooks and gets tracked.
+    is_upgrade = haskey(headers, "sec-websocket-key")
     if !is_upgrade
         mg_ws_upgrade(conn, ev_data, C_NULL)
         return
