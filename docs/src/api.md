@@ -173,9 +173,9 @@ broadcastws
 ## Lifecycle
 
 ```@docs
-onstart!
-onstop!
-background!
+onstart
+onstop
+background
 serve!
 ```
 

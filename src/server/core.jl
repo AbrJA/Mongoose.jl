@@ -209,7 +209,7 @@ end
 """
     bg_count(server) → Int
 
-Number of tracked background tasks (runaway timed-out handlers, `background!`
+Number of tracked background tasks (runaway timed-out handlers, `background`
 tasks). Lock-protected: callable from worker threads.
 """
 function bg_count(server::AbstractServer)::Int
@@ -294,17 +294,13 @@ struct App{R<:AbstractRouter,E<:AbstractExecutor,C<:RequestContext} <: AbstractS
     runtime::RunState
     router::R
     mounts::Vector{Tuple{String,String}}
-    hooks_start::Vector{Function}
-    hooks_stop::Vector{Function}
     executor::E
     context::C
 
     function App{R,E,C}(config::ServerConfig, runtime::RunState, router::R,
                         mounts::Vector{Tuple{String,String}},
-                        hooks_start::Vector{Function}, hooks_stop::Vector{Function},
                         executor::E, context::C) where {R<:AbstractRouter,E<:AbstractExecutor,C<:RequestContext}
-        return new{R,E,C}(config, runtime, router, mounts,
-                          hooks_start, hooks_stop, executor, context)
+        return new{R,E,C}(config, runtime, router, mounts, executor, context)
     end
 end
 
@@ -312,10 +308,8 @@ end
 # statically typed (and JET-clean) instead of `typeof(union)`.
 function _build_app(config::ServerConfig, runtime::RunState, router::R,
                     mounts::Vector{Tuple{String,String}},
-                    hooks_start::Vector{Function}, hooks_stop::Vector{Function},
                     context::C, executor::E) where {R<:AbstractRouter,E<:AbstractExecutor,C<:RequestContext}
-    return App{R,E,C}(config, runtime, router, mounts,
-                      hooks_start, hooks_stop, executor, context)
+    return App{R,E,C}(config, runtime, router, mounts, executor, context)
 end
 
 function App(;
@@ -354,8 +348,7 @@ function App(;
     rs.tls = tls   # raw TLSConfig material; normalized at start!
     mws = asmiddlewaretuple(middleware)
     ctx = RequestContext(router; middlewares=mws, errors=errors, services=services)
-    app = _build_app(cfg, rs, router, Tuple{String,String}[],
-                     Function[], Function[], ctx, exec)
+    app = _build_app(cfg, rs, router, Tuple{String,String}[], ctx, exec)
     for mw in mws
         attach!(mw, app)
     end
@@ -403,7 +396,9 @@ function trap(app::App, status::Int, handler::Response)
     pages[status] = handler
     return _with_context(app, Kernel._rebuild_context(app.context, pages,
                                                app.context.error_handlers,
-                                               app.context.exception_handlers))
+                                               app.context.exception_handlers,
+                                               app.context.hooks_start,
+                                               app.context.hooks_stop))
 end
 
 function trap(app::App, status::Int, handler::F) where {F<:Function}
@@ -411,7 +406,9 @@ function trap(app::App, status::Int, handler::F) where {F<:Function}
     handlers = (app.context.error_handlers..., Kernel.ErrorPage(status, handler))
     return _with_context(app, Kernel._rebuild_context(app.context, app.context.errors,
                                                handlers,
-                                               app.context.exception_handlers))
+                                               app.context.exception_handlers,
+                                               app.context.hooks_start,
+                                               app.context.hooks_stop))
 end
 trap(f::Function, app::App, status::Int) = trap(app, status, f)
 
@@ -440,39 +437,80 @@ function trap(app::App, ::Type{E}, handler::F) where {E<:Exception,F<:Function}
     _ensure_registratable(app, "exception handlers")
     handlers = (app.context.exception_handlers..., Kernel.ExceptionHandler{E,F}(handler))
     return _with_context(app, Kernel._rebuild_context(app.context, app.context.errors,
-                                               app.context.error_handlers, handlers))
+                                               app.context.error_handlers, handlers,
+                                               app.context.hooks_start,
+                                               app.context.hooks_stop))
 end
 trap(handler::F, app::App, ::Type{E}) where {E<:Exception,F<:Function} =
     trap(app, E, handler)
 
 """
-    onstart!(app, f)
-    onstart!(f, app)
+    onstart(app, f) → App
+    onstart(f, app) → App
 
 Register a callback to run after the server starts (before accepting
-connections). Both argument orders are accepted; the `(f, app)` form exists so
-`onstart!(app) do … end` works.
+connections), returning the rebuilt App. Both argument orders are accepted; the
+`(f, app)` form exists so `onstart(app) do … end` works.
 """
-function onstart!(server::AbstractServer, f::Function)
-    _ensure_registratable(server, "start hooks")
-    push!(server.hooks_start, f)
-    return server
+function onstart(app::App, f::F) where {F}
+    _ensure_registratable(app, "start hooks")
+    return _with_context(app, _add_start_hook(app.context, f))
 end
-onstart!(f::Function, server::AbstractServer) = onstart!(server, f)
+onstart(f::Function, app::App) = onstart(app, f)
 
 """
-    onstop!(app, f)
-    onstop!(f, app)
+    onstop(app, f) → App
+    onstop(f, app) → App
 
-Register a callback to run during graceful shutdown. Both argument orders are
-accepted; the `(f, app)` form exists so `onstop!(app) do … end` works.
+Register a callback to run during graceful shutdown, returning the rebuilt App.
+Both argument orders are accepted; the `(f, app)` form exists so
+`onstop(app) do … end` works.
 """
-function onstop!(server::AbstractServer, f::Function)
-    _ensure_registratable(server, "stop hooks")
-    push!(server.hooks_stop, f)
-    return server
+function onstop(app::App, f::F) where {F}
+    _ensure_registratable(app, "stop hooks")
+    ctx = Kernel._rebuild_context(app.context, app.context.errors,
+                                  app.context.error_handlers, app.context.exception_handlers,
+                                  app.context.hooks_start, (app.context.hooks_stop..., f))
+    return _with_context(app, ctx)
 end
-onstop!(f::Function, server::AbstractServer) = onstop!(server, f)
+onstop(f::Function, app::App) = onstop(app, f)
+
+"""
+    BackgroundTask{F} — a hook that spawns `f` as a tracked background task.
+"""
+struct BackgroundTask{F}
+    f::F
+end
+
+@inline function _add_start_hook(ctx::RequestContext, hook::H) where {H}
+    return Kernel._rebuild_context(ctx, ctx.errors, ctx.error_handlers,
+                                   ctx.exception_handlers, (ctx.hooks_start..., hook),
+                                   ctx.hooks_stop)
+end
+
+# Typed hook runners: each tuple element is called concretely (trim-safe).
+@inline _run_start_hook(h::BackgroundTask, server::AbstractServer) = bg_track!(server, @async h.f())
+@inline _run_start_hook(h::F, server::AbstractServer) where {F} = h()
+
+@inline _run_start_hooks(::Tuple{}, server::AbstractServer) = nothing
+@inline function _run_start_hooks(hooks::Tuple, server::AbstractServer)
+    try
+        _run_start_hook(hooks[1], server)
+    catch e
+        @log_error "onstart hook error" e catch_backtrace()
+    end
+    return _run_start_hooks(Base.tail(hooks), server)
+end
+
+@inline _run_stop_hooks(::Tuple{}, server::AbstractServer) = nothing
+@inline function _run_stop_hooks(hooks::Tuple, server::AbstractServer)
+    try
+        hooks[1]()
+    catch e
+        @log_error "onstop hook error" e catch_backtrace()
+    end
+    return _run_stop_hooks(Base.tail(hooks), server)
+end
 
 """
     provide(app, name, value) → App
@@ -502,14 +540,16 @@ function _provide(app::App{R,E,C}, services::S) where {R,E,C,S<:NamedTuple}
     ctx = RequestContext(app.router; middlewares=app.context.middlewares,
                          errors=app.context.errors, services=services,
                          error_handlers=app.context.error_handlers,
-                         exception_handlers=app.context.exception_handlers)
+                         exception_handlers=app.context.exception_handlers,
+                         hooks_start=app.context.hooks_start,
+                         hooks_stop=app.context.hooks_stop)
     return _with_context(app, ctx)
 end
 
 # Rebuild an App with a new RequestContext; all other state is shared.
 function _with_context(app::App{R,E}, ctx::C) where {R,E,C<:RequestContext}
     return App{R,E,C}(app.config, app.runtime, app.router, app.mounts,
-                      app.hooks_start, app.hooks_stop, app.executor, ctx)
+                      app.executor, ctx)
 end
 
 # Transport convenience: resolve an error page from the server's context.
@@ -594,15 +634,16 @@ end
 @inline withservices(f::F, req::Request) where {F} = f(services(req))
 
 """
-    background!(app, f)
-    background!(f, app)
+    background(app, f) → App
+    background(f, app) → App
 
-Schedule a background task to be spawned when `start!` is called.
-`f` should be a zero-argument function. Both argument orders are accepted; the
-`(f, app)` form exists so `background!(app) do … end` works.
+Schedule `f` as a tracked background task spawned when `start!` is called,
+returning the rebuilt App. `f` should be a zero-argument function. Both argument
+orders are accepted; the `(f, app)` form exists so `background(app) do … end`
+works.
 
 ```julia
-background!(app) do
+app = background(app) do
     while true
         cleanup_expired_sessions!()
         sleep(60)
@@ -610,12 +651,11 @@ background!(app) do
 end
 ```
 """
-function background!(server::AbstractServer, f::Function)
-    _ensure_registratable(server, "background tasks")
-    push!(server.hooks_start, () -> bg_track!(server, @async f()))
-    return server
+function background(app::App, f::F) where {F}
+    _ensure_registratable(app, "background tasks")
+    return _with_context(app, _add_start_hook(app.context, BackgroundTask{F}(f)))
 end
-background!(f::Function, server::AbstractServer) = background!(server, f)
+background(f::Function, app::App) = background(app, f)
 
 # --- Display ---
 
@@ -666,7 +706,9 @@ function _compose(app::App{R,E,C}, wrapped::M) where {R,E,C,M<:AbstractMiddlewar
     ctx = RequestContext(app.router; middlewares=mws, errors=app.context.errors,
                          services=app.context.services,
                          error_handlers=app.context.error_handlers,
-                         exception_handlers=app.context.exception_handlers)
+                         exception_handlers=app.context.exception_handlers,
+                         hooks_start=app.context.hooks_start,
+                         hooks_stop=app.context.hooks_stop)
     newapp = _with_context(app, ctx)
     attach!(wrapped, newapp)
     return newapp

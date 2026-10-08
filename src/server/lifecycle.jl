@@ -9,7 +9,7 @@ Start the HTTP server. Initializes manager, binds listener, spawns workers (if a
 
 When `blocking=true` (default), the caller blocks until shutdown, and a
 delivered `InterruptException` (Ctrl+C) triggers graceful shutdown (drain +
-`onstop!` hooks) before `start!` returns. Graceful shutdown depends on Julia
+`onstop` hooks) before `start!` returns. Graceful shutdown depends on Julia
 delivering SIGINT as an exception to the waiting task; process managers that
 only send SIGTERM bypass it.
 
@@ -40,9 +40,7 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
         freeze!(server.router)
 
         # Run lifecycle start hooks and background tasks
-        for hook in server.hooks_start
-            try hook() catch e; @log_error "onstart! hook error" e catch_backtrace() end
-        end
+        _run_start_hooks(server.context.hooks_start, server)
 
         start!(server.executor, server)
         log_server_start(server, url)
@@ -73,7 +71,7 @@ end
     shutdown!(server)
 
 Gracefully stop the server: drain requests, stop workers, free resources.
-In-flight requests and tracked background tasks (see `background!`, and
+In-flight requests and tracked background tasks (see `background`, and
 over-budget handlers from `request_timeout_ms`) get one shared grace period of
 `drain_timeout_ms` ms before teardown; tasks still running after it are left
 alone, completed ones are dropped.
@@ -82,9 +80,7 @@ function shutdown!(server::AbstractServer)
     Threads.atomic_xchg!(server.runtime.running, false) || return
     log_server_stop(server)
 
-    for hook in server.hooks_stop
-        try hook() catch e; @log_error "onstop! hook error" e catch_backtrace() end
-    end
+    _run_stop_hooks(server.context.hooks_stop, server)
 
     drain!(server)
     _stop_executor(server.executor, server.config.drain_timeout_ms / 1000.0)

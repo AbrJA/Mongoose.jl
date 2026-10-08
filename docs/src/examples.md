@@ -465,15 +465,15 @@ route!(router, :get, "/", req -> text("running"))
 
 app = App(; router=router, workers=4)
 
-onstart!(app) do
+app = onstart(app) do
     @info "Server started, seeding data..."
 end
 
-onstop!(app) do
+app = onstop(app) do
     @info "Graceful shutdown complete"
 end
 
-background!(app) do
+app = background(app) do
     while true
         @info "Background tick" time=time()
         sleep(30)

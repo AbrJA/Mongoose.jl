@@ -16,12 +16,13 @@ const DEFAULT_503 = Response(Plain, "503 Service Unavailable"; status=503)
 const DEFAULT_504 = Response(Plain, "504 Gateway Timeout"; status=504)
 
 """
-    RequestContext{R,M,S,EH,XH} — the app-level request-processing bundle.
+    RequestContext{R,M,S,EH,XH,HS,XS} — the app-level typed registry bundle.
 
     Collapses the config that `process` needs into one object so the
     pipeline seam has a single argument: the router, the app-global middleware
-    stack, the static error pages, the DI services, and the typed dynamic error
-    and exception handlers (tuples, so every call site is statically typed).
+    stack, the static error pages, the DI services, the typed dynamic error and
+    exception handlers, and the lifecycle hooks (all tuples, so every call site
+    is statically typed).
 
     The global middleware stack is stored as a **baked tuple snapshot** (built
     once by `App`/`use` and immutable afterward), so the per-request pipeline
@@ -38,13 +39,17 @@ struct RequestContext{R<:AbstractRouter,
                       M<:Tuple,
                       S<:NamedTuple,
                       EH<:Tuple,
-                      XH<:Tuple}
+                      XH<:Tuple,
+                      HS<:Tuple,
+                      XS<:Tuple}
     router::R
     middlewares::M
     errors::Dict{Int,Response}
     services::S
     error_handlers::EH
     exception_handlers::XH
+    hooks_start::HS
+    hooks_stop::XS
 end
 
 Base.show(io::IO, ctx::RequestContext) =
@@ -55,19 +60,26 @@ function RequestContext(router::AbstractRouter;
                         errors::AbstractDict{Int,<:Response}=Dict{Int,Response}(),
                         services::NamedTuple=NamedTuple(),
                         error_handlers::Tuple=(),
-                        exception_handlers::Tuple=())
+                        exception_handlers::Tuple=(),
+                        hooks_start::Tuple=(),
+                        hooks_stop::Tuple=())
     errs = Dict{Int,Response}(k => v for (k, v) in errors)
     return RequestContext(router, Tuple(middlewares), errs, services,
-                          error_handlers, exception_handlers)
+                          error_handlers, exception_handlers, hooks_start, hooks_stop)
 end
 
-# Rebuild a context with a new registry while keeping router/middleware/services.
-@inline function _rebuild_context(ctx::RequestContext{R,M,S,EH,XH},
+# Rebuild a context with new registries while keeping router/middleware/services.
+@inline function _rebuild_context(ctx::RequestContext{R,M,S,EH,XH,HS,XS},
                                   errors::Dict{Int,Response},
                                   error_handlers::EH2,
-                                  exception_handlers::XH2) where {R,M,S,EH,XH,EH2<:Tuple,XH2<:Tuple}
-    return RequestContext{R,M,S,EH2,XH2}(ctx.router, ctx.middlewares, errors,
-                                         ctx.services, error_handlers, exception_handlers)
+                                  exception_handlers::XH2,
+                                  hooks_start::HS2,
+                                  hooks_stop::XS2) where {R,M,S,EH,XH,HS,XS,
+                                                          EH2<:Tuple,XH2<:Tuple,
+                                                          HS2<:Tuple,XS2<:Tuple}
+    return RequestContext{R,M,S,EH2,XH2,HS2,XS2}(ctx.router, ctx.middlewares, errors,
+                                                 ctx.services, error_handlers,
+                                                 exception_handlers, hooks_start, hooks_stop)
 end
 
 """

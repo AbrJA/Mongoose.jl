@@ -152,9 +152,9 @@ serve!(app, "public"; uri_prefix="/static")             # C-level static files
 ```
 
 **Registration rule** — functions that change the app's typed configuration
-return a rebuilt `App`: `use`, `provide`, `trap`. Functions that mutate shared
-build-phase state keep the bang: `route!`, `get!`, `ws!`, `serve!`, `onstart!`,
-`onstop!`, `background!`.
+return a rebuilt `App`: `use`, `provide`, `trap`, `onstart`, `onstop`,
+`background`. Functions that mutate shared build-phase state keep the bang:
+`route!`, `get!`, `ws!`, `serve!`.
 
 Custom middleware — a closure or a small type:
 
@@ -280,7 +280,7 @@ start!(app; port=8443)
 ## 🛡️ Production
 
 - **Graceful shutdown** — SIGINT and SIGTERM drain in-flight requests and SSE
-  streams, run `onstop!` hooks, and stop workers (SIGTERM and normal exits go
+  streams, run `onstop` hooks, and stop workers (SIGTERM and normal exits go
   through Julia's `atexit` path; SIGINT is caught while `start!` blocks).
 - **Backpressure** — the async executor bounds its queue and answers `503` when
   full; `max_connections`, `header_timeout_ms`, `body_timeout_ms`, and
@@ -294,10 +294,10 @@ start!(app; port=8443)
   `matchroute(app, …)`, `hasroute(app, path)`.
 
 ```julia
-onstart!(app) do; @info "starting"; connect_database!() end
-onstop!(app)  do; @info "stopping"; close_database!() end
+app = onstart(app) do; @info "starting"; connect_database!() end
+app = onstop(app)  do; @info "stopping"; close_database!() end
 
-background!(app) do
+app = background(app) do
     while true
         cleanup_expired_sessions!()
         sleep(60)

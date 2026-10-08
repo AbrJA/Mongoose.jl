@@ -299,7 +299,7 @@ end
     using Mongoose
     app = App()
     get!(app, "/") do req; text("ok") end
-    onstop!(app) do
+    app = onstop(app) do
         write($(repr(marker)), "ONSTOP-RAN")
     end
     start!(app; port=$port, blocking=true)
@@ -318,7 +318,7 @@ end
         kill(proc, 9)
         @test false
     else
-        kill(proc, 15)          # SIGTERM: Julia runs atexit → drain + onstop!
+        kill(proc, 15)          # SIGTERM: Julia runs atexit → drain + onstop
         wait(proc)
         ran = wait_until(timeout=5.0) do
             isfile(marker) && read(marker, String) == "ONSTOP-RAN"

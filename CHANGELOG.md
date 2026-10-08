@@ -26,6 +26,9 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   statically resolvable.
 - **Breaking**: `@router` renamed to `@routes` — it declares the route table;
   `Router()` remains the runtime-registered default.
+- **Breaking**: `onstart!`/`onstop!`/`background!` are now
+  `onstart`/`onstop`/`background` and return the rebuilt `App` (lifecycle hooks
+  are stored as typed tuples, so hook dispatch is statically resolvable).
 - Transport capability traits renamed to explicit names:
   `supportsws`/`supportstls`/`supportsstream` (were `canws`/`cantls`/`canstream`).
 - `StreamResponse{P}` is parameterized on its producer function.

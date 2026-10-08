@@ -86,7 +86,7 @@ histogram, and live gauges: `mongoose_connections`, `mongoose_ws_clients`,
 `mongoose_active_streams`, `mongoose_executor_inflight`,
 `mongoose_executor_queue_depth`. `logger()` emits access logs (including 500s
 from throwing handlers) and `health()` serves Kubernetes probes. Shutdown on
-SIGINT/SIGTERM drains in-flight requests and SSE streams, runs `onstop!` hooks,
+SIGINT/SIGTERM drains in-flight requests and SSE streams, runs `onstop` hooks,
 and stops workers.
 
 ## Guarding against regressions
