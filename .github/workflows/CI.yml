@@ -56,7 +56,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
-          version: '1.12'
+          version: '1'
       - uses: julia-actions/julia-buildpkg@v1
       - name: Install JuliaC
         run: julia -e 'using Pkg; Pkg.Apps.add(name="JuliaC")'

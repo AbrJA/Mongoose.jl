@@ -111,18 +111,28 @@ numbers in the commit message and update the baseline table above plus the
 Mongoose ships a **trim-safe profile**: `@routes` declares the route table at
 compile time (paths, capture types, methods, handlers are type parameters), so
 dispatch has no runtime `apply_type`, no erased `Function` slots, and no dynamic
-terminal. Both probes build with **0 verifier errors** and run:
+terminal. Both probes build with **0 verifier errors** and run (verified on
+Julia 1.12 and 1.13):
 
 - `bench/trim/trim_core.jl` — the full pipeline over `FakeTransport`
   (middleware, errors, typed params), self-checking exit codes.
-- `bench/trim/trim_server.jl` — a real server on the C transport.
+- `bench/trim/trim_server.jl` — a real server on the C transport (HTTP, static
+  mounts, WebSocket).
 
 ```sh
-JULIA_APPS_JULIA_CMD=~/.julia/juliaup/julia-1.12.5+0.x64.linux.gnu/bin/julia \
+# Run from the package root (its Project.toml is the build project).
+cd /path/to/Mongoose.jl
 ~/.julia/bin/juliac --output-exe app --trim=safe --experimental \
-  --project=/path/to/Mongoose.jl bench/trim/trim_server.jl
-./app 8080 &            # serves; curl http://127.0.0.1:8080/
+  --project="$PWD" "$PWD/bench/trim/trim_server.jl" > /tmp/app.log 2>&1
+
+grep -c '^Verifier error' /tmp/app.log || true   # expect 0
+./app 8080 /tmp/staticdir &                       # blocks inline; serves
+curl -s http://127.0.0.1:8080/                    # {"ok":true}
 ```
+
+`JULIA_APPS_JULIA_CMD=/path/to/julia` selects a different Julia for the build
+(juliac otherwise uses its own); `--output-exe` takes a bare name and writes to
+the invocation directory.
 
 ```julia
 router = @routes begin
