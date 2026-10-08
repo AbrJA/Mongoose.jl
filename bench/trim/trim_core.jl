@@ -4,7 +4,7 @@
 # Parity: julia --project=. bench/trim/trim_core.jl; echo $?  (same exit code)
 using Mongoose
 
-@main function main(args)
+function main(args)
     router = @routes begin
         get("/hello", req -> json((message = "hello", n = 42)))
         get("/users/:id::Int", (req, id) -> text("user $id"))
@@ -29,3 +29,5 @@ using Mongoose
 
     return 0
 end
+
+@main
