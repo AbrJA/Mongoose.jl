@@ -21,3 +21,7 @@ ROADMAP.md
 # OS junk
 .DS_Store
 Thumbs.db
+
+# AOT probe executables (juliac --output-exe writes to the invocation dir)
+/trim_core
+/trim_server
