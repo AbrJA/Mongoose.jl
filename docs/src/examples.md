@@ -584,6 +584,7 @@ app = App(;
 # Full middleware stack
 app = use(app, security())
 app = use(app, health(ready_check = () -> true))
+# Custom probes: health(health_path="/health", ready_path="/ready", live_path=nothing)
 app = use(app, metrics())
 app = use(app, cors(origins=get(ENV, "CORS_ORIGINS", "*")))
 app = use(app, compress(min_size_bytes=1024))

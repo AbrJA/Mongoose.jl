@@ -17,6 +17,8 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   typed params (`:id::Int`), wildcards, and route-scoped middleware, all as type
   parameters. Dispatch is fully static, with no per-request route lookup or
   dynamic terminal; the trim-safe routing profile.
+- `health(; health_path=, ready_path=, live_path=)` custom probe paths;
+  `nothing` disables an endpoint (e.g. a single `/health`).
 - `App` is immutable and typed: `use(app, mw; paths)` and `provide(app, name, value)`
   return a rebuilt `App`; middleware and DI services live in the context type.
 

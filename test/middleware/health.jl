@@ -41,6 +41,20 @@
         end
     end
 
+    @testset "Custom probe paths" begin
+        s = App()
+        get!(s, "/") do req; text("app") end
+        s = use(s, health(health_path="/health", ready_path="/ready", live_path=nothing))
+
+        with_server(s) do port
+            @test HTTP.get("http://127.0.0.1:$port/health"; status_exception=false).status == 200
+            @test HTTP.get("http://127.0.0.1:$port/ready"; status_exception=false).status == 200
+            # Defaults are replaced; disabled endpoints pass through (404 here).
+            @test HTTP.get("http://127.0.0.1:$port/healthz"; status_exception=false).status == 404
+            @test HTTP.get("http://127.0.0.1:$port/livez"; status_exception=false).status == 404
+        end
+    end
+
     @testset "Non-health routes pass through" begin
         s = App()
         get!(s, "/app") do req; text("hello") end
