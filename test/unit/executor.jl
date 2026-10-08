@@ -55,7 +55,7 @@ end
     exec2 = AsyncExecutor(1, 1)
     start!(exec2, nothing)
     for i in 1:6
-        submit!(exec2, () -> Mongoose.Kernel.Tagged{Union{Response,StreamResponse,Message}}(i, Message("x")))
+        submit!(exec2, () -> Mongoose.Kernel.Tagged{Mongoose.Kernel.ReplyPayload}(i, Message("x")))
     end
     ok = timedwait(10.0; pollint=0.05) do
         stop!(exec2; timeout=2.0)
@@ -66,7 +66,7 @@ end
 
 @testset "AsyncExecutor reply offer is non-blocking" begin
     exec = AsyncExecutor(1, 1)                      # no workers: fully deterministic
-    tagged = Mongoose.Kernel.Tagged{Union{Response,StreamResponse,Message}}(1, Message("x"))
+    tagged = Mongoose.Kernel.Tagged{Mongoose.Kernel.ReplyPayload}(1, Message("x"))
     @test Mongoose._offer_reply!(exec, tagged) === true
     @test Mongoose._offer_reply!(exec, tagged) === false   # full → caller drops
     @test take!(exec.replies) === tagged

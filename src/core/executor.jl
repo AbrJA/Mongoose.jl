@@ -24,6 +24,26 @@
 """
 abstract type AbstractExecutor end
 
+# --- Reply payloads (the executor's reply-queue contract) ---
+
+"""
+    StreamStart — a prepared streamed reply.
+
+    Holds the headers to send plus the bounded chunk channel whose producer
+    task is already running. It is concrete (no producer type parameter), so a
+    worker can prepare a `StreamResponse{P}` and ship it through the reply
+    queue without erasing `P` at the poll-thread boundary.
+"""
+struct StreamStart
+    chan::Channel{Union{Vector{UInt8},Nothing}}
+    status::Int
+    content_type::String
+    headers::Headers
+end
+
+"""Payloads that can travel through an executor's reply queue."""
+const ReplyPayload = Union{Message,Response,StreamStart}
+
 # --- Reference implementation: inline execution ---
 
 """

@@ -227,16 +227,18 @@ function _http_job(server::AbstractServer, id::Int, req::Request)
             errorresponse(server, req, 500)
         end
         if res isa StreamResponse
-            return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, res)
+            # Prepare the stream here (worker thread): the producer type is
+            # concrete in this frame, so no abstract Function is shipped.
+            return Kernel.Tagged{Kernel.ReplyPayload}(id, _prepare_stream(res))
         end
         resp = mergeheaders(res, ["X-Request-Id" => rid])
-        return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, _echo_conn_close!(resp, req))
+        return Kernel.Tagged{Kernel.ReplyPayload}(id, _echo_conn_close!(resp, req))
     catch e
         # Anything outside the handler's own try (post-processing) still gets a
         # reply, so the connection entry is cleaned up and the client answered.
         @log_error "Request job error uri=$(req.uri)" e catch_backtrace()
         resp = errorresponse(server, req, 500)
-        return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, _echo_conn_close!(resp, req))
+        return Kernel.Tagged{Kernel.ReplyPayload}(id, _echo_conn_close!(resp, req))
     end
 end
 
@@ -260,13 +262,13 @@ function _http_job_timed(server::AbstractServer, id::Int, req::Request, timeout:
             # so the connection entry is cleaned up and the client is answered.
             @log_error "Request job failed uri=$(req.uri)" e catch_backtrace()
             resp = errorresponse(server, req, 500)
-            Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, _echo_conn_close!(resp, req))
+            Kernel.Tagged{Kernel.ReplyPayload}(id, _echo_conn_close!(resp, req))
         end
     end
     bg_track!(server, t)
     @log_warn "Request timeout uri=$(req.uri)"
     resp = errorresponse(server, req, 504)
-    return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, _echo_conn_close!(resp, req))
+    return Kernel.Tagged{Kernel.ReplyPayload}(id, _echo_conn_close!(resp, req))
 end
 
 # --- HTTP dispatch (thin transport wrapper over the core pipeline) ---

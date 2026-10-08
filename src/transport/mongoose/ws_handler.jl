@@ -230,7 +230,7 @@ function broadcastws(server::AbstractServer, path::AbstractString, data::Abstrac
     end
     frame = Message(String(data))
     for id in ids
-        tagged = Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, frame)
+        tagged = Kernel.Tagged{Kernel.ReplyPayload}(id, frame)
         # Non-blocking: a full reply queue drops the frame for that client
         # rather than stalling the caller (which may be a request handler).
         _offer_reply!(exec, tagged) ||
@@ -247,7 +247,7 @@ function invoke_ws(server::AbstractServer, request::Kernel.Tagged{Kernel.Intent}
     return call_ws_endpoint(endpoint, request)
 end
 
-tag_ws(id, res::Message)        = Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, res)
+tag_ws(id, res::Message)        = Kernel.Tagged{Kernel.ReplyPayload}(id, res)
 tag_ws(id, res::String)         = tag_ws(id, Message(res))
 tag_ws(id, res::Vector{UInt8})  = tag_ws(id, Message(res))
 tag_ws(id, ::Nothing)           = nothing

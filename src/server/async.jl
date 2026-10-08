@@ -3,7 +3,7 @@ mutable struct AsyncExecutor <: AbstractExecutor
     queue_size::Int
     worker_tasks::Vector{Task}
     calls::Channel{Function}
-    replies::Channel{Kernel.Tagged{Union{Response,StreamResponse,Message}}}
+    replies::Channel{Kernel.Tagged{Kernel.ReplyPayload}}
     inflight::Threads.Atomic{Int}
     stopping::Threads.Atomic{Bool}
 end
@@ -26,7 +26,7 @@ end
 function AsyncExecutor(workers::Int, queue_size::Int)
     return AsyncExecutor(workers, queue_size, Task[],
         Channel{Function}(queue_size),
-        Channel{Kernel.Tagged{Union{Response,StreamResponse,Message}}}(queue_size),
+        Channel{Kernel.Tagged{Kernel.ReplyPayload}}(queue_size),
         Threads.Atomic{Int}(0), Threads.Atomic{Bool}(false))
 end
 
@@ -37,7 +37,7 @@ Base.show(io::IO, e::AsyncExecutor) =
 
 function init_executor!(exec::AsyncExecutor)
     exec.calls = Channel{Function}(exec.queue_size)
-    exec.replies = Channel{Kernel.Tagged{Union{Response,StreamResponse,Message}}}(exec.queue_size)
+    exec.replies = Channel{Kernel.Tagged{Kernel.ReplyPayload}}(exec.queue_size)
     exec.stopping[] = false
     empty!(exec.worker_tasks)
     return exec
@@ -193,8 +193,8 @@ function _dispatch_replies!(exec::AsyncExecutor, app::App)::Bool
             send_http_response!(conn, reply.payload)
             _response_wants_close(reply.payload) && mgjl_conn_close_after_send(conn)
             delete!(app.runtime.connections, reply.id)
-        elseif reply.payload isa StreamResponse
-            try send_stream_response!(app, conn, reply.payload) catch e; @log_error "Stream error" e catch_backtrace() end
+        elseif reply.payload isa Kernel.StreamStart
+            try send_stream_start!(app, conn, reply.payload) catch e; @log_error "Stream error" e catch_backtrace() end
             delete!(app.runtime.connections, reply.id)
         else  # Message (WebSocket)
             cap = app.config.send_buffer_bytes

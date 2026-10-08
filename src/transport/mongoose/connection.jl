@@ -108,27 +108,46 @@ end
 Base.isopen(w::StreamWriter) = w.open
 
 """
-    send_stream_response!(server, conn, resp)
+    _prepare_stream(resp) → StreamStart
 
-Initiate a chunked streaming response. Headers are sent immediately; the
-producer runs on its own task and writes chunks to a bounded channel which
-the event loop drains (`drain_streams!`). The poll thread never runs user
-code, so one slow stream cannot stall the server.
+Prepare a streamed reply in the caller's context: create the bounded chunk
+channel and spawn the producer task (concrete producer type). The poll thread
+later sends the headers and registers the stream (`send_stream_start!`), so a
+worker can prepare a stream without erasing its producer type.
 """
-function send_stream_response!(server::AbstractServer, conn::MgConnection, resp::StreamResponse{P}) where {P}
-    io = IOBuffer(sizehint=192)
-    print(io, "HTTP/1.1 ", resp.status, " ", statusreason(resp.status), "\r\n",
-        "Content-Type: ", resp.content_type, "\r\n")
-    formatheaders(io, resp.headers.data)
-    write(io, "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n")
-    mg_send(conn, take!(io))
-
+function _prepare_stream(resp::StreamResponse{P}) where {P}
     chan = Channel{Union{Vector{UInt8},Nothing}}(64)
-    server.runtime.streams[Int(conn)] = ActiveStream(chan, conn, false)
-    producer = resp.producer
     # A producer must never run on the poll thread: a CPU-bound generator
     # (@async is sticky) would stall mg_mgr_poll, draining, and timeouts.
-    Threads.@spawn _run_stream(chan, producer)
+    Threads.@spawn _run_stream(chan, resp.producer)
+    return Kernel.StreamStart(chan, resp.status, resp.content_type, resp.headers)
+end
+
+"""
+    send_stream_start!(server, conn, start) → nothing
+
+Poll-thread side of a streamed reply: send the headers and register the stream
+so `drain_streams!` forwards the producer's chunks.
+"""
+function send_stream_start!(server::AbstractServer, conn::MgConnection, start::Kernel.StreamStart)
+    io = IOBuffer(sizehint=192)
+    print(io, "HTTP/1.1 ", start.status, " ", statusreason(start.status), "\r\n",
+        "Content-Type: ", start.content_type, "\r\n")
+    formatheaders(io, start.headers.data)
+    write(io, "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n")
+    mg_send(conn, take!(io))
+    server.runtime.streams[Int(conn)] = ActiveStream(start.chan, conn, false)
+    return nothing
+end
+
+"""
+    send_stream_response!(server, conn, resp)
+
+Initiate a chunked streaming response on the poll thread (sync mode): prepare
+the stream and send its headers.
+"""
+function send_stream_response!(server::AbstractServer, conn::MgConnection, resp::StreamResponse{P}) where {P}
+    send_stream_start!(server, conn, _prepare_stream(resp))
     return nothing
 end
 
