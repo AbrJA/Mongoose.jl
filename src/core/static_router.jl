@@ -347,7 +347,15 @@ function _path_type_expr(path::AbstractString)
     return expr
 end
 
-function _route_expr(ex::Expr)
+# Join a group prefix with a route path at macro-expansion time.
+function _path_join(prefix::AbstractString, path::AbstractString)::String
+    p = rstrip(prefix, '/')
+    isempty(p) && return String(path)
+    path == "/" && return p
+    return p * (startswith(path, '/') ? path : "/" * path)
+end
+
+function _route_expr(ex::Expr, prefix::AbstractString="", mws::Vector{Any}=Any[])
     ex.head === :call || error("@routes: expected `method(\"path\", handler)`, got $ex")
     fname = ex.args[1]
     fname isa Symbol && fname in _ROUTER_METHODS ||
@@ -365,12 +373,56 @@ function _route_expr(ex::Expr)
     length(args) == 2 || error("@routes: expected `method(\"path\", handler)`")
     path, handler = args
     path isa String || error("@routes: path must be a string literal")
-    pathtype = _path_type_expr(path)
+    full_path = _path_join(prefix, path)
+    pathtype = _path_type_expr(full_path)
+    # Middleware tuple: group middleware (outer → inner), then the route's own.
+    # Each source may be a single middleware or a tuple; flatten both.
+    sources = Any[mws...; mw_expr]
+    flat = [:(asmiddlewaretuple($(esc(m)))...) for m in sources]
     return quote
-        let h = $(esc(handler)), mw = asmiddlewaretuple($(esc(mw_expr)))
-            StaticRoute{$(QuoteNode(fname)),$pathtype,typeof(h),typeof(mw)}($path, h, mw)
+        let h = $(esc(handler)), mw = ($(flat...),)
+            StaticRoute{$(QuoteNode(fname)),$pathtype,typeof(h),typeof(mw)}($full_path, h, mw)
         end
     end
+end
+
+# Parse `group("prefix"; middleware=…) do g … end` into (prefix, mw, body).
+function _group_parts(ex::Expr)
+    ex.head === :do || error("@routes: expected a `group(…) do … end` block")
+    call = ex.args[1]
+    (call isa Expr && call.head === :call && call.args[1] === :group) ||
+        error("@routes: expected `group(\"prefix\"; middleware=…)`")
+    args = call.args[2:end]
+    mw = nothing
+    if !isempty(args) && args[1] isa Expr && args[1].head === :parameters
+        for kw in args[1].args
+            (kw isa Expr && kw.head === :kw && kw.args[1] === :middleware) ||
+                error("@routes: only the `middleware` keyword is supported on group")
+            mw = kw.args[2]
+        end
+        args = args[2:end]
+    end
+    (length(args) == 1 && args[1] isa String) ||
+        error("@routes: expected `group(\"prefix\") do … end`")
+    closure = ex.args[2]
+    closure isa Expr && closure.head === :-> ||
+        error("@routes: malformed group block")
+    return args[1], mw, closure.args[2]
+end
+
+function _routes_from!(out::Vector{Any}, block::Expr, prefix::String, mws::Vector{Any})
+    block.head === :block || (block = Expr(:block, block))
+    for ex in block.args
+        ex isa LineNumberNode && continue
+        if ex isa Expr && ex.head === :do
+            gprefix, gmw, body = _group_parts(ex)
+            inner = gmw === nothing ? mws : [mws; gmw]
+            _routes_from!(out, body, _path_join(prefix, gprefix), inner)
+        else
+            push!(out, _route_expr(ex, prefix, mws))
+        end
+    end
+    return out
 end
 
 """
@@ -379,20 +431,28 @@ end
         get("/users/:id::Int", (req, id) -> json((id = id,)))
         get("/files/*path", (req, path) -> text(path))
         post("/echo", req -> text(body(req)); middleware=(cors(),))
+
+        group("/api"; middleware=(bearer(token),)) do api
+            get("/items", list_items)
+            group("/admin"; middleware=(require_admin,)) do admin
+                delete("/items/:id::Int", delete_item)
+            end
+        end
     end
 
 Build a [`StaticRouter`](@ref) from a block of route declarations. Paths are
 parsed at macro-expansion time: `:name` captures a decoded `String`,
 `:name::T` captures a parsed `T` (Int, Float64, Bool, …), `*name` captures the
 rest of the path, and a bare `"*"` is the final fallback.
+
+`group("prefix"; middleware=…) do … end` blocks are expanded at compile time:
+paths are prefixed and middleware tuples concatenated (outer → inner → route),
+so groups add no runtime structure. Both forms are fully static.
 """
 macro routes(block)
     block isa Expr && block.head === :block ||
         error("@routes expects a `begin ... end` block of route declarations")
     routes = Any[]
-    for ex in block.args
-        ex isa LineNumberNode && continue
-        push!(routes, _route_expr(ex))
-    end
+    _routes_from!(routes, block, "", Any[])
     return :(StaticRouter($(routes...)))
 end

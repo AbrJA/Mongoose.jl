@@ -162,6 +162,38 @@
         @test String(r.body) == "custom 404"
     end
 
+    @testset "Compile-time groups" begin
+        router = @routes begin
+            group("/api"; middleware=(cors(origins="*"),)) do api
+                get("/items", req -> text("items"))
+                get("/scoped", req -> text("scoped"); middleware=(etag(),))
+                group("/admin"; middleware=(security(),)) do admin
+                    get("/x", req -> text("admin"))
+                end
+            end
+        end
+        @test length(router) == 3
+        client = FakeTransport(App(router = router))
+        origin = ["Origin" => "http://example.com"]
+
+        r = client(:get, "/api/items"; headers = origin)
+        @test r.status == 200 && String(r.body) == "items"
+        @test get(r.headers, "access-control-allow-origin", "") == "*"
+
+        r = client(:get, "/api/scoped"; headers = origin)
+        @test get(r.headers, "etag", "") != ""
+        @test get(r.headers, "access-control-allow-origin", "") == "*"
+
+        r = client(:get, "/api/admin/x"; headers = origin)
+        @test r.status == 200 && String(r.body) == "admin"
+        @test get(r.headers, "x-content-type-options", "") == "nosniff"
+        @test get(r.headers, "access-control-allow-origin", "") == "*"
+
+        # Only the prefixed paths exist.
+        @test client(:get, "/items").status == 404
+        @test client(:get, "/api").status == 404
+    end
+
     @testset "Macro rejects malformed declarations" begin
         @test_throws LoadError @eval @routes begin
             get("/x")
@@ -171,6 +203,11 @@
         end
         @test_throws LoadError @eval @routes begin
             fetch("/x", req -> text("x"))
+        end
+        @test_throws LoadError @eval @routes begin
+            group("/api"; nope=1) do g
+                get("/x", req -> text("x"))
+            end
         end
     end
 

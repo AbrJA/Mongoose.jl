@@ -94,11 +94,22 @@ router = @routes begin
     get("/users/:id::Int", (req, id) -> json((id = id,)))
     get("/files/*path", (req, path) -> text("Requested: $path"))
     post("/echo", req -> text(body(req)); middleware = (cors(),))
+
+    group("/api"; middleware = (bearer(token),)) do api
+        get("/items", list_items)                    # GET /api/items
+        group("/admin"; middleware = (require_admin,)) do admin
+            delete("/items/:id::Int", delete_item)   # DELETE /api/admin/items/:id
+        end
+    end
 end
 
 app = App(; router = router)
 start!(app; port = 8080)
 ```
+
+`group(...) do … end` is expanded at compile time: paths are prefixed and
+middleware tuples concatenated (outer group → inner group → route), so groups
+add no runtime structure and stay trim-safe.
 
 Semantics match the dynamic `Router`: literal routes win over patterns,
 patterns resolve in declaration order, a bare `"*"` is the final fallback, and

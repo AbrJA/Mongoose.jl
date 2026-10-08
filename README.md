@@ -116,6 +116,10 @@ router = @routes begin
     get("/users", list_users)
     get("/users/:id::Int", get_user)
     get("/files/*path", serve_file)
+
+    group("/api"; middleware=(bearer(token),)) do api
+        get("/items", list_items)          # GET /api/items
+    end
 end
 app = App(router = router)
 ```

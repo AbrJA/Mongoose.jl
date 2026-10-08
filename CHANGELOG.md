@@ -17,6 +17,9 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   typed params (`:id::Int`), wildcards, and route-scoped middleware, all as type
   parameters. Dispatch is fully static, with no per-request route lookup or
   dynamic terminal; the trim-safe routing profile.
+- `@routes` groups: `group("prefix"; middleware=…) do … end` is expanded at
+  compile time (paths prefixed, middleware tuples concatenated), so grouped
+  routes stay fully static.
 - `App()` sync, `App(N)` async (N-worker pool), `App(executor=…)` explicit
   injection: the executor is a first-class argument, so every construction
   infers one concrete `App` type without relying on constant propagation.

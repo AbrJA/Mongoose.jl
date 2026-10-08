@@ -7,7 +7,9 @@ using Mongoose
 function main(args)
     router = @routes begin
         get("/hello", req -> json((message = "hello", n = 42)))
-        get("/users/:id::Int", (req, id) -> text("user $id"))
+        group("/api"; middleware = (cors(origins = "*"),)) do api
+            get("/users/:id::Int", (req, id) -> text("user $id"))
+        end
     end
     app = App(router = router)
     app = use(app, cors())
@@ -20,12 +22,15 @@ function main(args)
     r = client(:get, "/hello"; headers = ["Accept-Encoding" => "gzip"])
     (r.status == 200 && occursin("hello", String(r.body))) || return 1
 
-    r = client(:get, "/users/7")
+    r = client(:get, "/api/users/7")
     (r.status == 200 && String(r.body) == "user 7") || return 2
 
     client(:get, "/missing").status == 404 || return 3
 
-    client(:get, "/users/abc").status == 404 || return 4
+    client(:get, "/api/users/abc").status == 404 || return 4
+
+    r = client(:get, "/api/users/7"; headers = ["Origin" => "http://example.com"])
+    get(r.headers, "access-control-allow-origin", "") == "*" || return 5
 
     return 0
 end
