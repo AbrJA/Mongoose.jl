@@ -20,6 +20,9 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - `@routes` groups: `group("prefix"; middleware=…) do … end` is expanded at
   compile time (paths prefixed, middleware tuples concatenated), so grouped
   routes stay fully static.
+- `@routes` WebSocket endpoints: `ws("path", handler; on_open=, on_close=,
+  allowed_origins=)` declares typed WS routes; upgrade, message, and close
+  dispatch resolve the concrete handlers (trim-safe, sync mode).
 - `App()` sync, `App(N)` async (N-worker pool), `App(executor=…)` explicit
   injection: the executor is a first-class argument, so every construction
   infers one concrete `App` type without relying on constant propagation.

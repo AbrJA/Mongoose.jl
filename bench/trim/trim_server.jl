@@ -10,6 +10,8 @@ function main(args)
     static_dir = length(args) >= 2 ? args[2] : mktempdir()
     router = @routes begin
         get("/", req -> json((ok = true,)))
+        ws("/chat", msg -> Message("Echo: " * String(msg.data));
+           allowed_origins = ["http://localhost"])
     end
     app = App(router = router)
     app = use(app, cors())

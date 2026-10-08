@@ -146,6 +146,8 @@ Two constraints of the AOT profile (juliac/trim, not Mongoose):
 - **No dynamic `Router`.** Runtime registration (`get!`/`route!`) is rejected by
   the verifier; use `@routes`/`StaticRouter`.
 
-Static mounts (`serve!`) are trim-safe: they are concrete `(dir, prefix)` pairs
-served by the C static-dir helper. TLS is not trim-verified yet. The default
+Static mounts (`serve!`) and `@routes` WebSocket endpoints are trim-safe:
+mounts are concrete `(dir, prefix)` pairs served by the C helper, and WS
+upgrades/messages resolve typed handlers with no Dict lookup. WS is sync-only
+in AOT (the profile has no tasks). TLS is not trim-verified yet. The default
 `Router` remains the JIT profile.

@@ -117,6 +117,8 @@ router = @routes begin
     get("/users/:id::Int", get_user)
     get("/files/*path", serve_file)
 
+    ws("/chat", msg -> Message("Echo: " * String(msg.data)))
+
     group("/api"; middleware=(bearer(token),)) do api
         get("/items", list_items)          # GET /api/items
     end

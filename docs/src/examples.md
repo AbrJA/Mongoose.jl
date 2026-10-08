@@ -94,6 +94,7 @@ router = @routes begin
     get("/users/:id::Int", (req, id) -> json((id = id,)))
     get("/files/*path", (req, path) -> text("Requested: $path"))
     post("/echo", req -> text(body(req)); middleware = (cors(),))
+    ws("/chat", msg -> Message("Echo: " * String(msg.data)); on_open = req -> true)
 
     group("/api"; middleware = (bearer(token),)) do api
         get("/items", list_items)                    # GET /api/items
@@ -109,7 +110,9 @@ start!(app; port = 8080)
 
 `group(...) do … end` is expanded at compile time: paths are prefixed and
 middleware tuples concatenated (outer group → inner group → route), so groups
-add no runtime structure and stay trim-safe.
+add no runtime structure and stay trim-safe. `ws(...)` declares typed WebSocket
+endpoints (exact paths, `on_open`/`on_close`/`allowed_origins`); upgrade and
+message dispatch resolve the concrete handlers.
 
 Semantics match the dynamic `Router`: literal routes win over patterns,
 patterns resolve in declaration order, a bare `"*"` is the final fallback, and

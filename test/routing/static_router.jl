@@ -194,6 +194,54 @@
         @test client(:get, "/api").status == 404
     end
 
+    @testset "Static WebSocket routes" begin
+        opened = Ref(false)
+        closed = Ref(false)
+        router = @routes begin
+            get("/hello", req -> text("hi"))
+            ws("/chat", msg -> Message("Echo: $(msg.data)");
+               on_open = req -> (opened[] = true; true),
+               on_close = () -> (closed[] = true))
+            ws("/gated", msg -> Message("gated"); allowed_origins = ["http://localhost"])
+        end
+        @test Mongoose.haswsroutes(router)
+        @test length(router) == 1
+
+        with_server(App(router = router)) do port
+            HTTP.WebSockets.open("ws://127.0.0.1:$port/chat") do ws
+                HTTP.WebSockets.send(ws, "hello")
+                @test String(HTTP.WebSockets.receive(ws)) == "Echo: hello"
+            end
+            @test opened[]
+
+            # Origin allowlist rejects non-matching origins before upgrade.
+            rejected = try
+                HTTP.WebSockets.open("ws://127.0.0.1:$port/gated";
+                                     headers = ["Origin" => "http://evil.example"]) do ws
+                    HTTP.WebSockets.receive(ws)
+                end
+                false
+            catch
+                true
+            end
+            @test rejected
+            sleep(0.3)
+            @test closed[]
+        end
+    end
+
+    @testset "Static WebSocket routes (async executor)" begin
+        router = @routes begin
+            ws("/chat", msg -> Message("Got: $(msg.data)"))
+        end
+        with_server(App(2; router = router)) do port
+            HTTP.WebSockets.open("ws://127.0.0.1:$port/chat") do ws
+                HTTP.WebSockets.send(ws, "x")
+                @test String(HTTP.WebSockets.receive(ws)) == "Got: x"
+            end
+        end
+    end
+
     @testset "Macro rejects malformed declarations" begin
         @test_throws LoadError @eval @routes begin
             get("/x")

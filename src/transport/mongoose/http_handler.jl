@@ -131,12 +131,8 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
     uri = to_string(msg.uri)
 
     # 1. WebSocket upgrade check
-    if haswsroutes(server.router)
-        endpoint = getwsendpoint(server.router, uri)
-        if endpoint !== nothing
-            ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
-            return nothing
-        end
+    if haswsroutes(server.router) && ws_upgrade(server.router, server, conn, ev_data, uri, msg)
+        return nothing
     end
 
     # 2. Body size enforcement (mongoose buffers up to its 8 MiB ceiling)

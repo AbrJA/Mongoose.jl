@@ -89,28 +89,53 @@ end
 # --- Static router ---
 
 """
-    StaticRouter{Routes<:Tuple} — the compiled route table.
+    StaticWSRoute{M,O,C} — one compile-time WebSocket endpoint.
+
+    Exact-path route: the transport matches `path` and calls `on_message` /
+    `on_open` / `on_close` through their concrete types (no dynamic lookup).
 """
-struct StaticRouter{Routes<:Tuple} <: AbstractRouter
-    routes::Routes
+struct StaticWSRoute{M,O,C}
+    path::String
+    on_message::M
+    on_open::O
+    on_close::C
+    allowed_origins::Vector{String}
 end
 
-StaticRouter(routes::StaticRoute...) = StaticRouter{typeof(routes)}(routes)
+function StaticWSRoute(path::AbstractString; on_message::M, on_open::O=nothing,
+                       on_close::C=nothing, allowed_origins=nothing) where {M,O,C}
+    return StaticWSRoute{M,O,C}(String(path), on_message, on_open, on_close,
+                                asstrings(allowed_origins))
+end
+
+"""
+    StaticRouter{Routes<:Tuple,WSRoutes<:Tuple} — the compiled route table.
+
+    `Routes` holds the HTTP routes; `WSRoutes` the WebSocket endpoints
+    (declared with `ws(...)` in `@routes`).
+"""
+struct StaticRouter{Routes<:Tuple,WSRoutes<:Tuple} <: AbstractRouter
+    routes::Routes
+    ws_routes::WSRoutes
+end
+
+StaticRouter(routes::StaticRoute...) = StaticRouter{typeof(routes),Tuple{}}(routes, ())
 
 Base.length(r::StaticRouter)::Int = length(r.routes)
 Base.isempty(r::StaticRouter)::Bool = isempty(r.routes)
 Base.show(io::IO, r::StaticRouter) =
-    print(io, "StaticRouter(", length(r.routes), " routes)")
+    print(io, "StaticRouter(", length(r.routes), " routes",
+          isempty(r.ws_routes) ? "" : ", $(length(r.ws_routes)) ws", ")")
 
 freeze!(r::StaticRouter) = r
 isfrozen(::StaticRouter) = true
-haswsroutes(::StaticRouter) = false
+haswsroutes(::StaticRouter{R,W}) where {R,W} = W !== Tuple{}
 getwsendpoint(::StaticRouter, uri::AbstractString) = nothing
 
 route!(r::StaticRouter, method::Symbol, path::AbstractString, handler::Function; kwargs...) =
     throw(RouteError("static router: registration is closed (declare routes in @routes)"))
 ws!(r::StaticRouter, path::AbstractString; kwargs...) =
-    throw(RouteError("static router: WebSocket routes are not supported yet"))
+    throw(RouteError("static router: declare WebSocket routes with ws(...) in @routes"))
 
 # --- Path matching (unrolled over the path type) ---
 
@@ -410,19 +435,54 @@ function _group_parts(ex::Expr)
     return args[1], mw, closure.args[2]
 end
 
-function _routes_from!(out::Vector{Any}, block::Expr, prefix::String, mws::Vector{Any})
+function _ws_expr(ex::Expr, prefix::AbstractString)
+    (ex.head === :call && ex.args[1] === :ws) ||
+        error("@routes: expected `ws(\"path\", handler; …)`")
+    args = ex.args[2:end]
+    on_open = nothing
+    on_close = nothing
+    allowed = nothing
+    if !isempty(args) && args[1] isa Expr && args[1].head === :parameters
+        for kw in args[1].args
+            (kw isa Expr && kw.head === :kw) ||
+                error("@routes: malformed ws keyword")
+            key = kw.args[1]
+            key === :on_open && (on_open = kw.args[2])
+            key === :on_close && (on_close = kw.args[2])
+            key === :allowed_origins && (allowed = kw.args[2])
+            (key in (:on_open, :on_close, :allowed_origins)) ||
+                error("@routes: unknown ws keyword `$key`")
+        end
+        args = args[2:end]
+    end
+    length(args) == 2 || error("@routes: expected `ws(\"path\", handler; …)`")
+    path, handler = args
+    path isa String || error("@routes: ws path must be a string literal")
+    full = _path_join(prefix, path)
+    return quote
+        StaticWSRoute($full; on_message = $(esc(handler)),
+                      on_open = $(esc(on_open)),
+                      on_close = $(esc(on_close)),
+                      allowed_origins = $(esc(allowed)))
+    end
+end
+
+function _routes_from!(http::Vector{Any}, ws::Vector{Any}, block::Expr,
+                       prefix::String, mws::Vector{Any})
     block.head === :block || (block = Expr(:block, block))
     for ex in block.args
         ex isa LineNumberNode && continue
         if ex isa Expr && ex.head === :do
             gprefix, gmw, body = _group_parts(ex)
             inner = gmw === nothing ? mws : [mws; gmw]
-            _routes_from!(out, body, _path_join(prefix, gprefix), inner)
+            _routes_from!(http, ws, body, _path_join(prefix, gprefix), inner)
+        elseif ex isa Expr && ex.head === :call && ex.args[1] === :ws
+            push!(ws, _ws_expr(ex, prefix))
         else
-            push!(out, _route_expr(ex, prefix, mws))
+            push!(http, _route_expr(ex, prefix, mws))
         end
     end
-    return out
+    return http, ws
 end
 
 """
@@ -431,6 +491,7 @@ end
         get("/users/:id::Int", (req, id) -> json((id = id,)))
         get("/files/*path", (req, path) -> text(path))
         post("/echo", req -> text(body(req)); middleware=(cors(),))
+        ws("/chat", msg -> Message("Echo: \$(msg.data)"))
 
         group("/api"; middleware=(bearer(token),)) do api
             get("/items", list_items)
@@ -447,12 +508,15 @@ rest of the path, and a bare `"*"` is the final fallback.
 
 `group("prefix"; middleware=…) do … end` blocks are expanded at compile time:
 paths are prefixed and middleware tuples concatenated (outer → inner → route),
-so groups add no runtime structure. Both forms are fully static.
+so groups add no runtime structure. `ws("path", handler; on_open=, on_close=,
+allowed_origins=)` declares a typed WebSocket endpoint. All three forms are
+fully static.
 """
 macro routes(block)
     block isa Expr && block.head === :block ||
         error("@routes expects a `begin ... end` block of route declarations")
-    routes = Any[]
-    _routes_from!(routes, block, "", Any[])
-    return :(StaticRouter($(routes...)))
+    http = Any[]
+    ws = Any[]
+    _routes_from!(http, ws, block, "", Any[])
+    return :(StaticRouter(($(http...),), ($(ws...),)))
 end
