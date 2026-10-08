@@ -61,7 +61,8 @@ start!(app; port=8080)        # binds, then freezes/compiles the route table
 - **Sync or async.** `workers=0` runs handlers inline (lowest overhead, one
   slow handler blocks the loop); `workers=N` runs a bounded pool with
   backpressure, per-request timeouts, and thread-safe reply delivery. Use
-  async when handlers do I/O.
+  async when handlers do I/O. For a runtime-chosen executor, inject it
+  explicitly (`App(executor=AsyncExecutor(n))`) so the App type stays concrete.
 - **Scoped middleware is cheap.** `route!(...; middleware=(a, b))`,
   `group(...)`, and `use(...; paths=["/api"])` all run through the tuple
   pipeline; route-scoped middleware adds no allocation over an unscoped route.

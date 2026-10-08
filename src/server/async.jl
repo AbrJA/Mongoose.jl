@@ -30,6 +30,9 @@ function AsyncExecutor(workers::Int, queue_size::Int)
         Threads.Atomic{Int}(0), Threads.Atomic{Bool}(false))
 end
 
+AsyncExecutor(workers::Integer; queue_size::Integer=1024) =
+    AsyncExecutor(Int(workers), Int(queue_size))
+
 Base.show(io::IO, e::AsyncExecutor) =
     print(io, "AsyncExecutor(", e.workers, " workers, queue ", e.queue_size, ")")
 

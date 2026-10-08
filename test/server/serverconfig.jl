@@ -13,6 +13,19 @@
         @test_throws Mongoose.ServerError App(workers=-1)
         @test_throws Mongoose.ServerError App(poll_timeout_ms=-1)
     end
+
+    @testset "executor injection" begin
+        app = App(executor=AsyncExecutor(2, 256))
+        @test app.executor isa AsyncExecutor
+        @test app.config.workers == 2
+        @test app.config.queue_size == 256
+
+        sync = App(executor=SyncExecutor())
+        @test sync.executor isa SyncExecutor
+        @test sync.config.workers == 0
+
+        @test_throws Mongoose.ServerError App(workers=2, executor=SyncExecutor())
+    end
 end
 
 

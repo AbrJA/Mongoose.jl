@@ -353,7 +353,8 @@ submit!(fe, () -> "work")   # enqueued, not run
 ## 🔌 Pluggable Components
 
 Each boundary is a replacement point: `App(router=my_router)`,
-`App(workers=n)` chooses the executor, and `AbstractTransport` declares its
+`App(workers=n)` chooses the executor (or inject it explicitly and type-stably
+with `App(executor=AsyncExecutor(n))`), and `AbstractTransport` declares its
 capabilities (`supportsws`, `supportstls`, `supportsstream`).
 
 Exports are the consumer surface; to *extend* the framework, import exactly

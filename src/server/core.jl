@@ -264,6 +264,7 @@ end
     |------------------------|--------------------|----------------------------------------|
     | `workers`              | `0`                | Worker threads (0 = sync)              |
     | `queue_size`           | `1024`             | Max pending requests (async only)      |
+    | `executor`             | `nothing`          | Inject an executor (type-stable; exclusive with `workers`) |
     | `poll_timeout_ms`      | `1`                | Mongoose poll interval                 |
     | `max_body_bytes`       | `MAX_BODY_BYTES`   | Max request body size                  |
     | `drain_timeout_ms`     | `DRAIN_TIMEOUT_MS` | Graceful shutdown drain                |
@@ -316,6 +317,7 @@ end
 Base.@constprop :aggressive function App(;
              workers::Integer=0,
              queue_size::Integer=1024,
+             executor=nothing,
              poll_timeout_ms::Integer=1,
              max_body_bytes::Integer=MAX_BODY_BYTES,
              drain_timeout_ms::Integer=DRAIN_TIMEOUT_MS,
@@ -334,19 +336,29 @@ Base.@constprop :aggressive function App(;
              middleware=nothing,
              services::NamedTuple=NamedTuple()) where {R<:AbstractRouter}
 
+    workers >= 0 || throw(ServerError("workers must be >= 0"))
+    if executor !== nothing && workers > 0
+        throw(ServerError("pass either executor=... or workers=..., not both"))
+    end
+    # `executor=` is explicit and type-stable by construction; `workers=` is
+    # sugar (literal values constant-propagate to one concrete App type).
+    exec = executor !== nothing ? executor :
+           (workers > 0 ? AsyncExecutor(Int(workers), Int(queue_size)) : SyncExecutor())
+
+    # Derive the pool config from the actual executor.
+    w = exec isa AsyncExecutor ? exec.workers : 0
+    q = exec isa AsyncExecutor ? exec.queue_size : Int(queue_size)
+
     cfg = ServerConfig(;
         poll_timeout_ms, max_body_bytes, drain_timeout_ms, request_timeout_ms,
         ws_max_frame_bytes, ws_idle_timeout_ms, header_timeout_ms, body_timeout_ms,
         max_header_bytes, send_buffer_bytes, max_bg_tasks, max_connections,
-        workers, queue_size)
+        workers=w, queue_size=q)
 
     for code in keys(errors)
         (100 <= code <= 599) || throw(ServerError("Error status code must be in [100,599], got $code"))
     end
 
-    # Select from the kwarg, not `cfg`: the value stays constant-propagatable,
-    # so `App()` infers one concrete App type instead of a Sync/Async union.
-    exec = workers > 0 ? AsyncExecutor(Int(workers), Int(queue_size)) : SyncExecutor()
     rs = RunState()
     rs.tls = tls   # raw TLSConfig material; normalized at start!
     mws = asmiddlewaretuple(middleware)
