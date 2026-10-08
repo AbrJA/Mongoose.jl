@@ -21,7 +21,7 @@ end
     RegexRouter() = RegexRouter(Tuple{Regex,Symbol,Mongoose.Endpoint}[])
 
     function Mongoose.route!(r::RegexRouter, method::Symbol, path::AbstractString,
-                             handler::Function; middleware::AbstractVector=Mongoose.AbstractMiddleware[],
+                             handler::Function; middleware=nothing,
                              metadata=nothing)
         push!(r.entries, (Regex("^" * String(path) * "\$"), method,
                           Mongoose.Endpoint(handler; middleware=middleware, metadata=metadata)))

@@ -157,35 +157,15 @@ dispatch path passes pre-baked terminal functors.
 @inline runpipeline(globals::Tuple, scoped::Tuple, req::Request, handler) =
     _run_next(Next(globals, scoped, handler, req))
 
-# Fallback for vector stacks (e.g. a compiled route's scoped wrapper): same
-# onion with one closure + cursor per request.
-@inline function runpipeline(middlewares, req::Request, handler)
-    n = length(middlewares)
-    n == 0 && return handler(req)
-    cell = _ChainCursor(0)
-    next = () -> begin
-        cell.i += 1
-        cell.i <= n || return handler(req)
-        middlewares[cell.i](req, next)
-    end
-    return next()
-end
+# Compatibility: vectors are snapshotted into tuples (same typed continuation).
+@inline runpipeline(middlewares::AbstractVector, req::Request, handler) =
+    runpipeline(Tuple(middlewares), req, handler)
 
-@inline function runpipeline(globals, scoped,
-                                  req::Request, handler)
-    ng, ns = length(globals), length(scoped)
-    total = ng + ns
-    total == 0 && return handler(req)
-    cell = _ChainCursor(0)
-    next = () -> begin
-        cell.i += 1
-        cell.i <= ng && return globals[cell.i](req, next)
-        cell.i <= total || return handler(req)
-        scoped[cell.i - ng](req, next)
-    end
-    return next()
-end
+@inline runpipeline(globals::AbstractVector, scoped::AbstractVector, req::Request, handler) =
+    runpipeline(Tuple(globals), Tuple(scoped), req, handler)
 
-mutable struct _ChainCursor
-    i::Int
-end
+@inline runpipeline(globals::AbstractVector, scoped, req::Request, handler) =
+    runpipeline(Tuple(globals), scoped, req, handler)
+
+@inline runpipeline(globals, scoped::AbstractVector, req::Request, handler) =
+    runpipeline(globals, Tuple(scoped), req, handler)

@@ -342,17 +342,14 @@ end
 
 # --- Routing convenience on server/app ---
 
-# Built-in Router bakes a concrete middleware tuple (trim-friendly); the router
-# protocol contract passes a normalized vector to custom routers.
-@inline _route_middleware(::Router, middleware) = asmiddlewaretuple(middleware)
-@inline _route_middleware(::AbstractRouter, middleware) = asmiddlewares(middleware)
-
+# Every router receives an immutable middleware tuple (the same snapshot the
+# typed pipeline consumes), so there is no vector round-trip.
 function route!(server::AbstractServer, method::Symbol, path::AbstractString, handler::Function;
                 middleware=nothing,
                 metadata=nothing)
     _ensure_registratable(server, "routes")
     route!(server.router, method, path, handler;
-           middleware=_route_middleware(server.router, middleware), metadata=metadata)
+           middleware=asmiddlewaretuple(middleware), metadata=metadata)
     return server
 end
 
@@ -360,7 +357,7 @@ function route!(server::AbstractServer, method::AbstractString, path::AbstractSt
                 middleware=nothing,
                 metadata=nothing)
     route!(server.router, Symbol(lowercase(method)), path, handler;
-           middleware=_route_middleware(server.router, middleware), metadata=metadata)
+           middleware=asmiddlewaretuple(middleware), metadata=metadata)
     return server
 end
 

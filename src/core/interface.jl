@@ -6,11 +6,11 @@
     this protocol; they never inspect internal fields.
 
     Required protocol for HTTP dispatch:
-    - `route!(r::R, method, path, handler; middleware=AbstractMiddleware[], metadata=nothing) → r`
+    - `route!(r::R, method, path, handler; middleware=(), metadata=nothing) → r`
       (register an HTTP route; the router stores the handler inside an
       `Endpoint` and never interprets it. The `App` layer normalizes
-      `middleware` to a vector before delegating, so a router may assume an
-      `AbstractVector`)
+      `middleware` to an immutable tuple before delegating, so a router may
+      assume a `Tuple`)
     - `matchroute(r::R, method, path)`                → a `RouteResult`
       (`Matched` / `NoMatch` / `MethodMismatch{allowed}` — 404/405 and the
       `Allow` set are resolved by the router at match time)
