@@ -22,7 +22,8 @@
 # --- Route endpoint (handler + scoped middleware + metadata) ---
 
 """
-    Endpoint{F} — what a route owns: handler, scoped middleware, and metadata.
+    Endpoint{F,M,MD} — what a route owns: handler, scoped middleware, and
+    metadata (all type parameters, so the endpoint has no abstract fields).
 
     The handler's concrete type is a type parameter, so the endpoint can be
     invoked without a dynamic call when its type is known (custom routers,
@@ -32,17 +33,17 @@
     middleware. `middleware` applies to this route (in addition to app-global
     middleware); `metadata` is opaque and available for OpenAPI-style docs.
 """
-struct Endpoint{F,M<:Tuple}
+struct Endpoint{F,M<:Tuple,MD}
     handler::F
     middleware::M
-    metadata::Any
+    metadata::MD
 end
 
 function Endpoint(handler::F;
                   middleware=nothing,
                   metadata=nothing) where {F}
     mws = asmiddlewaretuple(middleware)
-    return Endpoint{F,typeof(mws)}(handler, mws, metadata)
+    return Endpoint{F,typeof(mws),typeof(metadata)}(handler, mws, metadata)
 end
 
 # --- Method Dispatch (struct fields instead of Dict for zero-allocation dispatch) ---

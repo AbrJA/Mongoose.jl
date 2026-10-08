@@ -174,7 +174,7 @@ mutable struct RunState
     ws_dropped::Threads.Atomic{UInt64}   # WS pushes dropped (queue full / send cap)
     bg_tasks::Vector{Task}
     bg_lock::Threads.SpinLock            # guards bg_tasks (workers push)
-    cb_root::Any                         # roots the per-server C callback closure
+    cb_root::Union{Nothing,Base.CFunction}  # roots the per-server C callback closure
 end
 
 RunState() = RunState(Threads.Atomic{Bool}(false), nothing, nothing, Manager(empty=true), nothing,

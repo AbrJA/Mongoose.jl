@@ -100,7 +100,7 @@ asmiddlewares(mw) = AbstractMiddleware[asmiddleware(mw)]
     asmiddlewaretuple(input) → Tuple
 
 Like [`asmiddlewares`](@ref) but returns an immutable tuple, so route-scoped
-middleware can live in a type parameter (`Endpoint{F,M}`) and run through the
+middleware can live in a type parameter (`Endpoint{F,M,MD}`) and run through the
 allocation-free tuple pipeline.
 """
 asmiddlewaretuple(::Nothing) = ()

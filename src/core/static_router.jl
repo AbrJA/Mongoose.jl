@@ -256,7 +256,7 @@ end
 # --- AbstractRouter protocol (for direct/plug-in use) ---
 
 @inline function _matched_result(route::StaticRoute{M,PT,F,MW}, params) where {M,PT,F,MW}
-    ep = Endpoint{F,MW}(route.handler, route.middleware, nothing)
+    ep = Endpoint{F,MW,Nothing}(route.handler, route.middleware, nothing)
     return Matched(ep, SingleEndpoint(ep, M), params)
 end
 

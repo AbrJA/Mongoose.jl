@@ -7,10 +7,10 @@
     Health — Health check middleware for cloud-native deployments.
     Intercepts `/healthz`, `/readyz`, and `/livez` before any other middleware.
 """
-struct Health <: AbstractMiddleware
-    health_check::Function
-    ready_check::Function
-    live_check::Function
+struct Health{H,R,L} <: AbstractMiddleware
+    health_check::H
+    ready_check::R
+    live_check::L
 end
 
 """
@@ -19,9 +19,9 @@ end
 Create a health check middleware for cloud-native deployments.
 
 # Keyword Arguments
-- `health_check::Function`: Function that returns `true` if the service is healthy (default: always true)
-- `ready_check::Function`: Function that returns `true` if the service is ready to accept traffic (default: always true)
-- `live_check::Function`: Function that returns `true` if the service is alive (default: always true)
+- `health_check`: zero-arg callable returning `true` if the service is healthy (default: always true)
+- `ready_check`: zero-arg callable returning `true` if the service is ready for traffic (default: always true)
+- `live_check`: zero-arg callable returning `true` if the service is alive (default: always true)
 
 # Endpoints
 - `GET /healthz`: Overall health status (combines all checks)
@@ -38,9 +38,9 @@ server = use(server, health(
 ```
 """
 function health(;
-    health_check::Function = () -> true,
-    ready_check::Function = () -> true,
-    live_check::Function = () -> true
+    health_check = () -> true,
+    ready_check = () -> true,
+    live_check = () -> true
 )
     return Health(health_check, ready_check, live_check)
 end
