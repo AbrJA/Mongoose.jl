@@ -306,7 +306,7 @@ ws!(router, "/ws";
         @info "WS connected" uri=req.uri
         true
     end,
-    on_message = msg -> Message("Echo: $(msg.data)"),
+    on_message = msg -> Message("Echo: " * String(msg.data)),
     on_close = () -> @info "WS disconnected"
 )
 
@@ -330,7 +330,7 @@ router = Router()
 
 # Clients subscribe to stock updates
 ws!(router, "/stock";
-    on_message = msg -> Message("pong: $(msg.data)"),
+    on_message = msg -> Message("pong: " * String(msg.data)),
 )
 
 app = App(4; router=router)

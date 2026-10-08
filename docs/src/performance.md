@@ -13,13 +13,13 @@ guarantees — re-run the script on your hardware.
 
 | Path | Allocations | Latency |
 |---|---|---|
-| `process` frozen fixed route | 192 B | ~225 ns |
-| `process` frozen typed-param route | 528 B | ~400 ns |
-| `process` frozen + route-scoped middleware | 192 B | ~350 ns |
-| `process` frozen + `cors()` + `etag()` | 1024 B | ~1.3 µs |
-| `process` generic fixed route | 256 B | ~700 ns |
-| `process` generic typed-param route | 640 B | ~1.5 µs |
-| `parse_method` | 0 B | ~4 ns |
+| `process` frozen fixed route | 192 B | ~180 ns |
+| `process` frozen typed-param route | 528 B | ~500 ns |
+| `process` frozen + route-scoped middleware | 192 B | ~210 ns |
+| `process` frozen + `cors()` + `etag()` | 1024 B | ~2.6 µs |
+| `process` generic fixed route | 224 B | ~2 µs |
+| `process` generic typed-param route | 656 B | ~2.2 µs |
+| `parse_method` | 0 B | ~1 ns |
 
 A handler that returns `text("ok")`/`json(...)` costs one `Response` plus the
 header block; header-adding middleware costs one `mergeheaders` (368 B) each.

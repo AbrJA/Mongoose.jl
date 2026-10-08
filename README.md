@@ -21,7 +21,7 @@
 ## ✨ Why Mongoose.jl?
 
 - ⚡ **Fast** — precompiled cold start; `freeze!` compiles the route table so
-  warm dispatch stays at ~100 ns (fixed routes) / ~400 ns (typed params) with
+  warm dispatch stays at ~180 ns (fixed routes) / ~500 ns (typed params) with
   minimal allocation.
 - 🧪 **Testable without FFI** — `FakeTransport` drives the full pipeline in pure
   Julia: no ports, no C library, deterministic tests.
@@ -144,7 +144,7 @@ Built-ins cover the common production stack:
 
 ```julia
 app = use(app, security())                        # OWASP headers
-app = use(app, health())                          # /healthz /readyz /livez
+app = use(app, health())                          # /healthz /readyz /livez (paths configurable)
 app = use(app, metrics())                         # Prometheus /metrics
 app = use(app, cors(origins="https://myapp.com")) # CORS + preflight
 app = use(app, compress(min_size_bytes=1024))     # gzip
@@ -221,7 +221,7 @@ end
 ws!(app, "/chat";
     allowed_origins = ["https://myapp.com"],   # optional
     on_open         = req -> true,             # false → 403
-    on_message      = msg -> Message("Echo: $(msg.data)"),
+    on_message      = msg -> Message("Echo: " * String(msg.data)),
     on_close        = () -> @info "disconnected",
 )
 
