@@ -47,6 +47,26 @@ jobs:
       - name: Performance smoke (advisory)
         run: julia --project=. bench/dispatch.jl
         continue-on-error: true
+  aot:
+    name: AOT trim-safe smoke (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.12'
+      - uses: julia-actions/julia-buildpkg@v1
+      - name: Install JuliaC
+        run: julia -e 'using Pkg; Pkg.Apps.add(name="JuliaC")'
+      - name: Build the trim-safe core probe
+        run: |
+          ~/.julia/bin/juliac --output-exe trim_core --trim=safe --experimental \
+            --project="$PWD" "$PWD/bench/trim/trim_core.jl" > /tmp/trim_core.log 2>&1
+          test ! grep -q "^Verifier error" /tmp/trim_core.log
+      - name: Run the trimmed binary (self-checking)
+        run: ./trim_core
   docs:
       name: Documentation
       runs-on: ubuntu-latest
