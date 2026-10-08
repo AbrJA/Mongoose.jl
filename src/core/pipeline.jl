@@ -111,17 +111,25 @@ asmiddlewaretuple(mw) = (asmiddleware(mw),)
 """
     Next — immutable middleware continuation (internal).
 
-    A `Function` holding the remaining middleware tuple, the terminal handler,
-    and the request, so the onion needs no per-request closure.
+    A `Function` holding the remaining global and scoped middleware stacks, the
+    terminal handler, and the request, so the onion needs no per-request closure
+    or cursor. The global stack runs first, then the route-scoped stack, then
+    the handler.
 """
-struct Next{M,H} <: Function
-    mws::M
+struct Next{G,S,H} <: Function
+    globals::G
+    scoped::S
     handler::H
     req::Request
 end
 
-@inline (n::Next{Tuple{}})() = n.handler(n.req)
-@inline (n::Next)() = first(n.mws)(n.req, Next(Base.tail(n.mws), n.handler, n.req))
+@inline _run_next(n::Next{Tuple{},Tuple{}}) = n.handler(n.req)
+@inline _run_next(n::Next{Tuple{},S}) where {S<:Tuple} =
+    first(n.scoped)(n.req, Next((), Base.tail(n.scoped), n.handler, n.req))
+@inline _run_next(n::Next{G,S}) where {G<:Tuple,S<:Tuple} =
+    first(n.globals)(n.req, Next(Base.tail(n.globals), n.scoped, n.handler, n.req))
+
+@inline (n::Next)() = _run_next(n)
 
 """
     runpipeline(middlewares, request, handler) → Response
@@ -137,38 +145,17 @@ callable continuation — `Next` is a `Function`, so the `(req, next)` contract
 is unchanged, but no closure or cursor is allocated per request.
 
 The four-argument form (generic/dev path) walks the baked app-global stack and
-the route-scoped stack with **one cursor over their virtual concatenation** —
-no `[global; scoped]` array built per request.
+the route-scoped stack with the same continuation — no `[global; scoped]`
+array built per request.
 
 `handler` may be any 0-arity callable (`Function` or functor) — the compiled
 dispatch path passes pre-baked terminal functors.
 """
 @inline runpipeline(middlewares::Tuple, req::Request, handler) =
-    Next(middlewares, handler, req)()
-
-"""
-    Next2 — immutable continuation over two tuple stacks (global + scoped).
-
-    The four-argument tuple pipeline (`global → scoped → handler`) walks both
-    stacks with one typed continuation and no per-request closure or cursor.
-"""
-struct Next2{G,S,H} <: Function
-    globals::G
-    scoped::S
-    handler::H
-    req::Request
-end
-
-@inline _run_next(n::Next2{Tuple{},Tuple{}}) = n.handler(n.req)
-@inline _run_next(n::Next2{Tuple{},S}) where {S<:Tuple} =
-    first(n.scoped)(n.req, Next2((), Base.tail(n.scoped), n.handler, n.req))
-@inline _run_next(n::Next2{G,S}) where {G<:Tuple,S<:Tuple} =
-    first(n.globals)(n.req, Next2(Base.tail(n.globals), n.scoped, n.handler, n.req))
-
-@inline (n::Next2)() = _run_next(n)
+    _run_next(Next(middlewares, (), handler, req))
 
 @inline runpipeline(globals::Tuple, scoped::Tuple, req::Request, handler) =
-    _run_next(Next2(globals, scoped, handler, req))
+    _run_next(Next(globals, scoped, handler, req))
 
 # Fallback for vector stacks (e.g. a compiled route's scoped wrapper): same
 # onion with one closure + cursor per request.
