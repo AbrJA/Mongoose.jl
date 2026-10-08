@@ -1,5 +1,7 @@
 # Trim probe: juliac --output-exe trim_core --trim=safe --experimental --project=<pkg> bench/trim/trim_core.jl
-# StaticRouter profile: routes are compile-time types, so routing verifies clean.
+# Self-checking: exits 0 only when the trimmed binary serves the expected
+# responses. Test: ./trim_core; echo $?
+# Parity: julia --project=. bench/trim/trim_core.jl; echo $?  (same exit code)
 using Mongoose
 
 @main function main(args)
@@ -14,8 +16,16 @@ using Mongoose
     app = use(app, compress(min_size_bytes = 64))
 
     client = FakeTransport(app)
-    for (m, p) in ((:get, "/hello"), (:get, "/users/7"), (:get, "/missing"))
-        client(m, p; headers = ["Accept-Encoding" => "gzip"])
-    end
+
+    r = client(:get, "/hello"; headers = ["Accept-Encoding" => "gzip"])
+    (r.status == 200 && occursin("hello", String(r.body))) || return 1
+
+    r = client(:get, "/users/7")
+    (r.status == 200 && String(r.body) == "user 7") || return 2
+
+    client(:get, "/missing").status == 404 || return 3
+
+    client(:get, "/users/abc").status == 404 || return 4
+
     return 0
 end
