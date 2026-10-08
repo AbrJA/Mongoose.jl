@@ -3,8 +3,8 @@
         s = App()
         s = provide(s, :version, "1.0.0")
         s = provide(s, :region, "us-east")
-        @test s.context.services.version == "1.0.0"
-        @test s.context.services.region == "us-east"
+        @test s.context.registries.services.version == "1.0.0"
+        @test s.context.registries.services.region == "us-east"
         get!(s, "/version") do req
             v = service(req, :version)
             text("v=$v")
@@ -19,7 +19,7 @@ end
 @testset "Typed NamedTuple services" begin
     @testset "Val-typed access + missing service" begin
         s = App(services=(db="pool", retries=3))
-        @test s.context.services.db == "pool"
+        @test s.context.registries.services.db == "pool"
         get!(s, "/svc") do req
             db = service(req, Val(:db))       # type-stable access
             retries = service(req, Val(:retries))

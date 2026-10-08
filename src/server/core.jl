@@ -393,23 +393,17 @@ end
 """
 function trap(app::App, status::Int, handler::Response)
     _register_error!(app, status)
-    pages = copy(app.context.errors)
+    pages = copy(app.context.registries.errors)
     pages[status] = handler
-    return _with_context(app, Kernel._rebuild_context(app.context, pages,
-                                               app.context.error_handlers,
-                                               app.context.exception_handlers,
-                                               app.context.hooks_start,
-                                               app.context.hooks_stop))
+    return _with_context(app, Kernel._rebuild_context(app.context,
+                                               merge(app.context.registries, (; errors=pages))))
 end
 
 function trap(app::App, status::Int, handler::F) where {F<:Function}
     _register_error!(app, status)
-    handlers = (app.context.error_handlers..., Kernel.ErrorPage(status, handler))
-    return _with_context(app, Kernel._rebuild_context(app.context, app.context.errors,
-                                               handlers,
-                                               app.context.exception_handlers,
-                                               app.context.hooks_start,
-                                               app.context.hooks_stop))
+    handlers = (app.context.registries.error_handlers..., Kernel.ErrorPage(status, handler))
+    return _with_context(app, Kernel._rebuild_context(app.context,
+                                               merge(app.context.registries, (; error_handlers=handlers))))
 end
 trap(f::Function, app::App, status::Int) = trap(app, status, f)
 
@@ -436,11 +430,9 @@ end
 """
 function trap(app::App, ::Type{E}, handler::F) where {E<:Exception,F<:Function}
     _ensure_registratable(app, "exception handlers")
-    handlers = (app.context.exception_handlers..., Kernel.ExceptionHandler{E,F}(handler))
-    return _with_context(app, Kernel._rebuild_context(app.context, app.context.errors,
-                                               app.context.error_handlers, handlers,
-                                               app.context.hooks_start,
-                                               app.context.hooks_stop))
+    handlers = (app.context.registries.exception_handlers..., Kernel.ExceptionHandler{E,F}(handler))
+    return _with_context(app, Kernel._rebuild_context(app.context,
+                                               merge(app.context.registries, (; exception_handlers=handlers))))
 end
 trap(handler::F, app::App, ::Type{E}) where {E<:Exception,F<:Function} =
     trap(app, E, handler)
@@ -469,9 +461,8 @@ Both argument orders are accepted; the `(f, app)` form exists so
 """
 function onstop(app::App, f::F) where {F}
     _ensure_registratable(app, "stop hooks")
-    ctx = Kernel._rebuild_context(app.context, app.context.errors,
-                                  app.context.error_handlers, app.context.exception_handlers,
-                                  app.context.hooks_start, (app.context.hooks_stop..., f))
+    ctx = Kernel._rebuild_context(app.context,
+                                  merge(app.context.registries, (; hooks_stop=(app.context.registries.hooks_stop..., f))))
     return _with_context(app, ctx)
 end
 onstop(f::Function, app::App) = onstop(app, f)
@@ -484,9 +475,7 @@ struct BackgroundTask{F}
 end
 
 @inline function _add_start_hook(ctx::RequestContext, hook::H) where {H}
-    return Kernel._rebuild_context(ctx, ctx.errors, ctx.error_handlers,
-                                   ctx.exception_handlers, (ctx.hooks_start..., hook),
-                                   ctx.hooks_stop)
+    return Kernel._rebuild_context(ctx, merge(ctx.registries, (; hooks_start=(ctx.registries.hooks_start..., hook))))
 end
 
 # Typed hook runners: each tuple element is called concretely (trim-safe).
@@ -529,21 +518,17 @@ app = provide(app, (cache=redis, queue=ch))
 """
 function provide(app::App{R,E,C}, name::Symbol, value) where {R,E,C}
     _ensure_registratable(app, "services")
-    return _provide(app, merge(app.context.services, (; name => value)))
+    return _provide(app, merge(app.context.registries.services, (; name => value)))
 end
 
 function provide(app::App{R,E,C}, services::NamedTuple) where {R,E,C}
     _ensure_registratable(app, "services")
-    return _provide(app, merge(app.context.services, services))
+    return _provide(app, merge(app.context.registries.services, services))
 end
 
 function _provide(app::App{R,E,C}, services::S) where {R,E,C,S<:NamedTuple}
-    ctx = RequestContext(app.router; middlewares=app.context.middlewares,
-                         errors=app.context.errors, services=services,
-                         error_handlers=app.context.error_handlers,
-                         exception_handlers=app.context.exception_handlers,
-                         hooks_start=app.context.hooks_start,
-                         hooks_stop=app.context.hooks_stop)
+    ctx = RequestContext(app.router, app.context.middlewares,
+                         merge(app.context.registries, (; services)))
     return _with_context(app, ctx)
 end
 
@@ -704,12 +689,7 @@ end
 
 function _compose(app::App{R,E,C}, wrapped::M) where {R,E,C,M<:AbstractMiddleware}
     mws = (app.context.middlewares..., wrapped)
-    ctx = RequestContext(app.router; middlewares=mws, errors=app.context.errors,
-                         services=app.context.services,
-                         error_handlers=app.context.error_handlers,
-                         exception_handlers=app.context.exception_handlers,
-                         hooks_start=app.context.hooks_start,
-                         hooks_stop=app.context.hooks_stop)
+    ctx = RequestContext(app.router, mws, app.context.registries)
     newapp = _with_context(app, ctx)
     attach!(wrapped, newapp)
     return newapp

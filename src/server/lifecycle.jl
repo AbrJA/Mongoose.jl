@@ -40,7 +40,7 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
         freeze!(server.router)
 
         # Run lifecycle start hooks and background tasks
-        _run_start_hooks(server.context.hooks_start, server)
+        _run_start_hooks(server.context.registries.hooks_start, server)
 
         start!(server.executor, server)
         log_server_start(server, url)
@@ -79,7 +79,7 @@ function shutdown!(server::AbstractServer)
     Threads.atomic_xchg!(server.runtime.running, false) || return
     log_server_stop(server)
 
-    _run_stop_hooks(server.context.hooks_stop, server)
+    _run_stop_hooks(server.context.registries.hooks_stop, server)
 
     drain!(server)
     _stop_executor(server.executor, server.config.drain_timeout_ms / 1000.0)

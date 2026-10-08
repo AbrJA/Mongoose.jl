@@ -16,13 +16,13 @@ const DEFAULT_503 = Response(Plain, "503 Service Unavailable"; status=503)
 const DEFAULT_504 = Response(Plain, "504 Gateway Timeout"; status=504)
 
 """
-    RequestContext{R,M,S,EH,XH,HS,XS} — the app-level typed registry bundle.
+    RequestContext{R,M,G} — the app-level typed registry bundle.
 
     Collapses the config that `process` needs into one object so the
     pipeline seam has a single argument: the router, the app-global middleware
-    stack, the static error pages, the DI services, the typed dynamic error and
-    exception handlers, and the lifecycle hooks (all tuples, so every call site
-    is statically typed).
+    stack, and a `registries` NamedTuple holding the static error pages, the DI
+    services, the typed dynamic error and exception handlers, and the lifecycle
+    hooks (all concrete, so every call site is statically typed).
 
     The global middleware stack is stored as a **baked tuple snapshot** (built
     once by `App`/`use` and immutable afterward), so the per-request pipeline
@@ -35,25 +35,15 @@ const DEFAULT_504 = Response(Plain, "504 Gateway Timeout"; status=504)
     resp = process(ctx, Request(:get, "/", Dict{String,String}(), Pair{String,String}[], ""))
     ```
 """
-struct RequestContext{R<:AbstractRouter,
-                      M<:Tuple,
-                      S<:NamedTuple,
-                      EH<:Tuple,
-                      XH<:Tuple,
-                      HS<:Tuple,
-                      XS<:Tuple}
+struct RequestContext{R<:AbstractRouter, M<:Tuple, G<:NamedTuple}
     router::R
     middlewares::M
-    errors::Dict{Int,Response}
-    services::S
-    error_handlers::EH
-    exception_handlers::XH
-    hooks_start::HS
-    hooks_stop::XS
+    registries::G
 end
 
 Base.show(io::IO, ctx::RequestContext) =
-    print(io, "RequestContext(", length(ctx.middlewares), " middleware, ", length(ctx.services), " services)")
+    print(io, "RequestContext(", length(ctx.middlewares), " middleware, ",
+          length(ctx.registries.services), " services)")
 
 function RequestContext(router::AbstractRouter;
                         middlewares::Union{AbstractVector{<:AbstractMiddleware},Tuple}=(),
@@ -64,22 +54,14 @@ function RequestContext(router::AbstractRouter;
                         hooks_start::Tuple=(),
                         hooks_stop::Tuple=())
     errs = Dict{Int,Response}(k => v for (k, v) in errors)
-    return RequestContext(router, Tuple(middlewares), errs, services,
-                          error_handlers, exception_handlers, hooks_start, hooks_stop)
+    registries = (; errors=errs, services, error_handlers, exception_handlers,
+                  hooks_start, hooks_stop)
+    return RequestContext(router, Tuple(middlewares), registries)
 end
 
-# Rebuild a context with new registries while keeping router/middleware/services.
-@inline function _rebuild_context(ctx::RequestContext{R,M,S,EH,XH,HS,XS},
-                                  errors::Dict{Int,Response},
-                                  error_handlers::EH2,
-                                  exception_handlers::XH2,
-                                  hooks_start::HS2,
-                                  hooks_stop::XS2) where {R,M,S,EH,XH,HS,XS,
-                                                          EH2<:Tuple,XH2<:Tuple,
-                                                          HS2<:Tuple,XS2<:Tuple}
-    return RequestContext{R,M,S,EH2,XH2,HS2,XS2}(ctx.router, ctx.middlewares, errors,
-                                                 ctx.services, error_handlers,
-                                                 exception_handlers, hooks_start, hooks_stop)
+# Rebuild a context with a new registries bundle while keeping router/middleware.
+@inline function _rebuild_context(ctx::RequestContext{R,M}, registries::G2) where {R,M,G2<:NamedTuple}
+    return RequestContext{R,M,G2}(ctx.router, ctx.middlewares, registries)
 end
 
 """
@@ -151,9 +133,9 @@ Resolve the response for `status`: a static page first, then a dynamic handler
 """
 @inline function errorresponse(ctx::RequestContext, req::Union{Request,Nothing},
                                status::Int)::Response
-    page = get(ctx.errors, status, nothing)
+    page = get(ctx.registries.errors, status, nothing)
     page !== nothing && return page
-    dynamic = _scan_error_handlers(ctx.error_handlers, req, status)
+    dynamic = _scan_error_handlers(ctx.registries.error_handlers, req, status)
     return dynamic === nothing ? _default_error(status) : dynamic
 end
 
@@ -218,7 +200,7 @@ end
 @inline function _http_error_response(ctx::RequestContext, req::Request,
                                       status::Int, message::String,
                                       headers::Headers=Headers())::Response
-    (haskey(ctx.errors, status) || _has_error_handler(ctx.error_handlers, status)) &&
+    (haskey(ctx.registries.errors, status) || _has_error_handler(ctx.registries.error_handlers, status)) &&
         return errorresponse(ctx, req, status)
     isempty(headers) && push!(headers, "Content-Type" => "text/plain")
     return Response(status, headers, message)
@@ -264,7 +246,7 @@ the 404/405 producers — so interception middleware (CORS, health,
 metrics) observes all requests.
 """
 function process(ctx::RequestContext, request::Request)::Union{Response,StreamResponse}
-    request.services = ctx.services
+    request.services = ctx.registries.services
     return _guarded_process(ctx, request) do
         _process_pipeline(ctx, request)
     end
@@ -291,12 +273,12 @@ end
     try
         result = dispatch()
         if result isa Response &&
-           (haskey(ctx.errors, result.status) || _has_error_handler(ctx.error_handlers, result.status))
+           (haskey(ctx.registries.errors, result.status) || _has_error_handler(ctx.registries.error_handlers, result.status))
             return errorresponse(ctx, request, result.status)
         end
         return result
     catch e
-        found, res = _scan_exceptions(ctx.exception_handlers, e, request)
+        found, res = _scan_exceptions(ctx.registries.exception_handlers, e, request)
         found && return res
         e isa HTTPError     && return _http_error_response(ctx, request, e)
         e isa ValidationError && return _http_error_response(ctx, request, 422, e.message)
