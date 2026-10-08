@@ -38,7 +38,7 @@ include("router.jl")        # Default Router (method map + ordered patterns)
 include("groups.jl")        # RouteGroup + mount!
 include("compiled.jl")      # Compiled frozen-route dispatch (freeze! table)
 include("process.jl")       # process — the transport-agnostic seam
-include("static_router.jl") # StaticRouter + @router — compile-time typed table
+include("static_router.jl") # StaticRouter + @routes — compile-time typed table
 include("streaming.jl")     # SSEWriter/emit/sse — SSE producer over StreamResponse
 
 include("cors.jl")
@@ -73,7 +73,7 @@ export AbstractRequest, Request, Headers, asheaders, mergeheaders, context, pars
     Message, WSEndpoint,
     AbstractRouter, Router, MethodMap, RouteResult, Matched, NoMatch, MethodMismatch,
     SingleEndpoint, matchroute, hasroute,
-    StaticRouter, @router,
+    StaticRouter, @routes,
     gethandler, getendpoint, sethandler!, haswsroutes, getwsendpoint,
     route!, ws!, group, group!, RouteGroup, mount!, post!, patch!, options!, head!,
     Endpoint, errorresponse, process, RequestContext, freeze!, isfrozen, getterminal,

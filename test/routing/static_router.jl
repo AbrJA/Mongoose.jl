@@ -1,6 +1,6 @@
-@testset "StaticRouter (@router)" begin
+@testset "StaticRouter (@routes)" begin
     @testset "Fixed, typed, wildcard, method dispatch" begin
-        router = @router begin
+        router = @routes begin
             get("/hello", req -> text("hi"))
             get("/users/:id::Int", (req, id) -> text("user $id"))
             get("/files/*path", (req, path) -> text("file $path"))
@@ -40,7 +40,7 @@
     end
 
     @testset "Typed param mismatch falls through" begin
-        router = @router begin
+        router = @routes begin
             get("/users/:id::Int", (req, id) -> text("id=$id"))
             get("/users/:slug", (req, slug) -> text("slug=$slug"))
         end
@@ -50,7 +50,7 @@
     end
 
     @testset "Param decoding (RFC 3986; + stays literal)" begin
-        router = @router begin
+        router = @routes begin
             get("/items/:name", (req, name) -> text(name))
         end
         client = FakeTransport(App(router = router))
@@ -59,7 +59,7 @@
     end
 
     @testset "Exact beats pattern; method mask aggregates" begin
-        router = @router begin
+        router = @routes begin
             get("/users/:id", (req, id) -> text("pattern:$id"))
             get("/users/me", req -> text("exact"))
             post("/users/me", req -> text("posted"))
@@ -73,7 +73,7 @@
     end
 
     @testset "Pattern order: first match wins" begin
-        router = @router begin
+        router = @routes begin
             get("/a/:x", (req, x) -> text("first:$x"))
             get("/a/:y", (req, y) -> text("second:$y"))
         end
@@ -82,7 +82,7 @@
     end
 
     @testset "Bare * catch-all is the final fallback" begin
-        router = @router begin
+        router = @routes begin
             get("/hello", req -> text("hi"))
             get("*", req -> text("fallback"))
         end
@@ -95,7 +95,7 @@
     end
 
     @testset "Route-scoped middleware" begin
-        router = @router begin
+        router = @routes begin
             get("/open", req -> text("open"))
             get("/closed", req -> text("closed"); middleware = (security(),))
         end
@@ -105,7 +105,7 @@
     end
 
     @testset "Global middleware wraps 404/405 too" begin
-        router = @router begin
+        router = @routes begin
             get("/x", req -> text("x"))
         end
         app = use(App(router = router), security())
@@ -115,7 +115,7 @@
     end
 
     @testset "hasroute / matchroute protocol" begin
-        router = @router begin
+        router = @routes begin
             get("/hello", req -> text("hi"))
             get("/users/:id::Int", (req, id) -> text("u"))
             get("*", req -> text("fallback"))
@@ -125,7 +125,7 @@
         @test !Mongoose.hasroute(router, "/users/x")       # typed parse fails
         @test !Mongoose.hasroute(router, "/other")         # catch-all excluded
 
-        plain = @router begin
+        plain = @routes begin
             get("/hello", req -> text("hi"))
             get("/users/:id::Int", (req, id) -> text("u"))
         end
@@ -138,7 +138,7 @@
     end
 
     @testset "Registration is closed; WS unsupported" begin
-        router = @router begin
+        router = @routes begin
             get("/hello", req -> text("hi"))
         end
         @test_throws Mongoose.RouteError route!(router, :post, "/x", req -> text("x"))
@@ -147,7 +147,7 @@
     end
 
     @testset "Errors and exceptions flow through the static path" begin
-        router = @router begin
+        router = @routes begin
             get("/bad", req -> throw(BadRequestError("nope")))
             get("/crash", req -> error("boom"))
         end
@@ -163,19 +163,19 @@
     end
 
     @testset "Macro rejects malformed declarations" begin
-        @test_throws LoadError @eval @router begin
+        @test_throws LoadError @eval @routes begin
             get("/x")
         end
-        @test_throws LoadError @eval @router begin
+        @test_throws LoadError @eval @routes begin
             get("/a/*rest/b", req -> text("x"))
         end
-        @test_throws LoadError @eval @router begin
+        @test_throws LoadError @eval @routes begin
             fetch("/x", req -> text("x"))
         end
     end
 
     @testset "Live server" begin
-        router = @router begin
+        router = @routes begin
             get("/ping", req -> text("pong"))
             get("/n/:id::Int", (req, id) -> json((id = id,)))
         end

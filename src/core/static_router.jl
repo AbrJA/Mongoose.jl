@@ -1,7 +1,7 @@
 """
     StaticRouter — compile-time typed route table (trim-safe / AOT profile).
 
-    Routes are declared with the [`@router`](@ref) macro (or by constructing
+    Routes are declared with the [`@routes`](@ref) macro (or by constructing
     `StaticRoute`s directly). The whole table is a type: every path segment,
     capture type, method, and handler type is a type parameter, so dispatch is
     fully static — no runtime `apply_type`, no dynamic route lookup, no erased
@@ -9,7 +9,7 @@
     accepts; the dynamic [`Router`](@ref) stays available for JIT use.
 
     ```julia
-    router = @router begin
+    router = @routes begin
         get("/hello", req -> text("hi"))
         get("/users/:id::Int", (req, id) -> json((id = id,)))
         get("/files/*path", (req, path) -> text(path))
@@ -108,7 +108,7 @@ haswsroutes(::StaticRouter) = false
 getwsendpoint(::StaticRouter, uri::AbstractString) = nothing
 
 route!(r::StaticRouter, method::Symbol, path::AbstractString, handler::Function; kwargs...) =
-    throw(RouteError("static router: registration is closed (declare routes in @router)"))
+    throw(RouteError("static router: registration is closed (declare routes in @routes)"))
 ws!(r::StaticRouter, path::AbstractString; kwargs...) =
     throw(RouteError("static router: WebSocket routes are not supported yet"))
 
@@ -309,7 +309,7 @@ function process(ctx::RequestContext{<:StaticRouter}, request::Request)
     end
 end
 
-# --- @router macro ---
+# --- @routes macro ---
 
 const _ROUTER_METHODS = (:get, :post, :put, :patch, :delete, :options, :head)
 
@@ -320,7 +320,7 @@ function _path_type_expr(path::AbstractString)
         part = parts[idx]
         if startswith(part, '*')
             idx == length(parts) ||
-                error("@router: wildcard must be the last segment in '$path'")
+                error("@routes: wildcard must be the last segment in '$path'")
             name = String(part[2:end])
             if isempty(name)
                 expr = :(PathCons{CatchAll,$expr})
@@ -338,7 +338,7 @@ function _path_type_expr(path::AbstractString)
                 tname = spec[last(sep)+1:end]
                 T = get(PARAM_TYPES, tname, String)
             end
-            isempty(name) && error("@router: parameter name is empty in '$path'")
+            isempty(name) && error("@routes: parameter name is empty in '$path'")
             expr = :(PathCons{Cap{$(QuoteNode(Symbol(name))),$T},$expr})
         else
             expr = :(PathCons{Lit{$(QuoteNode(Symbol(part)))},$expr})
@@ -348,23 +348,23 @@ function _path_type_expr(path::AbstractString)
 end
 
 function _route_expr(ex::Expr)
-    ex.head === :call || error("@router: expected `method(\"path\", handler)`, got $ex")
+    ex.head === :call || error("@routes: expected `method(\"path\", handler)`, got $ex")
     fname = ex.args[1]
     fname isa Symbol && fname in _ROUTER_METHODS ||
-        error("@router: unknown method `$fname` (expected one of $(_ROUTER_METHODS))")
+        error("@routes: unknown method `$fname` (expected one of $(_ROUTER_METHODS))")
     args = ex.args[2:end]
     mw_expr = :(nothing)
     if !isempty(args) && args[1] isa Expr && args[1].head === :parameters
         for kw in args[1].args
             (kw isa Expr && kw.head === :kw && kw.args[1] === :middleware) ||
-                error("@router: only the `middleware` keyword is supported")
+                error("@routes: only the `middleware` keyword is supported")
             mw_expr = kw.args[2]
         end
         args = args[2:end]
     end
-    length(args) == 2 || error("@router: expected `method(\"path\", handler)`")
+    length(args) == 2 || error("@routes: expected `method(\"path\", handler)`")
     path, handler = args
-    path isa String || error("@router: path must be a string literal")
+    path isa String || error("@routes: path must be a string literal")
     pathtype = _path_type_expr(path)
     return quote
         let h = $(esc(handler)), mw = asmiddlewaretuple($(esc(mw_expr)))
@@ -374,7 +374,7 @@ function _route_expr(ex::Expr)
 end
 
 """
-    @router begin
+    @routes begin
         get("/hello", req -> text("hi"))
         get("/users/:id::Int", (req, id) -> json((id = id,)))
         get("/files/*path", (req, path) -> text(path))
@@ -386,9 +386,9 @@ parsed at macro-expansion time: `:name` captures a decoded `String`,
 `:name::T` captures a parsed `T` (Int, Float64, Bool, …), `*name` captures the
 rest of the path, and a bare `"*"` is the final fallback.
 """
-macro router(block)
+macro routes(block)
     block isa Expr && block.head === :block ||
-        error("@router expects a `begin ... end` block of route declarations")
+        error("@routes expects a `begin ... end` block of route declarations")
     routes = Any[]
     for ex in block.args
         ex isa LineNumberNode && continue

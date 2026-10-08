@@ -13,7 +13,7 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
-- **`StaticRouter` + `@router`** — compile-time typed route table: fixed paths,
+- **`StaticRouter` + `@routes`** — compile-time typed route table: fixed paths,
   typed params (`:id::Int`), wildcards, and route-scoped middleware, all as type
   parameters. Dispatch is fully static, with no per-request route lookup or
   dynamic terminal; the trim-safe routing profile.
@@ -24,10 +24,12 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - **Breaking**: `trap` returns the rebuilt `App` (rebind the result). Dynamic
   error and exception handlers are stored as typed tuples, making error handling
   statically resolvable.
+- **Breaking**: `@router` renamed to `@routes` — it declares the route table;
+  `Router()` remains the runtime-registered default.
 - Transport capability traits renamed to explicit names:
   `supportsws`/`supportstls`/`supportsstream` (were `canws`/`cantls`/`canstream`).
 - `StreamResponse{P}` is parameterized on its producer function.
-- `StaticRoute` is no longer exported; it is constructed by `@router`.
+- `StaticRoute` is no longer exported; it is constructed by `@routes`.
 
 ### AOT
 - `juliac --trim=safe` builds a working executable with the `StaticRouter`

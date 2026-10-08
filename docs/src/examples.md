@@ -79,17 +79,17 @@ start!(app; port=8080)
 
 Freezing also provides the closed-table guarantee AOT builds need: with no
 runtime registration, the route table can be compiled once and pruned. For
-`juliac --trim=safe` builds use `@router`/`StaticRouter`, which declares the
+`juliac --trim=safe` builds use `@routes`/`StaticRouter`, which declares the
 table at compile time (0 trim-verifier errors — see the AOT section in
 [Performance & Deployment](@ref)); the dynamic `Router` is the JIT profile.
 
-## Static Routes (`@router`)
+## Static Routes (`@routes`)
 
 Declare the whole table up front when you want fully static dispatch or an AOT
 build:
 
 ```julia
-router = @router begin
+router = @routes begin
     get("/hello", req -> text("hello"))
     get("/users/:id::Int", (req, id) -> json((id = id,)))
     get("/files/*path", (req, path) -> text("Requested: $path"))

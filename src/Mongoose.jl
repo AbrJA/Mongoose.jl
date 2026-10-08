@@ -6,7 +6,7 @@ import JSON
 
 # Facade exports the user surface only; extension protocols live in Kernel.
 export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
-    StaticRouter, @router,
+    StaticRouter, @routes,
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, isrunning, url, route!, use, serve!, trap, onstart!, onstop!,
     context, Cookie, Headers, setcookie, parsecookies, parseform, header,
@@ -94,6 +94,15 @@ end
         matchroute(router, :get,  "/users/1")
         matchroute(router, :post, "/data")
         matchroute(router, :get,  "/nonexistent")
+
+        # --- Static router (@routes) ---
+        static_router = @routes begin
+            get("/", req -> Response(200, Pair{String,String}[], ""))
+            get("/users/:id::Int", (req, id) -> Response(200, Pair{String,String}[], ""))
+        end
+        static_ctx = RequestContext(static_router)
+        process(static_ctx, Request(:get, "/", Dict{String,String}(), Pair{String,String}[], ""))
+        process(static_ctx, Request(:get, "/users/1", Dict{String,String}(), Pair{String,String}[], ""))
 
         # --- Response constructors & helpers ---
         Response(Plain, "ok")

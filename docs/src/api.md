@@ -27,7 +27,7 @@ url
 ```@docs
 Router
 StaticRouter
-@router
+@routes
 route!
 ws!
 freeze!

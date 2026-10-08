@@ -3,7 +3,7 @@
 using Mongoose
 
 @main function main(args)
-    router = @router begin
+    router = @routes begin
         get("/hello", req -> json((message = "hello", n = 42)))
         get("/users/:id::Int", (req, id) -> text("user $id"))
     end

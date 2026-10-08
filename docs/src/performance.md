@@ -108,14 +108,14 @@ numbers in the commit message and update the baseline table above plus the
 
 ## AOT / `juliac --trim`
 
-The **`StaticRouter` profile is trim-safe**: `@router` declares the route table
+The **`StaticRouter` profile is trim-safe**: `@routes` declares the route table
 at compile time (paths, capture types, methods, handlers are type parameters),
 so dispatch has no runtime `apply_type`, no erased `Function` slots, and no
 dynamic terminal. `juliac --trim=safe` on `bench/trim/trim_core.jl` builds with
 0 verifier errors and the resulting executable runs:
 
 ```julia
-router = @router begin
+router = @routes begin
     get("/hello", req -> json((message = "hello",)))
     get("/users/:id::Int", (req, id) -> text("user $id"))
 end

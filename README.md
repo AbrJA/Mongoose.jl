@@ -106,13 +106,13 @@ end
 mount!(app, api)
 ```
 
-**Static routing (AOT/trim-safe)** — declare the whole table with `@router` to
+**Static routing (AOT/trim-safe)** — declare the whole table with `@routes` to
 build a `StaticRouter`. Every path segment, capture type, method, and handler is
 a type parameter, so dispatch is fully static and `juliac --trim=safe` builds a
 working executable:
 
 ```julia
-router = @router begin
+router = @routes begin
     get("/users", list_users)
     get("/users/:id::Int", get_user)
     get("/files/*path", serve_file)
