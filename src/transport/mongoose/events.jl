@@ -1,8 +1,10 @@
 """
     Event dispatch — routes Mongoose C events to Julia handlers.
 
-    Single C callback → event type dispatch → specialized handlers.
-    GC-safe: fn_data stores objectid token, recovered via registry lookup.
+    Single C callback per server → event type dispatch → specialized handlers.
+    The callback is a closure created at bind time that captures the concrete
+    server, so dispatch resolves statically (trim-safe, and no registry lookup
+    on the event hot path).
 """
 
 # --- Event filter (skip unhandled events without deref) ---
@@ -11,24 +13,16 @@
     ev == MG_EV_WS_OPEN || ev == MG_EV_WS_MSG || ev == MG_EV_WS_CTL ||
     ev == MG_EV_CLOSE || ev == MG_EV_ACCEPT)
 
-# --- Singleton C function pointer ---
-
-const _C_EVENT_CALLBACK = Ref{Ptr{Cvoid}}(C_NULL)
-
-# --- C callback entry point (defined before get_c_callback for @cfunction) ---
+# --- C callback entry point ---
 
 """
-    c_event_callback(conn, ev, ev_data) → Cvoid
+    c_event_callback(server, conn, ev, ev_data) → Cvoid
 
-The single @cfunction registered with the Mongoose C library.
-Recovers the Julia server via registry lookup (GC-safe).
+Event entry point for one server: `bind_server!` wraps this in a per-server
+`@cfunction` closure that captures the concrete server type.
 """
-function c_event_callback(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
+function c_event_callback(server::AbstractServer, conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
     is_handled_event(ev) || return nothing
-    fn_data = mgjl_conn_get_fn_data(conn)
-    fn_data == C_NULL && return nothing
-    server = lookup_server(UInt(fn_data))
-    server === nothing && return nothing
     try
         dispatch_event(server, ev, conn, ev_data)
     catch e
@@ -37,22 +31,9 @@ function c_event_callback(conn::Ptr{Cvoid}, ev::Cint, ev_data::Ptr{Cvoid})
     return nothing
 end
 
-"""
-    get_c_callback() → Ptr{Cvoid}
-
-Return the single @cfunction pointer used by all App instances.
-Initialized lazily on first call.
-"""
-function get_c_callback()::Ptr{Cvoid}
-    if _C_EVENT_CALLBACK[] == C_NULL
-        _C_EVENT_CALLBACK[] = @cfunction(c_event_callback, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
-    end
-    return _C_EVENT_CALLBACK[]
-end
-
 # --- Event routing ---
 
-@inline function dispatch_event(@nospecialize(server), ev::Cint, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid})
+@inline function dispatch_event(server, ev::Cint, conn::Ptr{Cvoid}, ev_data::Ptr{Cvoid})
     if ev == MG_EV_ACCEPT
         on_accept(server, conn, ev_data)
     elseif ev == MG_EV_HTTP_HDRS

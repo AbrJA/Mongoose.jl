@@ -193,17 +193,17 @@ function ws_idle_sweep!(server::AbstractServer)
     now = time()
     # `last_active` is `time()` (seconds); the config is milliseconds.
     timeout = server.config.ws_idle_timeout_ms / 1000.0
-    to_close = lock(server.runtime.ws_lock) do
-        to_close = Int[]
+    stale = lock(server.runtime.ws_lock) do
+        ids = Int[]
         for (id, entry) in server.runtime.ws_clients
             if (now - entry.last_active) > timeout
                 entry.closing = true
-                push!(to_close, id)
+                push!(ids, id)
             end
         end
-        return to_close
+        return ids
     end
-    for id in to_close
+    for id in stale
         conn = get(server.runtime.connections, id, nothing)
         conn === nothing && continue
         # Send a proper Close frame (1001 "going away") and drain. The poll

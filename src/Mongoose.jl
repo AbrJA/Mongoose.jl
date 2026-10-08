@@ -189,8 +189,6 @@ end
         is_handled_event(MG_EV_POLL)
     end
 
-    # Precompile C callback entry point
-    precompile(c_event_callback, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
 end
 
 end # module Mongoose
