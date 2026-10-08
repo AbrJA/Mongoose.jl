@@ -108,25 +108,42 @@ numbers in the commit message and update the baseline table above plus the
 
 ## AOT / `juliac --trim`
 
-The **`StaticRouter` profile is trim-safe**: `@routes` declares the route table
-at compile time (paths, capture types, methods, handlers are type parameters),
-so dispatch has no runtime `apply_type`, no erased `Function` slots, and no
-dynamic terminal. `juliac --trim=safe` on `bench/trim/trim_core.jl` builds with
-0 verifier errors and the resulting executable runs:
+Mongoose ships a **trim-safe profile**: `@routes` declares the route table at
+compile time (paths, capture types, methods, handlers are type parameters), so
+dispatch has no runtime `apply_type`, no erased `Function` slots, and no dynamic
+terminal. Both probes build with **0 verifier errors** and run:
+
+- `bench/trim/trim_core.jl` — the full pipeline over `FakeTransport`
+  (middleware, errors, typed params), self-checking exit codes.
+- `bench/trim/trim_server.jl` — a real server on the C transport.
+
+```sh
+JULIA_APPS_JULIA_CMD=~/.julia/juliaup/julia-1.12.5+0.x64.linux.gnu/bin/julia \
+~/.julia/bin/juliac --output-exe app --trim=safe --experimental \
+  --project=/path/to/Mongoose.jl bench/trim/trim_server.jl
+./app 8080 &            # serves; curl http://127.0.0.1:8080/
+```
 
 ```julia
 router = @routes begin
-    get("/hello", req -> json((message = "hello",)))
-    get("/users/:id::Int", (req, id) -> text("user $id"))
+    get("/", req -> json((ok = true,)))
 end
 app = App(router = router)
 
-@main function main(args)
-    # ...
-    return 0        # JuliaC calls exit(main(ARGS)); return an exit code
+function main(args)                 # canonical entry: `function main` + `@main`
+    start!(app; host = "127.0.0.1", port = 8080, blocking = true)
+    return 0                        # JuliaC calls exit(main(ARGS))
 end
+@main
 ```
 
-The default `Router` registers routes at runtime, which the trim verifier
-rejects; use it for JIT deployments and `StaticRouter` for AOT. The async
-executor, TLS, and the C transport are not trim-verified yet.
+Two constraints of the AOT profile (juliac/trim, not Mongoose):
+
+- **No tasks.** Trimmed executables cannot run `@async`/`Threads.@spawn`
+  (stale task world age), so `blocking = true` runs the event loop **inline**
+  and the profile is sync-mode only: no async workers, streams, or
+  `background` tasks.
+- **No dynamic `Router`.** Runtime registration (`get!`/`route!`) is rejected by
+  the verifier; use `@routes`/`StaticRouter`.
+
+TLS is not trim-verified yet. The default `Router` remains the JIT profile.

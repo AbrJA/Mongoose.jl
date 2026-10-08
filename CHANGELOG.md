@@ -35,8 +35,11 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - `StaticRoute` is no longer exported; it is constructed by `@routes`.
 
 ### AOT
-- `juliac --trim=safe` builds a working executable with the `StaticRouter`
-  profile: 0 trim-verifier errors (`bench/trim/trim_core.jl`).
+- `juliac --trim=safe` builds working executables with the `StaticRouter`
+  profile (0 verifier errors): the full pipeline over `FakeTransport`
+  (`bench/trim/trim_core.jl`) and a real server on the C transport
+  (`bench/trim/trim_server.jl`). The AOT profile runs the event loop inline
+  (trimmed exes cannot run tasks) and is sync-only.
 
 ## [0.4.0] and earlier
 

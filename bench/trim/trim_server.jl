@@ -1,4 +1,5 @@
 # Trim probe (real C transport): juliac --output-exe trim_server --trim=safe --experimental --project=<pkg> bench/trim/trim_server.jl
+# Status: 0 verifier errors; the exe serves requests on the C transport.
 # Wire test: ./trim_server 8080 & then curl http://127.0.0.1:8080/ ; kill -TERM %1
 # AOT profile: the loop runs inline (trimmed exes cannot run tasks), so no
 # async workers, streams, or background tasks here.
