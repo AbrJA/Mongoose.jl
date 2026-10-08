@@ -313,7 +313,7 @@ function _build_app(config::ServerConfig, runtime::RunState, router::R,
     return App{R,E,C}(config, runtime, router, mounts, executor, context)
 end
 
-function App(;
+Base.@constprop :aggressive function App(;
              workers::Integer=0,
              queue_size::Integer=1024,
              poll_timeout_ms::Integer=1,
@@ -344,7 +344,9 @@ function App(;
         (100 <= code <= 599) || throw(ServerError("Error status code must be in [100,599], got $code"))
     end
 
-    exec = cfg.workers > 0 ? AsyncExecutor(cfg.workers, cfg.queue_size) : SyncExecutor()
+    # Select from the kwarg, not `cfg`: the value stays constant-propagatable,
+    # so `App()` infers one concrete App type instead of a Sync/Async union.
+    exec = workers > 0 ? AsyncExecutor(Int(workers), Int(queue_size)) : SyncExecutor()
     rs = RunState()
     rs.tls = tls   # raw TLSConfig material; normalized at start!
     mws = asmiddlewaretuple(middleware)
@@ -369,7 +371,8 @@ end
 # --- Registration-after-start guard ---
 
 @inline function _ensure_registratable(server::AbstractServer, what::String)
-    server.runtime.running[] && throw(ServerError("cannot register $what after start!"))
+    server.runtime.running[] &&
+        throw(ServerError("cannot register " * what * " after start!"))
     return nothing
 end
 
