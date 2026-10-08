@@ -1,6 +1,6 @@
 @testset "WebSocket basic" begin
     @testset "Echo message" begin
-        s = App(workers=2)
+        s = App(2)
         get!(s, "/") do req; text("ok") end
         ws!(s, "/ws/echo"; on_message=msg -> Message("Echo: $(msg.data)"))
 
@@ -14,7 +14,7 @@
     end
 
     @testset "Multiple messages" begin
-        s = App(workers=2)
+        s = App(2)
         get!(s, "/") do req; text("ok") end
         ws!(s, "/ws/multi"; on_message=msg -> Message("Got: $(msg.data)"))
 
@@ -31,7 +31,7 @@
 end
 
 @testset "WebSocket server-initiated push (broadcastws)" begin
-    s = App(workers=2)
+    s = App(2)
     get!(s, "/") do req; text("ok") end
     ws!(s, "/ws/push"; on_message=msg -> Message("reply: $(msg.data)"))
 
@@ -48,7 +48,7 @@ end
     end
 
     @testset "push targets only the matching path" begin
-        s2 = App(workers=2)
+        s2 = App(2)
         ws!(s2, "/a"; on_message=msg -> Message("a"))
         ws!(s2, "/b"; on_message=msg -> Message("b"))
         with_server(s2) do port
@@ -68,7 +68,7 @@ end
 @testset "WebSocket lifecycle callbacks" begin
     @testset "on_open callback" begin
         opened = Channel{Nothing}(1)
-        s = App(workers=2)
+        s = App(2)
         get!(s, "/") do req; text("ok") end
         ws!(s, "/ws/open";
             on_message=msg -> Message("ok"),
@@ -86,7 +86,7 @@ end
 
     @testset "on_close callback" begin
         closed = Channel{Nothing}(1)
-        s = App(workers=2)
+        s = App(2)
         get!(s, "/") do req; text("ok") end
         ws!(s, "/ws/close";
             on_message=msg -> Message("ok"),
@@ -107,7 +107,7 @@ end
 
 @testset "WebSocket special characters" begin
     @testset "Unicode messages" begin
-        s = App(workers=2)
+        s = App(2)
         get!(s, "/") do req; text("ok") end
         ws!(s, "/ws/unicode"; on_message=msg -> Message(msg.data))
 
@@ -122,7 +122,7 @@ end
     end
 
     @testset "Empty message" begin
-        s = App(workers=2)
+        s = App(2)
         get!(s, "/") do req; text("ok") end
         ws!(s, "/ws/empty"; on_message=msg -> Message("len=$(length(msg.data))"))
 
@@ -137,7 +137,7 @@ end
 end
 
 @testset "WebSocket concurrent connections" begin
-    s = App(workers=4)
+    s = App(4)
     get!(s, "/") do req; text("ok") end
     ws!(s, "/ws/concurrent"; on_message=msg -> Message("Reply: $(msg.data)"))
 
@@ -196,7 +196,7 @@ end
 
     @testset "Idle timeout closes the client" begin
         # Idle sweep drops server-side registration; assert the server-observable contract.
-        s = App(workers=2, ws_idle_timeout_ms=200)
+        s = App(2; ws_idle_timeout_ms=200)
         closed = Ref(false)
         ws!(s, "/ws/idle";
             on_message=msg -> Message("x"),
@@ -258,7 +258,7 @@ end
 @testset "Control frames are answered exactly once" begin
     # Regression: mongoose auto-replies to PING (PONG) and CLOSE (echo +
     # drain); the control handler must not reply a second time.
-    s = App(workers=2)
+    s = App(2)
     ws!(s, "/ws/ctl"; on_message=msg -> Message(msg.data))
     with_server(s) do port
         sock = Sockets.connect("127.0.0.1", port)
@@ -284,7 +284,7 @@ end
 
 @testset "slow WS reader: pushes are capped and counted" begin
     cap = 64 * 1024
-    s = App(workers=2, send_buffer_bytes=cap)
+    s = App(2; send_buffer_bytes=cap)
     ws!(s, "/ws"; on_message=msg -> Message(msg.data))
     get!(s, "/flood") do req
         for _ in 1:500
@@ -312,7 +312,7 @@ end
 end
 
 @testset "Protocol violations drop the connection" begin
-    s = App(workers=2)
+    s = App(2)
     ws!(s, "/ws"; on_message=msg -> Message(msg.data))
 
     with_server(s) do port

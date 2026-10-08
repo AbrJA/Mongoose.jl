@@ -244,7 +244,7 @@ server); before that only the counter and histogram are exposed.
 
 # Example
 ```julia
-app = App(workers=4)
+app = App(4)
 app = use(app, health())
 app = use(app, metrics())   # exposes GET /metrics
 

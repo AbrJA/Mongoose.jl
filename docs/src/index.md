@@ -37,7 +37,7 @@
 ```julia
 using Mongoose
 
-app = App(workers=4)
+app = App(4)
 
 get!(app, "/") do req
     text("Hello, World!")

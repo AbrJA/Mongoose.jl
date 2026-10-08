@@ -87,7 +87,7 @@ end
 
 @testset "Async Connection: close is echoed and drained" begin
     # _http_job echoes close; the drain loop marks draining (RFC 7230 §6.3).
-    s = App(workers=2)
+    s = App(2)
     get!(s, "/close") do req; text("bye") end
     with_server(s) do port
         sock = Sockets.connect("127.0.0.1", port)

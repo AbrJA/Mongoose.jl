@@ -249,22 +249,23 @@ end
 """
     App — Mongoose.jl web application.
 
-    Use `workers=0` for sync (default) or `workers=N` for async worker pool.
+    The executor is the first-class dependency: `App()` is sync, `App(N)`
+    builds an N-worker pool, and `App(executor=…)` injects one explicitly
+    (type-stable by construction — the argument type selects the `App`
+    specialization).
 
     # Constructors
     ```julia
-    app = App()                          # sync, dynamic router
-    app = App(workers=4)                 # async, 4 workers
-    app = App(workers=4, queue_size=2048) # async with larger queue
-    app = App(router=my_router)          # bring-your-own router
+    app = App()                              # sync (inline handlers)
+    app = App(4)                             # async pool with 4 workers
+    app = App(4; queue_size=2048)            # async with a larger queue
+    app = App(executor=AsyncExecutor(4))     # explicit injection
+    app = App(router=my_router)              # bring-your-own router
     ```
 
     # Configuration keyword arguments
     | Keyword                | Default            | Description                            |
     |------------------------|--------------------|----------------------------------------|
-    | `workers`              | `0`                | Worker threads (0 = sync)              |
-    | `queue_size`           | `1024`             | Max pending requests (async only)      |
-    | `executor`             | `nothing`          | Inject an executor (type-stable; exclusive with `workers`) |
     | `poll_timeout_ms`      | `1`                | Mongoose poll interval                 |
     | `max_body_bytes`       | `MAX_BODY_BYTES`   | Max request body size                  |
     | `drain_timeout_ms`     | `DRAIN_TIMEOUT_MS` | Graceful shutdown drain                |
@@ -282,13 +283,15 @@ end
     | `middleware`           | `nothing`          | Static middleware tuple (`use` adds incrementally) |
     | `services`             | `NamedTuple()`     | DI services (`provide` adds incrementally) |
 
+    `queue_size` is the second argument of the `App(N; queue_size=…)` form.
+
     # Structure (DESIGN G4)
     - `app.config` — immutable `ServerConfig`.
     - `app.runtime` — mutable `RunState` (connections, manager, loop, TLS…).
-    - `app.router`, `app.hooks_*` — build-phase state; registration
-      after `start!` throws `ServerError`.
+    - `app.router`, `app.context` — build-phase state; registration after
+      `start!` throws `ServerError`.
     - `app.context` — typed request bundle (middleware tuple, DI services, error
-      pages, exception handlers).
+      pages, exception handlers, lifecycle hooks).
     - `app.executor` — `SyncExecutor` or `AsyncExecutor` (the worker pool).
 """
 struct App{R<:AbstractRouter,E<:AbstractExecutor,C<:RequestContext} <: AbstractServer
@@ -314,10 +317,13 @@ function _build_app(config::ServerConfig, runtime::RunState, router::R,
     return App{R,E,C}(config, runtime, router, mounts, executor, context)
 end
 
-Base.@constprop :aggressive function App(;
-             workers::Integer=0,
-             queue_size::Integer=1024,
-             executor=nothing,
+"""
+    App(executor::AbstractExecutor; kwargs...) → App
+
+Real constructor: the executor fixes the `App{R,E,C}` specialization
+(type-stable by construction, no constant propagation involved).
+"""
+function App(executor::AbstractExecutor;
              poll_timeout_ms::Integer=1,
              max_body_bytes::Integer=MAX_BODY_BYTES,
              drain_timeout_ms::Integer=DRAIN_TIMEOUT_MS,
@@ -336,18 +342,9 @@ Base.@constprop :aggressive function App(;
              middleware=nothing,
              services::NamedTuple=NamedTuple()) where {R<:AbstractRouter}
 
-    workers >= 0 || throw(ServerError("workers must be >= 0"))
-    if executor !== nothing && workers > 0
-        throw(ServerError("pass either executor=... or workers=..., not both"))
-    end
-    # `executor=` is explicit and type-stable by construction; `workers=` is
-    # sugar (literal values constant-propagate to one concrete App type).
-    exec = executor !== nothing ? executor :
-           (workers > 0 ? AsyncExecutor(Int(workers), Int(queue_size)) : SyncExecutor())
-
-    # Derive the pool config from the actual executor.
-    w = exec isa AsyncExecutor ? exec.workers : 0
-    q = exec isa AsyncExecutor ? exec.queue_size : Int(queue_size)
+    # Derive the pool config from the actual executor (a type branch: folds).
+    w = executor isa AsyncExecutor ? executor.workers : 0
+    q = executor isa AsyncExecutor ? executor.queue_size : 1024
 
     cfg = ServerConfig(;
         poll_timeout_ms, max_body_bytes, drain_timeout_ms, request_timeout_ms,
@@ -363,11 +360,25 @@ Base.@constprop :aggressive function App(;
     rs.tls = tls   # raw TLSConfig material; normalized at start!
     mws = asmiddlewaretuple(middleware)
     ctx = RequestContext(router; middlewares=mws, errors=errors, services=services)
-    app = _build_app(cfg, rs, router, Tuple{String,String}[], ctx, exec)
+    app = _build_app(cfg, rs, router, Tuple{String,String}[], ctx, executor)
     for mw in mws
         attach!(mw, app)
     end
     return app
+end
+
+"""
+    App(; executor=SyncExecutor(), kwargs...) → App
+    App(workers::Integer; queue_size=1024, kwargs...) → App
+
+Sync default and async sugar: both construct the executor and delegate to the
+positional constructor, so each call site infers one concrete `App` type.
+"""
+App(; executor=SyncExecutor(), kwargs...) = App(executor; kwargs...)
+
+function App(workers::Integer; queue_size::Integer=1024, kwargs...)
+    workers > 0 || throw(ServerError("workers must be > 0; use App() for sync"))
+    return App(AsyncExecutor(Int(workers), Int(queue_size)); kwargs...)
 end
 
 # --- Teardown ---

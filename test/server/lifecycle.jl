@@ -8,7 +8,7 @@
     end
 
     @testset "Async App" begin
-        app = App(workers=4)
+        app = App(4)
         @test app isa App
         @test app.runtime.running[] == false
         @test app.config.workers == 4
@@ -19,7 +19,7 @@
     end
 
     @testset "App with custom options" begin
-        app = App(workers=2, queue_size=512, poll_timeout_ms=2, max_body_bytes=2048)
+        app = App(2; queue_size=512, poll_timeout_ms=2, max_body_bytes=2048)
         @test app.config.workers == 2
         @test app.config.queue_size == 512
         @test app.config.poll_timeout_ms == 2
@@ -43,7 +43,7 @@ end
     end
 
     @testset "Basic start and stop (async)" begin
-        app = App(workers=2)
+        app = App(2)
         get!(app, "/") do req; text("ok") end
         with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
@@ -101,7 +101,7 @@ end
 end
 
 @testset "Per-request timeout (async)" begin
-    app = App(workers=1, request_timeout_ms=150)
+    app = App(1; request_timeout_ms=150)
     get!(app, "/slow") do req
         sleep(1.0)
         text("late")
@@ -166,7 +166,7 @@ end
 end
 
 @testset "Queue-full 503 carries X-Request-Id" begin
-    app = App(workers=1, queue_size=1, drain_timeout_ms=200)
+    app = App(1; queue_size=1, drain_timeout_ms=200)
     started = Channel{Nothing}(1)
     gate = Channel{Nothing}(1)
     blocked = Ref(false)

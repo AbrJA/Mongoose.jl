@@ -28,8 +28,7 @@ Streams and binary bodies are hand-framed and always close the connection.
 ## The production recipe
 
 ```julia
-app = App(;
-    workers            = Threads.nthreads(),  # 0 = sync (inline handlers)
+app = App(Threads.nthreads();                 # App() = sync (inline handlers)
     queue_size         = 1024,                # 503 backpressure when full
     request_timeout_ms = 5_000,               # async only
     drain_timeout_ms   = 5_000,               # graceful shutdown budget
@@ -58,11 +57,11 @@ start!(app; port=8080)        # binds, then freezes/compiles the route table
   bind, so production gets compiled dispatch without an extra call. A failed
   start does not freeze, so you can fix routes and retry. Register everything
   before `start!`; later registration throws.
-- **Sync or async.** `workers=0` runs handlers inline (lowest overhead, one
-  slow handler blocks the loop); `workers=N` runs a bounded pool with
-  backpressure, per-request timeouts, and thread-safe reply delivery. Use
-  async when handlers do I/O. For a runtime-chosen executor, inject it
-  explicitly (`App(executor=AsyncExecutor(n))`) so the App type stays concrete.
+- **Sync or async.** `App()` runs handlers inline (lowest overhead, one slow
+  handler blocks the loop); `App(N)` runs a bounded pool with backpressure,
+  per-request timeouts, and thread-safe reply delivery. Use async when handlers
+  do I/O. For a runtime-chosen executor, inject it explicitly
+  (`App(executor=AsyncExecutor(n))`) so the App type stays concrete.
 - **Scoped middleware is cheap.** `route!(...; middleware=(a, b))`,
   `group(...)`, and `use(...; paths=["/api"])` all run through the tuple
   pipeline; route-scoped middleware adds no allocation over an unscoped route.

@@ -50,7 +50,7 @@ route!(router, :get, "/files/*path", (req, path) ->
     text("Requested: $path")
 )
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 start!(app; port=8080)
 ```
 
@@ -73,7 +73,7 @@ get!(router, "/files/*path", (req, path) -> text("Requested: $path"))
 
 freeze!(router)   # route!/ws! throw RouteError from here on
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 start!(app; port=8080)
 ```
 
@@ -123,7 +123,7 @@ route!(router, :get, "/search", req -> begin
     json(Dict("query" => q, "page" => page, "limit" => limit, "active" => active))
 end)
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 start!(app; port=8080)
 ```
 
@@ -159,7 +159,7 @@ route!(router, :post, "/users/typed", req -> begin
     json(Dict("name" => user.name, "email" => user.email))
 end)
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 start!(app; port=8080)
 ```
 
@@ -182,7 +182,7 @@ route!(router, :post, "/upload", req -> begin
     json(Dict("files" => [file.filename], "size" => length(file.data)); status=201)
 end)
 
-app = App(; router=router, workers=4, max_body_bytes=10_000_000)  # 10MB limit
+app = App(4; router=router, max_body_bytes=10_000_000)  # 10MB limit
 start!(app; port=8080)
 ```
 
@@ -195,7 +195,7 @@ router = Router()
 route!(router, :get, "/", req -> json(Dict("status" => "ok")))
 route!(router, :get, "/api/data", req -> json(Dict("data" => [1,2,3])))
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 
 # Middleware runs in registration order
 app = use(app, security())                                     # Security headers
@@ -228,7 +228,7 @@ end
 router = Router()
 route!(router, :get, "/", req -> text("hello"))
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 app = use(app, RequestTimer())
 start!(app; port=8080)
 ```
@@ -265,7 +265,7 @@ end
 
 mount!(router, api)
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 start!(app; port=8080)
 ```
 
@@ -296,7 +296,7 @@ ws!(router, "/ws";
     on_close = () -> @info "WS disconnected"
 )
 
-app = App(; router=router, workers=4, ws_idle_timeout_ms=60_000)
+app = App(4; router=router, ws_idle_timeout_ms=60_000)
 start!(app; port=8080)
 ```
 
@@ -319,7 +319,7 @@ ws!(router, "/stock";
     on_message = msg -> Message("pong: $(msg.data)"),
 )
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 
 # Broadcast a stock event to everyone currently connected to /stock
 broadcastws(app, "/stock", JSON.json(Dict("event" => "low", "sku" => "SHOP-MUG-6")))
@@ -356,7 +356,7 @@ route!(router, :get, "/", req -> html("""
     <p>Check console for SSE events</p>
 """))
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 start!(app; port=8080)
 ```
 
@@ -368,7 +368,7 @@ using Mongoose
 router = Router()
 route!(router, :get, "/", req -> redirect("/static/index.html"))
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 
 # Serve files from "public/" directory at /static/* prefix
 # Supports Range requests, ETag, and gzip (handled at C level)
@@ -402,7 +402,7 @@ route!(router, :get, "/profile", req -> begin
     json(Dict("session" => session))
 end)
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 start!(app; port=8080)
 ```
 
@@ -414,7 +414,7 @@ using Mongoose
 router = Router()
 route!(router, :get, "/", req -> json(Dict("ok" => true)))
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 
 # Static error responses
 app = trap(app, 500, json(Dict("error" => "Internal Server Error"); status=500))
@@ -449,7 +449,7 @@ route!(router, :get, "/users/:id::Int", (req, id) -> begin
     json(Dict("id" => id, "name" => name))
 end)
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 app = provide(app, :db, FakeDB(Dict(1 => "Alice", 2 => "Bob")))
 
 start!(app; port=8080)
@@ -463,7 +463,7 @@ using Mongoose
 router = Router()
 route!(router, :get, "/", req -> text("running"))
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 
 app = onstart(app) do
     @info "Server started, seeding data..."
@@ -496,7 +496,7 @@ route!(router, :get, "/data", req -> begin
     json(large_data)
 end)
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 
 # Compress responses larger than 1KB when client accepts gzip
 app = use(app, compress(min_size_bytes=1024))
@@ -565,9 +565,8 @@ using Mongoose
 router = Router()
 # ... define routes ...
 
-app = App(;
+app = App(parse(Int, get(ENV, "WORKERS", "4"));   # workers from the environment
     router          = router,
-    workers         = parse(Int, get(ENV, "WORKERS", "4")),
     queue_size       = 2048,
     max_body_bytes        = 4_000_000,       # 4MB
     request_timeout_ms = 30_000,          # 30s

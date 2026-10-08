@@ -102,9 +102,9 @@ end
     # Pin the executor selection: a silent inference regression (Sync/Async
     # union) would re-introduce union splitting on every `app` use.
     @test length(Base.return_types(() -> App(), ())) == 1
-    @test length(Base.return_types(() -> App(workers=2), ())) == 1
+    @test length(Base.return_types(() -> App(2), ())) == 1
     @test length(Base.return_types(() -> App(executor=AsyncExecutor(2)), ())) == 1
     @test App().executor isa SyncExecutor
-    @test App(workers=2).executor isa AsyncExecutor
+    @test App(2).executor isa AsyncExecutor
     @test App(executor=AsyncExecutor(2)).executor isa AsyncExecutor
 end

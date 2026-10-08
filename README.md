@@ -47,7 +47,7 @@ using Pkg; Pkg.add("Mongoose")
 ```julia
 using Mongoose
 
-app = App(workers=4)
+app = App(4)
 
 get!(app, "/") do req
     text("Hello from Mongoose.jl!")
@@ -247,8 +247,7 @@ end
 ## ⚙️ Configuration
 
 ```julia
-app = App(;
-    workers            = 4,          # 0 = sync (inline); N = worker pool
+app = App(4;                         # N = worker pool; App() = sync inline
     queue_size         = 1024,       # pending requests before 503
     request_timeout_ms = 5_000,      # 0 = disabled (async mode)
     drain_timeout_ms   = 5_000,      # graceful shutdown budget
@@ -353,7 +352,7 @@ submit!(fe, () -> "work")   # enqueued, not run
 ## 🔌 Pluggable Components
 
 Each boundary is a replacement point: `App(router=my_router)`,
-`App(workers=n)` chooses the executor (or inject it explicitly and type-stably
+`App(n)` chooses the executor (or inject it explicitly and type-stably
 with `App(executor=AsyncExecutor(n))`), and `AbstractTransport` declares its
 capabilities (`supportsws`, `supportstls`, `supportsstream`).
 

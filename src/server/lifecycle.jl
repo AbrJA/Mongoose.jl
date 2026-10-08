@@ -15,7 +15,7 @@ only send SIGTERM bypass it.
 
 # Example
 ```julia
-app = App(workers=4)
+app = App(4)
 get!(app, "/") do req; json(Dict("ok" => true)) end
 start!(app; port=8080)
 ```
@@ -25,8 +25,8 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
     Threads.atomic_xchg!(server.runtime.running, true) && return server
 
     if server.config.workers == 0 && server.config.request_timeout_ms > 0
-        @log_warn "request_timeout_ms is ignored in sync mode (workers=0); " *
-                  "use workers=N for per-request timeouts"
+        @log_warn "request_timeout_ms is ignored in sync mode (App()); " *
+                  "use App(N) for per-request timeouts"
     end
 
     try

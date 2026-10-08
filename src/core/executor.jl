@@ -49,7 +49,7 @@ const ReplyPayload = Union{Message,Response,StreamStart}
 """
     SyncExecutor — runs every job inline on the calling thread.
 
-    This is the transport-agnostic equivalent of `workers=0` sync mode.
+    This is the transport-agnostic equivalent of `App()` sync mode.
 """
 struct SyncExecutor <: AbstractExecutor end
 

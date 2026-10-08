@@ -17,15 +17,18 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   typed params (`:id::Int`), wildcards, and route-scoped middleware, all as type
   parameters. Dispatch is fully static, with no per-request route lookup or
   dynamic terminal; the trim-safe routing profile.
-- `App(; executor=…)` injects an executor explicitly (type-stable by
-  construction); `workers=` remains sugar. `AsyncExecutor(n)` gets a one-arg
-  convenience constructor.
+- `App()` sync, `App(N)` async (N-worker pool), `App(executor=…)` explicit
+  injection: the executor is a first-class argument, so every construction
+  infers one concrete `App` type without relying on constant propagation.
+  `AsyncExecutor(n)` gets a one-arg convenience constructor.
 - `health(; health_path=, ready_path=, live_path=)` custom probe paths;
   `nothing` disables an endpoint (e.g. a single `/health`).
 - `App` is immutable and typed: `use(app, mw; paths)` and `provide(app, name, value)`
   return a rebuilt `App`; middleware and DI services live in the context type.
 
 ### Changed
+- **Breaking**: `App(workers=n)` is now `App(n)`; `App(workers=0)` is `App()`
+  and `App(0)` is an error. `queue_size` stays a keyword on `App(n; …)`.
 - **Breaking**: `trap` returns the rebuilt `App` (rebind the result). Dynamic
   error and exception handlers are stored as typed tuples, making error handling
   statically resolvable.

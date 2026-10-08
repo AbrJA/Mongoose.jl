@@ -291,7 +291,7 @@ end
 
 @testset "SSE response" begin
     @testset "SSE events are properly formatted" begin
-        s = App(workers=2)
+        s = App(2)
         get!(s, "/events") do req
             sse(req) do writer
                 emit(writer; data="hello", event="greeting", id="1")
@@ -312,7 +312,7 @@ end
 
 @testset "Concurrent requests" begin
     @testset "Handles concurrent GETs" begin
-        s = App(workers=4)
+        s = App(4)
         get!(s, "/concurrent") do req; text("ok") end
         with_server(s) do port
             tasks = [@async begin

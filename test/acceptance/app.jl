@@ -121,8 +121,7 @@ function buildapp(; token::String="test-token", workers::Integer=2)
         allowed_origins=["http://127.0.0.1", "http://localhost"])
 
     # --- Compose the app ---
-    app = App(; router=freeze!(router), workers=workers,
-              services=(version="0.4.0-acceptance", db="memory"))
+    app = App(workers; router=freeze!(router), services=(version="0.4.0-acceptance", db="memory"))
 
     # Middleware stack (global).
     app = use(app, security())
