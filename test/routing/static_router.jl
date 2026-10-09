@@ -275,4 +275,43 @@
             @test r.status == 404
         end
     end
+
+    @testset "Large table (generated flat scans)" begin
+        router = @routes begin
+            get("/r0", req -> text("r0"))
+            get("/r1", req -> text("r1"))
+            get("/r2", req -> text("r2"))
+            get("/r3", req -> text("r3"))
+            get("/r4", req -> text("r4"))
+            get("/r5", req -> text("r5"))
+            get("/r6", req -> text("r6"))
+            get("/r7", req -> text("r7"))
+            get("/r8", req -> text("r8"))
+            get("/r9", req -> text("r9"))
+            get("/r10", req -> text("r10"))
+            get("/r11", req -> text("r11"))
+            get("/r12", req -> text("r12"))
+            get("/r13", req -> text("r13"))
+            get("/r14", req -> text("r14"))
+            get("/r15", req -> text("r15"))
+            get("/r16", req -> text("r16"))
+            get("/r17", req -> text("r17"))
+            get("/r18", req -> text("r18"))
+            get("/r19", req -> text("r19"))
+            get("/users/:id::Int", (req, id) -> json((id = id,)))
+            get("/files/*path", (req, path) -> text("file:" * path))
+            post("/only-post", req -> text("posted"))
+            get("*", req -> text("fallback"))
+        end
+        @test length(router) == 24
+        client = FakeTransport(App(router = router))
+        @test String(client(:get, "/r0").body) == "r0"
+        @test String(client(:get, "/r19").body) == "r19"
+        @test occursin("\"id\":7", String(client(:get, "/users/7").body))
+        @test String(client(:get, "/files/a/b.txt").body) == "file:a/b.txt"
+        @test String(client(:post, "/only-post").body) == "posted"
+        @test client(:get, "/only-post").status == 405
+        @test client(:post, "/users/7").status == 405
+        @test String(client(:get, "/nope").body) == "fallback"
+    end
 end

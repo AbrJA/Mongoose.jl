@@ -70,10 +70,8 @@ end
 Base.show(io::IO, r::StaticRoute{M}) where {M} =
     print(io, "StaticRoute(", uppercase(String(M)), " ", r.path, ")")
 
-@inline _route_method(::StaticRoute{M}) where {M} = M
 @inline _route_is_fixed(route::StaticRoute{M,PT}) where {M,PT} = _is_fixed(PT)
 @inline _route_is_catchall(route::StaticRoute{M,PT}) where {M,PT} = _is_catchall(PT)
-@inline _route_is_pattern(route::StaticRoute) = !_route_is_fixed(route) && !_route_is_catchall(route)
 
 @inline function _method_bit(m::Symbol)::UInt8
     m === :get     && return 0x01
@@ -182,58 +180,76 @@ end
 @inline _parts_for(::Val{true}, clean::AbstractString) = _split_parts(clean)
 @inline _parts_for(::Val{false}, clean::AbstractString) = EMPTY_PARTS
 
-# --- Dispatch scans (recursive over the route tuple; `k` runs the match) ---
+# --- Dispatch scans (generated flat over the route tuple; `k` runs the match) ---
+# A recursive `@inline` scan grows `_dispatch_static` with the table and the
+# optimizer's union splitting explodes compile memory; these emit one flat
+# branch per route instead (O(routes) code, no per-level call or tuple).
 
 # Literal pass: exact path match, method check; a path hit shadows patterns.
-@inline function _scan_fixed(::Tuple{}, method::Symbol, clean, parts, mask::UInt8, k)
-    return (nothing, false, mask)
-end
-
-@inline function _scan_fixed(routes::Tuple, method::Symbol, clean, parts, mask::UInt8, k)
-    route = routes[1]
-    rest = Base.tail(routes)
-    if _route_is_fixed(route)
-        if clean == route.path
-            method === _route_method(route) && return (k(route, ()), true, mask)
-            return _scan_fixed(rest, method, clean, parts, mask | _method_bit(_route_method(route)), k)
-        end
+@generated function _scan_fixed(routes::Routes, method::Symbol, clean, parts,
+                                mask::UInt8, k) where {Routes<:Tuple}
+    exprs = Any[]
+    for i in 1:length(Routes.parameters)
+        RT = Routes.parameters[i]
+        _is_fixed(RT.parameters[2]) || continue
+        M = RT.parameters[1]
+        push!(exprs, quote
+            if clean == routes[$i].path
+                if method === $(QuoteNode(M))
+                    return (k(routes[$i], ()), true, mask)
+                else
+                    mask |= $(UInt8(_method_bit(M)))
+                end
+            end
+        end)
     end
-    return _scan_fixed(rest, method, clean, parts, mask, k)
+    push!(exprs, :(return (nothing, false, mask)))
+    return Expr(:block, exprs...)
 end
 
 # Pattern pass: first pattern whose path matches wins (declaration order).
-@inline function _scan_pattern(::Tuple{}, method::Symbol, parts, mask::UInt8, k)
-    return (nothing, mask)
-end
-
-@inline function _scan_pattern(routes::Tuple, method::Symbol, parts, mask::UInt8, k)
-    route = routes[1]
-    rest = Base.tail(routes)
-    if _route_is_pattern(route)
-        params = _match_route(route, parts)
-        if params !== nothing
-            method === _route_method(route) && return (k(route, params), mask)
-            return (nothing, mask | _method_bit(_route_method(route)))
-        end
+@generated function _scan_pattern(routes::Routes, method::Symbol, parts,
+                                  mask::UInt8, k) where {Routes<:Tuple}
+    exprs = Any[]
+    for i in 1:length(Routes.parameters)
+        RT = Routes.parameters[i]
+        PT = RT.parameters[2]
+        (_is_fixed(PT) || _is_catchall(PT)) && continue
+        M = RT.parameters[1]
+        push!(exprs, quote
+            let params = _match_path($PT, parts, 1)
+                if params !== nothing
+                    if method === $(QuoteNode(M))
+                        return (k(routes[$i], params), mask)
+                    else
+                        return (nothing, mask | $(UInt8(_method_bit(M))))
+                    end
+                end
+            end
+        end)
     end
-    return _scan_pattern(rest, method, parts, mask, k)
+    push!(exprs, :(return (nothing, mask)))
+    return Expr(:block, exprs...)
 end
 
 # Catch-all pass: bare `"*"` routes, declaration order.
-@inline function _scan_catchall(::Tuple{}, method::Symbol, parts, mask::UInt8, k)
-    return (nothing, mask)
-end
-
-@inline function _scan_catchall(routes::Tuple, method::Symbol, parts, mask::UInt8, k)
-    route = routes[1]
-    rest = Base.tail(routes)
-    if _route_is_catchall(route)
-        if method === _route_method(route)
-            return (k(route, ()), mask)
-        end
-        return _scan_catchall(rest, method, parts, mask | _method_bit(_route_method(route)), k)
+@generated function _scan_catchall(routes::Routes, method::Symbol, parts,
+                                   mask::UInt8, k) where {Routes<:Tuple}
+    exprs = Any[]
+    for i in 1:length(Routes.parameters)
+        RT = Routes.parameters[i]
+        _is_catchall(RT.parameters[2]) || continue
+        M = RT.parameters[1]
+        push!(exprs, quote
+            if method === $(QuoteNode(M))
+                return (k(routes[$i], ()), mask)
+            else
+                mask |= $(UInt8(_method_bit(M)))
+            end
+        end)
     end
-    return _scan_catchall(rest, method, parts, mask, k)
+    push!(exprs, :(return (nothing, mask)))
+    return Expr(:block, exprs...)
 end
 
 # --- Handler invocation (typed params, no erased callable) ---
@@ -241,7 +257,10 @@ end
 @inline _handler_terminal(f::F, ::Tuple{}) where {F} = req -> f(req)
 @inline _handler_terminal(f::F, params::Tuple) where {F} = req -> f(req, params...)
 
-@inline function _invoke_static(route::StaticRoute, ctx::RequestContext, req::Request, params)
+# `@noinline` is load-bearing: inlining the per-route pipeline into the scan
+# chain makes `_dispatch_static` grow O(routes × middleware) and blows up
+# compile memory for large tables.
+Base.@noinline function _invoke_static(route::StaticRoute, ctx::RequestContext, req::Request, params)
     terminal = _handler_terminal(route.handler, params)
     return format_response(runpipeline(ctx.middlewares, route.middleware, req, terminal))
 end
