@@ -78,7 +78,8 @@ route!(app, :get, "/search", req -> ...)
 ```
 
 Typed path parameters use `:name::Type` and arrive as a typed tuple (invalid
-values are 404s). Wildcards capture the rest of the path:
+values are 400s, unless a later route serves the path). Wildcards capture the
+rest of the path:
 
 ```julia
 get!(app, "/users/:id::Int",       (req, id)   -> ...)   # id::Int

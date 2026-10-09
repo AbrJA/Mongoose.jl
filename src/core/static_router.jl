@@ -19,8 +19,10 @@
 
     Semantics match the dynamic `Router`: literal routes take precedence over
     patterns, patterns resolve in declaration order, a bare `"*"` route is the
-    final fallback, and a path match with the wrong method answers `405` with
-    the `Allow` set.
+    final fallback, a path match with the wrong method answers `405` with the
+    `Allow` set, and a typed capture that fails to parse (`/users/abraham`
+    against `/users/:id::Int`) answers `400` unless another route serves the
+    path.
 """
 
 # --- Path segment types (compile-time segment list) ---
@@ -42,6 +44,9 @@ struct PathEnd end
 
 """One path segment plus the rest of the path."""
 struct PathCons{Seg,Rest} end
+
+"""A typed capture failed to parse (the 400 signal), unlike `nothing` (no structural match)."""
+struct ParamParseFail end
 
 # --- Compile-time predicates (fold to constants per route) ---
 
@@ -149,9 +154,9 @@ end
 @inline function _match_path(::Type{PathCons{Cap{N,T},Rest}}, parts::Vector{String}, i::Int) where {N,T,Rest}
     i <= length(parts) || return nothing
     v = _try_parse_param(parts[i], T)
-    v === nothing && return nothing
+    v === nothing && return ParamParseFail()
     rest = _match_path(Rest, parts, i + 1)
-    rest === nothing && return nothing
+    (rest === nothing || rest isa ParamParseFail) && return rest
     return (v, rest...)
 end
 
@@ -161,8 +166,10 @@ end
 
 @inline _match_path(::Type{PathCons{CatchAll,PathEnd}}, parts::Vector{String}, i::Int) = ()
 
-@inline _match_route(route::StaticRoute{M,PT}, parts::Vector{String}) where {M,PT} =
-    _match_path(PT, parts, 1)
+@inline function _match_route(route::StaticRoute{M,PT}, parts::Vector{String}) where {M,PT}
+    m = _match_path(PT, parts, 1)
+    return m isa ParamParseFail ? nothing : m
+end
 
 @inline _split_parts(clean::AbstractString) =
     String[String(seg) for seg in eachsplit(clean, '/'; keepempty=false)]
@@ -207,7 +214,9 @@ end
     return Expr(:block, exprs...)
 end
 
-# Pattern pass: first pattern whose path matches wins (declaration order).
+# Pattern pass: first pattern that structurally matches *and* serves the
+# method wins (declaration order); same-path routes with other methods keep
+# scanning and contribute to the 405 mask. An unparseable capture flags 400.
 @generated function _scan_pattern(routes::Routes, method::Symbol, parts,
                                   mask::UInt8, k) where {Routes<:Tuple}
     exprs = Any[]
@@ -218,18 +227,20 @@ end
         M = RT.parameters[1]
         push!(exprs, quote
             let params = _match_path($PT, parts, 1)
-                if params !== nothing
+                if params isa ParamParseFail
+                    parse_failed = true
+                elseif params !== nothing
                     if method === $(QuoteNode(M))
-                        return (k(routes[$i], params), mask)
+                        return (k(routes[$i], params), mask, parse_failed)
                     else
-                        return (nothing, mask | $(UInt8(_method_bit(M))))
+                        mask |= $(UInt8(_method_bit(M)))
                     end
                 end
             end
         end)
     end
-    push!(exprs, :(return (nothing, mask)))
-    return Expr(:block, exprs...)
+    push!(exprs, :(return (nothing, mask, parse_failed)))
+    return Expr(:block, :(parse_failed = false), exprs...)
 end
 
 # Catch-all pass: bare `"*"` routes, declaration order.
@@ -273,9 +284,16 @@ struct MethodNotAllowedTerminal
 end
 (t::MethodNotAllowedTerminal)(r::Request) = _method_not_allowed(t.mask)
 
+struct BadParamsTerminal end
+(t::BadParamsTerminal)(r::Request) = Response(Plain, "400 Bad Request"; status=400)
+
 @inline function _fallback_static(ctx::RequestContext, req::Request, mask::UInt8)
     terminal = mask == 0x00 ? NotFoundTerminal() : MethodNotAllowedTerminal(mask)
     return format_response(runpipeline(ctx.middlewares, (), req, terminal))
+end
+
+@inline function _bad_params_static(ctx::RequestContext, req::Request)
+    return format_response(runpipeline(ctx.middlewares, (), req, BadParamsTerminal()))
 end
 
 function _dispatch_static(router::StaticRouter, ctx::RequestContext, req::Request)
@@ -288,12 +306,13 @@ function _dispatch_static(router::StaticRouter, ctx::RequestContext, req::Reques
     res === nothing || return res
     fixed_hit && return _fallback_static(ctx, req, mask)
 
-    res, mask = _scan_pattern(router.routes, method, parts, mask, k)
+    res, mask, parse_failed = _scan_pattern(router.routes, method, parts, mask, k)
     res === nothing || return res
     mask != 0x00 && return _fallback_static(ctx, req, mask)
 
     res, mask = _scan_catchall(router.routes, method, parts, UInt8(0), k)
     res === nothing || return res
+    parse_failed && return _bad_params_static(ctx, req)
     return _fallback_static(ctx, req, mask)
 end
 
@@ -314,12 +333,13 @@ function matchroute(router::StaticRouter, method::Symbol, path::AbstractString):
     res === nothing || return res
     fixed_hit && return MethodMismatch(mask)
 
-    res, mask = _scan_pattern(router.routes, m, parts, mask, k)
+    res, mask, parse_failed = _scan_pattern(router.routes, m, parts, mask, k)
     res === nothing || return res
     mask != 0x00 && return MethodMismatch(mask)
 
     res, mask = _scan_catchall(router.routes, m, parts, UInt8(0), k)
     res === nothing || return res
+    parse_failed && return ParamMismatch()
     mask != 0x00 && return MethodMismatch(mask)
     return NoMatch()
 end

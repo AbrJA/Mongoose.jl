@@ -71,7 +71,7 @@ export AbstractRequest, Request, Headers, asheaders, mergeheaders, context, pars
     LoopDetectedError, NotExtendedError, NetworkAuthenticationRequiredError,
     validate, ValidationError,
     Message, WSEndpoint,
-    AbstractRouter, Router, MethodMap, RouteResult, Matched, NoMatch, MethodMismatch,
+    AbstractRouter, Router, MethodMap, RouteResult, Matched, NoMatch, MethodMismatch, ParamMismatch,
     SingleEndpoint, matchroute, hasroute,
     StaticRouter, @routes,
     gethandler, getendpoint, sethandler!, haswsroutes, getwsendpoint,

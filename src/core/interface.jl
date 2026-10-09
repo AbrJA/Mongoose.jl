@@ -44,9 +44,10 @@ abstract type AbstractRouter end
 # ── RouteResult — the exhaustive router match (Ciro/Keel-style ADT) ──────────
 
 """
-    RouteResult — outcome of `matchroute`: `Matched`, `NoMatch`, or
-    `MethodMismatch{allowed}` (the last carries the route's method bitmask,
-    so 405 `Allow` needs no secondary lookup).
+    RouteResult — outcome of `matchroute`: `Matched`, `NoMatch`,
+    `MethodMismatch{allowed}` (carries the route's method bitmask, so 405
+    `Allow` needs no secondary lookup), or `ParamMismatch` (the path matched a
+    typed pattern but a capture failed to parse → 400).
 """
 abstract type RouteResult end
 
@@ -66,6 +67,16 @@ end
 
 """No route matched the path."""
 struct NoMatch <: RouteResult end
+
+"""
+    ParamMismatch <: RouteResult
+
+The path structurally matched a parametric route but a typed capture could not
+be parsed (`/users/abraham` against `/users/:id::Int`); the dispatch layer
+answers 400. Reported only when no other route (including a later pattern or
+the `"*"` catch-all) actually serves the path.
+"""
+struct ParamMismatch <: RouteResult end
 
 """
     MethodMismatch{allowed::UInt8} <: RouteResult

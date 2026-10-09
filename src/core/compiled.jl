@@ -17,15 +17,17 @@
 
     Semantics are identical to the generic path: exact (fixed) matches win,
     parametric routes resolve in registration order, the `"*"` catch-all is
-    the final fallback, and missing methods produce 405. HEAD is served only
-    by an explicit `head!` route (no auto-HEAD fallback).
+    the final fallback, missing methods produce 405, and an unparseable typed
+    capture produces 400. HEAD is served only by an explicit `head!` route
+    (no auto-HEAD fallback).
 """
 
 # --- Prebuilt 0-arity terminal: calls a handler with a baked concrete type ---
 
 # Pre-built short-circuit terminals (immutable singletons; mirror the generic
-# path's inline 404/405 producers).
+# path's inline 404/405/400 producers).
 const TERM_404 = (req) -> Response(Plain, "404 Not Found"; status=404)
+const TERM_400 = (req) -> Response(Plain, "400 Bad Request"; status=400)
 
 """
     Terminal{H} — pre-built terminal for a fixed route / catch-all.
@@ -344,6 +346,35 @@ end
     return _walk_ops(node.ops, s, 1, ())
 end
 
+# `true` when the path structurally matches the node but a capture fails to
+# parse (the ParamMismatch/400 signal); literal or length mismatches are false.
+@inline _walk_ops_parsefail(::Tuple{}, s::AbstractString, i::Int) = false
+@inline function _walk_ops_parsefail(ops::Tuple, s::AbstractString, i::Int)
+    op = ops[1]
+    rest = Base.tail(ops)
+    if op isa LitOp
+        j0, j1, ni = _next_seg(s, i)
+        (j0 != 0 && _bytes_eq(s, j0, j1, op.text)) || return false
+        return _walk_ops_parsefail(rest, s, ni)
+    elseif op isa CaptureOp
+        j0, j1, ni = _next_seg(s, i)
+        j0 == 0 && return false
+        op.parse(s, j0, j1) === nothing && return true
+        return _walk_ops_parsefail(rest, s, ni)
+    else # WildOp — never fails
+        return false
+    end
+end
+
+@inline _walk_segs_parsefail(node::CompiledParam, s::AbstractString) =
+    _walk_ops_parsefail(node.ops, s, 1)
+
+@inline _scan_parsefail(::Tuple{}, clean::AbstractString) = false
+@inline function _scan_parsefail(chain::Tuple, clean::AbstractString)
+    _walk_segs_parsefail(chain[1], clean) && return true
+    return _scan_parsefail(Base.tail(chain), clean)
+end
+
 # --- Dispatch through the compiled table ---
 
 # Fixed/catch-all node: method → baked terminal, else 405.
@@ -385,7 +416,7 @@ end
 Resolve a frozen request into a pre-built terminal (a `Function` or a
 `BoundParams` functor). Fixed paths first, then parametric routes in
 registration order, then the `"*"` catch-all; no match yields the pre-built
-404 terminal.
+404 terminal, or 400 when a typed capture failed to parse.
 """
 @inline function _compiled_terminal(d::CompiledDispatch, method::Symbol,
                                     clean::AbstractString)
@@ -395,7 +426,7 @@ registration order, then the `"*"` catch-all; no match yields the pre-built
     t === nothing || return t
     w = d.wildcard
     w !== nothing && return _action(w, method)
-    return TERM_404
+    return _scan_parsefail(d.chain, clean) ? TERM_400 : TERM_404
 end
 
 # --- Pipeline entry point ---

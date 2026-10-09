@@ -189,6 +189,8 @@ function _resolve_terminal(router::AbstractRouter, request::Request)
         return ((r) -> Response(Plain, "404 Not Found"; status=404)), ()
     elseif result isa MethodMismatch
         return ((r) -> _method_not_allowed(result.allowed)), ()
+    elseif result isa ParamMismatch
+        return ((r) -> Response(Plain, "400 Bad Request"; status=400)), ()
     end
 
     ep = result.endpoint

@@ -34,7 +34,7 @@ router = Router()
 # String parameter (default)
 route!(router, :get, "/greet/:name", (req, name) -> text("Hello, $name!"))
 
-# Typed integer — /users/abc returns 404 automatically
+# Typed integer — /users/abc returns 400 automatically
 route!(router, :get, "/users/:id::Int", (req, id) ->
     json(Dict("id" => id, "type" => string(typeof(id))))
 )

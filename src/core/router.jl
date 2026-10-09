@@ -380,21 +380,52 @@ function _matchroute(route::ParamRoute{P,N}, parts::Vector{String}) where {P,N}
     return _extract(route.param_types, route.param_pos, parts)
 end
 
+# `true` when the route structurally matches `parts` but a typed capture fails
+# to parse — the `ParamMismatch` (400) signal.
+function _matchroute_parsefail(route::ParamRoute{P,N}, parts::Vector{String}) where {P,N}
+    nseg = length(route.segments)
+    n = length(parts)
+    if route.is_wildcard
+        n < nseg - 1 && return false
+    elseif n != nseg
+        return false
+    end
+    @inbounds for idx in 1:nseg
+        seg = route.segments[idx]
+        if !seg.is_param
+            parts[idx] == seg.text || return false
+        end
+    end
+    return _extract(route.param_types, route.param_pos, parts) === nothing
+end
+
+function _any_param_mismatch(router::Router, clean::AbstractString)::Bool
+    isempty(router.param_routes) && return false
+    parts = String[String(seg) for seg in eachsplit(clean, '/'; keepempty=false)]
+    for route in router.param_routes
+        _matchroute_parsefail(route, parts) && return true
+    end
+    return false
+end
+
 """
     matchroute(router, method, path) → RouteResult
 
 Resolve a request to its exhaustive outcome: `Matched(endpoint, handlers,
 params)` when the route serves the method, `NoMatch` when the path matches
-nothing, or `MethodMismatch{allowed}` carrying the route's method bitmask.
-Exact (static) matches win; parametric routes are scanned in registration
-order; the `"*"` catch-all is the final fallback. `HEAD` is served only by an
-explicit `head!` route — there is no auto-HEAD fallback.
+nothing, `MethodMismatch{allowed}` carrying the route's method bitmask, or
+`ParamMismatch` when a typed capture could not be parsed. Exact (static)
+matches win; parametric routes are scanned in registration order; the `"*"`
+catch-all is the final fallback. `HEAD` is served only by an explicit `head!`
+route — there is no auto-HEAD fallback.
 """
 function matchroute(router::Router, method::Symbol, path::AbstractString)::RouteResult
     m = _normalize_method(method)
     clean = stripquery(path)
     found = _find_route(router, clean)
-    found === nothing && return NoMatch()
+    if found === nothing
+        return _any_param_mismatch(router, clean) ? ParamMismatch() : NoMatch()
+    end
     mm, params = found
     ep = resolve_method(mm, m)
     ep === nothing && return MethodMismatch(method_bitmask(mm))

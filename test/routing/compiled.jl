@@ -65,7 +65,7 @@ const ERRORS = Dict{Int,Response}()
         (:get,    "/users/alice"),
         (:get,    "/org/julia/repo/mongoose"),
         (:get,    "/temp/36.6"),                    # Float64
-        (:get,    "/temp/abc"),                     # parse fail → 404
+        (:get,    "/temp/abc"),                     # parse fail → 400
         (:get,    "/flag/true"), (:get, "/flag/false"), (:get, "/flag/maybe"),
         (:get,    "/id/42"), (:get, "/id/-1"),
         (:get,    "/api/v2/users/5/posts/10"),

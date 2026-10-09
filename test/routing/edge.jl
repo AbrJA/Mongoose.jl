@@ -21,7 +21,7 @@
             @test String(resp.body) == "flag=false"
 
             resp = HTTP.get("http://127.0.0.1:$port/flag/maybe"; status_exception=false)
-            @test resp.status == 404
+            @test resp.status == 400   # unparseable typed capture
         end
     end
 
@@ -34,7 +34,7 @@
             @test String(resp.body) == "id=42"
 
             resp = HTTP.get("http://127.0.0.1:$port/id/-1"; status_exception=false)
-            @test resp.status == 404
+            @test resp.status == 400   # unparseable typed capture
         end
     end
 

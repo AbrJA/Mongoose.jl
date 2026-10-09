@@ -276,6 +276,22 @@
         end
     end
 
+    @testset "Same path, multiple methods" begin
+        router = @routes begin
+            get("/items/:id::Int", (req, id) -> text("get $id"))
+            put("/items/:id::Int", (req, id) -> text("put $id"))
+            delete("/items/:id::Int", (req, id) -> text("del $id"))
+        end
+        client = FakeTransport(App(router = router))
+        @test String(client(:get, "/items/7").body) == "get 7"
+        @test String(client(:put, "/items/7").body) == "put 7"
+        @test String(client(:delete, "/items/7").body) == "del 7"
+        r = client(:patch, "/items/7")
+        @test r.status == 405
+        allow = get(r.headers, "allow", "")
+        @test occursin("GET", allow) && occursin("PUT", allow) && occursin("DELETE", allow)
+    end
+
     @testset "Large table (generated flat scans)" begin
         router = @routes begin
             get("/r0", req -> text("r0"))
