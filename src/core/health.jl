@@ -16,9 +16,7 @@ struct Health{H,R,L} <: AbstractMiddleware
     live_path::Union{Nothing,String}
 end
 
-# Functor (not a closure) so the kwargs stay concrete: Julia does not
-# specialize on `Function`-typed arguments, which would widen `Health` and
-# break the trim verifier.
+# Functor, not a closure: Julia won't specialize on `Function` args (trim verifier).
 struct _HealthOK end
 (::_HealthOK)() = true
 

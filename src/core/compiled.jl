@@ -24,8 +24,7 @@
 
 # --- Prebuilt 0-arity terminal: calls a handler with a baked concrete type ---
 
-# Pre-built short-circuit terminals (immutable singletons; mirror the generic
-# path's inline 404/405/400 producers).
+# Pre-built short-circuit terminals (mirror the generic path's producers).
 const TERM_404 = (req) -> Response(Plain, "404 Not Found"; status=404)
 const TERM_400 = (req) -> Response(Plain, "400 Bad Request"; status=400)
 
@@ -346,8 +345,7 @@ end
     return _walk_ops(node.ops, s, 1, ())
 end
 
-# `true` when the path structurally matches the node but a capture fails to
-# parse (the ParamMismatch/400 signal); literal or length mismatches are false.
+# True when the path matches structurally but a capture fails to parse (400).
 @inline _walk_ops_parsefail(::Tuple{}, s::AbstractString, i::Int) = false
 @inline function _walk_ops_parsefail(ops::Tuple, s::AbstractString, i::Int)
     op = ops[1]

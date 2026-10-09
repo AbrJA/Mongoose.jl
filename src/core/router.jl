@@ -380,8 +380,7 @@ function _matchroute(route::ParamRoute{P,N}, parts::Vector{String}) where {P,N}
     return _extract(route.param_types, route.param_pos, parts)
 end
 
-# `true` when the route structurally matches `parts` but a typed capture fails
-# to parse — the `ParamMismatch` (400) signal.
+# True when the route matches structurally but a capture fails to parse (400).
 function _matchroute_parsefail(route::ParamRoute{P,N}, parts::Vector{String}) where {P,N}
     nseg = length(route.segments)
     n = length(parts)

@@ -188,9 +188,7 @@ end
 @inline _parts_for(::Val{false}, clean::AbstractString) = EMPTY_PARTS
 
 # --- Dispatch scans (generated flat over the route tuple; `k` runs the match) ---
-# A recursive `@inline` scan grows `_dispatch_static` with the table and the
-# optimizer's union splitting explodes compile memory; these emit one flat
-# branch per route instead (O(routes) code, no per-level call or tuple).
+# Flat per-route branches: recursive @inline scans explode compile memory.
 
 # Literal pass: exact path match, method check; a path hit shadows patterns.
 @generated function _scan_fixed(routes::Routes, method::Symbol, clean, parts,
@@ -214,9 +212,7 @@ end
     return Expr(:block, exprs...)
 end
 
-# Pattern pass: first pattern that structurally matches *and* serves the
-# method wins (declaration order); same-path routes with other methods keep
-# scanning and contribute to the 405 mask. An unparseable capture flags 400.
+# First pattern that matches and serves the method wins; parse failure flags 400.
 @generated function _scan_pattern(routes::Routes, method::Symbol, parts,
                                   mask::UInt8, k) where {Routes<:Tuple}
     exprs = Any[]
@@ -268,9 +264,7 @@ end
 @inline _handler_terminal(f::F, ::Tuple{}) where {F} = req -> f(req)
 @inline _handler_terminal(f::F, params::Tuple) where {F} = req -> f(req, params...)
 
-# `@noinline` is load-bearing: inlining the per-route pipeline into the scan
-# chain makes `_dispatch_static` grow O(routes × middleware) and blows up
-# compile memory for large tables.
+# @noinline is load-bearing: inlining the pipeline per route explodes compile memory.
 Base.@noinline function _invoke_static(route::StaticRoute, ctx::RequestContext, req::Request, params)
     terminal = _handler_terminal(route.handler, params)
     return format_response(runpipeline(ctx.middlewares, route.middleware, req, terminal))

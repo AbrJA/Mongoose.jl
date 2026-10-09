@@ -209,9 +209,7 @@ end
     return Response(status, headers, message)
 end
 
-# A caught `HTTPError` is the abstract UnionAll: dispatch on the `status` type
-# parameter cannot be resolved by the trim verifier, so the mirrored field and
-# `@nospecialize` keep the call resolvable.
+# A caught HTTPError is the abstract UnionAll; the field + @nospecialize keep it resolvable.
 @inline _http_error_response(ctx::RequestContext, req::Request, @nospecialize(e::HTTPError)) =
     _http_error_response(ctx, req, e.status, e.message, e.headers)
 

@@ -361,8 +361,7 @@ function App(executor::AbstractExecutor;
     mws = asmiddlewaretuple(middleware)
     ctx = RequestContext(router; middlewares=mws, errors=errors, services=services)
     app = _build_app(cfg, rs, router, Tuple{String,String}[], ctx, executor)
-    # `attach!` may rebuild a middleware (e.g. Metrics captures gauges); always
-    # re-context with the returned values so the App type stays concrete.
+    # attach! may rebuild a middleware; re-context so the App type stays concrete.
     attached = map(mw -> attach!(mw, app), mws)
     ctx = RequestContext(router; middlewares=attached, errors=errors, services=services)
     return _build_app(cfg, rs, router, Tuple{String,String}[], ctx, executor)
@@ -709,9 +708,7 @@ end
 # Do-block convenience: app = use(app) do req, next ... end
 use(f::Function, app::App; paths=nothing) = use(app, f; paths=paths)
 
-# Metrics gauges: capture the server so `/metrics` can report live counts.
-# Rebuilds the middleware (the state type is a parameter) — callers must use
-# the returned value; an already-attached `Metrics` is returned unchanged.
+# Metrics gauges: rebuild with the server captured (callers use the return value).
 function attach!(mw::Metrics{Nothing}, server::AbstractServer)
     exec = server.executor
     state = () -> (

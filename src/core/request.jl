@@ -148,8 +148,7 @@ mutable struct Request{S} <: AbstractRequest
     end
 end
 
-# Rebuild `req` with a concrete services registry (used by `process`); the
-# empty-registry case keeps the cheap `Request{Nothing}`.
+# Rebuild with the concrete registry; the empty case keeps `Request{Nothing}`.
 @inline _attach_services(req::Request{Nothing}, ::NamedTuple{(),Tuple{}}) = req
 @inline _attach_services(req::Request, services::NamedTuple) =
     Request(req.method, req.uri, req.path, req.query, req.query_raw,

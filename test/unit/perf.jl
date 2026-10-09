@@ -46,9 +46,7 @@ end
     a1 = @allocated(f1())
     a8 = @allocated(f8())
     @test a1 <= 400                            # baseline ~224 B
-    # Flatness relies on fully inlining the continuation chain; some platforms
-    # (Windows) box one small `Next` per level, so allow that while still
-    # catching a closure (~200+ B) allocated per middleware.
+    # Windows boxes one small `Next` per level (inlining); allow it, catch closures.
     @test a8 <= a1 + 8 * 128                   # baseline: a8 == a1
 end
 
