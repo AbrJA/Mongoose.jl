@@ -60,13 +60,34 @@ jobs:
       - uses: julia-actions/julia-buildpkg@v1
       - name: Install JuliaC
         run: julia -e 'using Pkg; Pkg.Apps.add(name="JuliaC")'
-      - name: Build the trim-safe core probe
+      - name: Build the trim-safe smoke app
         run: |
-          ~/.julia/bin/juliac --output-exe trim_core --trim=safe --experimental \
-            --project="$PWD" "$PWD/bench/trim/trim_core.jl" > /tmp/trim_core.log 2>&1
-          test ! grep -q "^Verifier error" /tmp/trim_core.log
+          cat > /tmp/trim_app.jl <<'JULIA'
+          using Mongoose
+          router = @routes begin
+              get("/hello", req -> json((message = "hello", n = 42)))
+              group("/api"; middleware = (cors(origins = "*"),)) do api
+                  get("/users/:id::Int", (req, id) -> text("user $id"))
+              end
+          end
+          app = App(router = router)
+          app = use(app, cors())
+          app = use(app, etag())
+          function main(args)
+              client = FakeTransport(app)
+              r = client(:get, "/hello")
+              (r.status == 200 && occursin("hello", String(r.body))) || return 1
+              client(:get, "/api/users/7").body == "user 7" || return 2
+              client(:get, "/missing").status == 404 || return 3
+              return 0
+          end
+          @main
+          JULIA
+          ~/.julia/bin/juliac --output-exe trim_app --trim=safe --experimental \
+            --project="$PWD" /tmp/trim_app.jl > /tmp/trim_app.log 2>&1
+          test ! grep -q "^Verifier error" /tmp/trim_app.log
       - name: Run the trimmed binary (self-checking)
-        run: ./trim_core
+        run: ./trim_app
   docs:
       name: Documentation
       runs-on: ubuntu-latest

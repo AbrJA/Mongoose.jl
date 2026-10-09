@@ -111,23 +111,21 @@ numbers in the commit message and update the baseline table above plus the
 Mongoose ships a **trim-safe profile**: `@routes` declares the route table at
 compile time (paths, capture types, methods, handlers are type parameters), so
 dispatch has no runtime `apply_type`, no erased `Function` slots, and no dynamic
-terminal. Both probes build with **0 verifier errors** and run (verified on
-Julia 1.12 and 1.13):
-
-- `bench/trim/trim_core.jl` — the full pipeline over `FakeTransport`
-  (middleware, errors, typed params), self-checking exit codes.
-- `bench/trim/trim_server.jl` — a real server on the C transport (HTTP, static
-  mounts, WebSocket).
+terminal. Trim-safe builds produce **0 verifier errors** and run (verified on
+Julia 1.12 and 1.13); local reference builds live under `examples/aot/`
+(gitignored): `server.jl` (comprehensive server + browser dashboard),
+`trim_core.jl` (self-checking pipeline probe), and `trim_server.jl` (minimal
+C-transport server).
 
 ```sh
 # Run from the package root (its Project.toml is the build project).
 cd /path/to/Mongoose.jl
 ~/.julia/bin/juliac --output-exe app --trim=safe --experimental \
-  --project="$PWD" "$PWD/bench/trim/trim_server.jl" > /tmp/app.log 2>&1
+  --project="$PWD" "$PWD/myapp.jl" > /tmp/app.log 2>&1
 
 grep -c '^Verifier error' /tmp/app.log || true   # expect 0
-./app 8080 /tmp/staticdir &                       # blocks inline; serves
-curl -s http://127.0.0.1:8080/                    # {"ok":true}
+./app 8080 &                                      # blocks inline; serves
+curl -s http://127.0.0.1:8080/hello               # hello
 ```
 
 `JULIA_APPS_JULIA_CMD=/path/to/julia` selects a different Julia for the build
