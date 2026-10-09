@@ -207,8 +207,11 @@ end
     return Response(status, headers, message)
 end
 
-@inline _http_error_response(ctx::RequestContext, req::Request, e::HTTPError{status}) where {status} =
-    _http_error_response(ctx, req, status, e.message, e.headers)
+# A caught `HTTPError` is the abstract UnionAll: dispatch on the `status` type
+# parameter cannot be resolved by the trim verifier, so the mirrored field and
+# `@nospecialize` keep the call resolvable.
+@inline _http_error_response(ctx::RequestContext, req::Request, @nospecialize(e::HTTPError)) =
+    _http_error_response(ctx, req, e.status, e.message, e.headers)
 
 # --- HEAD body semantics (RFC 9110 §3.1) ---
 
