@@ -35,10 +35,10 @@ const CLOSE = ["Connection" => "close"]
             @test r.status == 200
             @test JSON.parse(String(r.body))["id"] == 42
 
-            # Typed param mismatch → custom 404 page, not 500.
+            # Typed param mismatch → custom 400 page, not 500.
             r = HTTP.get("$base/api/users/abc"; status_exception=false, headers=AUTH, read_idle_timeout=10)
-            @test r.status == 404
-            @test contains(String(r.body), "Not found")
+            @test r.status == 400
+            @test contains(String(r.body), "Bad request")
 
             r = HTTP.post("$base/api/users"; status_exception=false, headers=AUTH,
                 body=JSON.json(Dict("name" => "Carol")))

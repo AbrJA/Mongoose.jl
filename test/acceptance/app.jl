@@ -135,6 +135,9 @@ function buildapp(; token::String="test-token", workers::Integer=2)
     app = use(app, bearer(t -> t == token); paths=["/api"])
 
     # Custom error pages + typed exceptions.
+    app = trap(app, 400) do req
+        json(Dict("error" => "Bad request", "path" => req.uri); status=400)
+    end
     app = trap(app, 404) do req
         json(Dict("error" => "Not found", "path" => req.uri); status=404)
     end
