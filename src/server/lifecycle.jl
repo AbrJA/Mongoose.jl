@@ -103,12 +103,17 @@ function bind_server!(server::AbstractServer, host::AbstractString, port::Intege
     # C parser mis-reads the address and binds nowhere useful.
     h = occursin(':', host) && !startswith(host, "[") ? "[$host]" : host
     url = "$scheme://$h:$port"
-    # Per-server callback closure: captures the concrete server so event
-    # dispatch resolves statically (and skips a registry lookup per event).
-    callback = (conn::Ptr{Cvoid}, ev::Cint, data::Ptr{Cvoid}) -> c_event_callback(server, conn, ev, data)
-    cb = @cfunction($callback, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
-    server.runtime.cb_root = cb          # roots the closure for the server's lifetime
-    listener = mg_http_listen(server.runtime.manager.ptr, url, cb.ptr, C_NULL)
+    if _CLOSURE_CFUNCTIONS
+        # Per-server closure: captures the concrete server (static dispatch, trim-safe).
+        callback = (conn::Ptr{Cvoid}, ev::Cint, data::Ptr{Cvoid}) -> c_event_callback(server, conn, ev, data)
+        cb = @cfunction($callback, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+        server.runtime.cb_root = cb      # roots the closure for the server's lifetime
+        listener = mg_http_listen(server.runtime.manager.ptr, url, cb.ptr, C_NULL)
+    else
+        # ARM/AArch64/PPC64: constant callback + registry (JIT profile).
+        listener = mg_http_listen(server.runtime.manager.ptr, url, get_c_callback(),
+                                  Ptr{Cvoid}(objectid(server)))
+    end
     listener == C_NULL && throw(BindError("Failed to bind to $url. Port may be in use."))
     return url
 end
