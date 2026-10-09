@@ -116,11 +116,11 @@ asmiddlewaretuple(mw) = (asmiddleware(mw),)
     or cursor. The global stack runs first, then the route-scoped stack, then
     the handler.
 """
-struct Next{G,S,H} <: Function
+struct Next{G,S,H,R} <: Function
     globals::G
     scoped::S
     handler::H
-    req::Request
+    req::R
 end
 
 @inline _run_next(n::Next{Tuple{},Tuple{}}) = n.handler(n.req)
