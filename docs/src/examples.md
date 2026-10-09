@@ -464,7 +464,7 @@ route!(router, :get, "/users/:id::Int", (req, id) -> begin
 end)
 
 app = App(4; router=router)
-app = provide(app, :db, FakeDB(Dict(1 => "Alice", 2 => "Bob")))
+app = provide(app, (db = FakeDB(Dict(1 => "Alice", 2 => "Bob")),))
 
 start!(app; port=8080)
 ```
@@ -609,7 +609,7 @@ app = trap(app, 413, json(Dict("error" => "Too large"); status=413))
 app = trap(app, 503, json(Dict("error" => "Overloaded"); status=503))
 
 # Services
-app = provide(app, :env, get(ENV, "APP_ENV", "production"))
+app = provide(app, (env = get(ENV, "APP_ENV", "production"),))
 
 # Static assets
 serve!(app, "public"; uri_prefix="/static")

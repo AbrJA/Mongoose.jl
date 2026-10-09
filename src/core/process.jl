@@ -45,14 +45,15 @@ Base.show(io::IO, ctx::RequestContext) =
     print(io, "RequestContext(", length(ctx.middlewares), " middleware, ",
           length(ctx.registries.services), " services)")
 
+# Untyped kwargs: annotations here would widen inference of the rebuilt context.
 function RequestContext(router::AbstractRouter;
-                        middlewares::Union{AbstractVector{<:AbstractMiddleware},Tuple}=(),
-                        errors::AbstractDict{Int,<:Response}=Dict{Int,Response}(),
-                        services::NamedTuple=NamedTuple(),
-                        error_handlers::Tuple=(),
-                        exception_handlers::Tuple=(),
-                        hooks_start::Tuple=(),
-                        hooks_stop::Tuple=())
+                        middlewares=(),
+                        errors=Dict{Int,Response}(),
+                        services=NamedTuple(),
+                        error_handlers=(),
+                        exception_handlers=(),
+                        hooks_start=(),
+                        hooks_stop=())
     errs = Dict{Int,Response}(k => v for (k, v) in errors)
     registries = (; errors=errs, services, error_handlers, exception_handlers,
                   hooks_start, hooks_stop)
@@ -246,7 +247,7 @@ the 404/405 producers — so interception middleware (CORS, health,
 metrics) observes all requests.
 """
 function process(ctx::RequestContext, request::Request)::Union{Response,StreamResponse}
-    request.services = ctx.registries.services
+    request = _attach_services(request, ctx.registries.services)
     return _guarded_process(ctx, request) do
         _process_pipeline(ctx, request)
     end

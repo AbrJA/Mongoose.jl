@@ -529,24 +529,18 @@ end
 end
 
 """
-    provide(app, name, value) → App
     provide(app, services::NamedTuple) → App
 
-Register one or more dependency-injection services, returning the rebuilt App
-(the argument is not mutated). Retrieve them with [`service`](@ref),
-[`services`](@ref), or [`withservices`](@ref).
+Register dependency-injection services, returning the rebuilt App (the
+argument is not mutated). Keys must be literal: the NamedTuple type carries
+them, which keeps the rebuilt `App` type concrete. Retrieve services with
+[`service`](@ref), [`services`](@ref), or [`withservices`](@ref).
 
 # Example
 ```julia
-app = provide(app, :db, MyDB.connect())
-app = provide(app, (cache=redis, queue=ch))
+app = provide(app, (db = MyDB.connect(), cache = redis))
 ```
 """
-function provide(app::App{R,E,C}, name::Symbol, value) where {R,E,C}
-    _ensure_registratable(app, "services")
-    return _provide(app, merge(app.context.registries.services, (; name => value)))
-end
-
 function provide(app::App{R,E,C}, services::NamedTuple) where {R,E,C}
     _ensure_registratable(app, "services")
     return _provide(app, merge(app.context.registries.services, services))
@@ -571,42 +565,34 @@ end
     errorresponse(server.context, status)
 
 """
-    service(req, name) → Any
-    service(req, ::Val{name}) → T
+    service(req, name) → value
+    service(req, ::Val{name}) → value
     service(req, name, T) → T
 
-Retrieve a service by name from the request context.
-- `service(req, :db)` returns the raw value (values may be zero-arg callables,
-  which are invoked).
-- `service(req, Val(:db))` avoids re-parsing the name, but the lookup goes
-  through the dynamic request context — the return type is inferred `Any`.
-- `service(req, :db, DBPool)` asserts the type and throws otherwise.
-
-For **type-stable** access in hot paths use [`withservices`](@ref), whose
-closure receives the concrete `NamedTuple`:
+Retrieve a service by name. Values may be zero-arg callables, which are
+invoked. The registry type travels in `Request{S}`, so the `Val` form is
+type-stable; `service(req, :db, DBPool)` asserts the type and throws
+otherwise. Apps with no services return `nothing`.
 
 # Example
 ```julia
 app = App(services=(db=pool, cache=redis))
-withservices(req) do svcs
-    svcs.db            # concrete: DBPool
-end
-db = service(req, Val(:db))   # convenient, dynamically typed
+db = service(req, Val(:db))              # static: DBPool
+db = service(req, :db, DBPool)           # asserted: DBPool
 ```
 """
-function service(req::Request, name::Symbol)
-    svcs = req.services
-    svcs === nothing && return nothing
-    hasproperty(svcs, name) || return nothing
-    v = getproperty(svcs, name)
+service(::Request{Nothing}, name::Symbol) = nothing
+@inline service(::Request{Nothing}, ::Val{name}) where {name} = nothing
+
+function service(req::Request{S}, name::Symbol) where {S<:NamedTuple}
+    hasproperty(req.services, name) || return nothing
+    v = getfield(req.services, name)
     return v isa Function ? v() : v
 end
 
-@inline function service(req::Request, ::Val{name}) where {name}
-    svcs = req.services
-    svcs === nothing && return nothing
-    hasproperty(svcs, name) || return nothing
-    v = getfield(svcs, name)
+@inline function service(req::Request{S}, ::Val{name}) where {S<:NamedTuple,name}
+    hasproperty(req.services, name) || return nothing
+    v = getfield(req.services, name)
     return v isa Function ? v() : v
 end
 
@@ -620,21 +606,17 @@ end
 """
     services(req) → NamedTuple
 
-The request's DI services as a NamedTuple (empty when none were registered).
-Dynamically typed at this boundary; use [`withservices`](@ref) for
-type-stable access.
+The request's DI services as a concrete NamedTuple (empty when none were
+registered), so field access specializes.
 """
-function services(req::Request)
-    svcs = req.services
-    return svcs === nothing ? NamedTuple() : svcs
-end
+@inline services(::Request{Nothing}) = NamedTuple()
+@inline services(req::Request{S}) where {S<:NamedTuple} = req.services
 
 """
     withservices(f, req) → f(services(req))
 
 Function-barrier access to DI services: the closure receives the concrete
-NamedTuple, so field access inside it specializes — unlike
-`service(req, Val(:x))`, which returns a dynamically typed value.
+NamedTuple, so field access inside it specializes.
 
 # Example
 ```julia

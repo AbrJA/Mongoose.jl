@@ -29,7 +29,7 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   `AsyncExecutor(n)` gets a one-arg convenience constructor.
 - `health(; health_path=, ready_path=, live_path=)` custom probe paths;
   `nothing` disables an endpoint (e.g. a single `/health`).
-- `App` is immutable and typed: `use(app, mw; paths)` and `provide(app, name, value)`
+- `App` is immutable and typed: `use(app, mw; paths)` and `provide(app, (name = value,))`
   return a rebuilt `App`; middleware and DI services live in the context type.
 
 ### Changed

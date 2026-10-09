@@ -55,11 +55,12 @@ end
     req = Request(:get, "/", Dict{String,String}(), Pair{String,String}[], "")
     f() = process(ctx, req)
     f()
-    # Setting the services field must not allocate a Dict{Symbol,Any} (the old
-    # eager injection cost ~304 B/op).
+    # Attaching services rebuilds the request with a concrete registry type —
+    # no Dict{Symbol,Any} (the old eager injection cost ~304 B/op).
     @test @allocated(f()) <= 400
-    @test req.services.db == "pool"
-    @test service(req, Val(:db)) == "pool"
+    r = Request(; method=:get, uri="/", services=(db="pool",))
+    @test r.services.db == "pool"
+    @test service(r, Val(:db)) == "pool"
 end
 
 @testset "Method token parsing" begin

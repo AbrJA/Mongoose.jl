@@ -328,7 +328,7 @@ end
 # --- Trim-safe process specialization (CPS dispatch, no RouteResult union) ---
 
 function process(ctx::RequestContext{<:StaticRouter}, request::Request)
-    request.services = ctx.registries.services
+    request = _attach_services(request, ctx.registries.services)
     return _guarded_process(ctx, request) do
         _dispatch_static(ctx.router, ctx, request)
     end

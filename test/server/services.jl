@@ -1,8 +1,7 @@
 @testset "provide/inject" begin
     @testset "Service retrieved per request" begin
         s = App()
-        s = provide(s, :version, "1.0.0")
-        s = provide(s, :region, "us-east")
+        s = provide(s, (version="1.0.0", region="us-east"))
         @test s.context.registries.services.version == "1.0.0"
         @test s.context.registries.services.region == "us-east"
         get!(s, "/version") do req
@@ -41,7 +40,7 @@ end
 @testset "Typed Services" begin
     @testset "service(req, name, T) returns typed value" begin
         app = App()
-        app = provide(app, :version, "1.0.0")
+        app = provide(app, (version="1.0.0",))
 
         get!(app, "/test") do req
             v = service(req, :version, String)
@@ -56,7 +55,7 @@ end
 
     @testset "service(req, name, T) throws on type mismatch" begin
         app = App()
-        app = provide(app, :count, 42)
+        app = provide(app, (count=42,))
 
         get!(app, "/test") do req
             service(req, :count, String)  # Wrong type
@@ -82,7 +81,7 @@ end
 
 @testset "provide/inject integration" begin
     app = App()
-    app = provide(app, :db, () -> "database_connection")
+    app = provide(app, (db=() -> "database_connection",))
     get!(app, "/svc") do req
         db = service(req, :db)
         text(db)
@@ -114,4 +113,12 @@ end
     r0 = Mongoose.Request(:get, "/", Dict{String,String}(), Pair{String,String}[], "")
     @test services(r0) == NamedTuple()
     @test withservices(svcs -> svcs, r0) == NamedTuple()
+
+    # The registry type rides in Request{S}: access is statically typed.
+    r = Mongoose.Request(; method=:get, uri="/", services=(db="pool", retries=3))
+    @test r isa Mongoose.Request{<:NamedTuple}
+    @test @inferred(services(r)) == (db="pool", retries=3)
+    @test @inferred(service(r, Val(:db))) == "pool"
+    @test @inferred(service(r, Val(:nope))) === nothing
+    @test @inferred(withservices(svcs -> svcs.db, r)) == "pool"
 end

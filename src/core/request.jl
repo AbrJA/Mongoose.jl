@@ -116,15 +116,16 @@ end
     that never read the query pay only the raw-string copy (nothing at all when
     there is no query). `context` is allocated on first access the same way.
 
-    `services` is the app's DI NamedTuple, set by `process` before dispatch (no
-    dict allocation, no boxing); [`service`](@ref)/[`withservices`](@ref) read
-    it directly.
+    `services` is the app's DI registry, attached by `process` before dispatch:
+    `S` is `Nothing` when the app registers none, otherwise the concrete
+    NamedTuple type — so [`service`](@ref)/[`withservices`](@ref) resolve
+    statically (no dict allocation, no dynamic lookup).
 
     `remote_addr` is the transport-provided peer address (the client's IP as a
     string, or `nothing` when the transport does not supply one — e.g. the
     standalone pipeline or `FakeTransport`-constructed requests).
 """
-mutable struct Request <: AbstractRequest
+mutable struct Request{S} <: AbstractRequest
     const method::Symbol
     const uri::String
     const path::String                          # URI without query string (pre-stripped)
@@ -133,7 +134,7 @@ mutable struct Request <: AbstractRequest
     const headers::Headers
     const body::String
     context::Union{Nothing,Dict{Symbol,Any}}
-    services::Union{Nothing,NamedTuple}         # DI, set by `process`
+    services::S                                 # DI, attached by `process`
     const remote_addr::Union{Nothing,String}
 
     # Primary constructor — all fields explicit
@@ -141,11 +142,18 @@ mutable struct Request <: AbstractRequest
                      query::Union{Nothing,Dict{String,String}}, query_raw::String,
                      headers::Headers, body::String,
                      context::Union{Nothing,Dict{Symbol,Any}}=nothing,
-                     services::Union{Nothing,NamedTuple}=nothing,
-                     remote_addr::Union{Nothing,String}=nothing)
-        return new(method, uri, path, query, query_raw, headers, body, context, services, remote_addr)
+                     services::S=nothing,
+                     remote_addr::Union{Nothing,String}=nothing) where {S<:Union{Nothing,NamedTuple}}
+        return new{S}(method, uri, path, query, query_raw, headers, body, context, services, remote_addr)
     end
 end
+
+# Rebuild `req` with a concrete services registry (used by `process`); the
+# empty-registry case keeps the cheap `Request{Nothing}`.
+@inline _attach_services(req::Request{Nothing}, ::NamedTuple{(),Tuple{}}) = req
+@inline _attach_services(req::Request, services::NamedTuple) =
+    Request(req.method, req.uri, req.path, req.query, req.query_raw,
+            req.headers, req.body, req.context, services, req.remote_addr)
 
 # Convenience: pre-parsed query (tests, FakeTransport); no raw source needed.
 function Request(method::Symbol, uri::String, path::String,
@@ -190,7 +198,7 @@ end
 
 """
     Request(; method, uri, query=Dict(), headers=Headers(), body="",
-              context=nothing, remote_addr=nothing) → Request
+              context=nothing, services=nothing, remote_addr=nothing) → Request
 
 Keyword constructor; `path` is derived from `uri`. Prefer this over the
 positional forms for readability.
@@ -199,9 +207,10 @@ function Request(; method::Symbol, uri::String,
                  query::Dict{String,String}=Dict{String,String}(),
                  headers=Headers(), body::String="",
                  context::Union{Nothing,Dict{Symbol,Any}}=nothing,
-                 remote_addr::Union{Nothing,String}=nothing)
+                 services::S=nothing,
+                 remote_addr::Union{Nothing,String}=nothing) where {S<:Union{Nothing,NamedTuple}}
     path = String(stripquery(uri))
-    return Request(method, uri, path, query, asheaders(headers), body, context, remote_addr)
+    return Request(method, uri, path, query, "", asheaders(headers), body, context, services, remote_addr)
 end
 
 function Base.show(io::IO, req::Request)

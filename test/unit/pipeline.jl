@@ -24,13 +24,13 @@
     @test res3.status == 404
     @test res3.body == "custom 404"
 
-    req4 = Request(:get, "/hi", Dict{String,String}(), Pair{String,String}[], "")
+    seen = Ref{Any}(nothing)
+    route!(r, :get, "/svc", req -> (seen[] = Mongoose.service(req, Val(:db)); text("ok")))
+    req4 = Request(:get, "/svc", Dict{String,String}(), Pair{String,String}[], "")
     Mongoose.process(ctx2, req4)
-    # Typed DI: `process` sets the request's services field directly — no
-    # Dict{Symbol,Any} is allocated and `context(req)` stays untouched.
-    @test req4.services.db == "pool"
-    @test Mongoose.services(req4).db == "pool"
-    @test Mongoose.service(req4, Val(:db)) == "pool"
+    # Typed DI: `process` attaches the concrete registry to the dispatched
+    # request — no Dict{Symbol,Any} and `context(req)` stays untouched.
+    @test seen[] == "pool"
     @test req4.context === nothing
 end
 
