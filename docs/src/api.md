@@ -45,6 +45,7 @@ getwsendpoint
 Matched
 NoMatch
 MethodMismatch
+ParamMismatch
 RouteResult
 MethodMap
 post!
@@ -193,7 +194,7 @@ extends (required to add methods anyway):
 
 ```julia
 import Mongoose: AbstractRouter, route!, matchroute, hasroute,
-    Matched, NoMatch, MethodMismatch, Endpoint, SingleEndpoint
+    Matched, NoMatch, MethodMismatch, ParamMismatch, Endpoint, SingleEndpoint
 ```
 
 ```@docs

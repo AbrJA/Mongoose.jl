@@ -16,6 +16,12 @@ struct Health{H,R,L} <: AbstractMiddleware
     live_path::Union{Nothing,String}
 end
 
+# Functor (not a closure) so the kwargs stay concrete: Julia does not
+# specialize on `Function`-typed arguments, which would widen `Health` and
+# break the trim verifier.
+struct _HealthOK end
+(::_HealthOK)() = true
+
 """
     health(; health_check, ready_check, live_check,
              health_path="/healthz", ready_path="/readyz", live_path="/livez")
@@ -45,9 +51,9 @@ server = use(server, health(
 ```
 """
 function health(;
-    health_check = () -> true,
-    ready_check = () -> true,
-    live_check = () -> true,
+    health_check = _HealthOK(),
+    ready_check = _HealthOK(),
+    live_check = _HealthOK(),
     health_path::Union{Nothing,AbstractString} = "/healthz",
     ready_path::Union{Nothing,AbstractString} = "/readyz",
     live_path::Union{Nothing,AbstractString} = "/livez"
@@ -69,20 +75,24 @@ function (mw::Health)(request::Request, next::Function)
 
         status = healthy && ready && alive ? 200 : 503
 
-        body = "status: $(status == 200 ? "healthy" : "unhealthy")\nchecks: health=$healthy, ready=$ready, alive=$alive\n"
-        return Response(Plain, body; status=status)
+        io = IOBuffer(sizehint = 64)
+        print(io, "status: ", status == 200 ? "healthy" : "unhealthy",
+              "\nchecks: health=", healthy ? "true" : "false",
+              ", ready=", ready ? "true" : "false",
+              ", alive=", alive ? "true" : "false", '\n')
+        return Response(Plain, String(take!(io)); status=status)
 
     elseif mw.ready_path !== nothing && uri == mw.ready_path
         ready = mw.ready_check()
         status = ready ? 200 : 503
-        body = "status: $(ready ? "ready" : "not ready")\n"
-        return Response(Plain, body; status=status)
+        return Response(Plain, ready ? "status: ready\n" : "status: not ready\n";
+                        status=status)
 
     elseif mw.live_path !== nothing && uri == mw.live_path
         alive = mw.live_check()
         status = alive ? 200 : 503
-        body = "status: $(alive ? "alive" : "dead")\n"
-        return Response(Plain, body; status=status)
+        return Response(Plain, alive ? "status: alive\n" : "status: dead\n";
+                        status=status)
     end
 
     return next()

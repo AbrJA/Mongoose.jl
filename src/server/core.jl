@@ -361,10 +361,11 @@ function App(executor::AbstractExecutor;
     mws = asmiddlewaretuple(middleware)
     ctx = RequestContext(router; middlewares=mws, errors=errors, services=services)
     app = _build_app(cfg, rs, router, Tuple{String,String}[], ctx, executor)
-    for mw in mws
-        attach!(mw, app)
-    end
-    return app
+    # `attach!` may rebuild a middleware (e.g. Metrics captures gauges); always
+    # re-context with the returned values so the App type stays concrete.
+    attached = map(mw -> attach!(mw, app), mws)
+    ctx = RequestContext(router; middlewares=attached, errors=errors, services=services)
+    return _build_app(cfg, rs, router, Tuple{String,String}[], ctx, executor)
 end
 
 """
@@ -699,17 +700,21 @@ function _compose(app::App{R,E,C}, wrapped::M) where {R,E,C,M<:AbstractMiddlewar
     mws = (app.context.middlewares..., wrapped)
     ctx = RequestContext(app.router, mws, app.context.registries)
     newapp = _with_context(app, ctx)
-    attach!(wrapped, newapp)
-    return newapp
+    attached = attach!(wrapped, newapp)
+    ctx = RequestContext(app.router, (app.context.middlewares..., attached),
+                         app.context.registries)
+    return _with_context(app, ctx)
 end
 
 # Do-block convenience: app = use(app) do req, next ... end
 use(f::Function, app::App; paths=nothing) = use(app, f; paths=paths)
 
 # Metrics gauges: capture the server so `/metrics` can report live counts.
-function attach!(mw::Metrics, server::AbstractServer)
+# Rebuilds the middleware (the state type is a parameter) — callers must use
+# the returned value; an already-attached `Metrics` is returned unchanged.
+function attach!(mw::Metrics{Nothing}, server::AbstractServer)
     exec = server.executor
-    mw.state = () -> (
+    state = () -> (
         connections = length(server.runtime.conn_times),
         ws_clients = length(server.runtime.ws_clients),
         streams = length(server.runtime.streams),
@@ -718,8 +723,10 @@ function attach!(mw::Metrics, server::AbstractServer)
         bg_tasks = bg_count(server),
         ws_dropped = server.runtime.ws_dropped[],
     )
-    return mw
+    return Metrics{typeof(state)}(mw.shards, mw.path, state)
 end
+
+attach!(mw::Metrics, ::AbstractServer) = mw   # already attached
 
 Base.show(io::IO, c::ServerConfig) =
     print(io, "ServerConfig(workers=", c.workers, ", poll_timeout_ms=", c.poll_timeout_ms,

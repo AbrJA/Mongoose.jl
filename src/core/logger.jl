@@ -89,6 +89,42 @@ function _printable(s::AbstractString)::String
     return String(take!(io))
 end
 
+# Trim-safe UTC ISO timestamp (`Libc.strftime` pulls in non-trim-safe printing).
+function _iso_utc(t::Float64)::String
+    secs = floor(Int64, t)
+    days = fld(secs, 86400)
+    rem = secs - days * 86400
+    hh = rem ÷ 3600
+    mm = (rem % 3600) ÷ 60
+    ss = rem % 60
+    z = days + 719468
+    era = fld(z >= 0 ? z : z - 146096, 146097)
+    doe = z - era * 146097
+    yoe = (doe - doe ÷ 1460 + doe ÷ 36524 - doe ÷ 146096) ÷ 365
+    y = yoe + era * 400
+    doy = doe - (365 * yoe + yoe ÷ 4 - yoe ÷ 100)
+    mp = (5 * doy + 2) ÷ 153
+    d = doy - (153 * mp + 2) ÷ 5 + 1
+    m = mp < 10 ? mp + 3 : mp - 9
+    y += m <= 2
+    io = IOBuffer(sizehint = 19)
+    _write_digits(io, y, 4);  write(io, '-')
+    _write_digits(io, m, 2);  write(io, '-')
+    _write_digits(io, d, 2);  write(io, 'T')
+    _write_digits(io, hh, 2); write(io, ':')
+    _write_digits(io, mm, 2); write(io, ':')
+    _write_digits(io, ss, 2)
+    return String(take!(io))
+end
+
+# Zero-padded decimal digits without `lpad` (`Base.repeat` is not trim-safe).
+@inline function _write_digits(io::IO, x::Int, width::Int)
+    for shift in (width - 1):-1:0
+        write(io, UInt8('0') + UInt8((x ÷ 10^shift) % 10))
+    end
+    return nothing
+end
+
 function _log_request(mw::Logger, request::Request, status::Int,
                       elapsed_ms::Float64, rid::String)
     io = IOBuffer(sizehint=160)
@@ -101,7 +137,7 @@ function _log_request(mw::Logger, request::Request, status::Int,
             "\",\"status\":", status,
             ",\"duration\":", round(elapsed_ms; digits=2),
             ",\"request_id\":\"", _escape(rid),
-            "\",\"ts\":\"", Libc.strftime("%Y-%m-%dT%H:%M:%S", time()),
+            "\",\"ts\":\"", _iso_utc(time()),
             "\"}\n")
     else
         print(io, uppercase(String(request.method)), " ", _printable(request.uri),

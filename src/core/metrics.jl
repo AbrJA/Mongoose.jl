@@ -56,10 +56,10 @@ mutable struct _MetricsShard
     )
 end
 
-mutable struct Metrics <: AbstractMiddleware
+struct Metrics{S} <: AbstractMiddleware
     shards::Vector{_MetricsShard}
     path::String
-    state::Union{Nothing,Function}   # set by `attach!` (server gauges)
+    state::S   # `Nothing` until `attach!` rebuilds it with the server gauges
 end
 
 @doc """
@@ -261,7 +261,7 @@ Prometheus `scrape_configs`:
 """
 function metrics(; path::String="/metrics")
     shards = [_MetricsShard() for _ in 1:_METRICS_SHARDS]
-    return Metrics(shards, path, nothing)
+    return Metrics{Nothing}(shards, path, nothing)
 end
 
 Base.show(io::IO, mw::Metrics) = print(io, "Metrics(path=", repr(mw.path), ")")

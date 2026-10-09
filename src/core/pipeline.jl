@@ -34,7 +34,9 @@ abstract type AbstractMiddleware end
 
 Optional lifecycle hook: `use` calls it when middleware is registered, so
 middleware that needs server state (metrics gauges, readiness checks) can
-capture a reference. Default is a no-op.
+capture a reference. Default is a no-op. A middleware whose type changes when
+attached (e.g. `Metrics`) returns a rebuilt instance — callers must use the
+returned value, and `App`/`use` rebuild the middleware tuple accordingly.
 """
 attach!(mw, server) = mw
 
@@ -45,7 +47,7 @@ struct PathFilter{M} <: AbstractMiddleware
     prefixes::Vector{String}
 end
 
-attach!(mw::PathFilter, server) = (attach!(mw.inner, server); mw)
+attach!(mw::PathFilter, server) = PathFilter(attach!(mw.inner, server), mw.prefixes)
 
 function (mw::PathFilter)(req::Request, next::Function)
     path = req.path
