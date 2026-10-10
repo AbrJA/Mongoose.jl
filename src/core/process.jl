@@ -169,21 +169,33 @@ end
 end
 
 """
-    _resolve_terminal(router, request) → (terminal, scoped_middleware)
+    EndpointCall{E,P} — a matched endpoint bound to its parameter tuple.
 
-Resolve a request into a `terminal` callable `(Request) → Response` and the
-route's scoped middleware. The terminal is always a short-circuiting
-404/405 producer when no handler matches, so middleware sees every request
-exactly like the handler path.
+    The terminal `_generic_terminal` returns on the generic dispatch path.
+    A closure over an abstractly-typed `ep` forces *two* dynamic calls per
+    request (the closure body and `invokeendpoint`); this parametric functor
+    keeps one at the terminal boundary and lets `invokeendpoint` specialize on
+    the concrete endpoint/param types.
 """
-function _resolve_terminal(router::AbstractRouter, request::Request)
-    compiled = getterminal(router, request)
-    if compiled !== nothing
-        # Frozen/compiled router: the terminal already fuses scoped middleware;
-        # `nothing` marks scoped as baked-in.
-        return compiled, nothing
-    end
+struct EndpointCall{E,P}
+    ep::E
+    params::P
+end
+@inline (c::EndpointCall)(r::Request) = invokeendpoint(c.ep, r, c.params)
 
+"""
+    _generic_terminal(router, request) → (terminal, scoped_middleware)
+
+Resolve a request through `matchroute` into a `terminal` callable
+`(Request) → Response` and the route's scoped middleware. The terminal is
+always a short-circuiting 404/405/400 producer when no handler matches, so
+middleware sees every request exactly like the handler path.
+
+Kept separate from the compiled path in `_process_pipeline` so the compiled
+terminal union never mixes with `EndpointCall` — mixing the two perturbed
+union-split codegen (measured +16 B/op on frozen parametric routes).
+"""
+function _generic_terminal(router::AbstractRouter, request::Request)
     result = matchroute(router, request.method, request.uri)
     if result isa NoMatch
         return ((r) -> Response(Plain, "404 Not Found"; status=404)), ()
@@ -193,9 +205,7 @@ function _resolve_terminal(router::AbstractRouter, request::Request)
         return ((r) -> Response(Plain, "400 Bad Request"; status=400)), ()
     end
 
-    ep = result.endpoint
-    params = result.params
-    return ((r) -> invokeendpoint(ep, r, params)), scopedmiddleware(ep)
+    return EndpointCall(result.endpoint, result.params), scopedmiddleware(result.endpoint)
 end
 
 # Built-in mapping for status-carrying exceptions: a custom error page for that
@@ -257,15 +267,16 @@ function process(ctx::RequestContext, request::Request)::Union{Response,StreamRe
 end
 
 @inline function _process_pipeline(ctx::RequestContext, request::Request)
-    terminal, scoped = _resolve_terminal(ctx.router, request)
-    result = if scoped === nothing
-        # Compiled path: scoped middleware is already fused into the terminal,
+    compiled = getterminal(ctx.router, request)
+    result = if compiled !== nothing
+        # Compiled path: the terminal already fuses route-scoped middleware,
         # so the baked global stack wraps it directly.
-        isempty(ctx.middlewares) ? terminal(request) :
-            runpipeline(ctx.middlewares, request, terminal)
+        isempty(ctx.middlewares) ? compiled(request) :
+            runpipeline(ctx.middlewares, request, compiled)
     else
         # Generic path: global stack + route-scoped stack, walked with a
         # single cursor (no per-request [global; scoped] concatenation).
+        terminal, scoped = _generic_terminal(ctx.router, request)
         runpipeline(ctx.middlewares, scoped, request, terminal)
     end
     # Auto-serialize non-Response returns (String/Dict/bytes/nothing/…).
