@@ -10,7 +10,7 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 > gates: main suite, wire-level acceptance suite, Aqua + JET baseline, and a
 > green docs build.
 
-## [Unreleased]
+## [0.5.0] - 2026-10-09
 
 ### Added
 - **`StaticRouter` + `@routes`** — compile-time typed route table: fixed paths,
