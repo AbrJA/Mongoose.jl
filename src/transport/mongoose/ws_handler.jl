@@ -121,7 +121,10 @@ function ws_handle_upgrade(server::AbstractServer, conn::MgConnection, ev_data::
         isempty(server.context.middlewares) ? terminal(req) :
             runpipeline(server.context.middlewares, req, terminal)
     end
-    if res isa Response
+    if res isa StreamResponse
+        # A short-circuiting middleware may stream its rejection (e.g. SSE).
+        send_stream_response!(server, conn, res)
+    elseif res isa Response
         res = _echo_conn_close!(res, req)
         send_http_response!(conn, res, resolve_request_id(req, server))
         _response_wants_close(res) && mgjl_conn_close_after_send(conn)

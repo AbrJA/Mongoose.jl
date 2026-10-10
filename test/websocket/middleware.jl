@@ -7,6 +7,11 @@ using Sockets
 struct _DenyUpgrade <: Mongoose.AbstractMiddleware end
 (_::_DenyUpgrade)(req, next) = throw(UnauthorizedError("upgrade denied"))
 
+struct _StreamUpgrade <: Mongoose.AbstractMiddleware end
+(_::_StreamUpgrade)(req, next) = sse(req) do writer
+    emit(writer; data="blocked")
+end
+
 @testset "WS handshake middleware" begin
     @testset "API key protects the handshake" begin
         s = App(2)
@@ -44,6 +49,17 @@ struct _DenyUpgrade <: Mongoose.AbstractMiddleware end
                 HTTP.WebSockets.send(ws, "x")
                 @test String(HTTP.WebSockets.receive(ws)) == "ok"
             end
+        end
+    end
+
+    @testset "Streaming middleware short-circuit" begin
+        s = App()
+        ws!(s, "/ws/stream"; on_message=msg -> Message("x"))
+        s = use(s, _StreamUpgrade())
+        with_server(s) do port
+            r = HTTP.get("http://127.0.0.1:$port/ws/stream"; status_exception=false)
+            @test r.status == 200
+            @test occursin("blocked", String(r.body))
         end
     end
 
