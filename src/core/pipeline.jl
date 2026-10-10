@@ -43,15 +43,20 @@ attach!(mw, server) = mw
 struct PathFilter{M} <: AbstractMiddleware
     inner::M
     prefixes::Vector{String}
+    prefixed::Vector{String}   # `prefix * "/"`, precomputed (no per-request join)
 end
+
+PathFilter(inner::M, prefixes::Vector{String}) where {M} =
+    PathFilter{M}(inner, prefixes, String[p * "/" for p in prefixes])
 
 attach!(mw::PathFilter, server) = PathFilter(attach!(mw.inner, server), mw.prefixes)
 
 function (mw::PathFilter)(req::Request, next::Function)
     path = req.path
-    for prefix in mw.prefixes
+    prefixes, prefixed = mw.prefixes, mw.prefixed
+    @inbounds for i in eachindex(prefixes)
         # Segment-boundary match: "/api" matches "/api" and "/api/x", not "/apixyz".
-        (path == prefix || startswith(path, prefix * "/")) && return mw.inner(req, next)
+        (path == prefixes[i] || startswith(path, prefixed[i])) && return mw.inner(req, next)
     end
     return next()
 end

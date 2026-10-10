@@ -42,10 +42,7 @@ itself.
 @inline function _response_wants_close(res::Response)::Bool
     value = get(res.headers, "connection", nothing)
     value === nothing && return false
-    for token in split(value, ',')
-        lowercase(strip(token)) == "close" && return true
-    end
-    return false
+    return Kernel._has_token(value, "close")
 end
 
 """

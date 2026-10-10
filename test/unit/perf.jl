@@ -90,6 +90,27 @@ end
     end
 end
 
+@testset "Header + connection-token allocation ceilings" begin
+    mixed = Headers(["Content-Type" => "text/plain", "X-Custom" => "1"])
+    req = Request(:get, "/", Dict{String,String}(), mixed.data, "")
+    get(mixed, "connection", nothing); haskey(mixed, "x-custom"); header(req, "content-type")
+    @test @allocated(get(mixed, "connection", nothing)) == 0
+    @test @allocated(haskey(mixed, "x-custom")) == 0
+    @test @allocated(header(req, "content-type")) == 0
+
+    creq = Request(:get, "/", Dict{String,String}(), ["Connection" => "keep-alive"], "")
+    @test !Mongoose.conn_close_requested(creq)
+    @test @allocated(Mongoose.conn_close_requested(creq)) == 0
+
+    pf = Mongoose.Kernel.PathFilter(Mongoose.Kernel.asmiddleware((r, n) -> n()), ["/api"])
+    preq = Request(:get, "/api/x", Dict{String,String}(), Pair{String,String}[], "")
+    next0() = 1
+    pf(preq, next0)
+    @test @allocated(pf(preq, next0)) == 0
+
+    @test @allocated(Mongoose.Kernel.mergeheaders(Headers(), "A" => "1")) <= 128
+end
+
 @testset "Hot helper inference" begin
     @test @inferred(Mongoose.Kernel.asheaders(("a" => "1",))) isa Headers
     @test @inferred(Mongoose.Kernel.mergeheaders(Response(200, "x"), ["A" => "1"])) isa Response

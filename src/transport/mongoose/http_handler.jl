@@ -96,13 +96,8 @@ end
 # Mongoose closes on request `Connection: close` but does not echo it; echo
 # the header so pooling clients do not reuse a dead socket.
 
-@inline function conn_close_requested(req::Request)::Bool
-    value = get(req.headers, "connection", "")
-    for token in split(value, ',')
-        lowercase(strip(token)) == "close" && return true
-    end
-    return false
-end
+@inline conn_close_requested(req::Request)::Bool =
+    Kernel._has_token(get(req.headers, "connection", ""), "close")
 
 @inline function _echo_conn_close!(res, req::Request)
     if conn_close_requested(req) && res isa Response

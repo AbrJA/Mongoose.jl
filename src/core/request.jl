@@ -82,28 +82,16 @@ end
 
 formatheaders(h::Headers)::String = formatheaders(h.data)
 
-function Base.get(h::Headers, key::String, default)
-    lkey = is_lowercase_ascii(key) ? key : lowercase(key)
+function Base.get(h::Headers, key::AbstractString, default)
     @inbounds for i in eachindex(h.data)
-        k = h.data[i].first
-        if is_lowercase_ascii(k)
-            k == lkey && return h.data[i].second
-        elseif lowercase(k) == lkey
-            return h.data[i].second
-        end
+        _key_eq(h.data[i].first, key) && return h.data[i].second
     end
     return default
 end
 
-function Base.haskey(h::Headers, key::String)::Bool
-    lkey = is_lowercase_ascii(key) ? key : lowercase(key)
+function Base.haskey(h::Headers, key::AbstractString)::Bool
     @inbounds for i in eachindex(h.data)
-        k = h.data[i].first
-        if is_lowercase_ascii(k)
-            k == lkey && return true
-        elseif lowercase(k) == lkey
-            return true
-        end
+        _key_eq(h.data[i].first, key) && return true
     end
     return false
 end
@@ -256,15 +244,7 @@ end
 
 Look up a request header by name (case-insensitive).
 """
-@inline header(req::Request, name::AbstractString) = get(req.headers, lowercase(String(name)), nothing)
-
-@inline function is_lowercase_ascii(s::String)::Bool
-    @inbounds for i in 1:ncodeunits(s)
-        b = codeunit(s, i)
-        (UInt8('A') <= b <= UInt8('Z')) && return false
-    end
-    return true
-end
+@inline header(req::Request, name::AbstractString) = get(req.headers, name, nothing)
 
 # ── Query parameter helpers ──────────────────────────────────────────────────
 

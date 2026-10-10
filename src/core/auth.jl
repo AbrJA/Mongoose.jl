@@ -29,7 +29,7 @@ function (mw::Bearer)(request::Request, next::Function)
         return Response(Plain, "401 Unauthorized"; status=401, headers=["WWW-Authenticate" => "Bearer"])
     end
 
-    if length(auth_header) < 8 || !startswith(lowercase(auth_header), "bearer ")
+    if length(auth_header) < 8 || !_starts_ci(auth_header, "bearer ")
         return Response(Plain, "401 Unauthorized: Invalid scheme"; status=401, headers=["WWW-Authenticate" => "Bearer"])
     end
 
