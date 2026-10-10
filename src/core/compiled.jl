@@ -440,5 +440,5 @@ end
 function getterminal(r::Router, req::Request)
     c = r.compiled
     c === nothing && return nothing
-    return _compiled_terminal(c, req.method, stripquery(req.uri))
+    return _compiled_terminal(c, _match_method(req.method), stripquery(req.uri))
 end

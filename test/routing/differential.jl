@@ -21,6 +21,10 @@ end
 
 const _DIFF_METHODS = (:get, :post, :put, :patch, :delete, :options, :head)
 
+# Probe-only methods: unknown tokens (`:unknown` from the wire) and
+# mixed-case Symbols must classify identically across the three dispatchers.
+const _DIFF_PROBE_METHODS = (_DIFF_METHODS..., :unknown, :brew, :PROPFIND)
+
 const _DIFF_PATHS = [
     "/", "/a", "/a/b", "/users", "/users/:id::Int", "/users/:id::Int/posts",
     "/users/:id::Int/profile", "/posts/:slug", "/files/*rest", "*",
@@ -77,9 +81,8 @@ end
         freeze!(frozen)
         static = StaticRouter(static_routes...)
 
-        methods = _DIFF_METHODS
         probe_paths = unique(vcat([p for (_, p, _) in specs], _DIFF_PROBES))
-        for path in probe_paths, method in methods
+        for path in probe_paths, method in _DIFF_PROBE_METHODS
             a = _diff_outcome(generic, method, path)
             b = _diff_outcome(frozen, method, path)
             c = _diff_outcome(static, method, path)

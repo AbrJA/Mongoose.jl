@@ -295,7 +295,7 @@ end
 end
 
 function _dispatch_static(router::StaticRouter, ctx::RequestContext, req::Request)
-    method = _normalize_method(req.method)
+    method = _match_method(req.method)
     clean = stripquery(req.uri)
     parts = _parts_for(Val(_has_patterns(router.routes)), clean)
     k = (route, params) -> _invoke_static(route, ctx, req, params)
@@ -325,7 +325,7 @@ end
 end
 
 function matchroute(router::StaticRouter, method::Symbol, path::AbstractString)::RouteResult
-    m = _normalize_method(method)
+    m = _match_method(method)
     clean = stripquery(path)
     parts = _parts_for(Val(_has_patterns(router.routes)), clean)
     k = (route, params) -> _matched_result(route, params)

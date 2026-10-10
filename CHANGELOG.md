@@ -42,6 +42,11 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - Unknown route parameter types (`/u/:id::UUID`) now throw `RouteError` at
   registration instead of silently degrading to a `String` capture — in both
   `route!` and `@routes`.
+- Unknown HTTP methods (`BREW`, `PROPFIND`, …) no longer fail with a `500` on
+  the generic/static dispatch paths: all three dispatchers now answer `405`
+  with the path's `Allow` set when the path is served and `404` otherwise,
+  matching the compiled path. Mixed-case method `Symbol`s (`:GET`) normalize
+  consistently everywhere.
 
 ### Performance
 - Allocation-free ASCII case-insensitive matching: `Headers.get`/`haskey`,

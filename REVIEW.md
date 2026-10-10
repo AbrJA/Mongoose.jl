@@ -18,6 +18,9 @@
 >   frozen/static, catch-all 405-vs-400 priority in static, `hasroute("*")`).
 > - **C1 landed**: unknown typed captures throw `RouteError` in both routers.
 > - **C2 landed**: `parsemultipart` regex removed; `Response` docstring fixed.
+> - **Dispatch parity follow-up**: unknown/mixed-case HTTP methods answer
+>   `405`/`404` identically on all three dispatchers (no more `RouteError`→500
+>   on generic/static); wire-level test + differential probes added.
 > - **M1 withdrawn after measurement**: the compiler already stack-allocates
 >   the non-escaping `Next` continuation — 0 extra B/op for 1–4 middleware
 >   layers (see §2-M1).

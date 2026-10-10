@@ -274,13 +274,24 @@ function route!(router::Router, method::AbstractString, path::AbstractString, ha
            middleware=middleware, metadata=metadata)
 end
 
-# Registration is cold: accept `:GET`/`:Get` by lowering once. Valid lowercase
-# methods (the hot-path protocol form) pass through the tuple scan untouched.
-@inline function _normalize_method(method::Symbol)::Symbol
+# Dispatch-safe method normalization: valid methods are lowered (`:GET` →
+# `:get`); anything else becomes `:unknown`, which matches no endpoint but still
+# reports the path's Allow set (405) instead of failing the request with a
+# RouteError. Wire methods are already lowercase (or `:unknown` from
+# `parse_method`), so the hot path pays one tuple scan.
+@inline function _match_method(method::Symbol)::Symbol
     method in VALID_METHODS && return method
+    method === :unknown && return :unknown
     lowered = Symbol(lowercase(String(method)))
-    lowered in VALID_METHODS || throw(RouteError("Invalid HTTP method: $method"))
-    return lowered
+    return lowered in VALID_METHODS ? lowered : :unknown
+end
+
+# Registration is cold: accept `:GET`/`:Get` by lowering once, and reject
+# anything that is not a supported HTTP method.
+@inline function _normalize_method(method::Symbol)::Symbol
+    m = _match_method(method)
+    m === :unknown && throw(RouteError("Invalid HTTP method: $method"))
+    return m
 end
 
 function _register_route!(router::Router, method::Symbol, path::String, endpoint::Endpoint)
@@ -431,17 +442,19 @@ nothing, `MethodMismatch{allowed}` carrying the route's method bitmask, or
 `ParamMismatch` when a typed capture could not be parsed. Exact (static)
 matches win; parametric routes are scanned in registration order; the `"*"`
 catch-all is the final fallback. `HEAD` is served only by an explicit `head!`
-route — there is no auto-HEAD fallback.
+route — there is no auto-HEAD fallback. Unknown methods (`:unknown` from the
+transport, or any Symbol outside the supported seven) match no endpoint: a
+served path answers `405` with its `Allow` set, an unserved path answers `404`.
 """
 function matchroute(router::Router, method::Symbol, path::AbstractString)::RouteResult
-    m = _normalize_method(method)
+    m = _match_method(method)
     clean = stripquery(path)
     found = _find_route(router, clean)
     if found === nothing
         return _any_param_mismatch(router, clean) ? ParamMismatch() : NoMatch()
     end
     mm, params = found
-    ep = resolve_method(mm, m)
+    ep = m === :unknown ? nothing : resolve_method(mm, m)
     ep === nothing && return MethodMismatch(method_bitmask(mm))
     return Matched(ep, mm, params)
 end

@@ -116,6 +116,26 @@ end
     end
 end
 
+@testset "Unknown HTTP method answers 405/404, never 500" begin
+    s = App()
+    get!(s, "/known") do req; text("ok") end
+    with_server(s) do port
+        # Wire method token outside the supported seven: parse_method → :unknown.
+        sock = Sockets.connect("127.0.0.1", port)
+        write(sock, "BREW /known HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+        resp = String(read(sock))
+        @test startswith(resp, "HTTP/1.1 405")
+        @test contains(resp, "Allow: GET")
+        close(sock)
+
+        sock2 = Sockets.connect("127.0.0.1", port)
+        write(sock2, "BREW /missing HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+        resp2 = String(read(sock2))
+        @test startswith(resp2, "HTTP/1.1 404")
+        close(sock2)
+    end
+end
+
 @testset "CL+TE request smuggling is dropped" begin
     s = App()
     post!(s, "/echo") do req; text("len=$(sizeof(body(req)))") end
