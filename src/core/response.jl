@@ -90,7 +90,7 @@ end
 # --- Primary ergonomic constructor: status + body ---
 
 """
-    Response(status, body; headers=[]) → Response
+    Response(status, body; headers=Headers()) → Response
 
 Create a plain-text response.
 

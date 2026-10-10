@@ -32,6 +32,31 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - `App` is immutable and typed: `use(app, mw; paths)` and `provide(app, (name = value,))`
   return a rebuilt `App`; middleware and DI services live in the context type.
 
+### Fixed
+- **Dispatch parity across `Router`, `freeze!`-compiled, and `StaticRouter`**:
+  a typed capture that fails to parse answers `400` only when the whole pattern
+  structurally matches (`/users/abraham` against `/users/:id::Int/posts` is a
+  `404`), and a `*` catch-all that owns the path answers `405` (not `400`) when
+  it does not serve the method. `hasroute(router, "*")` no longer reports the
+  catch-all as an owned path.
+- Unknown route parameter types (`/u/:id::UUID`) now throw `RouteError` at
+  registration instead of silently degrading to a `String` capture — in both
+  `route!` and `@routes`.
+
+### Performance
+- Allocation-free ASCII case-insensitive matching: `Headers.get`/`haskey`,
+  `header()`, `Bearer` scheme checks, and `Connection: close` token parsing no
+  longer allocate `lowercase`/`split` copies (512–640 B → 0 B per lookup or
+  request). `PathFilter` precomputes its prefix joins; the single-pair
+  `mergeheaders` path is one allocation smaller.
+- The generic dispatch path resolves matches through a parametric
+  `EndpointCall` terminal with the compiled-terminal resolution split out
+  (fixed: 224 → 208 B/op; parametric: 672 → 640 B/op; frozen parametric:
+  544 → 528 B/op).
+- Added a randomized differential test suite (16 generated tables × all
+  methods × 24 probe paths) asserting identical `(status, body, Allow)` across
+  the generic, compiled, and static routers.
+
 ### Changed
 - **Breaking**: `App(workers=n)` is now `App(n)`; `App(workers=0)` is `App()`
   and `App(0)` is an error. `queue_size` stays a keyword on `App(n; …)`.

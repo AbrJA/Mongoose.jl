@@ -5,6 +5,27 @@
 > measured micro-benchmarks (`bench/dispatch.jl` + targeted `@allocated` probes).
 > All measurements below were reproduced locally during this audit.
 
+> **Implementation progress (2026-10-10 session):**
+> - **H1 landed** (`09f129c`): zero-alloc ASCII case-insensitive matching;
+>   `Headers.get`/`header()` 512→0 B, `Bearer` 566→32 B/req,
+>   `Connection: close` 640→0 B/req, `PathFilter` 120→0 B/req,
+>   pair-`mergeheaders` 176→96 B/op; `process + cors+etag` 1024→768 B/op.
+> - **M2 landed** (`f729a2c`): parametric `EndpointCall` + split compiled
+>   resolution — generic fixed 224→208 B/op, generic param 672→640,
+>   frozen param 544→528 B/op.
+> - **B2 landed** (`bbd6d0c`): differential property suite (6,600 checks) found
+>   and fixed 4 real dispatch divergences (structural-parsefail 404-vs-400 in
+>   frozen/static, catch-all 405-vs-400 priority in static, `hasroute("*")`).
+> - **C1 landed**: unknown typed captures throw `RouteError` in both routers.
+> - **C2 landed**: `parsemultipart` regex removed; `Response` docstring fixed.
+> - **M1 withdrawn after measurement**: the compiler already stack-allocates
+>   the non-escaping `Next` continuation — 0 extra B/op for 1–4 middleware
+>   layers (see §2-M1).
+> - Gates after the session: **10,176 tests green**, JET 45 (baseline 47),
+>   bench ceilings green, frozen+param 528 B/op.
+> - Remaining: Phase C release prep (acceptance gate in CI), Phase D
+>   (1.0 items) — see §5.
+
 ---
 
 ## 1. Executive Architectural Summary
@@ -223,45 +244,29 @@ level, not the example level.
 
 ### Medium Impact
 
-#### M1 — `Next`: tail-tuple slicing vs. index cursor
+#### M1 — `Next`: tail-tuple slicing vs. index cursor — **WITHDRAWN (measured)**
 
-**Current approach** (`src/core/pipeline.jl:119-132`): each `next()` call
-allocates a sliced tuple *and* a `Next` struct per middleware layer:
+**Original concern:** each `next()` call allocates a sliced tuple plus a `Next`
+struct via `Base.tail` (`src/core/pipeline.jl:119-132`), so N middleware layers
+should cost ~N allocations.
 
-```julia
-struct Next{G,S,H,R} <: Function
-    globals::G; scoped::S; handler::H; req::R
-end
-@inline _run_next(n::Next{G,S}) where {G<:Tuple,S<:Tuple} =
-    first(n.globals)(n.req, Next(Base.tail(n.globals), n.scoped, n.handler, n.req))
-```
+**Measurement (2026-10-10):** Julia's escape analysis already stack-allocates
+the continuation when middleware do not stash it:
 
-`Base.tail` on a tuple allocates a new tuple every layer. Measured: frozen
-fixed route with cors+etag = **1,024 B/op** for 2 middleware layers — a good
-chunk of that is tail slicing (plus the per-response `mergeheaders`).
+| middleware layers | B/op |
+|---|---|
+| 0 | 224 |
+| 1 | 256 |
+| 2 | 256 |
+| 3 | 256 |
+| 4 | 256 |
+| 2, stashing `next` in a `Ref` | 288 |
 
-**Idiomatic production Julia** — same immutable protocol, index cursor instead
-of slicing (one small struct per layer, no tuple alloc):
-
-```julia
-struct Next{G,S,H,R} <: Function
-    globals::G; scoped::S; handler::H; req::R
-    gi::Int   # global cursor
-    si::Int   # scoped cursor
-end
-@inline _run_next(n::Next) =
-    n.gi <= length(n.globals) ?
-        getfield(n.globals, n.gi)(n.req, Next(n.globals, n.scoped, n.handler, n.req, n.gi + 1, n.si)) :
-    n.si <= length(n.scoped) ?
-        getfield(n.scoped, n.si)(n.req, Next(n.globals, n.scoped, n.handler, n.req, n.gi, n.si + 1)) :
-        n.handler(n.req)
-```
-
-`Next` remains immutable and `Function`-subtyped, so the `(req, next)` contract
-is untouched; middleware that stores `next` still works. Expected: the
-cors+etag row drops roughly 100-200 B/op. Note: this changes the *size* of
-`Next`, so re-run the AOT probes (`examples/aot/build.sh`) and the trim build
-after landing it.
+One-time +32 B when any middleware runs (the first `Next` construction), then
+**flat** — `Base.tail`'s temporaries never reach the heap for the normal
+`(req, next) -> next()` shape. An index cursor would replace ~16 B/layer only
+in the pathological stashing case, at the cost of a runtime-indexed
+heterogeneous `getfield` (which falls off static dispatch). **No action.**
 
 #### M2 — Static endpoint call on the generic path (function barrier on `Matched`)
 

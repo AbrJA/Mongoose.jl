@@ -397,10 +397,17 @@ function _parse_multipart(data::AbstractVector{UInt8}, boundary::String)::Dict{S
     return result
 end
 
+# Extract `field="value"` from a part header without compiling a Regex per
+# part (this runs for every multipart field/file).
 function _extract_field(headers::AbstractString, field::String)::String
-    pattern = Regex("$(field)=\"([^\"]*)\"")
-    m = match(pattern, headers)
-    return m === nothing ? "" : m.captures[1]
+    needle = field * "=\""
+    i = findfirst(needle, headers)
+    i === nothing && return ""
+    start = nextind(headers, last(i))
+    start > ncodeunits(headers) && return ""
+    stop = findnext('"', headers, start)
+    stop === nothing && return ""
+    return String(headers[start:prevind(headers, stop)])
 end
 
 function _extract_header_value(headers::AbstractString, name::String)::String
