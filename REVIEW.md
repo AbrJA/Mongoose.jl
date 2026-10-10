@@ -22,7 +22,12 @@
 >   the non-escaping `Next` continuation — 0 extra B/op for 1–4 middleware
 >   layers (see §2-M1).
 > - Gates after the session: **10,176 tests green**, JET 45 (baseline 47),
->   bench ceilings green, frozen+param 528 B/op.
+>   bench ceilings green, acceptance 79/79, frozen+param 528 B/op.
+> - **AOT verified**: `trim_core`, `trim_server`, and the `server.jl` showcase
+>   rebuild with **0 verifier errors** (all StaticRouter profiles). The
+>   unsupported dynamic-`Router` + `FakeTransport` probe was already
+>   non-trimmable before this session (27 verifier errors); `EndpointCall`
+>   adds 2 to that JIT-only profile, none to the supported AOT profiles.
 > - Remaining: Phase C release prep (acceptance gate in CI), Phase D
 >   (1.0 items) — see §5.
 
