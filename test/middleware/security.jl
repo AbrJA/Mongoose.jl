@@ -1,7 +1,7 @@
 @testset "Security headers" begin
     @testset "Default security headers" begin
         s = App()
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         s = use(s, security())
 
         with_server(s) do port
@@ -17,7 +17,7 @@
 
     @testset "Custom security config" begin
         s = App()
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         s = use(s, security(frame_options="SAMEORIGIN", hsts_max_age_seconds=nothing))
 
         with_server(s) do port
@@ -30,7 +30,7 @@
 
     @testset "Every optional header is disabled with nothing" begin
         s = App()
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         s = use(s, security(hsts_max_age_seconds=nothing, frame_options=nothing,
                          content_type_options=false, referrer_policy=nothing))
 
@@ -46,7 +46,7 @@
 
     @testset "csp is opt-in" begin
         s = App()
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         s = use(s, security(csp="default-src 'self'"))
 
         with_server(s) do port

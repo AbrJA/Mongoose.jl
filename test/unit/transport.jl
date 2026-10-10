@@ -7,7 +7,7 @@
 
     # A full request cycle with a fake transport, no server started.
     app = App()
-    get!(app, "/hi") do req
+    route!(app, :get, "/hi") do req
         json((msg = "hi",))
     end
     app = use(app, cors())

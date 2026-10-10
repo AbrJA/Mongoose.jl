@@ -49,15 +49,15 @@ using Mongoose
 
 app = App(4)
 
-get!(app, "/") do req
+route!(app, :get, "/") do req
     text("Hello from Mongoose.jl!")
 end
 
-get!(app, "/users/:id::Int") do req, id
+route!(app, :get, "/users/:id::Int") do req, id
     json(Dict("id" => id, "name" => "User $id"))
 end
 
-post!(app, "/echo") do req
+route!(app, :post, "/echo") do req
     json(parsejson(req); status=201)
 end
 
@@ -69,11 +69,11 @@ start!(app; port=8080)
 ## 🧭 Routing
 
 ```julia
-get!(app, "/items",        req -> ...)
-post!(app, "/items",       req -> ...)
-put!(app, "/items/:id",    (req, id) -> ...)
-patch!(app, "/items/:id",  (req, id) -> ...)
-delete!(app, "/items/:id", (req, id) -> ...)
+route!(app, :get, "/items",        req -> ...)
+route!(app, :post, "/items",       req -> ...)
+route!(app, :put, "/items/:id",    (req, id) -> ...)
+route!(app, :patch, "/items/:id",  (req, id) -> ...)
+route!(app, :delete, "/items/:id", (req, id) -> ...)
 route!(app, :get, "/search", req -> ...)
 ```
 
@@ -82,10 +82,10 @@ values are 400s, unless a later route serves the path). Wildcards capture the
 rest of the path:
 
 ```julia
-get!(app, "/users/:id::Int",       (req, id)   -> ...)   # id::Int
-get!(app, "/price/:val::Float64",  (req, val)  -> ...)   # val::Float64
-get!(app, "/posts/:slug",          (req, slug) -> ...)   # slug::String
-get!(app, "/files/*path",          (req, path) -> ...)   # wildcard
+route!(app, :get, "/users/:id::Int",       (req, id)   -> ...)   # id::Int
+route!(app, :get, "/price/:val::Float64",  (req, val)  -> ...)   # val::Float64
+route!(app, :get, "/posts/:slug",          (req, slug) -> ...)   # slug::String
+route!(app, :get, "/files/*path",          (req, path) -> ...)   # wildcard
 ```
 
 **Groups** share a prefix and scoped middleware (composed as
@@ -97,11 +97,11 @@ api = group("/api/v1", middleware=[
     apikey("key-abc"; header_name="x-api-key"),
 ])
 
-get!(api, "/users", list_users)
-post!(api, "/users", create_user)
+route!(api, :get, "/users", list_users)
+route!(api, :post, "/users", create_user)
 
 group!(api, "/admin", middleware=[bearer("admin-token")]) do admin
-    delete!(admin, "/users/:id::Int", delete_user)
+    route!(admin, :delete, "/users/:id::Int", delete_user)
 end
 
 mount!(app, api)
@@ -239,7 +239,7 @@ broadcastws(app, "/chat", "Server announcement")
 > server-side security impact.
 
 ```julia
-get!(app, "/events") do req
+route!(app, :get, "/events") do req
     sse(req) do writer
         for i in 1:10
             emit(writer; data="Tick $i", event="update", id=string(i))
@@ -317,7 +317,7 @@ access inside the closure:
 ```julia
 app = App(; services=(db=connect_to_database(), cache=RedisPool()))
 
-get!(app, "/users") do req
+route!(app, :get, "/users") do req
     users = withservices(req) do svcs
         fetch_users(svcs.db)
     end
@@ -336,7 +336,7 @@ with no network and no FFI:
 using Test, Mongoose
 
 app = App()
-get!(app, "/hello", req -> json(Dict("msg" => "hi")))
+route!(app, :get, "/hello", req -> json(Dict("msg" => "hi")))
 app = use(app, cors())
 
 client = FakeTransport(app)

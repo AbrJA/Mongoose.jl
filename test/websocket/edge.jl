@@ -2,7 +2,7 @@
     @testset "on_close callback" begin
         closed = Ref(false)
         s = App(2)
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         ws!(s, "/ws/close";
             on_message=msg -> Message("ack"),
             on_close=() -> (closed[] = true))
@@ -20,7 +20,7 @@
     @testset "on_open with request info" begin
         captured_uri = Ref("")
         s = App(2)
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         ws!(s, "/ws/open";
             on_open=req -> (captured_uri[] = req.uri; true),
             on_message=msg -> Message("ok"))

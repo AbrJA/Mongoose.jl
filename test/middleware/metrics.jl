@@ -1,7 +1,7 @@
 @testset "Metrics middleware" begin
     @testset "Exposes /metrics endpoint" begin
         s = App()
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         s = use(s, metrics())
 
         with_server(s) do port
@@ -23,7 +23,7 @@
 
     @testset "Custom metrics path" begin
         s = App()
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         s = use(s, metrics(path="/stats"))
 
         with_server(s) do port
@@ -38,7 +38,7 @@ end
 
 @testset "Metrics count streaming responses" begin
     app = App()
-    get!(app, "/events") do req
+    route!(app, :get, "/events") do req
         sse(req) do writer
             emit(writer; data="one")
         end
@@ -55,8 +55,8 @@ end
 
 @testset "Exceptions are counted (500 and HTTPError status)" begin
     s = App()
-    get!(s, "/boom") do req; error("boom") end
-    get!(s, "/teapot") do req; throw(ImATeapotError("short and stout")) end
+    route!(s, :get, "/boom") do req; error("boom") end
+    route!(s, :get, "/teapot") do req; throw(ImATeapotError("short and stout")) end
     s = use(s, metrics())
 
     with_server(s) do port
@@ -71,7 +71,7 @@ end
 
 @testset "WS drop gauge is exposed" begin
     s = App()
-    get!(s, "/") do req; text("ok") end
+    route!(s, :get, "/") do req; text("ok") end
     s = use(s, metrics())
     with_server(s) do port
         body = String(HTTP.get("http://127.0.0.1:$port/metrics"; retry=false).body)

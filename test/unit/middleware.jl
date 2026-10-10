@@ -62,7 +62,7 @@ end
     r = Router()
     sink = String[]
     grp = group("/api", middleware=[_RecordMw("grp", sink)])
-    get!(grp, "/x") do req; push!(sink, "handler"); text("ok") end
+    route!(grp, :get, "/x") do req; push!(sink, "handler"); text("ok") end
     mount!(r, grp)
 
     ep = r.fixed["/api/x"].handlers.get
@@ -79,7 +79,7 @@ end
 @testset "Plain callable middleware (no subtype needed)" begin
     r = Router()
     hang = String[]
-    get!(r, "/c", req -> (push!(hang, "handler"); text("ok")))
+    route!(r, :get, "/c", req -> (push!(hang, "handler"); text("ok")))
 
     # use accepts a plain closure.
     app = App()

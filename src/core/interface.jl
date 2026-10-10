@@ -174,7 +174,7 @@ function ws!(router::AbstractRouter, path::AbstractString; kwargs...)
     throw(MethodError(ws!, (router, path)))
 end
 
-# Positional-handler sugar, mirroring the HTTP DSL (`get!(app, path, handler)`).
+# Positional-handler sugar, mirroring the HTTP DSL (`route!(app, :get, path, handler)`).
 ws!(router::AbstractRouter, path::AbstractString, handler::Function; kwargs...) =
     ws!(router, path; on_message=handler, kwargs...)
 

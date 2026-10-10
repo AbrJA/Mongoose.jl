@@ -10,6 +10,22 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 > gates: main suite, wire-level acceptance suite, Aqua + JET baseline, and a
 > green docs build.
 
+## [Unreleased]
+
+### Added
+- `route!(server, method, path) do req … end` and `ws!(server, path) do msg … end`
+  do-block forms (a do-block passes the handler first, so the argument order
+  mirrors the positional `route!(server, method, path, handler)`).
+
+### Removed
+- **Breaking**: the per-method route DSL verbs — `get!`, `post!`, `put!`,
+  `patch!`, `delete!`, `options!`, `head!` — were removed. `get!`/`put!`/`delete!`
+  overloaded `Base` container semantics (`delete!(app, path, handler)`
+  *registered* a DELETE handler while reading as route removal), and the family
+  duplicated the `route!` protocol across `Router`, `App`, and `RouteGroup`.
+  Register with `route!(app, :delete, path, handler)`; `@routes` blocks keep
+  the short `get(...)`/`post(...)` names for compile-time static tables.
+
 ## [0.5.0] - 2026-10-09
 
 ### Added

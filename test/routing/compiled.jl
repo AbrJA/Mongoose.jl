@@ -97,9 +97,9 @@ end
 @testset "Compiled dispatch: trailing literal cannot match an exhausted path" begin
     # Regression: a shorter path must not alias a longer route's trailing literal.
     r = Router()
-    post!(r, "/api/orders/:id::Int/payments") do req, id; text("pay:$id") end
-    get!(r, "/api/orders/:id::Int") do req, id; text("get:$id") end
-    post!(r, "/api/orders/:id::Int/cancel") do req, id; text("cancel:$id") end
+    route!(r, :post, "/api/orders/:id::Int/payments") do req, id; text("pay:$id") end
+    route!(r, :get, "/api/orders/:id::Int") do req, id; text("get:$id") end
+    route!(r, :post, "/api/orders/:id::Int/cancel") do req, id; text("cancel:$id") end
     freeze!(r)
 
     resp = process(mkctx(r), mkreq(:get, "/api/orders/1"))
@@ -143,7 +143,7 @@ end
 
 @testset "Compiled dispatch: getterminal contract" begin
     r = Router()
-    get!(r, "/a", req -> text("a"))
+    route!(r, :get, "/a", req -> text("a"))
     # Unfrozen routers fall back to the generic pipeline.
     @test getterminal(r, mkreq(:get, "/a")) === nothing
     freeze!(r)
@@ -194,7 +194,7 @@ end
 
 @testset "Compiled dispatch: error remap + services still apply" begin
     r = Router()
-    get!(r, "/svc", req -> text(string(service(req, Val(:db)))))
+    route!(r, :get, "/svc", req -> text(string(service(req, Val(:db)))))
     freeze!(r)
     resp = process(mkctx(r; svcs=(db=42,)),
         mkreq(:get, "/svc"))
@@ -246,8 +246,8 @@ end
 
 @testset "Compiled dispatch: parametric route with explicit head!" begin
     s = App()
-    get!(s, "/u/:id::Int", (req, id) -> text("g:$id"))
-    head!(s, "/u/:id::Int", (req, id) -> text("h:$id"))
+    route!(s, :get, "/u/:id::Int", (req, id) -> text("g:$id"))
+    route!(s, :head, "/u/:id::Int", (req, id) -> text("h:$id"))
     with_server(s) do port
         r = HTTP.get("http://127.0.0.1:$port/u/7"; status_exception=false)
         @test r.status == 200

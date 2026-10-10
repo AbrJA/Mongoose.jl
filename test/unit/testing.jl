@@ -1,15 +1,15 @@
 @testset "FakeTransport" begin
     app = App()
-    get!(app, "/hello") do req
+    route!(app, :get, "/hello") do req
         text("Hello World")
     end
-    get!(app, "/json") do req
+    route!(app, :get, "/json") do req
         json((message="hi", count=42))
     end
-    post!(app, "/echo") do req
+    route!(app, :post, "/echo") do req
         text("Got: $(req.body)")
     end
-    get!(app, "/query") do req
+    route!(app, :get, "/query") do req
         q = query(req, "name", "unknown")
         text("Hello $q")
     end
@@ -59,19 +59,19 @@ end
     end
 
     app = App()
-    get!(app, "/teapot") do req
+    route!(app, :get, "/teapot") do req
         throw(ImATeapotError("short and stout"))
     end
-    get!(app, "/gone") do req
+    route!(app, :get, "/gone") do req
         throw(NotFoundError("user 7 missing"))
     end
-    get!(app, "/conflict") do req
+    route!(app, :get, "/conflict") do req
         throw(ConflictError("duplicate email"))
     end
-    post!(app, "/valid") do req
+    route!(app, :post, "/valid") do req
         validate(req, ErrUserUnit)
     end
-    post!(app, "/valid/json") do req
+    route!(app, :post, "/valid/json") do req
         json(validate(req, ErrUserUnit))
     end
 
@@ -113,7 +113,7 @@ end
 
     @testset "trap registration beats the automatic mapping" begin
         ae = App()
-        get!(ae, "/g") do req; throw(NotFoundError("boom")) end
+        route!(ae, :get, "/g") do req; throw(NotFoundError("boom")) end
         ae = trap(ae, NotFoundError) do req, e
             text("custom: $(e.message)"; status=404)
         end
@@ -126,7 +126,7 @@ end
 
 @testset "Stateful FakeTransport (owner checks, one response/stream, close cascade)" begin
     app = App()
-    get!(app, "/events") do req
+    route!(app, :get, "/events") do req
         sse(req) do w
             emit(w; data="a")
             emit(w; data="b")
@@ -176,7 +176,7 @@ end
 
     @testset "Producer exceptions are recorded on the stream, not rethrown" begin
         s2 = App()
-        get!(s2, "/crash") do req
+        route!(s2, :get, "/crash") do req
             sse(req) do w
                 emit(w; data="before")
                 error("producer blew up")
@@ -194,8 +194,8 @@ end
 
 @testset "FakeTransport header input forms" begin
     app = App()
-    get!(app, "/h") do req; text(get(req.headers, "x-a", "none")) end
-    post!(app, "/j") do req; text(get(req.headers, "content-type", "none")) end
+    route!(app, :get, "/h") do req; text(get(req.headers, "x-a", "none")) end
+    route!(app, :post, "/j") do req; text(get(req.headers, "content-type", "none")) end
     client = Mongoose.FakeTransport(app)
 
     @test String(client(:get, "/h"; headers=Headers(["x-a" => "1"])).body) == "1"

@@ -1,6 +1,6 @@
 @testset "Custom error responses" begin
     app = App()
-    get!(app, "/") do req; text("ok") end
+    route!(app, :get, "/") do req; text("ok") end
     app = trap(app, 404, Response(404, Pair{String,String}[], "Custom Not Found"))
 
     with_server(app) do port

@@ -39,15 +39,15 @@ using Mongoose
 
 app = App(4)
 
-get!(app, "/") do req
+route!(app, :get, "/") do req
     text("Hello, World!")
 end
 
-get!(app, "/users/:id::Int") do req, id
+route!(app, :get, "/users/:id::Int") do req, id
     json(Dict("id" => id, "name" => "User $id"))
 end
 
-post!(app, "/users") do req
+route!(app, :post, "/users") do req
     data = parsejson(req)
     json(Dict("created" => data["name"]); status=201)
 end

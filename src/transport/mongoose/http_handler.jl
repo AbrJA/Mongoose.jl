@@ -364,23 +364,22 @@ function ws!(server::AbstractServer, path::AbstractString, handler::Function; kw
     return server
 end
 
-# Method-specific helpers for server/app (extend Base where applicable to avoid ambiguity)
-Base.get!(server::AbstractServer, path::AbstractString, h::Function) = (route!(server, :get, path, h); server)
-post!(server::AbstractServer, path::AbstractString, h::Function) = (route!(server, :post, path, h); server)
-Base.put!(server::AbstractServer, path::AbstractString, h::Function) = (route!(server, :put, path, h); server)
-patch!(server::AbstractServer, path::AbstractString, h::Function) = (route!(server, :patch, path, h); server)
-Base.delete!(server::AbstractServer, path::AbstractString, h::Function) = (route!(server, :delete, path, h); server)
-options!(server::AbstractServer, path::AbstractString, h::Function) = (route!(server, :options, path, h); server)
-head!(server::AbstractServer, path::AbstractString, h::Function) = (route!(server, :head, path, h); server)
+# Do-block convenience: route!(app, :get, "/x") do req … end
+function route!(f::Function, server::AbstractServer, method::Symbol, path::AbstractString;
+                middleware=nothing, metadata=nothing)
+    route!(server, method, path, f; middleware=middleware, metadata=metadata)
+    return server
+end
 
-# Do-block convenience
-Base.get!(f::Function, server::AbstractServer, path::AbstractString) = Base.get!(server, path, f)
-post!(f::Function, server::AbstractServer, path::AbstractString) = post!(server, path, f)
-Base.put!(f::Function, server::AbstractServer, path::AbstractString) = Base.put!(server, path, f)
-patch!(f::Function, server::AbstractServer, path::AbstractString) = patch!(server, path, f)
-Base.delete!(f::Function, server::AbstractServer, path::AbstractString) = Base.delete!(server, path, f)
-options!(f::Function, server::AbstractServer, path::AbstractString) = options!(server, path, f)
-head!(f::Function, server::AbstractServer, path::AbstractString) = head!(server, path, f)
+function route!(f::Function, server::AbstractServer, method::AbstractString, path::AbstractString;
+                middleware=nothing, metadata=nothing)
+    route!(server, method, path, f; middleware=middleware, metadata=metadata)
+    return server
+end
+
+# Do-block convenience: ws!(app, "/chat") do msg … end
+ws!(f::Function, server::AbstractServer, path::AbstractString; kwargs...) =
+    ws!(server, path, f; kwargs...)
 
 """
     serve!(server, directory; uri_prefix="/")

@@ -14,7 +14,7 @@ using Sockets
 
         @testset "HTTPS basic request" begin
             s = App()
-            get!(s, "/secure") do req; text("secure!") end
+            route!(s, :get, "/secure") do req; text("secure!") end
             port = fresh_port()
             start!(s; host="127.0.0.1", port=port, blocking=false, tls=tls)
 
@@ -70,7 +70,7 @@ using Sockets
 
         @testset "stalled TLS handshake is closed by header_timeout" begin
             s = App(header_timeout_ms=200)
-            get!(s, "/") do req; text("ok") end
+            route!(s, :get, "/") do req; text("ok") end
             port = fresh_port()
             start!(s; host="127.0.0.1", port=port, blocking=false, tls=tls)
             try
@@ -87,7 +87,7 @@ using Sockets
 
         @testset "HTTPS POST with body" begin
             s = App()
-            post!(s, "/data") do req; text("got: $(req.body)") end
+            route!(s, :post, "/data") do req; text("got: $(req.body)") end
             port = fresh_port()
             start!(s; host="127.0.0.1", port=port, blocking=false, tls=tls)
 

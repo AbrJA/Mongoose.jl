@@ -47,7 +47,7 @@ Base.showerror(io::IO, e::StreamClosedError) = print(io, "StreamClosedError: ", 
     # Example
     ```julia
     app = App()
-    get!(app, "/hello") do req
+    route!(app, :get, "/hello") do req
         json((message="Hello World",))
     end
 

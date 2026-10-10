@@ -215,7 +215,7 @@ Return the request's per-request context dict, creating it lazily on first acces
 
 # Example
 ```julia
-get!(app, "/") do req
+route!(app, :get, "/") do req
     ctx = context(req)
     ctx[:user_id] = 42
     json(Dict("ok" => true))
@@ -324,7 +324,7 @@ Returns a Dict where string fields map to their values and file fields map to Mu
 
 # Example
 ```julia
-post!(app, "/upload") do req
+route!(app, :post, "/upload") do req
     parts = parsemultipart(req)
     file = parts["avatar"]::MultipartFile
     text("Received \$(file.filename) (\$(length(file.data)) bytes)")

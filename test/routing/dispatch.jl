@@ -1,7 +1,7 @@
 @testset "Route dispatch (integration)" begin
     @testset "Fixed route dispatch" begin
         app = App()
-        get!(app, "/hello") do req; text("world") end
+        route!(app, :get, "/hello") do req; text("world") end
         with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/hello"; status_exception=false)
             @test resp.status == 200
@@ -11,7 +11,7 @@
 
     @testset "Parametric Int dispatch" begin
         app = App()
-        get!(app, "/users/:id::Int") do req, id; text("User $id type=$(typeof(id))") end
+        route!(app, :get, "/users/:id::Int") do req, id; text("User $id type=$(typeof(id))") end
         with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/users/42"; status_exception=false)
             @test resp.status == 200
@@ -21,7 +21,7 @@
 
     @testset "Parametric String dispatch" begin
         app = App()
-        get!(app, "/posts/:slug") do req, slug; text("Post: $slug") end
+        route!(app, :get, "/posts/:slug") do req, slug; text("Post: $slug") end
         with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/posts/hello-world"; status_exception=false)
             @test resp.status == 200
@@ -31,7 +31,7 @@
 
     @testset "Wildcard catch-all" begin
         app = App()
-        get!(app, "/files/*path") do req, path; text("Path: $path") end
+        route!(app, :get, "/files/*path") do req, path; text("Path: $path") end
         with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/files/docs/readme.md"; status_exception=false)
             @test resp.status == 200
@@ -41,7 +41,7 @@
 
     @testset "404 on unregistered route" begin
         app = App()
-        get!(app, "/exists") do req; text("ok") end
+        route!(app, :get, "/exists") do req; text("ok") end
         with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/nope"; status_exception=false)
             @test resp.status == 404
@@ -50,7 +50,7 @@
 
     @testset "405 method not allowed" begin
         app = App()
-        get!(app, "/only-get") do req; text("ok") end
+        route!(app, :get, "/only-get") do req; text("ok") end
         with_server(app) do port
             resp = HTTP.request("POST", "http://127.0.0.1:$port/only-get"; status_exception=false)
             @test resp.status == 405
@@ -59,7 +59,7 @@
 
     @testset "Multiple params" begin
         app = App()
-        get!(app, "/org/:org/repo/:repo") do req, org, repo; text("$org/$repo") end
+        route!(app, :get, "/org/:org/repo/:repo") do req, org, repo; text("$org/$repo") end
         with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/org/julia/repo/mongoose"; status_exception=false)
             @test resp.status == 200
@@ -69,7 +69,7 @@
 
     @testset "Invalid typed param returns 400" begin
         app = App()
-        get!(app, "/items/:id::Int") do req, id; text("ok") end
+        route!(app, :get, "/items/:id::Int") do req, id; text("ok") end
         with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/items/abc"; status_exception=false)
             @test resp.status == 400
@@ -79,8 +79,8 @@
     @testset "ParamMismatch: fallback, catch-all, 400 page" begin
         # A later pattern that matches wins over the parse failure.
         r = Router()
-        get!(r, "/users/:id::Int") do req, id; text("int $id") end
-        get!(r, "/users/:name") do req, name; text("str $name") end
+        route!(r, :get, "/users/:id::Int") do req, id; text("int $id") end
+        route!(r, :get, "/users/:name") do req, name; text("str $name") end
         c = FakeTransport(App(router = r))
         @test String(c(:get, "/users/abraham").body) == "str abraham"
         @test c(:get, "/users/7").status == 200
@@ -93,7 +93,7 @@
         app = trap(App(router = Router()), 400) do req
             json((error = "bad_param",); status = 400)
         end
-        get!(app, "/users/:id::Int") do req, id; text("user $id") end
+        route!(app, :get, "/users/:id::Int") do req, id; text("user $id") end
         c2 = FakeTransport(app)
         @test c2(:get, "/users/abraham").status == 400
         @test occursin("bad_param", String(c2(:get, "/users/abraham").body))

@@ -48,15 +48,11 @@ MethodMismatch
 ParamMismatch
 RouteResult
 MethodMap
-post!
-patch!
-options!
-head!
 ```
 
-> `get!`, `put!`, and `delete!` are `Base` methods that Mongoose extends (the
-> other verbs are Mongoose exports). All accept `(server_or_router, path,
-> handler)` and the do-block form `get!(server, path) do req … end`.
+> Route registration is `route!(server_or_router, method, path, handler)`; the
+> do-block form is `route!(server, :get, path) do req … end`. `@routes` blocks
+> keep the short `get(...)`/`post(...)` names for compile-time static tables.
 
 ## Request Processing
 

@@ -75,7 +75,7 @@ export AbstractRequest, Request, Headers, asheaders, mergeheaders, context, pars
     SingleEndpoint, matchroute, hasroute,
     StaticRouter, @routes,
     gethandler, getendpoint, sethandler!, haswsroutes, getwsendpoint,
-    route!, ws!, group, group!, RouteGroup, mount!, post!, patch!, options!, head!,
+    route!, ws!, group, group!, RouteGroup, mount!,
     Endpoint, errorresponse, process, RequestContext, freeze!, isfrozen, getterminal,
     invokeendpoint, scopedmiddleware,
     AbstractMiddleware, PathFilter, runpipeline, FunctionMiddleware, asmiddleware, asmiddlewares, asmiddlewaretuple, attach!,

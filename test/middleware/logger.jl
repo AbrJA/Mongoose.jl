@@ -2,7 +2,7 @@
     @testset "Logs to buffer" begin
         io = IOBuffer()
         s = App()
-        get!(s, "/logged") do req; text("ok") end
+        route!(s, :get, "/logged") do req; text("ok") end
         s = use(s, logger(output=io))
 
         with_server(s) do port
@@ -17,7 +17,7 @@
     @testset "Structured JSON logging" begin
         io = IOBuffer()
         s = App()
-        get!(s, "/json-log") do req; text("ok") end
+        route!(s, :get, "/json-log") do req; text("ok") end
         s = use(s, logger(output=io, structured=true))
 
         with_server(s) do port
@@ -34,7 +34,7 @@
     @testset "Threshold filtering" begin
         io = IOBuffer()
         s = App()
-        get!(s, "/fast") do req; text("ok") end
+        route!(s, :get, "/fast") do req; text("ok") end
         s = use(s, logger(output=io, threshold_ms=10000))  # 10 seconds — nothing logged
 
         with_server(s) do port
@@ -46,7 +46,7 @@
     @testset "Throwing handler is logged as 500" begin
         io = IOBuffer()
         s = App()
-        get!(s, "/boom") do req; error("boom") end
+        route!(s, :get, "/boom") do req; error("boom") end
         s = use(s, logger(output=io))
 
         with_server(s) do port
@@ -62,7 +62,7 @@ end
 @testset "Control characters are sanitized (log injection)" begin
     io = IOBuffer()
     s = App()
-    get!(s, "/x") do req; text("ok") end
+    route!(s, :get, "/x") do req; text("ok") end
     s = use(s, logger(output=io))
     FakeTransport(s)(:get, "/x\x1b[31mHACK\x0aINJECTED")
     out = String(take!(io))
@@ -71,7 +71,7 @@ end
 
     io2 = IOBuffer()
     s2 = App()
-    get!(s2, "/x") do req; text("ok") end
+    route!(s2, :get, "/x") do req; text("ok") end
     s2 = use(s2, logger(output=io2, structured=true))
     FakeTransport(s2)(:get, "/x\x1b[31m")
     for line in filter(!isempty, split(String(take!(io2)), '\n'))

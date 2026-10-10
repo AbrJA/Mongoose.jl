@@ -8,7 +8,7 @@
 
     ## 1. Manual validation in handler:
     ```julia
-    post!(app, "/users") do req
+    route!(app, :post, "/users") do req
         data = validate(req, CreateUser)
         # data is a validated CreateUser instance
         json((id=1, name=data.name))
@@ -17,7 +17,7 @@
 
     ## 2. Validation with custom error responses:
     ```julia
-    post!(app, "/users") do req
+    route!(app, :post, "/users") do req
         data = validate(req, CreateUser) do err
             json((error=err.message, field=err.field); status=422)
         end
@@ -67,7 +67,7 @@ struct CreateUser
     age::Int
 end
 
-post!(app, "/users") do req
+route!(app, :post, "/users") do req
     user = validate(req, CreateUser) do e
         json((error=e.message, field=e.field); status=422)
     end

@@ -21,6 +21,8 @@
 > - **Dispatch parity follow-up**: unknown/mixed-case HTTP methods answer
 >   `405`/`404` identically on all three dispatchers (no more `RouteError`→500
 >   on generic/static); wire-level test + differential probes added.
+> - **L3 resolved**: the per-method DSL verbs were removed; registration is
+>   `route!(app, :get, path, handler)` + do-block forms (see §2-L3).
 > - **M1 withdrawn after measurement**: the compiler already stack-allocates
 >   the non-escaping `Next` continuation — 0 extra B/op for 1–4 middleware
 >   layers (see §2-M1).
@@ -356,13 +358,18 @@ path: allocate `n+1` vector + 2 `copyto!`s (~110 B/op). This runs once per
 response for every middleware that injects a header (`X-Request-Id` in the
 async path, security, cors, etag).
 
-#### L3 — Reconsider `Base.get!`/`put!`/`delete!` as DSL verbs (1.0 decision)
+#### L3 — `Base.get!`/`put!`/`delete!` as DSL verbs — **RESOLVED (removed)**
 
-`get!(app, "/path") do req ... end` reads like dict mutation. It is not piracy
-(owned types), but it borrows Base *semantics*. If the DSL ever consolidates
-behind non-Base names (`route!(app, :get, ...)` + `@get`-style macros), the
-do-block sugar survives via the `(f, app, path)` forms. Do not remove now —
-just time-box the decision for the 1.0 API freeze with a `@deprecate` path.
+The per-method verbs (`get!`/`post!`/`put!`/`patch!`/`delete!`/`options!`/
+`head!`) were removed ahead of 1.0. Rationale: `delete!(app, path, handler)`
+*registered* a DELETE handler while reading as route removal; `get!`/`put!`
+borrowed Base container semantics; and the family duplicated the `route!`
+protocol across `Router`, `App`, and `RouteGroup`. Registration is now one
+verb — `route!(app, :get, path, handler)` — with the do-block form
+`route!(app, :get, path) do req … end` (and `ws!(app, path) do msg … end`).
+`@routes` blocks keep the short `get(...)`/`post(...)` names for compile-time
+static tables, which gives the principled split: declarative tables use short
+verbs, imperative registration uses one explicit verb.
 
 #### L4 — Naming cosmetics
 

@@ -19,7 +19,7 @@
         end
 
         s = App()
-        get!(s, "/") do req; push!(order, "handler"); text("ok") end
+        route!(s, :get, "/") do req; push!(order, "handler"); text("ok") end
         s = use(s, MW1())
         s = use(s, MW2())
 
@@ -37,7 +37,7 @@
         end
 
         s = App()
-        get!(s, "/") do req; text("should not reach") end
+        route!(s, :get, "/") do req; text("should not reach") end
         s = use(s, BlockAll())
 
         with_server(s) do port
@@ -49,7 +49,7 @@
 
     @testset "Static middleware composition via App(middleware=…)" begin
         s = App(middleware=(cors(origins="*"), security()))
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         @test length(s.context.middlewares) == 2
 
         client = FakeTransport(s)

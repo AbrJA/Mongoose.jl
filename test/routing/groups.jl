@@ -2,9 +2,9 @@
     @testset "Basic route group" begin
         s = App()
         grp = group("/api/v1")
-        get!(grp, "/users") do req; text("users") end
-        post!(grp, "/users") do req; Response(201, "created") end
-        get!(grp, "/health") do req; text("ok") end
+        route!(grp, :get, "/users") do req; text("users") end
+        route!(grp, :post, "/users") do req; Response(201, "created") end
+        route!(grp, :get, "/health") do req; text("ok") end
         mount!(s, grp)
 
         with_server(s) do port
@@ -25,8 +25,8 @@ end
     @testset "Basic group via mount!" begin
         app = App()
         grp = group("/api/v1")
-        get!(grp, "/users") do req; text("users list") end
-        get!(grp, "/items") do req; text("items list") end
+        route!(grp, :get, "/users") do req; text("users list") end
+        route!(grp, :get, "/items") do req; text("items list") end
         @test mount!(app, grp) === app
 
         with_server(app) do port
@@ -44,7 +44,7 @@ end
         for mws in (cors(), (cors(),), [cors()])
             app = App()
             grp = group("/api"; middleware=mws) do g
-                get!(g, "/x", req -> text("x"))
+                route!(g, :get, "/x", req -> text("x"))
             end
             @test mount!(app, grp) === app
             resp = Mongoose.FakeTransport(app)(:get, "/api/x"; headers=["Origin" => "https://a.test"])

@@ -1,6 +1,6 @@
 @testset "Standalone pipeline (no server, Kernel seam)" begin
     r = Router()
-    get!(r, "/hi") do req; text("hello") end
+    route!(r, :get, "/hi") do req; text("hello") end
     route!(r, :get, "/users/:id::Int", (req, id) -> text("user $id"))
 
     req = Request(:get, "/hi", Dict{String,String}(), Pair{String,String}[], "")
@@ -62,9 +62,9 @@ end
 
     @testset "End-to-end via the pipeline" begin
         r = Router()
-        get!(r, "/raw", req -> "raw text")
-        get!(r, "/dict", req -> Dict("k" => 1))
-        get!(r, "/nil", req -> nothing)
+        route!(r, :get, "/raw", req -> "raw text")
+        route!(r, :get, "/dict", req -> Dict("k" => 1))
+        route!(r, :get, "/nil", req -> nothing)
         rs = Dict{Int,Response}()
         mk(p) = Request(:get, p, Dict{String,String}(), Pair{String,String}[], "")
 
@@ -82,7 +82,7 @@ end
     @testset "HEAD without an explicit route is 405 (generic & frozen)" begin
         for frozen in (false, true)
             r = Router()
-            get!(r, "/dict", req -> Dict("k" => 1))
+            route!(r, :get, "/dict", req -> Dict("k" => 1))
             frozen && freeze!(r)
             rs = Dict{Int,Response}()
 
@@ -101,7 +101,7 @@ end
 
     @testset "Explicit HEAD route: handler body preserved at the seam" begin
         r = Router()
-        head!(r, "/ping", req -> text("pong"))
+        route!(r, :head, "/ping", req -> text("pong"))
         rs = Dict{Int,Response}()
         resp = Mongoose.process(Mongoose.RequestContext(r; errors=rs),
             Request(:head, "/ping", Dict{String,String}(), Pair{String,String}[], ""))

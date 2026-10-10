@@ -1,7 +1,7 @@
 @testset "SSE streaming" begin
     @testset "Basic SSE response" begin
         s = App(2)
-        get!(s, "/events") do req
+        route!(s, :get, "/events") do req
             sse(req) do writer
                 emit(writer; data="hello", event="greeting")
                 emit(writer; data="world", id="1")
@@ -25,7 +25,7 @@
 
     @testset "SSE framing (unit, via FakeTransport)" begin
         s = App()
-        get!(s, "/events") do req
+        route!(s, :get, "/events") do req
             sse(req) do writer
                 emit(writer; data="line1\nline2", event="evt", id="7", retry_ms=1000)
                 emit(writer; data="third")
@@ -52,7 +52,7 @@
         # requests; a Channel signal after the first event avoids fixed sleeps.
         s = App()
         mid_stream = Channel{Nothing}(1)
-        get!(s, "/events") do req
+        route!(s, :get, "/events") do req
             sse(req) do writer
                 emit(writer; data="tick 1")
                 signal(mid_stream)   # mid-flight handshake (never blocks)
@@ -62,7 +62,7 @@
                 end
             end
         end
-        get!(s, "/fast") do req; text("ok") end
+        route!(s, :get, "/fast") do req; text("ok") end
 
         with_server(s) do port
             # Warm the measured route (JIT) so timing measures the loop, not
@@ -92,7 +92,7 @@ end
 @testset "shutdown drains active streams" begin
     finished = Ref(false)
     app = App(drain_timeout_ms=5000)
-    get!(app, "/drain") do req
+    route!(app, :get, "/drain") do req
         sse(req) do writer
             for i in 1:5
                 emit(writer; data="e$i")
@@ -127,14 +127,14 @@ end
 @testset "slow consumer backpressure caps buffered bytes" begin
     cap = 64 * 1024
     s = App(2; send_buffer_bytes=cap)
-    get!(s, "/events") do req
+    route!(s, :get, "/events") do req
         sse(req) do w
             for i in 1:20000
                 emit(w; data="x"^1000)   # ~20MB: exceeds any kernel buffer
             end
         end
     end
-    get!(s, "/ping") do req; text("pong") end
+    route!(s, :get, "/ping") do req; text("pong") end
 
     with_server(s) do port
         sock = Sockets.connect("127.0.0.1", port)

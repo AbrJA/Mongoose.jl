@@ -2,7 +2,7 @@ import Base64
 @testset "Bearer auth" begin
     @testset "Valid token passes" begin
         s = App()
-        get!(s, "/secure") do req; text("secret") end
+        route!(s, :get, "/secure") do req; text("secret") end
         s = use(s, bearer(token -> token == "valid-token"))
 
         with_server(s) do port
@@ -16,7 +16,7 @@ import Base64
 
     @testset "Missing auth header returns 401" begin
         s = App()
-        get!(s, "/secure") do req; text("secret") end
+        route!(s, :get, "/secure") do req; text("secret") end
         s = use(s, bearer(token -> token == "valid-token"))
 
         with_server(s) do port
@@ -27,7 +27,7 @@ import Base64
 
     @testset "Invalid token returns 403" begin
         s = App()
-        get!(s, "/secure") do req; text("secret") end
+        route!(s, :get, "/secure") do req; text("secret") end
         s = use(s, bearer(token -> token == "valid-token"))
 
         with_server(s) do port
@@ -40,7 +40,7 @@ import Base64
 
     @testset "Invalid scheme returns 401" begin
         s = App()
-        get!(s, "/secure") do req; text("secret") end
+        route!(s, :get, "/secure") do req; text("secret") end
         s = use(s, bearer(token -> true))
 
         with_server(s) do port
@@ -55,7 +55,7 @@ end
 @testset "API Key auth" begin
     @testset "Valid key passes" begin
         s = App()
-        get!(s, "/api") do req; text("data") end
+        route!(s, :get, "/api") do req; text("data") end
         s = use(s, apikey(keys=Set(["key-123", "key-456"])))
 
         with_server(s) do port
@@ -68,7 +68,7 @@ end
 
     @testset "Missing key returns 401" begin
         s = App()
-        get!(s, "/api") do req; text("data") end
+        route!(s, :get, "/api") do req; text("data") end
         s = use(s, apikey(keys=Set(["key-123"])))
 
         with_server(s) do port
@@ -79,7 +79,7 @@ end
 
     @testset "Invalid key returns 401" begin
         s = App()
-        get!(s, "/api") do req; text("data") end
+        route!(s, :get, "/api") do req; text("data") end
         s = use(s, apikey(keys=Set(["key-123"])))
 
         with_server(s) do port
@@ -102,7 +102,7 @@ end
                apikey(keys=["key-123"]))
         app = App()
         app = use(app, mw)
-        get!(app, "/") do req; text("ok") end
+        route!(app, :get, "/") do req; text("ok") end
         client = Mongoose.FakeTransport(app)
         @test client(:get, "/"; headers=["x-api-key" => "key-123"]).status == 200
         @test client(:get, "/"; headers=["x-api-key" => "wrong"]).status == 401
@@ -111,7 +111,7 @@ end
     # Custom header name on the positional form.
     app = App()
     app = use(app, apikey("key-123"; header_name="X-Api-Token"))
-    get!(app, "/") do req; text("ok") end
+    route!(app, :get, "/") do req; text("ok") end
     client = Mongoose.FakeTransport(app)
     @test client(:get, "/"; headers=["x-api-token" => "key-123"]).status == 200
     @test client(:get, "/"; headers=["x-api-key" => "key-123"]).status == 401
@@ -121,7 +121,7 @@ end
     @testset "bearer with string uses constant-time comparison" begin
         app = App()
         app = use(app, bearer("secret-token-123"))
-        get!(app, "/") do req; text("ok") end
+        route!(app, :get, "/") do req; text("ok") end
 
         client = Mongoose.FakeTransport(app)
 
@@ -141,7 +141,7 @@ end
     @testset "apikey uses constant-time comparison" begin
         app = App()
         app = use(app, apikey(keys=Set(["key-abc-123"])))
-        get!(app, "/") do req; text("ok") end
+        route!(app, :get, "/") do req; text("ok") end
 
         client = Mongoose.FakeTransport(app)
 
@@ -155,7 +155,7 @@ end
 
 @testset "Basic auth" begin
     app = App()
-    get!(app, "/secure") do req
+    route!(app, :get, "/secure") do req
         text("secret data")
     end
     app = use(app, basicauth("admin", "hunter2"))

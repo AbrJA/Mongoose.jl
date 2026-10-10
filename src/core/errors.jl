@@ -43,7 +43,7 @@ Throw it inside a handler (or middleware) to signal a non-200 reply with a
 custom message:
 
 ```julia
-get!(app, "/users/:id::Int") do req, id
+route!(app, :get, "/users/:id::Int") do req, id
     id in 1:999 || throw(NotFoundError("user \$id not found"))
     json((id=id,))
 end

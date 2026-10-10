@@ -1,7 +1,7 @@
 @testset "Health middleware" begin
     @testset "Default healthy" begin
         s = App()
-        get!(s, "/") do req; text("app") end
+        route!(s, :get, "/") do req; text("app") end
         s = use(s, health())
 
         with_server(s) do port
@@ -19,7 +19,7 @@
 
     @testset "Unhealthy returns 503" begin
         s = App()
-        get!(s, "/") do req; text("app") end
+        route!(s, :get, "/") do req; text("app") end
         s = use(s, health(health_check=() -> false))
 
         with_server(s) do port
@@ -31,7 +31,7 @@
 
     @testset "Not ready returns 503" begin
         s = App()
-        get!(s, "/") do req; text("app") end
+        route!(s, :get, "/") do req; text("app") end
         s = use(s, health(ready_check=() -> false))
 
         with_server(s) do port
@@ -43,7 +43,7 @@
 
     @testset "Custom probe paths" begin
         s = App()
-        get!(s, "/") do req; text("app") end
+        route!(s, :get, "/") do req; text("app") end
         s = use(s, health(health_path="/health", ready_path="/ready", live_path=nothing))
 
         with_server(s) do port
@@ -57,7 +57,7 @@
 
     @testset "Non-health routes pass through" begin
         s = App()
-        get!(s, "/app") do req; text("hello") end
+        route!(s, :get, "/app") do req; text("hello") end
         s = use(s, health())
 
         with_server(s) do port

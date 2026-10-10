@@ -16,7 +16,7 @@ only send SIGTERM bypass it.
 # Example
 ```julia
 app = App(4)
-get!(app, "/") do req; json(Dict("ok" => true)) end
+route!(app, :get, "/") do req; json(Dict("ok" => true)) end
 start!(app; port=8080)
 ```
 """

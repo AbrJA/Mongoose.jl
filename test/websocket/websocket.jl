@@ -1,7 +1,7 @@
 @testset "WebSocket basic" begin
     @testset "Echo message" begin
         s = App(2)
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         ws!(s, "/ws/echo"; on_message=msg -> Message("Echo: $(msg.data)"))
 
         with_server(s) do port
@@ -15,7 +15,7 @@
 
     @testset "Multiple messages" begin
         s = App(2)
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         ws!(s, "/ws/multi"; on_message=msg -> Message("Got: $(msg.data)"))
 
         with_server(s) do port
@@ -32,7 +32,7 @@ end
 
 @testset "WebSocket server-initiated push (broadcastws)" begin
     s = App(2)
-    get!(s, "/") do req; text("ok") end
+    route!(s, :get, "/") do req; text("ok") end
     ws!(s, "/ws/push"; on_message=msg -> Message("reply: $(msg.data)"))
 
     with_server(s) do port
@@ -69,7 +69,7 @@ end
     @testset "on_open callback" begin
         opened = Channel{Nothing}(1)
         s = App(2)
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         ws!(s, "/ws/open";
             on_message=msg -> Message("ok"),
             on_open=(req) -> signal(opened))
@@ -87,7 +87,7 @@ end
     @testset "on_close callback" begin
         closed = Channel{Nothing}(1)
         s = App(2)
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         ws!(s, "/ws/close";
             on_message=msg -> Message("ok"),
             on_close=() -> signal(closed))
@@ -108,7 +108,7 @@ end
 @testset "WebSocket special characters" begin
     @testset "Unicode messages" begin
         s = App(2)
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         ws!(s, "/ws/unicode"; on_message=msg -> Message(msg.data))
 
         with_server(s) do port
@@ -123,7 +123,7 @@ end
 
     @testset "Empty message" begin
         s = App(2)
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         ws!(s, "/ws/empty"; on_message=msg -> Message("len=$(length(msg.data))"))
 
         with_server(s) do port
@@ -138,7 +138,7 @@ end
 
 @testset "WebSocket concurrent connections" begin
     s = App(4)
-    get!(s, "/") do req; text("ok") end
+    route!(s, :get, "/") do req; text("ok") end
     ws!(s, "/ws/concurrent"; on_message=msg -> Message("Reply: $(msg.data)"))
 
     with_server(s) do port
@@ -286,7 +286,7 @@ end
     cap = 64 * 1024
     s = App(2; send_buffer_bytes=cap)
     ws!(s, "/ws"; on_message=msg -> Message(msg.data))
-    get!(s, "/flood") do req
+    route!(s, :get, "/flood") do req
         for _ in 1:500
             broadcastws(s, "/ws", "x"^1024)
         end

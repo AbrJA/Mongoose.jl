@@ -1,7 +1,7 @@
 @testset "Request features" begin
     @testset "Headers are case-insensitive" begin
         s = App()
-        get!(s, "/headers") do req
+        route!(s, :get, "/headers") do req
             val = header(req, "x-custom-header")
             text(isnothing(val) ? "missing" : val)
         end
@@ -15,7 +15,7 @@
 
     @testset "Context per request" begin
         s = App()
-        get!(s, "/ctx") do req
+        route!(s, :get, "/ctx") do req
             c = context(req)
             c[:user_id] = 42
             uid = c[:user_id]
@@ -29,7 +29,7 @@
 
     @testset "Query parameters parsed" begin
         s = App()
-        get!(s, "/q") do req
+        route!(s, :get, "/q") do req
             a = get(parsequery(req), "a", "")
             b = get(parsequery(req), "b", "")
             text("$a,$b")
@@ -42,7 +42,7 @@
 
     @testset "Remote address from the C connection" begin
         s = App()
-        get!(s, "/remote") do req
+        route!(s, :get, "/remote") do req
             addr = req.remote_addr
             text(isnothing(addr) ? "none" : addr)
         end
@@ -57,7 +57,7 @@
         # Regression: the adapter used to re-decode Mongoose's already-decoded
         # body via an unbound name, so every chunked request hung.
         s = App()
-        post!(s, "/chunked") do req
+        route!(s, :post, "/chunked") do req
             text("len=$(length(req.body)):$(req.body)")
         end
         with_server(s) do port
@@ -71,7 +71,7 @@
 
     @testset "Chunked payload that looks chunked is not double-decoded" begin
         s = App()
-        post!(s, "/chunked2") do req
+        route!(s, :post, "/chunked2") do req
             text(req.body)
         end
         with_server(s) do port
@@ -88,7 +88,7 @@ end
 @testset "Async Connection: close is echoed and drained" begin
     # _http_job echoes close; the drain loop marks draining (RFC 7230 §6.3).
     s = App(2)
-    get!(s, "/close") do req; text("bye") end
+    route!(s, :get, "/close") do req; text("bye") end
     with_server(s) do port
         sock = Sockets.connect("127.0.0.1", port)
         write(sock, "GET /close HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
@@ -104,7 +104,7 @@ end
 
 @testset "Oversized body rejected (413) after buffering" begin
     s = App(max_body_bytes=1024)
-    post!(s, "/echo") do req; text("got") end
+    route!(s, :post, "/echo") do req; text("got") end
     with_server(s) do port
         # Early rejection is gone: mongoose buffers the body (bounded by its
         # 8 MiB ceiling) and the message-complete path answers 413.
@@ -118,7 +118,7 @@ end
 
 @testset "Unknown HTTP method answers 405/404, never 500" begin
     s = App()
-    get!(s, "/known") do req; text("ok") end
+    route!(s, :get, "/known") do req; text("ok") end
     with_server(s) do port
         # Wire method token outside the supported seven: parse_method → :unknown.
         sock = Sockets.connect("127.0.0.1", port)
@@ -138,7 +138,7 @@ end
 
 @testset "CL+TE request smuggling is dropped" begin
     s = App()
-    post!(s, "/echo") do req; text("len=$(sizeof(body(req)))") end
+    route!(s, :post, "/echo") do req; text("len=$(sizeof(body(req)))") end
     with_server(s) do port
         sock = Sockets.connect("127.0.0.1", port)
         write(sock, "POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 6\r\n" *

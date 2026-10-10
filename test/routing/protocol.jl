@@ -43,7 +43,7 @@ end
     end
 
     app = App(router=RegexRouter())
-    get!(app, "/re/.*", req -> text("regex route"))
+    route!(app, :get, "/re/.*", req -> text("regex route"))
     with_server(app) do port
         resp = HTTP.get("http://127.0.0.1:$port/re/anything"; status_exception=false)
         @test resp.status == 200
@@ -82,7 +82,7 @@ end
         any(e -> e[1] == String(Mongoose.stripquery(path)), r.entries)
 
     app = App(router=MyRouter())
-    get!(app, "/mine", req -> text("custom endpoint"))
+    route!(app, :get, "/mine", req -> text("custom endpoint"))
     with_server(app) do port
         resp = HTTP.get("http://127.0.0.1:$port/mine"; status_exception=false)
         @test resp.status == 200

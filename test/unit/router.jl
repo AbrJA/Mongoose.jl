@@ -92,14 +92,14 @@ end
 
 @testset "Router freeze! (closed route table / trim profile)" begin
     r = Router()
-    get!(r, "/a", req -> text("a"))
+    route!(r, :get, "/a", req -> text("a"))
 
     freeze!(r)
     @test isfrozen(r) == true
 
     # Registration is closed; dispatch still works.
     @test_throws RouteError route!(r, :get, "/b", req -> text("b"))
-    @test_throws RouteError get!(r, "/b", req -> text("b"))
+    @test_throws RouteError route!(r, :get, "/b", req -> text("b"))
     @test_throws RouteError ws!(r, "/ws"; on_message=req -> nothing)
     @test Mongoose.matchroute(r, :get, "/a") isa Mongoose.Matched
 

@@ -1,6 +1,6 @@
 @testset "Query string handling" begin
     app = App()
-    get!(app, "/search") do req
+    route!(app, :get, "/search") do req
         q = get(parsequery(req), "q", "")
         text("query=$q")
     end

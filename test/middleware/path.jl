@@ -1,7 +1,7 @@
 @testset "Path-scoped middleware" begin
     s = App()
-    get!(s, "/public") do req; text("public") end
-    get!(s, "/admin/panel") do req; text("admin") end
+    route!(s, :get, "/public") do req; text("public") end
+    route!(s, :get, "/admin/panel") do req; text("admin") end
     s = use(s, bearer(t -> t == "secret"); paths=["/admin"])
 
     with_server(s) do port
@@ -21,8 +21,8 @@ end
 @testset "use paths= input forms" begin
     for paths in ("/admin", ("/admin",), ["/admin"], [SubString("/admin/x", 1, 6)])
         app = App()
-        get!(app, "/public") do req; text("public") end
-        get!(app, "/admin/panel") do req; text("admin") end
+        route!(app, :get, "/public") do req; text("public") end
+        route!(app, :get, "/admin/panel") do req; text("admin") end
         app = use(app, bearer(t -> t == "secret"); paths=paths)
         client = Mongoose.FakeTransport(app)
         @test client(:get, "/public").status == 200
@@ -33,8 +33,8 @@ end
 
 @testset "path prefixes match whole segments" begin
     app = App()
-    get!(app, "/api/users") do req; text("users") end
-    get!(app, "/apixyz") do req; text("other") end
+    route!(app, :get, "/api/users") do req; text("users") end
+    route!(app, :get, "/apixyz") do req; text("other") end
     app = use(app, bearer(t -> t == "s"); paths=["/api"])
     client = Mongoose.FakeTransport(app)
     @test client(:get, "/api/users").status == 401
@@ -42,12 +42,12 @@ end
 
     # Trailing slashes are normalized; "/" (or empty) means no filter.
     app2 = App()
-    get!(app2, "/api/users") do req; text("users") end
+    route!(app2, :get, "/api/users") do req; text("users") end
     app2 = use(app2, bearer(t -> t == "s"); paths=["/api/"])
     @test Mongoose.FakeTransport(app2)(:get, "/api/users").status == 401
 
     app3 = App()
-    get!(app3, "/api/users") do req; text("users") end
+    route!(app3, :get, "/api/users") do req; text("users") end
     app3 = use(app3, bearer(t -> t == "s"); paths=["/"])
     @test Mongoose.FakeTransport(app3)(:get, "/api/users").status == 401
 end

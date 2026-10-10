@@ -86,22 +86,13 @@ function ws!(g::RouteGroup, path::AbstractString, handler::Function; kwargs...)
     return g
 end
 
-# Method helpers for RouteGroup (extend Base where applicable)
-Base.get!(g::RouteGroup, path::AbstractString, h::Function) = (push!(g.routes, (:get, path, h)); g)
-post!(g::RouteGroup, path::AbstractString, h::Function) = (push!(g.routes, (:post, path, h)); g)
-Base.put!(g::RouteGroup, path::AbstractString, h::Function) = (push!(g.routes, (:put, path, h)); g)
-patch!(g::RouteGroup, path::AbstractString, h::Function) = (push!(g.routes, (:patch, path, h)); g)
-Base.delete!(g::RouteGroup, path::AbstractString, h::Function) = (push!(g.routes, (:delete, path, h)); g)
-options!(g::RouteGroup, path::AbstractString, h::Function) = (push!(g.routes, (:options, path, h)); g)
-head!(g::RouteGroup, path::AbstractString, h::Function) = (push!(g.routes, (:head, path, h)); g)
+# Do-block convenience: route!(group, :get, "/x") do req … end
+route!(f::Function, g::RouteGroup, method::Symbol, path::String) =
+    route!(g, method, path, f)
 
-Base.get!(f::Function, g::RouteGroup, path::AbstractString) = Base.get!(g, path, f)
-post!(f::Function, g::RouteGroup, path::AbstractString) = post!(g, path, f)
-Base.put!(f::Function, g::RouteGroup, path::AbstractString) = Base.put!(g, path, f)
-patch!(f::Function, g::RouteGroup, path::AbstractString) = patch!(g, path, f)
-Base.delete!(f::Function, g::RouteGroup, path::AbstractString) = Base.delete!(g, path, f)
-options!(f::Function, g::RouteGroup, path::AbstractString) = options!(g, path, f)
-head!(f::Function, g::RouteGroup, path::AbstractString) = head!(g, path, f)
+# Do-block convenience: ws!(group, "/chat") do msg … end
+ws!(f::Function, g::RouteGroup, path::AbstractString; kwargs...) =
+    ws!(g, path, f; kwargs...)
 
 """
     group!(parent, prefix; middleware=[]) do g ... end
@@ -128,8 +119,8 @@ middleware at dispatch time — no per-route closures are created.
 # Example
 ```julia
 api = group("/api/v1") do g
-    get!(g, "/users", list_users)
-    post!(g, "/users", create_user)
+    route!(g, :get, "/users", list_users)
+    route!(g, :post, "/users", create_user)
 end
 mount!(app, api)
 ```

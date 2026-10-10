@@ -46,7 +46,7 @@ app = use(app, compress(min_size_bytes=1024))
 app = use(app, metrics()) # /metrics with counters, histogram, live gauges
 app = use(app, health())  # /healthz /readyz /livez
 
-get!(app, "/users/:id::Int") do req, id
+route!(app, :get, "/users/:id::Int") do req, id
     json((id=id,))
 end
 

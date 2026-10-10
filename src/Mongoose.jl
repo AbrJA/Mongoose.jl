@@ -37,7 +37,6 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
     RequestContext, process,
     SSEWriter, emit, sse,
     json, parsejson, html, text, redirect,
-    post!, patch!, options!, head!,
     query, parsequery, body, parsemultipart, MultipartFile,
     validate, ValidationError
 
@@ -45,7 +44,7 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
 include("core/kernel.jl")      # nested module: protocol, router, middleware
 using .Kernel
 # Server/transport layers extend these core generics; `using` alone is read-only.
-import .Kernel: route!, ws!, post!, patch!, options!, head!,
+import .Kernel: route!, ws!,
     submit!, start!, stop!, haspending,
     supportsws, supportstls, supportsstream,
     freeze!, isfrozen, matchroute, hasroute, haswsroutes, getwsendpoint,
@@ -152,8 +151,8 @@ end
         # --- App construction ---
         app = App()
         app = use(app, cors())
-        get!(app, "/") do r; json(Dict("ok" => true)) end
-        post!(app, "/data") do r; text("ok") end
+        route!(app, :get, "/") do r; json(Dict("ok" => true)) end
+        route!(app, :post, "/data") do r; text("ok") end
         errorresponse(app, req, 500)
 
         # --- HTTPError hierarchy + transport fallback ---
@@ -162,8 +161,8 @@ end
         sprint(showerror, err404)
         ValidationError("bad field", "age")
         thrower = App()
-        get!(thrower, "/bad") do r; throw(BadRequestError("bad input")) end
-        get!(thrower, "/gone") do r; throw(NotFoundError("user 7")) end
+        route!(thrower, :get, "/bad") do r; throw(BadRequestError("bad input")) end
+        route!(thrower, :get, "/gone") do r; throw(NotFoundError("user 7")) end
         req_bad = Request(:get, "/bad", Dict{String,String}(), Pair{String,String}[], "")
         req_gone = Request(:get, "/gone", Dict{String,String}(), Pair{String,String}[], "")
         process(thrower.context, req_bad)

@@ -1,10 +1,10 @@
 @testset "Method helpers on App" begin
     app = App()
-    get!(app, "/g") do req; text("get") end
-    post!(app, "/p") do req; text("post") end
-    put!(app, "/u") do req; text("put") end
-    patch!(app, "/pa") do req; text("patch") end
-    delete!(app, "/d") do req; text("delete") end
+    route!(app, :get, "/g") do req; text("get") end
+    route!(app, :post, "/p") do req; text("post") end
+    route!(app, :put, "/u") do req; text("put") end
+    route!(app, :patch, "/pa") do req; text("patch") end
+    route!(app, :delete, "/d") do req; text("delete") end
 
     with_server(app) do port
         @test HTTP.get("http://127.0.0.1:$port/g"; status_exception=false).status == 200
@@ -46,7 +46,7 @@ end
 
 @testset "App-level router introspection" begin
     app = App()
-    get!(app, "/a") do req; text("a") end
+    route!(app, :get, "/a") do req; text("a") end
     ws!(app, "/ws", m -> nothing)
 
     @test length(app) == 1

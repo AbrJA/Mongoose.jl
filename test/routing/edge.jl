@@ -1,7 +1,7 @@
 @testset "Router edge cases" begin
     @testset "Float64 typed parameter" begin
         s = App()
-        get!(s, "/temp/:val::Float64") do req, val; text("temp=$val") end
+        route!(s, :get, "/temp/:val::Float64") do req, val; text("temp=$val") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/temp/36.6"; status_exception=false)
             @test resp.status == 200
@@ -11,7 +11,7 @@
 
     @testset "Bool typed parameter" begin
         s = App()
-        get!(s, "/flag/:v::Bool") do req, v; text("flag=$v") end
+        route!(s, :get, "/flag/:v::Bool") do req, v; text("flag=$v") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/flag/true"; status_exception=false)
             @test resp.status == 200
@@ -27,7 +27,7 @@
 
     @testset "UInt typed parameter" begin
         s = App()
-        get!(s, "/id/:n::UInt") do req, n; text("id=$n") end
+        route!(s, :get, "/id/:n::UInt") do req, n; text("id=$n") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/id/42"; status_exception=false)
             @test resp.status == 200
@@ -40,7 +40,7 @@
 
     @testset "Deeply nested path" begin
         s = App()
-        get!(s, "/a/b/c/d/e/f") do req; text("deep") end
+        route!(s, :get, "/a/b/c/d/e/f") do req; text("deep") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/a/b/c/d/e/f"; status_exception=false)
             @test resp.status == 200
@@ -50,7 +50,7 @@
 
     @testset "Deeply nested parametric path" begin
         s = App()
-        get!(s, "/api/:v/users/:uid::Int/posts/:pid::Int") do req, v, uid, pid
+        route!(s, :get, "/api/:v/users/:uid::Int/posts/:pid::Int") do req, v, uid, pid
             text("$v:$uid:$pid")
         end
         with_server(s) do port
@@ -62,7 +62,7 @@
 
     @testset "Wildcard catch-all captures remainder" begin
         s = App()
-        get!(s, "/files/*path") do req, path; text("path=$path") end
+        route!(s, :get, "/files/*path") do req, path; text("path=$path") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/files/a/b/c.txt"; status_exception=false)
             @test resp.status == 200
@@ -72,8 +72,8 @@
 
     @testset "Bare wildcard catch-all" begin
         s = App()
-        get!(s, "/known") do req; text("known") end
-        get!(s, "*") do req; text("catch-all") end
+        route!(s, :get, "/known") do req; text("known") end
+        route!(s, :get, "*") do req; text("catch-all") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/known"; status_exception=false)
             @test String(resp.body) == "known"
@@ -128,7 +128,7 @@
 
     @testset "Query string stripped from path matching" begin
         s = App()
-        get!(s, "/search") do req
+        route!(s, :get, "/search") do req
             q = get(parsequery(req), "q", "none")
             text("q=$q")
         end
@@ -144,7 +144,7 @@ end
 @testset "Unknown/mixed-case methods dispatch as 405/404 (no error status)" begin
     # Generic (unfrozen) path via FakeTransport.
     app = App()
-    get!(app, "/known") do req; text("ok") end
+    route!(app, :get, "/known") do req; text("ok") end
     client = FakeTransport(app)
     @test client(:get, "/known").status == 200
     @test client(:GET, "/known").status == 200            # mixed-case Symbol normalizes

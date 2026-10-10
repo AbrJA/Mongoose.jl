@@ -4,7 +4,7 @@
         s = provide(s, (version="1.0.0", region="us-east"))
         @test s.context.registries.services.version == "1.0.0"
         @test s.context.registries.services.region == "us-east"
-        get!(s, "/version") do req
+        route!(s, :get, "/version") do req
             v = service(req, :version)
             text("v=$v")
         end
@@ -19,12 +19,12 @@ end
     @testset "Val-typed access + missing service" begin
         s = App(services=(db="pool", retries=3))
         @test s.context.registries.services.db == "pool"
-        get!(s, "/svc") do req
+        route!(s, :get, "/svc") do req
             db = service(req, Val(:db))       # type-stable access
             retries = service(req, Val(:retries))
             text("db=$db retries=$retries")
         end
-        get!(s, "/missing") do req
+        route!(s, :get, "/missing") do req
             v = service(req, Val(:nope))
             text(v === nothing ? "none" : "got")
         end
@@ -42,7 +42,7 @@ end
         app = App()
         app = provide(app, (version="1.0.0",))
 
-        get!(app, "/test") do req
+        route!(app, :get, "/test") do req
             v = service(req, :version, String)
             text(v)
         end
@@ -57,7 +57,7 @@ end
         app = App()
         app = provide(app, (count=42,))
 
-        get!(app, "/test") do req
+        route!(app, :get, "/test") do req
             service(req, :count, String)  # Wrong type
         end
 
@@ -69,7 +69,7 @@ end
     @testset "service(req, name, T) throws KeyError on missing" begin
         app = App()
 
-        get!(app, "/test") do req
+        route!(app, :get, "/test") do req
             service(req, :missing, String)
         end
 
@@ -82,7 +82,7 @@ end
 @testset "provide/inject integration" begin
     app = App()
     app = provide(app, (db=() -> "database_connection",))
-    get!(app, "/svc") do req
+    route!(app, :get, "/svc") do req
         db = service(req, :db)
         text(db)
     end
@@ -97,7 +97,7 @@ end
 
 @testset "services()/withservices type-stable access" begin
     s = App(services=(db="pool", retries=3))
-    get!(s, "/svcs") do req
+    route!(s, :get, "/svcs") do req
         plain = services(req)
         @test plain.db == "pool"
         out = withservices(req) do svcs

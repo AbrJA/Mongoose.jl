@@ -67,9 +67,9 @@ using Mongoose
 
 router = Router()
 
-get!(router, "/users/:id::Int", (req, id) -> json(Dict("id" => id)))
-post!(router, "/users", req -> json(Dict("created" => true); status=201))
-get!(router, "/files/*path", (req, path) -> text("Requested: $path"))
+route!(router, :get, "/users/:id::Int", (req, id) -> json(Dict("id" => id)))
+route!(router, :post, "/users", req -> json(Dict("created" => true); status=201))
+route!(router, :get, "/files/*path", (req, path) -> text("Requested: $path"))
 
 freeze!(router)   # route!/ws! throw RouteError from here on
 

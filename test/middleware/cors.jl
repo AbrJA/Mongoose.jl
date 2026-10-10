@@ -1,7 +1,7 @@
 @testset "CORS middleware" begin
     @testset "Preflight OPTIONS request (allowed origin)" begin
         s = App()
-        get!(s, "/api") do req; text("data") end
+        route!(s, :get, "/api") do req; text("data") end
         s = use(s, cors())
 
         with_server(s) do port
@@ -19,7 +19,7 @@
 
     @testset "Bare OPTIONS is not a preflight and reaches the route" begin
         s = App()
-        options!(s, "/api") do req; text("options route") end
+        route!(s, :options, "/api") do req; text("options route") end
         s = use(s, cors())
 
         with_server(s) do port
@@ -40,7 +40,7 @@
 
     @testset "Preflight rejected for foreign origin" begin
         s = App()
-        get!(s, "/api") do req; text("data") end
+        route!(s, :get, "/api") do req; text("data") end
         s = use(s, cors(origins=["https://app.example"]))
 
         with_server(s) do port
@@ -61,7 +61,7 @@
 
     @testset "Preflight validates method and headers" begin
         s = App()
-        get!(s, "/api") do req; text("data") end
+        route!(s, :get, "/api") do req; text("data") end
         s = use(s, cors(allow_methods="GET, POST", allow_headers="X-Custom, Content-Type", max_age_seconds=3600))
 
         with_server(s) do port
@@ -88,7 +88,7 @@
 
     @testset "CORS headers on regular requests (origin echo)" begin
         s = App()
-        get!(s, "/api") do req; text("data") end
+        route!(s, :get, "/api") do req; text("data") end
         s = use(s, cors(origins="https://example.com"))
 
         with_server(s) do port
@@ -113,7 +113,7 @@
 
     @testset "Credentials mode reflects origin (no wildcard)" begin
         s = App()
-        get!(s, "/api") do req; text("data") end
+        route!(s, :get, "/api") do req; text("data") end
         s = use(s, cors(origins=["https://app.example"], allow_credentials=true))
 
         with_server(s) do port
@@ -132,7 +132,7 @@ end
                     [SubString("https://a.test/x", 1, 14)])
         app = App()
         app = use(app, cors(origins=origins))
-        get!(app, "/") do req; text("ok") end
+        route!(app, :get, "/") do req; text("ok") end
         client = Mongoose.FakeTransport(app)
 
         ok = client(:get, "/"; headers=["Origin" => "https://a.test"])

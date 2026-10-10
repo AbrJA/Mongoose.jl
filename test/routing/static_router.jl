@@ -143,7 +143,7 @@
         end
         @test_throws Mongoose.RouteError route!(router, :post, "/x", req -> text("x"))
         @test_throws Mongoose.RouteError ws!(router, "/ws"; on_message = req -> nothing)
-        @test_throws Mongoose.RouteError get!(App(router = router), "/late", req -> text("x"))
+        @test_throws Mongoose.RouteError route!(App(router = router), :get, "/late", req -> text("x"))
     end
 
     @testset "Errors and exceptions flow through the static path" begin

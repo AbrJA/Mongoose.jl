@@ -298,7 +298,7 @@ end
     write(script, """
     using Mongoose
     app = App()
-    get!(app, "/") do req; text("ok") end
+    route!(app, :get, "/") do req; text("ok") end
     app = onstop(app) do
         write($(repr(marker)), "ONSTOP-RAN")
     end

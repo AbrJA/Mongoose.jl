@@ -11,7 +11,7 @@
 
         @testset "Serves HTML file" begin
             s = App()
-            get!(s, "/api") do req; text("api") end
+            route!(s, :get, "/api") do req; text("api") end
             serve!(s, dir)
 
             with_server(s) do port
@@ -66,7 +66,7 @@
 
         @testset "API routes coexist with static files" begin
             s = App()
-            get!(s, "/api/data") do req; json("""{"api":true}""") end
+            route!(s, :get, "/api/data") do req; json("""{"api":true}""") end
             serve!(s, dir)
 
             with_server(s) do port

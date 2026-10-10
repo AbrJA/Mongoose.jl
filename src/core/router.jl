@@ -561,71 +561,30 @@ function ws!(router::Router, path::AbstractString;
     return router
 end
 
-# --- Method-specific helpers ---
-# FastAPI-style DSL: get!(router, "/path", handler).
+# --- Do-block convenience ---
+# A do-block passes the handler first, so these mirror the argument order of
+# `route!(router, method, path, handler)`:
+#
+#     route!(router, :get, "/users/:id::Int") do req, id
+#         json((id = id,))
+#     end
 
-"""
-    get!(router_or_app, path, handler)  /  get!(handler, router_or_app, path)
+function route!(f::Function, r::Router, method::Symbol, path::AbstractString;
+                middleware=nothing, metadata=nothing)
+    route!(r, method, path, f; middleware=middleware, metadata=metadata)
+    return r
+end
 
-Register a GET route. Do-block syntax:
-```julia
-get!(app, "/users/:id::Int") do req, id
-    json(Dict("id" => id))
+function route!(f::Function, r::Router, method::AbstractString, path::AbstractString;
+                middleware=nothing, metadata=nothing)
+    route!(r, method, path, f; middleware=middleware, metadata=metadata)
+    return r
 end
-```
-"""
-function Base.get!(r::Router, path::AbstractString, handler::Function)
-    route!(r, :get, path, handler); return r
-end
-Base.get!(f::Function, r::Router, path::AbstractString) = Base.get!(r, path, f)
 
-"""
-    post!(router_or_app, path, handler)
-"""
-function post!(r::Router, path::AbstractString, handler::Function)
-    route!(r, :post, path, handler); return r
+function ws!(f::Function, r::Router, path::AbstractString; kwargs...)
+    ws!(r, path; on_message=f, kwargs...)
+    return r
 end
-post!(f::Function, r::Router, path::AbstractString) = post!(r, path, f)
-
-"""
-    put!(router_or_app, path, handler)
-"""
-function Base.put!(r::Router, path::AbstractString, handler::Function)
-    route!(r, :put, path, handler); return r
-end
-Base.put!(f::Function, r::Router, path::AbstractString) = Base.put!(r, path, f)
-
-"""
-    patch!(router_or_app, path, handler)
-"""
-function patch!(r::Router, path::AbstractString, handler::Function)
-    route!(r, :patch, path, handler); return r
-end
-patch!(f::Function, r::Router, path::AbstractString) = patch!(r, path, f)
-
-"""
-    delete!(router_or_app, path, handler)
-"""
-function Base.delete!(r::Router, path::AbstractString, handler::Function)
-    route!(r, :delete, path, handler); return r
-end
-Base.delete!(f::Function, r::Router, path::AbstractString) = Base.delete!(r, path, f)
-
-"""
-    options!(router_or_app, path, handler)
-"""
-function options!(r::Router, path::AbstractString, handler::Function)
-    route!(r, :options, path, handler); return r
-end
-options!(f::Function, r::Router, path::AbstractString) = options!(r, path, f)
-
-"""
-    head!(router_or_app, path, handler)
-"""
-function head!(r::Router, path::AbstractString, handler::Function)
-    route!(r, :head, path, handler); return r
-end
-head!(f::Function, r::Router, path::AbstractString) = head!(r, path, f)
 
 # --- Display ---
 

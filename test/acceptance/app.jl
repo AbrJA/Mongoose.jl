@@ -24,33 +24,33 @@ function buildapp(; token::String="test-token", workers::Integer=2)
     router = Router()
 
     # --- REST CRUD (typed path params) ---
-    get!(router, "/api/users") do req
+    route!(router, :get, "/api/users") do req
         json(Dict("users" => [Dict("id" => 1, "name" => "Alice"),
                               Dict("id" => 2, "name" => "Bob")]))
     end
-    get!(router, "/api/users/:id::Int") do req, id
+    route!(router, :get, "/api/users/:id::Int") do req, id
         1 <= id <= 999 || throw(ApiNotFound("user $id"))
         json(Dict("id" => id, "name" => "User $id"))
     end
-    post!(router, "/api/users") do req
+    route!(router, :post, "/api/users") do req
         data = parsejson(req)
         json(Dict("created" => data["name"]); status=201)
     end
-    delete!(router, "/api/users/:id::Int") do req, id
+    route!(router, :delete, "/api/users/:id::Int") do req, id
         text("deleted $id")
     end
 
     # --- Request features ---
-    get!(router, "/api/search") do req
+    route!(router, :get, "/api/search") do req
         json(Dict("q" => query(req, "q", ""),
                   "page" => query(req, "page", 1),
                   "limit" => query(req, "limit", 20)))
     end
-    post!(router, "/api/form") do req
+    route!(router, :post, "/api/form") do req
         form_dict = parseform(req)
         json(Dict("received" => form_dict))
     end
-    post!(router, "/api/upload") do req
+    route!(router, :post, "/api/upload") do req
         parts = parsemultipart(req)
         file = get(parts, "file", nothing)::Union{MultipartFile,Nothing}
         file === nothing && return json(Dict("error" => "no file"); status=400)
@@ -59,55 +59,55 @@ function buildapp(; token::String="test-token", workers::Integer=2)
                   "bytes" => length(file.data),
                   "head" => String(file.data[1:min(8, end)])))
     end
-    post!(router, "/api/echo") do req
+    route!(router, :post, "/api/echo") do req
         body(req)                 # raw return: auto-serialized to text
     end
 
     # --- Binary responses ---
-    get!(router, "/api/binary") do req
+    route!(router, :get, "/api/binary") do req
         payload = UInt8[0x00, 0x01, 0x02, 0xff, 0x00, 0x80, 0x7f]
         Response(200, ["Content-Type" => "application/octet-stream"], payload)
     end
-    get!(router, "/api/png") do req
+    route!(router, :get, "/api/png") do req
         Response(200, ["Content-Type" => "image/png"], PNG_1X1)
     end
 
     # --- Cookies ---
-    get!(router, "/api/cookie") do req
+    route!(router, :get, "/api/cookie") do req
         current = get(Mongoose.parsecookies(req), "session", "none")
         c = Mongoose.Cookie("session", "abc123"; httponly=true, samesite=:lax, max_age=3600)
         text("cookie=$current"; headers=["Set-Cookie" => Mongoose.setcookie(c)])
     end
 
     # --- Typed validation ---
-    post!(router, "/api/validate") do req
+    route!(router, :post, "/api/validate") do req
         user = validate(req, NewUser)
         json(Dict("name" => user.name, "age" => user.age))
     end
 
     # --- GZip target (text/plain, ~1.1KB, clearly compressible) ---
-    get!(router, "/api/quote") do req
+    route!(router, :get, "/api/quote") do req
         text(repeat("All partial functions are structured transformations. ", 20))
     end
 
     # --- Typed exception handler ---
-    get!(router, "/api/boom") do req
+    route!(router, :get, "/api/boom") do req
         throw(ApiNotFound("everything"))
     end
 
     # --- Built-in HTTPError (status-carrying exception, automatic mapping) ---
-    get!(router, "/api/http-error") do req
+    route!(router, :get, "/api/http-error") do req
         throw(ImATeapotError("short and stout"))
     end
 
     # --- DI: typed service access ---
-    get!(router, "/api/meta") do req
+    route!(router, :get, "/api/meta") do req
         json(Dict("version" => service(req, Val(:version)),
                   "db" => service(req, Val(:db))))
     end
 
     # --- SSE ---
-    get!(router, "/api/events") do req
+    route!(router, :get, "/api/events") do req
         sse(req) do writer
             for i in 1:3
                 emit(writer; data="tick $i", event="heartbeat", id=string(i))
