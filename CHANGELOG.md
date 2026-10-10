@@ -17,6 +17,14 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   do-block forms (a do-block passes the handler first, so the argument order
   mirrors the positional `route!(server, method, path, handler)`).
 
+### Changed
+- **WebSocket handshakes now run through the middleware pipeline** (security
+  fix): global and path-scoped middleware (`bearer`, `apikey`, `ratelimit`,
+  `logger`, …) observe the upgrade request, and a short-circuiting response
+  (401/403/429) aborts the handshake. `on_open` receives the same `Request`
+  (with DI services) the middleware saw. Previously upgrades bypassed
+  middleware entirely, so `use(app, bearer(...))` did not protect WS endpoints.
+
 ### Removed
 - **Breaking**: the per-method route DSL verbs — `get!`, `post!`, `put!`,
   `patch!`, `delete!`, `options!`, `head!` — were removed. `get!`/`put!`/`delete!`

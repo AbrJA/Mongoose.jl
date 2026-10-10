@@ -53,6 +53,10 @@ MethodMap
 > Route registration is `route!(server_or_router, method, path, handler)`; the
 > do-block form is `route!(server, :get, path) do req … end`. `@routes` blocks
 > keep the short `get(...)`/`post(...)` names for compile-time static tables.
+>
+> WebSocket handshakes run through the middleware pipeline: global and
+> path-scoped middleware protect `ws!` endpoints exactly like HTTP, and
+> `on_open` receives the same `Request` (with DI services) the middleware saw.
 
 ## Request Processing
 

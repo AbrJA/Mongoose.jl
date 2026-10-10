@@ -161,7 +161,7 @@ serve!(app, "public"; uri_prefix="/static")             # C-level static files
 **Registration rule** — functions that change the app's typed configuration
 return a rebuilt `App`: `use`, `provide`, `trap`, `onstart`, `onstop`,
 `background`. Functions that mutate shared build-phase state keep the bang:
-`route!`, `get!`, `ws!`, `serve!`.
+`route!`, `ws!`, `serve!`.
 
 Custom middleware — a closure or a small type:
 
@@ -230,6 +230,13 @@ ws!(app, "/chat";
 broadcastws(app, "/chat", "Server announcement")
 ```
 
+> WebSocket **handshakes run through the middleware pipeline**, so
+> `use(app, bearer(...))`, `apikey`, `ratelimit`, `logger`, and path-scoped
+> `use(app, mw; paths=["/ws"])` protect WS endpoints exactly like HTTP. A
+> middleware that short-circuits (401/403/429) aborts the upgrade; `on_open`
+> receives the same request (with DI services). Keep handshake middleware
+> fast — it runs on the event-loop thread.
+>
 > Slow WS readers are protected too: pushes beyond `send_buffer_bytes`
 > (default 1 MiB) unsent are dropped (not buffered), and
 > `mongoose_ws_frames_dropped` counts them — clients resync on reconnect.

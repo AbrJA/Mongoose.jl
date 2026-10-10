@@ -125,9 +125,14 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
     method = parse_method(msg.method)
     uri = to_string(msg.uri)
 
-    # 1. WebSocket upgrade check
-    if haswsroutes(server.router) && ws_upgrade(server.router, server, conn, ev_data, uri, msg)
-        return nothing
+    # 1. WebSocket upgrade check (the handshake runs through the middleware
+    # pipeline, so auth/ratelimit/logging see it exactly like an HTTP request).
+    if haswsroutes(server.router)
+        endpoint = resolve_ws(server.router, uri)
+        if endpoint !== nothing
+            ws_handle_upgrade(server, conn, ev_data, method, uri, msg, endpoint)
+            return nothing
+        end
     end
 
     # 2. Body size enforcement (mongoose buffers up to its 8 MiB ceiling)

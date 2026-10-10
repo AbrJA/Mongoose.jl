@@ -50,38 +50,83 @@ end
 
 # --- Upgrade ---
 
-function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
+"""
+    WSUpgraded — marker returned by the upgrade terminal when the handshake was
+    consumed (upgraded, or answered by mongoose's native 426).
+
+    Middleware see it as the `next()` result; anything that is not a `Response`
+    means "the request is handled, there is nothing to send". This mirrors how
+    a `StreamResponse` already travels through the pipeline.
+"""
+struct WSUpgraded end
+const WS_UPGRADED = WSUpgraded()
+
+"""
+    ws_upgrade!(server, conn, ev_data, uri, endpoint, msg, req) → WSUpgraded | Response
+
+Perform the handshake for a resolved endpoint. `req` is the pipeline request
+(DI services attached), so `on_open` receives the same object the middleware
+saw. Endpoint-level rejections (origin allowlist, `on_open` returning `false`)
+come back as `403` Responses so they travel the normal send path; a successful
+upgrade (or mongoose's 426 for a non-upgrade request) returns `WS_UPGRADED`.
+"""
+function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg, req)::Union{WSUpgraded,Response}
     headers = parse_headers(msg)
     # Gate on Sec-WebSocket-Key: mongoose's own acceptance criterion (else 426).
-    is_upgrade = haskey(headers, "sec-websocket-key")
-    if !is_upgrade
+    if !haskey(headers, "sec-websocket-key")
         mg_ws_upgrade(conn, ev_data, C_NULL)
-        return
+        return WS_UPGRADED
     end
 
     if !isempty(endpoint.allowed_origins)
         origin = get(headers, "origin", "")
         if !any(o -> o == origin, endpoint.allowed_origins)
-            mgjl_http_reply_bin(conn, 403, "", "Forbidden")
-            return
+            return Response(403, Pair{String,String}[], "Forbidden")
         end
     end
     if endpoint.on_open !== nothing
-        req = adapt_request(msg; remote_addr=remote_addr_of(conn))
         accepted = try
-            result = endpoint.on_open(req)
-            result !== false
+            endpoint.on_open(req) !== false
         catch e
             @log_error "WebSocket on_open error uri=$uri" e catch_backtrace()
             true
         end
-        if !accepted
-            mgjl_http_reply_bin(conn, 403, "", "Forbidden")
-            return
-        end
+        accepted || return Response(403, Pair{String,String}[], "Forbidden")
     end
     mg_ws_upgrade(conn, ev_data, C_NULL)
     ws_register!(server, uri, conn)
+    return WS_UPGRADED
+end
+
+"""
+    ws_handle_upgrade(server, conn, ev_data, method, uri, msg, endpoint)
+
+Run the WebSocket handshake through the middleware pipeline. Global (and
+path-scoped) middleware observe the upgrade request; a short-circuiting
+`Response` (401/403/429…) aborts the handshake and is sent normally. Otherwise
+the terminal performs the upgrade and returns `WS_UPGRADED`.
+
+Runs on the poll thread — the C upgrade is not thread-safe — so handshake
+middleware should stay fast (no blocking I/O).
+"""
+function ws_handle_upgrade(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid},
+                           method::Symbol, uri::String, msg, endpoint)
+    # Single assignment before capture: a reassigned `req` would be boxed by
+    # the closure below (Core.Box), which the trim verifier rejects.
+    req = Kernel._attach_services(
+        adapt_request(msg, method, uri; remote_addr=cached_remote_addr(server, conn)),
+        server.context.registries.services)
+    terminal = (r) -> ws_upgrade!(server, conn, ev_data, uri, endpoint, msg, r)
+    res = Kernel._guarded_process(server.context, req) do
+        isempty(server.context.middlewares) ? terminal(req) :
+            runpipeline(server.context.middlewares, req, terminal)
+    end
+    if res isa Response
+        res = _echo_conn_close!(res, req)
+        send_http_response!(conn, res, resolve_request_id(req, server))
+        _response_wants_close(res) && mgjl_conn_close_after_send(conn)
+    end
+    return nothing
 end
 
 # --- WS Control Frames (Ping/Pong/Close) ---
@@ -236,13 +281,10 @@ end
 # assuming how endpoints are stored. The generic implementations resolve the
 # endpoint via `getwsendpoint` (the dynamic `Router`); `StaticRouter` methods
 # scan its typed table and call the concrete handlers (trim-safe).
-function ws_upgrade(router::AbstractRouter, server::AbstractServer, conn::MgConnection,
-                    ev_data::Ptr{Cvoid}, uri::String, msg)
-    endpoint = getwsendpoint(router, uri)
-    endpoint === nothing && return false
-    ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
-    return true
-end
+#
+# `resolve_ws` is the side-effect-free lookup the upgrade pipeline needs before
+# running middleware; the actual handshake lives in `ws_upgrade!`.
+@inline resolve_ws(router::AbstractRouter, uri::String) = getwsendpoint(router, uri)
 
 function ws_message(router::AbstractRouter, request::Kernel.Tagged{Kernel.Intent})
     endpoint = getwsendpoint(router, request.payload.uri)
@@ -263,22 +305,14 @@ end
 
 # --- StaticRouter: typed WS dispatch (no Dict, no abstract handler call) ---
 
-@inline function _scan_ws_upgrade(::Tuple{}, server, conn, ev_data, uri, msg)
-    return false
-end
-
-@inline function _scan_ws_upgrade(routes::Tuple, server, conn, ev_data, uri, msg)
+@inline _find_ws_route(::Tuple{}, uri) = nothing
+@inline function _find_ws_route(routes::Tuple, uri)
     route = routes[1]
-    if route.path == uri
-        ws_upgrade!(server, conn, ev_data, uri, route, msg)
-        return true
-    end
-    return _scan_ws_upgrade(Base.tail(routes), server, conn, ev_data, uri, msg)
+    route.path == uri && return route
+    return _find_ws_route(Base.tail(routes), uri)
 end
 
-ws_upgrade(router::StaticRouter, server::AbstractServer, conn::MgConnection,
-           ev_data::Ptr{Cvoid}, uri::String, msg) =
-    _scan_ws_upgrade(router.ws_routes, server, conn, ev_data, uri, msg)
+@inline resolve_ws(router::StaticRouter, uri::String) = _find_ws_route(router.ws_routes, uri)
 
 @inline function _invoke_ws_static(route::Kernel.StaticWSRoute{M,O,C},
                                    request::Kernel.Tagged{Kernel.Intent}) where {M,O,C}

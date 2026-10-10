@@ -314,6 +314,19 @@ app = App(4; router=router, ws_idle_timeout_ms=60_000)
 start!(app; port=8080)
 ```
 
+The handshake is a normal request through the middleware pipeline, so global
+and path-scoped middleware protect WS endpoints too:
+
+```julia
+app = use(app, bearer(validate_token))                 # every route, WS included
+app = use(app, ratelimit(max_requests=10); paths=["/ws"])
+```
+
+A middleware that short-circuits (401/403/429) aborts the upgrade; otherwise
+`on_open` receives the same `Request` the middleware saw (DI services
+attached). Handshake middleware runs on the event-loop thread, so keep it
+fast.
+
 ## WebSocket Server Push (`broadcastws`)
 
 WebSockets can also be *pushed* to: send a frame to every open client of a
