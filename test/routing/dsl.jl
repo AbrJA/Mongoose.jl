@@ -66,3 +66,20 @@ end
     @test_throws Mongoose.RouteError ws!(app, "/late", m -> nothing)
 end
 
+
+@testset "ws! do-block form" begin
+    app = App()
+    ws!(app, "/chat") do msg
+        Message("Echo: " * String(msg.data))
+    end
+    @test Mongoose.haswsroutes(app)
+    ep = Mongoose.getwsendpoint(app, "/chat")
+    @test ep !== nothing
+    @test ep.on_message(Message("hi")).data == "Echo: hi"
+
+    r = Router()
+    ws!(r, "/chat") do msg
+        Message("r")
+    end
+    @test Mongoose.Kernel.haswsroutes(r)
+end
