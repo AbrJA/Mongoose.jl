@@ -21,7 +21,7 @@
             @test String(resp.body) == "flag=false"
 
             resp = HTTP.get("http://127.0.0.1:$port/flag/maybe"; status_exception=false)
-            @test resp.status == 404
+            @test resp.status == 400   # unparseable typed capture
         end
     end
 
@@ -34,7 +34,7 @@
             @test String(resp.body) == "id=42"
 
             resp = HTTP.get("http://127.0.0.1:$port/id/-1"; status_exception=false)
-            @test resp.status == 404
+            @test resp.status == 400   # unparseable typed capture
         end
     end
 
@@ -140,3 +140,30 @@
     end
 end
 
+
+@testset "Unknown/mixed-case methods dispatch as 405/404 (no error status)" begin
+    # Generic (unfrozen) path via FakeTransport.
+    app = App()
+    get!(app, "/known") do req; text("ok") end
+    client = FakeTransport(app)
+    @test client(:get, "/known").status == 200
+    @test client(:GET, "/known").status == 200            # mixed-case Symbol normalizes
+    @test client(:unknown, "/known").status == 405
+    @test get(client(:unknown, "/known").headers, "allow", "") == "GET"
+    @test client(:brew, "/missing").status == 404
+
+    # Frozen/compiled path parity.
+    frozen = Router()
+    route!(frozen, :get, "/known", req -> text("ok"))
+    freeze!(frozen)
+    ctx = RequestContext(frozen)
+    for method in (:unknown, :brew, :PROPFIND)
+        res = process(ctx, Request(method, "/known", Dict{String,String}(),
+                                   Pair{String,String}[], ""))
+        @test res.status == 405
+        @test get(res.headers, "allow", "") == "GET"
+        res404 = process(ctx, Request(method, "/missing", Dict{String,String}(),
+                                      Pair{String,String}[], ""))
+        @test res404.status == 404
+    end
+end

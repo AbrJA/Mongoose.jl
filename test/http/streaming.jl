@@ -1,6 +1,6 @@
 @testset "SSE streaming" begin
     @testset "Basic SSE response" begin
-        s = App(workers=2)
+        s = App(2)
         get!(s, "/events") do req
             sse(req) do writer
                 emit(writer; data="hello", event="greeting")
@@ -126,7 +126,7 @@ end
 
 @testset "slow consumer backpressure caps buffered bytes" begin
     cap = 64 * 1024
-    s = App(workers=2, send_buffer_bytes=cap)
+    s = App(2; send_buffer_bytes=cap)
     get!(s, "/events") do req
         sse(req) do w
             for i in 1:20000

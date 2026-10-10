@@ -2,7 +2,7 @@
     @testset "Allows requests under limit" begin
         s = App()
         get!(s, "/") do req; text("ok") end
-        use!(s, ratelimit(max_requests=5, window_seconds=60; trust_proxies=true))
+        s = use(s, ratelimit(max_requests=5, window_seconds=60; trust_proxies=true))
 
         with_server(s) do port
             for _ in 1:5
@@ -17,7 +17,7 @@
     @testset "Blocks requests over limit" begin
         s = App()
         get!(s, "/") do req; text("ok") end
-        use!(s, ratelimit(max_requests=2, window_seconds=60; trust_proxies=true))
+        s = use(s, ratelimit(max_requests=2, window_seconds=60; trust_proxies=true))
 
         with_server(s) do port
             for _ in 1:2
@@ -36,7 +36,7 @@
     @testset "Different IPs have independent limits" begin
         s = App()
         get!(s, "/") do req; text("ok") end
-        use!(s, ratelimit(max_requests=2, window_seconds=60; trust_proxies=true))
+        s = use(s, ratelimit(max_requests=2, window_seconds=60; trust_proxies=true))
 
         with_server(s) do port
             for _ in 1:2
@@ -56,7 +56,7 @@
         # spoofed X-Forwarded-For headers cannot evade the limit.
         s = App()
         get!(s, "/") do req; text("ok") end
-        use!(s, ratelimit(max_requests=2, window_seconds=60))
+        s = use(s, ratelimit(max_requests=2, window_seconds=60))
 
         with_server(s) do port
             for ip in ["100.0.0.1", "100.0.0.2", "100.0.0.3"]
@@ -76,7 +76,7 @@
     @testset "Default buckets per remote address (no proxies)" begin
         s = App()
         get!(s, "/") do req; text("ok") end
-        use!(s, ratelimit(max_requests=2, window_seconds=60))
+        s = use(s, ratelimit(max_requests=2, window_seconds=60))
         client = Mongoose.FakeTransport(s)
 
         r = client(:get, "/"); @test r.status == 200
@@ -89,7 +89,7 @@
         # No address available → shared fallback bucket (never per-client).
         server = App()
         get!(server, "/") do req; text("ok") end
-        use!(server, ratelimit(max_requests=1, window_seconds=60))
+        server = use(server, ratelimit(max_requests=1, window_seconds=60))
         tc = Mongoose.FakeTransport(server)
         @test tc(:get, "/"; remote_addr=nothing).status == 200
         @test tc(:get, "/"; remote_addr=nothing).status == 429
@@ -98,7 +98,7 @@
     @testset "Custom key_fn buckets by header" begin
         s = App()
         get!(s, "/") do req; text("ok") end
-        use!(s, ratelimit(max_requests=2, window_seconds=60,
+        s = use(s, ratelimit(max_requests=2, window_seconds=60,
                           key_fn=req -> get(req.headers, "x-api-key", "none")))
 
         with_server(s) do port

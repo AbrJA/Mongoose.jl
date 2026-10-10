@@ -26,6 +26,8 @@ url
 
 ```@docs
 Router
+StaticRouter
+@routes
 route!
 ws!
 freeze!
@@ -43,6 +45,7 @@ getwsendpoint
 Matched
 NoMatch
 MethodMismatch
+ParamMismatch
 RouteResult
 MethodMap
 post!
@@ -67,6 +70,7 @@ errorresponse
 runpipeline
 asmiddleware
 asmiddlewares
+asmiddlewaretuple
 attach!
 AbstractRequest
 ```
@@ -108,6 +112,7 @@ header
 service
 services
 withservices
+provide
 ```
 
 ## URI & String Utilities
@@ -124,7 +129,7 @@ statusreason
 ## Middleware
 
 ```@docs
-use!
+use
 cors
 ratelimit
 bearer
@@ -169,11 +174,9 @@ broadcastws
 ## Lifecycle
 
 ```@docs
-onerror!
-onstart!
-onstop!
-service!
-background!
+onstart
+onstop
+background
 serve!
 ```
 
@@ -186,6 +189,14 @@ TLSConfig
 
 ## Extensibility
 
+Exports are the consumer surface. Extension code imports exactly what it
+extends (required to add methods anyway):
+
+```julia
+import Mongoose: AbstractRouter, route!, matchroute, hasroute,
+    Matched, NoMatch, MethodMismatch, ParamMismatch, Endpoint, SingleEndpoint
+```
+
 ```@docs
 AbstractRouter
 SingleEndpoint
@@ -197,9 +208,9 @@ stop!
 FakeExecutor
 run!
 AbstractTransport
-canws
-cantls
-canstream
+supportsws
+supportstls
+supportsstream
 FakeTransport
 close!
 validate
@@ -243,4 +254,5 @@ errorstatus
 RouteError
 ServerError
 BindError
+trap
 ```

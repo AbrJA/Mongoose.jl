@@ -121,25 +121,27 @@ function buildapp(; token::String="test-token", workers::Integer=2)
         allowed_origins=["http://127.0.0.1", "http://localhost"])
 
     # --- Compose the app ---
-    app = App(; router=freeze!(router), workers=workers,
-              services=(version="0.4.0-acceptance", db="memory"))
+    app = App(workers; router=freeze!(router), services=(version="0.4.0-acceptance", db="memory"))
 
     # Middleware stack (global).
-    use!(app, security())
-    use!(app, health())
-    use!(app, metrics())
-    use!(app, cors(origins="*"))
-    use!(app, etag())                       # before compress: validates what is sent
-    use!(app, compress(min_size_bytes=64))
-    use!(app, logger())
-    use!(app, ratelimit(max_requests=100_000, window_seconds=60))
-    use!(app, bearer(t -> t == token); paths=["/api"])
+    app = use(app, security())
+    app = use(app, health())
+    app = use(app, metrics())
+    app = use(app, cors(origins="*"))
+    app = use(app, etag())                       # before compress: validates what is sent
+    app = use(app, compress(min_size_bytes=64))
+    app = use(app, logger())
+    app = use(app, ratelimit(max_requests=100_000, window_seconds=60))
+    app = use(app, bearer(t -> t == token); paths=["/api"])
 
     # Custom error pages + typed exceptions.
-    onerror!(app, 404) do req
+    app = trap(app, 400) do req
+        json(Dict("error" => "Bad request", "path" => req.uri); status=400)
+    end
+    app = trap(app, 404) do req
         json(Dict("error" => "Not found", "path" => req.uri); status=404)
     end
-    onerror!(app, ApiNotFound) do req, e
+    app = trap(app, ApiNotFound) do req, e
         json(Dict("error" => "API: $(e.resource)"); status=404)
     end
 

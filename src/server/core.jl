@@ -60,20 +60,6 @@ sweep reclaims stalled handshakes) and `max_connections` on public TLS
 listeners.
 """ TLSConfig
 
-# --- Dependency injection registry ---
-
-"""
-    ServiceRegistry — mutable container for typed NamedTuple services.
-
-    `App(services=(db=pool, ...))` stores its services here; `service!` mutates
-    `deps` in place (a cold, pre-start operation). Handlers access services with
-    `service(req, Val(:db))` for convenient retrieval, or `withservices(req) do svcs … end` for type-stable access.
-"""
-mutable struct ServiceRegistry
-    deps::NamedTuple
-end
-ServiceRegistry() = ServiceRegistry(NamedTuple())
-
 # --- Active streaming responses (chunk channels drained by the event loop) ---
 
 """
@@ -188,6 +174,7 @@ mutable struct RunState
     ws_dropped::Threads.Atomic{UInt64}   # WS pushes dropped (queue full / send cap)
     bg_tasks::Vector{Task}
     bg_lock::Threads.SpinLock            # guards bg_tasks (workers push)
+    cb_root::Union{Nothing,Base.CFunction}  # roots the per-server C callback closure
 end
 
 RunState() = RunState(Threads.Atomic{Bool}(false), nothing, nothing, Manager(empty=true), nothing,
@@ -196,7 +183,7 @@ RunState() = RunState(Threads.Atomic{Bool}(false), nothing, nothing, Manager(emp
     Dict{Int,MgConnection}(), Dict{Int,ActiveStream}(),
     Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(), Dict{Ptr{Cvoid},Float64}(),
     Dict{Ptr{Cvoid},String}(),
-    Threads.Atomic{UInt64}(0), Task[], Threads.SpinLock())
+    Threads.Atomic{UInt64}(0), Task[], Threads.SpinLock(), nothing)
 
 # --- Background task tracking (workers push, loop prunes) ---
 
@@ -223,7 +210,7 @@ end
 """
     bg_count(server) → Int
 
-Number of tracked background tasks (runaway timed-out handlers, `background!`
+Number of tracked background tasks (runaway timed-out handlers, `background`
 tasks). Lock-protected: callable from worker threads.
 """
 function bg_count(server::AbstractServer)::Int
@@ -262,21 +249,23 @@ end
 """
     App — Mongoose.jl web application.
 
-    Use `workers=0` for sync (default) or `workers=N` for async worker pool.
+    The executor is the first-class dependency: `App()` is sync, `App(N)`
+    builds an N-worker pool, and `App(executor=…)` injects one explicitly
+    (type-stable by construction — the argument type selects the `App`
+    specialization).
 
     # Constructors
     ```julia
-    app = App()                          # sync, dynamic router
-    app = App(workers=4)                 # async, 4 workers
-    app = App(workers=4, queue_size=2048) # async with larger queue
-    app = App(router=my_router)          # bring-your-own router
+    app = App()                              # sync (inline handlers)
+    app = App(4)                             # async pool with 4 workers
+    app = App(4; queue_size=2048)            # async with a larger queue
+    app = App(executor=AsyncExecutor(4))     # explicit injection
+    app = App(router=my_router)              # bring-your-own router
     ```
 
     # Configuration keyword arguments
     | Keyword                | Default            | Description                            |
     |------------------------|--------------------|----------------------------------------|
-    | `workers`              | `0`                | Worker threads (0 = sync)              |
-    | `queue_size`           | `1024`             | Max pending requests (async only)      |
     | `poll_timeout_ms`      | `1`                | Mongoose poll interval                 |
     | `max_body_bytes`       | `MAX_BODY_BYTES`   | Max request body size                  |
     | `drain_timeout_ms`     | `DRAIN_TIMEOUT_MS` | Graceful shutdown drain                |
@@ -291,73 +280,50 @@ end
     | `max_connections`      | `0`                | Max open connections (0 = unlimited)   |
     | `router`               | `Router()`         | Custom router instance                 |
     | `tls`                  | `nothing`          | `TLSConfig` for HTTPS                  |
+    | `middleware`           | `nothing`          | Static middleware tuple (`use` adds incrementally) |
+    | `services`             | `NamedTuple()`     | DI services (`provide` adds incrementally) |
+
+    `queue_size` is the second argument of the `App(N; queue_size=…)` form.
 
     # Structure (DESIGN G4)
     - `app.config` — immutable `ServerConfig`.
     - `app.runtime` — mutable `RunState` (connections, manager, loop, TLS…).
-    - `app.router`, `app.middlewares`, `app.errors`, `app.services`, … —
-      build-phase state; registration after `start!` throws `ServerError`.
+    - `app.router`, `app.context` — build-phase state; registration after
+      `start!` throws `ServerError`.
+    - `app.context` — typed request bundle (middleware tuple, DI services, error
+      pages, exception handlers, lifecycle hooks).
     - `app.executor` — `SyncExecutor` or `AsyncExecutor` (the worker pool).
 """
-mutable struct App{R<:AbstractRouter,E<:AbstractExecutor} <: AbstractServer
-    # ── Immutable configuration ────────────────────────────────────────────────
-    const config::ServerConfig
+struct App{R<:AbstractRouter,E<:AbstractExecutor,C<:RequestContext} <: AbstractServer
+    config::ServerConfig
+    runtime::RunState
+    router::R
+    mounts::Vector{Tuple{String,String}}
+    executor::E
+    context::C
 
-    # ── Mutable runtime (connections, loop, TLS, background tasks) ────────────
-    const runtime::RunState
-
-    # ── Build-phase routing & middleware ──────────────────────────────────────
-    const router::R
-    const middlewares::Vector{AbstractMiddleware}
-    const mounts::Vector{Tuple{String,String}}
-
-    # ── Build-phase error handling & DI ───────────────────────────────────────
-    const errors::Dict{Int,Union{Response,Function}}
-    const exception_handlers::Dict{DataType,Function}
-    const services::ServiceRegistry
-
-    # ── Build-phase lifecycle hooks ───────────────────────────────────────────
-    const hooks_start::Vector{Function}
-    const hooks_stop::Vector{Function}
-
-    # ── Execution strategy: SyncExecutor (inline) or AsyncExecutor ───────────
-    const executor::E
-
-    # ── Request-processing seam bundle (mirrors the build-phase containers) ──
-    context::RequestContext
-
-    # Positional inner constructor: `E` comes from the executor value via the
-    # `_build_app` barrier below, so the field is concretely typed.
-    function App{R,E}(config::ServerConfig, runtime::RunState, router::R,
-                      middlewares::Vector{AbstractMiddleware},
-                      mounts::Vector{Tuple{String,String}},
-                      errors::Dict{Int,Union{Response,Function}},
-                      exception_handlers::Dict{DataType,Function},
-                      services::ServiceRegistry,
-                      hooks_start::Vector{Function}, hooks_stop::Vector{Function},
-                      executor::E, context::RequestContext) where {R<:AbstractRouter,E<:AbstractExecutor}
-        return new{R,E}(config, runtime, router, middlewares, mounts, errors,
-                        exception_handlers, services, hooks_start, hooks_stop,
-                        executor, context)
+    function App{R,E,C}(config::ServerConfig, runtime::RunState, router::R,
+                        mounts::Vector{Tuple{String,String}},
+                        executor::E, context::C) where {R<:AbstractRouter,E<:AbstractExecutor,C<:RequestContext}
+        return new{R,E,C}(config, runtime, router, mounts, executor, context)
     end
 end
 
 # Type barrier: a concrete `exec` selects the concrete `E`, so construction is
 # statically typed (and JET-clean) instead of `typeof(union)`.
 function _build_app(config::ServerConfig, runtime::RunState, router::R,
-                    middlewares::Vector{AbstractMiddleware},
-                    errors::Dict{Int,Union{Response,Function}},
-                    exception_handlers::Dict{DataType,Function},
-                    services::ServiceRegistry, context::RequestContext,
-                    executor::E) where {R<:AbstractRouter,E<:AbstractExecutor}
-    return App{R,E}(config, runtime, router, middlewares, Tuple{String,String}[],
-                    errors, exception_handlers, services, Function[], Function[],
-                    executor, context)
+                    mounts::Vector{Tuple{String,String}},
+                    context::C, executor::E) where {R<:AbstractRouter,E<:AbstractExecutor,C<:RequestContext}
+    return App{R,E,C}(config, runtime, router, mounts, executor, context)
 end
 
-function App(;
-             workers::Integer=0,
-             queue_size::Integer=1024,
+"""
+    App(executor::AbstractExecutor; kwargs...) → App
+
+Real constructor: the executor fixes the `App{R,E,C}` specialization
+(type-stable by construction, no constant propagation involved).
+"""
+function App(executor::AbstractExecutor;
              poll_timeout_ms::Integer=1,
              max_body_bytes::Integer=MAX_BODY_BYTES,
              drain_timeout_ms::Integer=DRAIN_TIMEOUT_MS,
@@ -372,30 +338,47 @@ function App(;
              max_connections::Integer=0,
              router::R=Router(),
              tls::Union{Nothing,TLSConfig}=nothing,
-             errors::Dict{Int,<:Any}=Dict{Int,Union{Response,Function}}(),
+             errors::AbstractDict{Int,<:Response}=Dict{Int,Response}(),
+             middleware=nothing,
              services::NamedTuple=NamedTuple()) where {R<:AbstractRouter}
+
+    # Derive the pool config from the actual executor (a type branch: folds).
+    w = executor isa AsyncExecutor ? executor.workers : 0
+    q = executor isa AsyncExecutor ? executor.queue_size : 1024
 
     cfg = ServerConfig(;
         poll_timeout_ms, max_body_bytes, drain_timeout_ms, request_timeout_ms,
         ws_max_frame_bytes, ws_idle_timeout_ms, header_timeout_ms, body_timeout_ms,
         max_header_bytes, send_buffer_bytes, max_bg_tasks, max_connections,
-        workers, queue_size)
+        workers=w, queue_size=q)
 
-    errs = Dict{Int,Union{Response,Function}}(k => v for (k, v) in errors)
-    for code in keys(errs)
+    for code in keys(errors)
         (100 <= code <= 599) || throw(ServerError("Error status code must be in [100,599], got $code"))
     end
 
-    exec = cfg.workers > 0 ? AsyncExecutor(cfg.workers, cfg.queue_size) : SyncExecutor()
     rs = RunState()
     rs.tls = tls   # raw TLSConfig material; normalized at start!
-    ex_handlers = Dict{DataType,Function}()
-    used_mw = AbstractMiddleware[]
-    ctx = RequestContext(router; middlewares=used_mw,
-                         errors=errs, services=services,
-                         exception_handlers=ex_handlers)
-    return _build_app(cfg, rs, router, used_mw, errs, ex_handlers,
-                      ServiceRegistry(services), ctx, exec)
+    mws = asmiddlewaretuple(middleware)
+    ctx = RequestContext(router; middlewares=mws, errors=errors, services=services)
+    app = _build_app(cfg, rs, router, Tuple{String,String}[], ctx, executor)
+    # attach! may rebuild a middleware; re-context so the App type stays concrete.
+    attached = map(mw -> attach!(mw, app), mws)
+    ctx = RequestContext(router; middlewares=attached, errors=errors, services=services)
+    return _build_app(cfg, rs, router, Tuple{String,String}[], ctx, executor)
+end
+
+"""
+    App(; executor=SyncExecutor(), kwargs...) → App
+    App(workers::Integer; queue_size=1024, kwargs...) → App
+
+Sync default and async sugar: both construct the executor and delegate to the
+positional constructor, so each call site infers one concrete `App` type.
+"""
+App(; executor=SyncExecutor(), kwargs...) = App(executor; kwargs...)
+
+function App(workers::Integer; queue_size::Integer=1024, kwargs...)
+    workers > 0 || throw(ServerError("workers must be > 0; use App() for sync"))
+    return App(AsyncExecutor(Int(workers), Int(queue_size)); kwargs...)
 end
 
 # --- Teardown ---
@@ -411,147 +394,205 @@ end
 # --- Registration-after-start guard ---
 
 @inline function _ensure_registratable(server::AbstractServer, what::String)
-    server.runtime.running[] && throw(ServerError("cannot register $what after start!"))
+    server.runtime.running[] &&
+        throw(ServerError("cannot register " * what * " after start!"))
     return nothing
 end
 
 # --- Registration helpers ---
 
 """
-    onerror!(app, status, handler)
-    onerror!(handler, app, status)
+    trap(app, status, handler) → App
+    trap(handler, app, status) → App
 
-Register a custom error handler for a specific HTTP status code.
-`handler` may be a `Response` (static) or `Function(req) → Response` (dynamic).
-Both argument orders are accepted; the `(handler, app, status)` form exists so
-a do-block works.
+Register the response used for a status code (404, 405, 500, …), returning the
+rebuilt App (the argument is not mutated). `handler` may be a static `Response`
+or a dynamic `Function(req) → Response`. Both argument orders are accepted; the
+`(handler, app, status)` form exists so a do-block works.
 
 # Example
 ```julia
-onerror!(app, 404) do req
+app = trap(app, 404) do req
     json(Dict("error" => "not found", "path" => req.uri); status=404)
 end
 ```
 """
-function onerror!(server::AbstractServer, status::Int, handler::Union{Response,Function})
-    (100 <= status <= 599) || throw(ServerError("Status code must be in [100,599]"))
-    _ensure_registratable(server, "error responses")
-    server.errors[status] = handler
-    return server
+function trap(app::App, status::Int, handler::Response)
+    _register_error!(app, status)
+    pages = copy(app.context.registries.errors)
+    pages[status] = handler
+    return _with_context(app, Kernel._rebuild_context(app.context,
+                                               merge(app.context.registries, (; errors=pages))))
 end
-onerror!(f::Function, server::AbstractServer, status::Int) = onerror!(server, status, f)
+
+function trap(app::App, status::Int, handler::F) where {F<:Function}
+    _register_error!(app, status)
+    handlers = (app.context.registries.error_handlers..., Kernel.ErrorPage(status, handler))
+    return _with_context(app, Kernel._rebuild_context(app.context,
+                                               merge(app.context.registries, (; error_handlers=handlers))))
+end
+trap(f::Function, app::App, status::Int) = trap(app, status, f)
+
+@inline function _register_error!(app::App, status::Int)
+    (100 <= status <= 599) || throw(ServerError("Status code must be in [100,599]"))
+    _ensure_registratable(app, "error responses")
+    return nothing
+end
 
 """
-    onerror!(app, ::Type{E}, handler)
+    trap(app, ::Type{E}, handler) → App
 
-Register a typed exception handler: `handler(req, e)` returns the `Response`
-for any handler/middleware error that is a `E` (or subtype). Handlers are
-tried in registration order; unhandled exceptions fall through to the default
-500 path.
+Trap exceptions of type `E` (or a subtype): `handler(req, e)` returns the
+`Response`, returning the rebuilt App. Handlers are tried in registration
+order; unhandled exceptions fall through to the built-in 500 path.
 
 # Example
 ```julia
 struct NoMatch <: Exception end
-onerror!(app, NoMatch) do req, e
+app = trap(app, NoMatch) do req, e
     json(Dict("error" => "not found"); status=404)
 end
 ```
 """
-function onerror!(server::AbstractServer, ::Type{E}, handler::Function) where {E<:Exception}
-    _ensure_registratable(server, "exception handlers")
-    server.exception_handlers[E] = handler
-    return server
+function trap(app::App, ::Type{E}, handler::F) where {E<:Exception,F<:Function}
+    _ensure_registratable(app, "exception handlers")
+    handlers = (app.context.registries.exception_handlers..., Kernel.ExceptionHandler{E,F}(handler))
+    return _with_context(app, Kernel._rebuild_context(app.context,
+                                               merge(app.context.registries, (; exception_handlers=handlers))))
 end
-onerror!(handler::Function, server::AbstractServer, ::Type{E}) where {E<:Exception} =
-    onerror!(server, E, handler)
+trap(handler::F, app::App, ::Type{E}) where {E<:Exception,F<:Function} =
+    trap(app, E, handler)
 
 """
-    onstart!(app, f)
-    onstart!(f, app)
+    onstart(app, f) → App
+    onstart(f, app) → App
 
 Register a callback to run after the server starts (before accepting
-connections). Both argument orders are accepted; the `(f, app)` form exists so
-`onstart!(app) do … end` works.
+connections), returning the rebuilt App. Both argument orders are accepted; the
+`(f, app)` form exists so `onstart(app) do … end` works.
 """
-function onstart!(server::AbstractServer, f::Function)
-    _ensure_registratable(server, "start hooks")
-    push!(server.hooks_start, f)
-    return server
+function onstart(app::App, f::F) where {F}
+    _ensure_registratable(app, "start hooks")
+    return _with_context(app, _add_start_hook(app.context, f))
 end
-onstart!(f::Function, server::AbstractServer) = onstart!(server, f)
+onstart(f::Function, app::App) = onstart(app, f)
 
 """
-    onstop!(app, f)
-    onstop!(f, app)
+    onstop(app, f) → App
+    onstop(f, app) → App
 
-Register a callback to run during graceful shutdown. Both argument orders are
-accepted; the `(f, app)` form exists so `onstop!(app) do … end` works.
+Register a callback to run during graceful shutdown, returning the rebuilt App.
+Both argument orders are accepted; the `(f, app)` form exists so
+`onstop(app) do … end` works.
 """
-function onstop!(server::AbstractServer, f::Function)
-    _ensure_registratable(server, "stop hooks")
-    push!(server.hooks_stop, f)
-    return server
+function onstop(app::App, f::F) where {F}
+    _ensure_registratable(app, "stop hooks")
+    ctx = Kernel._rebuild_context(app.context,
+                                  merge(app.context.registries, (; hooks_stop=(app.context.registries.hooks_stop..., f))))
+    return _with_context(app, ctx)
 end
-onstop!(f::Function, server::AbstractServer) = onstop!(server, f)
+onstop(f::Function, app::App) = onstop(app, f)
 
 """
-    service!(app, name, value)
+    BackgroundTask{F} — a hook that spawns `f` as a tracked background task.
+"""
+struct BackgroundTask{F}
+    f::F
+end
 
-Register a service for dependency injection.
+@inline function _add_start_hook(ctx::RequestContext, hook::H) where {H}
+    return Kernel._rebuild_context(ctx, merge(ctx.registries, (; hooks_start=(ctx.registries.hooks_start..., hook))))
+end
 
+# Typed hook runners: each tuple element is called concretely (trim-safe).
+@inline _run_start_hook(h::BackgroundTask, server::AbstractServer) = bg_track!(server, @async h.f())
+@inline _run_start_hook(h::F, server::AbstractServer) where {F} = h()
+
+@inline _run_start_hooks(::Tuple{}, server::AbstractServer) = nothing
+@inline function _run_start_hooks(hooks::Tuple, server::AbstractServer)
+    try
+        _run_start_hook(hooks[1], server)
+    catch e
+        @log_error "onstart hook error" e catch_backtrace()
+    end
+    return _run_start_hooks(Base.tail(hooks), server)
+end
+
+@inline _run_stop_hooks(::Tuple{}, server::AbstractServer) = nothing
+@inline function _run_stop_hooks(hooks::Tuple, server::AbstractServer)
+    try
+        hooks[1]()
+    catch e
+        @log_error "onstop hook error" e catch_backtrace()
+    end
+    return _run_stop_hooks(Base.tail(hooks), server)
+end
+
+"""
+    provide(app, services::NamedTuple) → App
+
+Register dependency-injection services, returning the rebuilt App (the
+argument is not mutated). Keys must be literal: the NamedTuple type carries
+them, which keeps the rebuilt `App` type concrete. Retrieve services with
+[`service`](@ref), [`services`](@ref), or [`withservices`](@ref).
+
+# Example
 ```julia
-service!(app, :db, MyDB.connect())
-service(req, :db)      # retrieve inside handler
+app = provide(app, (db = MyDB.connect(), cache = redis))
 ```
 """
-function service!(app::App, name::Symbol, value)
+function provide(app::App{R,E,C}, services::NamedTuple) where {R,E,C}
     _ensure_registratable(app, "services")
-    old = app.services.deps
-    app.services.deps = (; old..., name => value)
-    # Services changed → refresh the seam's snapshot (build-phase only).
-    app.context = RequestContext(app.router; middlewares=app.middlewares,
-                                 errors=app.errors, services=app.services.deps,
-                                 exception_handlers=app.exception_handlers)
-    return app
+    return _provide(app, merge(app.context.registries.services, services))
 end
 
+function _provide(app::App{R,E,C}, services::S) where {R,E,C,S<:NamedTuple}
+    ctx = RequestContext(app.router, app.context.middlewares,
+                         merge(app.context.registries, (; services)))
+    return _with_context(app, ctx)
+end
+
+# Rebuild an App with a new RequestContext; all other state is shared.
+function _with_context(app::App{R,E}, ctx::C) where {R,E,C<:RequestContext}
+    return App{R,E,C}(app.config, app.runtime, app.router, app.mounts,
+                      app.executor, ctx)
+end
+
+# Transport convenience: resolve an error page from the server's context.
+@inline errorresponse(server::AbstractServer, req::Union{Request,Nothing}, status::Int)::Response =
+    errorresponse(server.context, req, status)
+@inline errorresponse(server::AbstractServer, status::Int)::Response =
+    errorresponse(server.context, status)
+
 """
-    service(req, name) → Any
-    service(req, ::Val{name}) → T
+    service(req, name) → value
+    service(req, ::Val{name}) → value
     service(req, name, T) → T
 
-Retrieve a service by name from the request context.
-- `service(req, :db)` returns the raw value (values may be zero-arg callables,
-  which are invoked).
-- `service(req, Val(:db))` avoids re-parsing the name, but the lookup goes
-  through the dynamic request context — the return type is inferred `Any`.
-- `service(req, :db, DBPool)` asserts the type and throws otherwise.
-
-For **type-stable** access in hot paths use [`withservices`](@ref), whose
-closure receives the concrete `NamedTuple`:
+Retrieve a service by name. Values may be zero-arg callables, which are
+invoked. The registry type travels in `Request{S}`, so the `Val` form is
+type-stable; `service(req, :db, DBPool)` asserts the type and throws
+otherwise. Apps with no services return `nothing`.
 
 # Example
 ```julia
 app = App(services=(db=pool, cache=redis))
-withservices(req) do svcs
-    svcs.db            # concrete: DBPool
-end
-db = service(req, Val(:db))   # convenient, dynamically typed
+db = service(req, Val(:db))              # static: DBPool
+db = service(req, :db, DBPool)           # asserted: DBPool
 ```
 """
-function service(req::Request, name::Symbol)
-    svcs = req.services
-    svcs === nothing && return nothing
-    hasproperty(svcs, name) || return nothing
-    v = getproperty(svcs, name)
+service(::Request{Nothing}, name::Symbol) = nothing
+@inline service(::Request{Nothing}, ::Val{name}) where {name} = nothing
+
+function service(req::Request{S}, name::Symbol) where {S<:NamedTuple}
+    hasproperty(req.services, name) || return nothing
+    v = getfield(req.services, name)
     return v isa Function ? v() : v
 end
 
-@inline function service(req::Request, ::Val{name}) where {name}
-    svcs = req.services
-    svcs === nothing && return nothing
-    hasproperty(svcs, name) || return nothing
-    v = getfield(svcs, name)
+@inline function service(req::Request{S}, ::Val{name}) where {S<:NamedTuple,name}
+    hasproperty(req.services, name) || return nothing
+    v = getfield(req.services, name)
     return v isa Function ? v() : v
 end
 
@@ -565,21 +606,17 @@ end
 """
     services(req) → NamedTuple
 
-The request's DI services as a NamedTuple (empty when none were registered).
-Dynamically typed at this boundary; use [`withservices`](@ref) for
-type-stable access.
+The request's DI services as a concrete NamedTuple (empty when none were
+registered), so field access specializes.
 """
-function services(req::Request)
-    svcs = req.services
-    return svcs === nothing ? NamedTuple() : svcs
-end
+@inline services(::Request{Nothing}) = NamedTuple()
+@inline services(req::Request{S}) where {S<:NamedTuple} = req.services
 
 """
     withservices(f, req) → f(services(req))
 
 Function-barrier access to DI services: the closure receives the concrete
-NamedTuple, so field access inside it specializes — unlike
-`service(req, Val(:x))`, which returns a dynamically typed value.
+NamedTuple, so field access inside it specializes.
 
 # Example
 ```julia
@@ -591,15 +628,16 @@ end
 @inline withservices(f::F, req::Request) where {F} = f(services(req))
 
 """
-    background!(app, f)
-    background!(f, app)
+    background(app, f) → App
+    background(f, app) → App
 
-Schedule a background task to be spawned when `start!` is called.
-`f` should be a zero-argument function. Both argument orders are accepted; the
-`(f, app)` form exists so `background!(app) do … end` works.
+Schedule `f` as a tracked background task spawned when `start!` is called,
+returning the rebuilt App. `f` should be a zero-argument function. Both argument
+orders are accepted; the `(f, app)` form exists so `background(app) do … end`
+works.
 
 ```julia
-background!(app) do
+app = background(app) do
     while true
         cleanup_expired_sessions!()
         sleep(60)
@@ -607,61 +645,73 @@ background!(app) do
 end
 ```
 """
-function background!(server::AbstractServer, f::Function)
-    _ensure_registratable(server, "background tasks")
-    push!(server.hooks_start, () -> bg_track!(server, @async f()))
-    return server
+function background(app::App, f::F) where {F}
+    _ensure_registratable(app, "background tasks")
+    return _with_context(app, _add_start_hook(app.context, BackgroundTask{F}(f)))
 end
-background!(f::Function, server::AbstractServer) = background!(server, f)
+background(f::Function, app::App) = background(app, f)
 
 # --- Display ---
 
 function Base.show(io::IO, app::App)
     mode = app.config.workers == 0 ? "sync" : "async($(app.config.workers) workers)"
-    print(io, "App($mode, $(length(app)) routes, $(length(app.middlewares)) middleware)")
+    print(io, "App($mode, $(length(app)) routes, $(length(app.context.middlewares)) middleware)")
 end
 
-# --- use! (wires the Kernel middleware protocol onto an App) ---
+# --- use (wires the Kernel middleware protocol onto an App) ---
 
 """
-    use!(app, middleware; paths=[])
+    use(app, middleware; paths=nothing) → App
 
-Add middleware to an app. `middleware` may be any callable
-`(req, next) → Response` or an `AbstractMiddleware` subtype; plain functions
-are wrapped automatically. When `paths` is non-empty, the middleware only
-applies to requests whose URI starts with one of the given prefixes.
+Compose middleware into the app, returning the rebuilt App (the argument is not
+mutated). `middleware` may be any callable `(req, next) → Response` or an
+`AbstractMiddleware` subtype; plain functions are wrapped automatically. When
+`paths` is non-empty, the middleware only applies to requests whose URI starts
+with one of the given prefixes.
 
 # Example
 ```julia
-use!(app, cors())
-use!(app, bearer(validate_token); paths=["/api"])
-use!(app, (req, next) -> (req.headers ...; next()))
+app = use(app, cors())
+app = use(app, bearer(validate_token); paths=["/api"])
+app = use(app) do req, next
+    next()
+end
 ```
 """
-function use!(server::AbstractServer, @nospecialize(mw); paths=nothing)
-    _ensure_registratable(server, "middleware")
-    inner = asmiddleware(mw)
-    prefixes = String[rstrip(p, '/') for p in asstrings(paths)]
-    filter!(!isempty, prefixes)
-    wrapped = isempty(prefixes) ? inner : PathFilter(inner, prefixes)
-    attach!(wrapped, server)
-    push!(server.middlewares, wrapped)
-    # Refresh the seam's baked tuple stack (registration is build-phase only).
-    server.context = RequestContext(server.router; middlewares=server.middlewares,
-                                    errors=server.errors,
-                                    services=server.services.deps,
-                                    exception_handlers=server.exception_handlers)
-    return server
+function use(app::App{R,E,C}, mw; paths=nothing) where {R,E,C}
+    _ensure_registratable(app, "middleware")
+    return _use(app, asmiddleware(mw), paths)
 end
 
-# Do-block convenience: use!(app) do req, next ... end
-use!(f::Function, server::AbstractServer; paths=nothing) =
-    use!(server, f; paths=paths)
+# No path scoping: single concrete call site keeps the tuple type trim-safe.
+function _use(app::App{R,E,C}, inner::M, ::Nothing) where {R,E,C,M<:AbstractMiddleware}
+    return _compose(app, inner)
+end
 
-# Metrics gauges: capture the server so `/metrics` can report live counts.
-function attach!(mw::Metrics, server::AbstractServer)
+function _use(app::App{R,E,C}, inner::M, paths) where {R,E,C,M<:AbstractMiddleware}
+    prefixes = String[rstrip(p, '/') for p in asstrings(paths)]
+    filter!(!isempty, prefixes)
+    isempty(prefixes) && return _compose(app, inner)
+    return _compose(app, PathFilter(inner, prefixes))
+end
+
+function _compose(app::App{R,E,C}, wrapped::M) where {R,E,C,M<:AbstractMiddleware}
+    mws = (app.context.middlewares..., wrapped)
+    ctx = RequestContext(app.router, mws, app.context.registries)
+    newapp = _with_context(app, ctx)
+    attached = attach!(wrapped, newapp)
+    ctx = RequestContext(app.router, (app.context.middlewares..., attached),
+                         app.context.registries)
+    return _with_context(app, ctx)
+end
+
+# Do-block convenience: app = use(app) do req, next ... end
+use(f::Function, app::App; paths=nothing) = use(app, f; paths=paths)
+
+# Metrics gauges: rebuild with the server captured (callers use the return value).
+function attach!(mw::Metrics{Nothing}, server::AbstractServer)
     exec = server.executor
-    mw.state = () -> (
+    state = () -> (
         connections = length(server.runtime.conn_times),
         ws_clients = length(server.runtime.ws_clients),
         streams = length(server.runtime.streams),
@@ -670,13 +720,14 @@ function attach!(mw::Metrics, server::AbstractServer)
         bg_tasks = bg_count(server),
         ws_dropped = server.runtime.ws_dropped[],
     )
-    return mw
+    return Metrics{typeof(state)}(mw.shards, mw.path, state)
 end
+
+attach!(mw::Metrics, ::AbstractServer) = mw   # already attached
 
 Base.show(io::IO, c::ServerConfig) =
     print(io, "ServerConfig(workers=", c.workers, ", poll_timeout_ms=", c.poll_timeout_ms,
           ", max_body_bytes=", c.max_body_bytes, ")")
-Base.show(io::IO, r::ServiceRegistry) = print(io, "ServiceRegistry(", length(r.deps), " services)")
 Base.show(io::IO, s::RunState) =
     print(io, "RunState(running=", s.running[], ", connections=", length(s.connections),
           ", streams=", length(s.streams), ")")

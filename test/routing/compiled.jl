@@ -48,7 +48,7 @@ struct _PassMw <: AbstractMiddleware
 end
 (mw::_PassMw)(req::Request, next::Function) = (push!(mw.sink, mw.tag); next())
 
-const ERRORS = Dict{Int,Union{Response,Function}}()
+const ERRORS = Dict{Int,Response}()
 
 @testset "Compiled dispatch: 404/405/HEAD parity (frozen vs generic)" begin
     # Same routes: one frozen (compiled), one open (generic dispatch).
@@ -65,7 +65,7 @@ const ERRORS = Dict{Int,Union{Response,Function}}()
         (:get,    "/users/alice"),
         (:get,    "/org/julia/repo/mongoose"),
         (:get,    "/temp/36.6"),                    # Float64
-        (:get,    "/temp/abc"),                     # parse fail → 404
+        (:get,    "/temp/abc"),                     # parse fail → 400
         (:get,    "/flag/true"), (:get, "/flag/false"), (:get, "/flag/maybe"),
         (:get,    "/id/42"), (:get, "/id/-1"),
         (:get,    "/api/v2/users/5/posts/10"),
@@ -200,7 +200,7 @@ end
         mkreq(:get, "/svc"))
     @test String(resp.body) == "42"
 
-    errs = Dict{Int,Union{Response,Function}}(
+    errs = Dict{Int,Response}(
         404 => Response(Plain, "custom 404"; status=404))
     resp = process(mkctx(r; errs=errs),
         mkreq(:get, "/missing"))

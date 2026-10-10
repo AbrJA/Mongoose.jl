@@ -51,11 +51,11 @@ using Sockets
         @test_throws ServerError App(max_body_bytes=0)
         @test_throws ServerError App(max_body_bytes=-1)
         @test_throws ServerError App(poll_timeout_ms=-1)
-        @test_throws ServerError App(workers=-1)
+        @test_throws ServerError App(-1)
     end
 
     @testset "Async App basic request" begin
-        s = App(workers=2)
+        s = App(2)
         get!(s, "/") do req; text("async-ok") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
@@ -65,7 +65,7 @@ using Sockets
     end
 
     @testset "Async App concurrent requests" begin
-        s = App(workers=4)
+        s = App(4)
         get!(s, "/slow") do req
             sleep(0.05)
             text("done")
@@ -86,8 +86,8 @@ end
     with_server(s) do port
         @test_throws Mongoose.ServerError get!(s, "/late", req -> text("x"))
         @test_throws Mongoose.ServerError route!(s, :get, "/late2", req -> text("x"))
-        @test_throws Mongoose.ServerError use!(s, cors())
-        @test_throws Mongoose.ServerError onerror!(s, 404, req -> text("x"))
+        @test_throws Mongoose.ServerError s = use(s, cors())
+        @test_throws Mongoose.ServerError trap(s, 404, req -> text("x"))
         @test_throws Mongoose.ServerError ws!(s, "/ws"; on_message=req -> nothing)
         # pre-start registration still fine
         @test HTTP.get("http://127.0.0.1:$port/before"; status_exception=false).status == 200
@@ -96,7 +96,7 @@ end
 
 @testset "max_connections refuses extra connections" begin
     gate = Channel{Nothing}(2)
-    app = App(workers=2, max_connections=2)
+    app = App(2; max_connections=2)
     get!(app, "/hold") do req
         sse(req) do w
             emit(w; data="open")
@@ -182,7 +182,7 @@ end
 end
 
 @testset "body_timeout closes stalled uploads" begin
-    app = App(workers=2, body_timeout_ms=300)
+    app = App(2; body_timeout_ms=300)
     get!(app, "/ping") do req; text("pong") end
     post!(app, "/echo") do req; text("len=$(sizeof(body(req)))") end
 
@@ -245,7 +245,7 @@ end
 
 @testset "runaway timed-out tasks are capped and shed" begin
     gate = Channel{Nothing}(2)
-    app = App(workers=2, request_timeout_ms=100, max_bg_tasks=2, drain_timeout_ms=100)
+    app = App(2; request_timeout_ms=100, max_bg_tasks=2, drain_timeout_ms=100)
     get!(app, "/hang") do req
         take!(gate)          # blocks until the test releases it
         text("late")
@@ -294,7 +294,7 @@ end
     if !v6
         @test_skip true
     else
-        app = App(workers=2)
+        app = App(2)
         get!(app, "/v6") do req
             json(Dict("remote" => something(req.remote_addr, "none")))
         end

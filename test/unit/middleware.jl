@@ -81,15 +81,15 @@ end
     hang = String[]
     get!(r, "/c", req -> (push!(hang, "handler"); text("ok")))
 
-    # use! accepts a plain closure.
+    # use accepts a plain closure.
     app = App()
-    use!(app) do req, next
+    app = use(app) do req, next
         push!(hang, "mw")
         next()
     end
-    @test app.middlewares[1] isa Mongoose.FunctionMiddleware
+    @test app.context.middlewares[1] isa Mongoose.FunctionMiddleware
 
-    res = Mongoose.process(Mongoose.RequestContext(r; middlewares=app.middlewares),
+    res = Mongoose.process(Mongoose.RequestContext(r; middlewares=app.context.middlewares),
         Request(:get, "/c", Dict{String,String}(), Pair{String,String}[], ""))
     @test res.status == 200
     @test hang == ["mw", "handler"]

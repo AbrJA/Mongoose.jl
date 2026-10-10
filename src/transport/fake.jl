@@ -32,7 +32,7 @@ Base.showerror(io::IO, e::StreamClosedError) = print(io, "StreamClosedError: ", 
     A `FakeTransport` really is a fake transport: it dispatches requests directly
     through the middleware pipeline and router (`process`), bypassing
     the C event loop entirely. It declares its capabilities via the ability
-    traits (`canws`, `cantls`, `canstream`): no WebSocket,
+    traits (`supportsws`, `supportstls`, `supportsstream`): no WebSocket,
     no TLS, streaming supported. It can
     drive a full request cycle without a running server — including on systems
     where `Mongoose_jll` was never loaded.
@@ -57,8 +57,8 @@ Base.showerror(io::IO, e::StreamClosedError) = print(io, "StreamClosedError: ", 
     @assert contains(resp.body, "Hello World")
     ```
 """
-mutable struct FakeTransport <: AbstractTransport
-    app::App
+mutable struct FakeTransport{A<:AbstractServer} <: AbstractTransport
+    app::A
     stream_seq::Int
     streams::Dict{Int,FakeStream}
     closed::Bool
@@ -67,11 +67,12 @@ end
 Base.show(io::IO, t::FakeTransport) =
     print(io, "FakeTransport(", t.app, ", ", length(t.streams), " streams)")
 
-FakeTransport(app::App) = FakeTransport(app, 0, Dict{Int,FakeStream}(), false)
+FakeTransport(app::A) where {A<:AbstractServer} =
+    FakeTransport{A}(app, 0, Dict{Int,FakeStream}(), false)
 
-canws(::FakeTransport) = false
-cantls(::FakeTransport) = false
-canstream(::FakeTransport) = true
+supportsws(::FakeTransport) = false
+supportstls(::FakeTransport) = false
+supportsstream(::FakeTransport) = true
 
 # --- Owner-aware stream writer (replaces the old stateless StreamWriterBuffer) ---
 
@@ -123,7 +124,7 @@ end
 
 # --- Stream execution: one response, bound to one stream ---
 
-function _run_fake_stream(transport::FakeTransport, resp::StreamResponse)::Response
+function _run_fake_stream(transport::FakeTransport, resp::StreamResponse{P})::Response where {P}
     transport.stream_seq += 1
     id = transport.stream_seq
     stream = FakeStream(IOBuffer(), true, false, nothing)
@@ -132,6 +133,7 @@ function _run_fake_stream(transport::FakeTransport, resp::StreamResponse)::Respo
     try
         resp.producer(writer)
     catch e
+        e isa Exception || rethrow()
         stream.error = e
     finally
         stream.open = false
@@ -173,7 +175,7 @@ function (client::FakeTransport)(method::Symbol, path::String;
     result = try
         invoke_http(client.app, req)
     catch e
-        errorresponse(client.app.errors, req, 500)
+        errorresponse(client.app, req, 500)
     end
 
     if result isa StreamResponse

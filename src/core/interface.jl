@@ -6,11 +6,11 @@
     this protocol; they never inspect internal fields.
 
     Required protocol for HTTP dispatch:
-    - `route!(r::R, method, path, handler; middleware=AbstractMiddleware[], metadata=nothing) → r`
+    - `route!(r::R, method, path, handler; middleware=(), metadata=nothing) → r`
       (register an HTTP route; the router stores the handler inside an
       `Endpoint` and never interprets it. The `App` layer normalizes
-      `middleware` to a vector before delegating, so a router may assume an
-      `AbstractVector`)
+      `middleware` to an immutable tuple before delegating, so a router may
+      assume a `Tuple`)
     - `matchroute(r::R, method, path)`                → a `RouteResult`
       (`Matched` / `NoMatch` / `MethodMismatch{allowed}` — 404/405 and the
       `Allow` set are resolved by the router at match time)
@@ -44,9 +44,10 @@ abstract type AbstractRouter end
 # ── RouteResult — the exhaustive router match (Ciro/Keel-style ADT) ──────────
 
 """
-    RouteResult — outcome of `matchroute`: `Matched`, `NoMatch`, or
-    `MethodMismatch{allowed}` (the last carries the route's method bitmask,
-    so 405 `Allow` needs no secondary lookup).
+    RouteResult — outcome of `matchroute`: `Matched`, `NoMatch`,
+    `MethodMismatch{allowed}` (carries the route's method bitmask, so 405
+    `Allow` needs no secondary lookup), or `ParamMismatch` (the path matched a
+    typed pattern but a capture failed to parse → 400).
 """
 abstract type RouteResult end
 
@@ -66,6 +67,16 @@ end
 
 """No route matched the path."""
 struct NoMatch <: RouteResult end
+
+"""
+    ParamMismatch <: RouteResult
+
+The path structurally matched a parametric route but a typed capture could not
+be parsed (`/users/abraham` against `/users/:id::Int`); the dispatch layer
+answers 400. Reported only when no other route (including a later pattern or
+the `"*"` catch-all) actually serves the path.
+"""
+struct ParamMismatch <: RouteResult end
 
 """
     MethodMismatch{allowed::UInt8} <: RouteResult

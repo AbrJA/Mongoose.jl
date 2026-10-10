@@ -82,28 +82,16 @@ end
 
 formatheaders(h::Headers)::String = formatheaders(h.data)
 
-function Base.get(h::Headers, key::String, default)
-    lkey = is_lowercase_ascii(key) ? key : lowercase(key)
+function Base.get(h::Headers, key::AbstractString, default)
     @inbounds for i in eachindex(h.data)
-        k = h.data[i].first
-        if is_lowercase_ascii(k)
-            k == lkey && return h.data[i].second
-        elseif lowercase(k) == lkey
-            return h.data[i].second
-        end
+        _key_eq(h.data[i].first, key) && return h.data[i].second
     end
     return default
 end
 
-function Base.haskey(h::Headers, key::String)::Bool
-    lkey = is_lowercase_ascii(key) ? key : lowercase(key)
+function Base.haskey(h::Headers, key::AbstractString)::Bool
     @inbounds for i in eachindex(h.data)
-        k = h.data[i].first
-        if is_lowercase_ascii(k)
-            k == lkey && return true
-        elseif lowercase(k) == lkey
-            return true
-        end
+        _key_eq(h.data[i].first, key) && return true
     end
     return false
 end
@@ -116,15 +104,16 @@ end
     that never read the query pay only the raw-string copy (nothing at all when
     there is no query). `context` is allocated on first access the same way.
 
-    `services` is the app's DI NamedTuple, set by `process` before dispatch (no
-    dict allocation, no boxing); [`service`](@ref)/[`withservices`](@ref) read
-    it directly.
+    `services` is the app's DI registry, attached by `process` before dispatch:
+    `S` is `Nothing` when the app registers none, otherwise the concrete
+    NamedTuple type — so [`service`](@ref)/[`withservices`](@ref) resolve
+    statically (no dict allocation, no dynamic lookup).
 
     `remote_addr` is the transport-provided peer address (the client's IP as a
     string, or `nothing` when the transport does not supply one — e.g. the
     standalone pipeline or `FakeTransport`-constructed requests).
 """
-mutable struct Request <: AbstractRequest
+mutable struct Request{S} <: AbstractRequest
     const method::Symbol
     const uri::String
     const path::String                          # URI without query string (pre-stripped)
@@ -133,7 +122,7 @@ mutable struct Request <: AbstractRequest
     const headers::Headers
     const body::String
     context::Union{Nothing,Dict{Symbol,Any}}
-    services::Union{Nothing,NamedTuple}         # DI, set by `process`
+    services::S                                 # DI, attached by `process`
     const remote_addr::Union{Nothing,String}
 
     # Primary constructor — all fields explicit
@@ -141,11 +130,17 @@ mutable struct Request <: AbstractRequest
                      query::Union{Nothing,Dict{String,String}}, query_raw::String,
                      headers::Headers, body::String,
                      context::Union{Nothing,Dict{Symbol,Any}}=nothing,
-                     services::Union{Nothing,NamedTuple}=nothing,
-                     remote_addr::Union{Nothing,String}=nothing)
-        return new(method, uri, path, query, query_raw, headers, body, context, services, remote_addr)
+                     services::S=nothing,
+                     remote_addr::Union{Nothing,String}=nothing) where {S<:Union{Nothing,NamedTuple}}
+        return new{S}(method, uri, path, query, query_raw, headers, body, context, services, remote_addr)
     end
 end
+
+# Rebuild with the concrete registry; the empty case keeps `Request{Nothing}`.
+@inline _attach_services(req::Request{Nothing}, ::NamedTuple{(),Tuple{}}) = req
+@inline _attach_services(req::Request, services::NamedTuple) =
+    Request(req.method, req.uri, req.path, req.query, req.query_raw,
+            req.headers, req.body, req.context, services, req.remote_addr)
 
 # Convenience: pre-parsed query (tests, FakeTransport); no raw source needed.
 function Request(method::Symbol, uri::String, path::String,
@@ -190,7 +185,7 @@ end
 
 """
     Request(; method, uri, query=Dict(), headers=Headers(), body="",
-              context=nothing, remote_addr=nothing) → Request
+              context=nothing, services=nothing, remote_addr=nothing) → Request
 
 Keyword constructor; `path` is derived from `uri`. Prefer this over the
 positional forms for readability.
@@ -199,9 +194,10 @@ function Request(; method::Symbol, uri::String,
                  query::Dict{String,String}=Dict{String,String}(),
                  headers=Headers(), body::String="",
                  context::Union{Nothing,Dict{Symbol,Any}}=nothing,
-                 remote_addr::Union{Nothing,String}=nothing)
+                 services::S=nothing,
+                 remote_addr::Union{Nothing,String}=nothing) where {S<:Union{Nothing,NamedTuple}}
     path = String(stripquery(uri))
-    return Request(method, uri, path, query, asheaders(headers), body, context, remote_addr)
+    return Request(method, uri, path, query, "", asheaders(headers), body, context, services, remote_addr)
 end
 
 function Base.show(io::IO, req::Request)
@@ -248,15 +244,7 @@ end
 
 Look up a request header by name (case-insensitive).
 """
-@inline header(req::Request, name::AbstractString) = get(req.headers, lowercase(String(name)), nothing)
-
-@inline function is_lowercase_ascii(s::String)::Bool
-    @inbounds for i in 1:ncodeunits(s)
-        b = codeunit(s, i)
-        (UInt8('A') <= b <= UInt8('Z')) && return false
-    end
-    return true
-end
+@inline header(req::Request, name::AbstractString) = get(req.headers, name, nothing)
 
 # ── Query parameter helpers ──────────────────────────────────────────────────
 
@@ -409,10 +397,17 @@ function _parse_multipart(data::AbstractVector{UInt8}, boundary::String)::Dict{S
     return result
 end
 
+# Extract `field="value"` from a part header without compiling a Regex per
+# part (this runs for every multipart field/file).
 function _extract_field(headers::AbstractString, field::String)::String
-    pattern = Regex("$(field)=\"([^\"]*)\"")
-    m = match(pattern, headers)
-    return m === nothing ? "" : m.captures[1]
+    needle = field * "=\""
+    i = findfirst(needle, headers)
+    i === nothing && return ""
+    start = nextind(headers, last(i))
+    start > ncodeunits(headers) && return ""
+    stop = findnext('"', headers, start)
+    stop === nothing && return ""
+    return String(headers[start:prevind(headers, stop)])
 end
 
 function _extract_header_value(headers::AbstractString, name::String)::String

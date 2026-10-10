@@ -67,13 +67,50 @@
         end
     end
 
-    @testset "Invalid Int param returns 404" begin
+    @testset "Invalid typed param returns 400" begin
         app = App()
         get!(app, "/items/:id::Int") do req, id; text("ok") end
         with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/items/abc"; status_exception=false)
-            @test resp.status == 404
+            @test resp.status == 400
         end
+    end
+
+    @testset "ParamMismatch: fallback, catch-all, 400 page" begin
+        # A later pattern that matches wins over the parse failure.
+        r = Router()
+        get!(r, "/users/:id::Int") do req, id; text("int $id") end
+        get!(r, "/users/:name") do req, name; text("str $name") end
+        c = FakeTransport(App(router = r))
+        @test String(c(:get, "/users/abraham").body) == "str abraham"
+        @test c(:get, "/users/7").status == 200
+
+        # Frozen/compiled path agrees.
+        freeze!(r)
+        @test String(c(:get, "/users/abraham").body) == "str abraham"
+
+        # Without a fallback: 400, and `trap(app, 400, …)` customizes it.
+        app = trap(App(router = Router()), 400) do req
+            json((error = "bad_param",); status = 400)
+        end
+        get!(app, "/users/:id::Int") do req, id; text("user $id") end
+        c2 = FakeTransport(app)
+        @test c2(:get, "/users/abraham").status == 400
+        @test occursin("bad_param", String(c2(:get, "/users/abraham").body))
+
+        # StaticRouter agrees: 400 without a fallback…
+        sr0 = @routes begin
+            get("/users/:id::Int", (req, id) -> text("user $id"))
+        end
+        @test FakeTransport(App(router = sr0))(:get, "/users/abraham").status == 400
+
+        # …and a registered catch-all still serves the path.
+        sr = @routes begin
+            get("/users/:id::Int", (req, id) -> text("user $id"))
+            get("*", req -> text("fallback"))
+        end
+        c3 = FakeTransport(App(router = sr))
+        @test String(c3(:get, "/users/abraham").body) == "fallback"
     end
 end
 

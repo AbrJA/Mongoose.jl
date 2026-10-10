@@ -34,7 +34,7 @@ router = Router()
 # String parameter (default)
 route!(router, :get, "/greet/:name", (req, name) -> text("Hello, $name!"))
 
-# Typed integer — /users/abc returns 404 automatically
+# Typed integer — /users/abc returns 400 automatically
 route!(router, :get, "/users/:id::Int", (req, id) ->
     json(Dict("id" => id, "type" => string(typeof(id))))
 )
@@ -50,7 +50,7 @@ route!(router, :get, "/files/*path", (req, path) ->
     text("Requested: $path")
 )
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 start!(app; port=8080)
 ```
 
@@ -73,15 +73,51 @@ get!(router, "/files/*path", (req, path) -> text("Requested: $path"))
 
 freeze!(router)   # route!/ws! throw RouteError from here on
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 start!(app; port=8080)
 ```
 
 Freezing also provides the closed-table guarantee AOT builds need: with no
-runtime registration, the route table can be compiled once and pruned. Note
-that `juliac --trim` compatibility is **not complete yet** — the trim
-verifier still finds dynamic dispatch in startup/registration. Call `freeze!`
-after the last registration and before starting the app.
+runtime registration, the route table can be compiled once and pruned. For
+`juliac --trim=safe` builds use `@routes`/`StaticRouter`, which declares the
+table at compile time (0 trim-verifier errors — see the AOT section in
+[Performance & Deployment](@ref)); the dynamic `Router` is the JIT profile.
+
+## Static Routes (`@routes`)
+
+Declare the whole table up front when you want fully static dispatch or an AOT
+build:
+
+```julia
+router = @routes begin
+    get("/hello", req -> text("hello"))
+    get("/users/:id::Int", (req, id) -> json((id = id,)))
+    get("/files/*path", (req, path) -> text("Requested: $path"))
+    post("/echo", req -> text(body(req)); middleware = (cors(),))
+    ws("/chat", msg -> Message("Echo: " * String(msg.data)); on_open = req -> true)
+
+    group("/api"; middleware = (bearer(token),)) do api
+        get("/items", list_items)                    # GET /api/items
+        group("/admin"; middleware = (require_admin,)) do admin
+            delete("/items/:id::Int", delete_item)   # DELETE /api/admin/items/:id
+        end
+    end
+end
+
+app = App(; router = router)
+start!(app; port = 8080)
+```
+
+`group(...) do … end` is expanded at compile time: paths are prefixed and
+middleware tuples concatenated (outer group → inner group → route), so groups
+add no runtime structure and stay trim-safe. `ws(...)` declares typed WebSocket
+endpoints (exact paths, `on_open`/`on_close`/`allowed_origins`); upgrade and
+message dispatch resolve the concrete handlers.
+
+Semantics match the dynamic `Router`: literal routes win over patterns,
+patterns resolve in declaration order, a bare `"*"` is the final fallback, and
+a path match with the wrong method answers `405` with the `Allow` set. The
+table is closed by construction — `route!`/`ws!` on a `StaticRouter` throw.
 
 ## Query Parameters
 
@@ -101,7 +137,7 @@ route!(router, :get, "/search", req -> begin
     json(Dict("query" => q, "page" => page, "limit" => limit, "active" => active))
 end)
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 start!(app; port=8080)
 ```
 
@@ -137,7 +173,7 @@ route!(router, :post, "/users/typed", req -> begin
     json(Dict("name" => user.name, "email" => user.email))
 end)
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 start!(app; port=8080)
 ```
 
@@ -160,7 +196,7 @@ route!(router, :post, "/upload", req -> begin
     json(Dict("files" => [file.filename], "size" => length(file.data)); status=201)
 end)
 
-app = App(; router=router, workers=4, max_body_bytes=10_000_000)  # 10MB limit
+app = App(4; router=router, max_body_bytes=10_000_000)  # 10MB limit
 start!(app; port=8080)
 ```
 
@@ -173,17 +209,17 @@ router = Router()
 route!(router, :get, "/", req -> json(Dict("status" => "ok")))
 route!(router, :get, "/api/data", req -> json(Dict("data" => [1,2,3])))
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 
 # Middleware runs in registration order
-use!(app, security())                                        # Security headers
-use!(app, health())                                          # /healthz, /readyz, /livez
-use!(app, metrics())                                         # GET /metrics
-use!(app, cors(origins="*"))                                 # CORS headers
-use!(app, compress(min_size_bytes=1024))                           # GZip compression
-use!(app, logger())                                          # Access logs
-use!(app, ratelimit(max_requests=100, window_seconds=60))    # Rate limiting
-use!(app, bearer(t -> t == "secret"); paths=["/api"])        # Auth on /api only
+app = use(app, security())                                     # Security headers
+app = use(app, health())                                       # /healthz, /readyz, /livez
+app = use(app, metrics())                                      # GET /metrics
+app = use(app, cors(origins="*"))                              # CORS headers
+app = use(app, compress(min_size_bytes=1024))                  # GZip compression
+app = use(app, logger())                                       # Access logs
+app = use(app, ratelimit(max_requests=100, window_seconds=60)) # Rate limiting
+app = use(app, bearer(t -> t == "secret"); paths=["/api"])     # Auth on /api only
 
 start!(app; port=8080)
 ```
@@ -206,8 +242,8 @@ end
 router = Router()
 route!(router, :get, "/", req -> text("hello"))
 
-app = App(; router=router, workers=4)
-use!(app, RequestTimer())
+app = App(4; router=router)
+app = use(app, RequestTimer())
 start!(app; port=8080)
 ```
 
@@ -243,7 +279,7 @@ end
 
 mount!(router, api)
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 start!(app; port=8080)
 ```
 
@@ -270,11 +306,11 @@ ws!(router, "/ws";
         @info "WS connected" uri=req.uri
         true
     end,
-    on_message = msg -> Message("Echo: $(msg.data)"),
+    on_message = msg -> Message("Echo: " * String(msg.data)),
     on_close = () -> @info "WS disconnected"
 )
 
-app = App(; router=router, workers=4, ws_idle_timeout_ms=60_000)
+app = App(4; router=router, ws_idle_timeout_ms=60_000)
 start!(app; port=8080)
 ```
 
@@ -294,10 +330,10 @@ router = Router()
 
 # Clients subscribe to stock updates
 ws!(router, "/stock";
-    on_message = msg -> Message("pong: $(msg.data)"),
+    on_message = msg -> Message("pong: " * String(msg.data)),
 )
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 
 # Broadcast a stock event to everyone currently connected to /stock
 broadcastws(app, "/stock", JSON.json(Dict("event" => "low", "sku" => "SHOP-MUG-6")))
@@ -334,7 +370,7 @@ route!(router, :get, "/", req -> html("""
     <p>Check console for SSE events</p>
 """))
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 start!(app; port=8080)
 ```
 
@@ -346,7 +382,7 @@ using Mongoose
 router = Router()
 route!(router, :get, "/", req -> redirect("/static/index.html"))
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 
 # Serve files from "public/" directory at /static/* prefix
 # Supports Range requests, ETag, and gzip (handled at C level)
@@ -380,7 +416,7 @@ route!(router, :get, "/profile", req -> begin
     json(Dict("session" => session))
 end)
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 start!(app; port=8080)
 ```
 
@@ -392,14 +428,14 @@ using Mongoose
 router = Router()
 route!(router, :get, "/", req -> json(Dict("ok" => true)))
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 
 # Static error responses
-onerror!(app, 500, json(Dict("error" => "Internal Server Error"); status=500))
-onerror!(app, 413, json(Dict("error" => "Payload too large"); status=413))
+app = trap(app, 500, json(Dict("error" => "Internal Server Error"); status=500))
+app = trap(app, 413, json(Dict("error" => "Payload too large"); status=413))
 
 # Dynamic error handler (handler receives the request)
-onerror!(app, 404) do req
+app = trap(app, 404) do req
     json(Dict("error" => "Not found", "path" => req.uri); status=404)
 end
 
@@ -427,8 +463,8 @@ route!(router, :get, "/users/:id::Int", (req, id) -> begin
     json(Dict("id" => id, "name" => name))
 end)
 
-app = App(; router=router, workers=4)
-service!(app, :db, FakeDB(Dict(1 => "Alice", 2 => "Bob")))
+app = App(4; router=router)
+app = provide(app, (db = FakeDB(Dict(1 => "Alice", 2 => "Bob")),))
 
 start!(app; port=8080)
 ```
@@ -441,17 +477,17 @@ using Mongoose
 router = Router()
 route!(router, :get, "/", req -> text("running"))
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 
-onstart!(app) do
+app = onstart(app) do
     @info "Server started, seeding data..."
 end
 
-onstop!(app) do
+app = onstop(app) do
     @info "Graceful shutdown complete"
 end
 
-background!(app) do
+app = background(app) do
     while true
         @info "Background tick" time=time()
         sleep(30)
@@ -474,10 +510,10 @@ route!(router, :get, "/data", req -> begin
     json(large_data)
 end)
 
-app = App(; router=router, workers=4)
+app = App(4; router=router)
 
 # Compress responses larger than 1KB when client accepts gzip
-use!(app, compress(min_size_bytes=1024))
+app = use(app, compress(min_size_bytes=1024))
 
 start!(app; port=8080)
 ```
@@ -500,7 +536,7 @@ route!(router, :post, "/echo", req -> begin
 end)
 
 app = App(; router=router)
-use!(app, cors())
+app = use(app, cors())
 
 client = FakeTransport(app)   # or: FakeTransport(app)
 
@@ -543,9 +579,8 @@ using Mongoose
 router = Router()
 # ... define routes ...
 
-app = App(;
+app = App(parse(Int, get(ENV, "WORKERS", "4"));   # workers from the environment
     router          = router,
-    workers         = parse(Int, get(ENV, "WORKERS", "4")),
     queue_size       = 2048,
     max_body_bytes        = 4_000_000,       # 4MB
     request_timeout_ms = 30_000,          # 30s
@@ -560,20 +595,21 @@ app = App(;
 )
 
 # Full middleware stack
-use!(app, security())
-use!(app, health(ready_check = () -> true))
-use!(app, metrics())
-use!(app, cors(origins=get(ENV, "CORS_ORIGINS", "*")))
-use!(app, compress(min_size_bytes=1024))
-use!(app, logger())
+app = use(app, security())
+app = use(app, health(ready_check = () -> true))
+# Custom probes: health(health_path="/health", ready_path="/ready", live_path=nothing)
+app = use(app, metrics())
+app = use(app, cors(origins=get(ENV, "CORS_ORIGINS", "*")))
+app = use(app, compress(min_size_bytes=1024))
+app = use(app, logger())
 
 # Error responses
-onerror!(app, 500, json(Dict("error" => "Internal error"); status=500))
-onerror!(app, 413, json(Dict("error" => "Too large"); status=413))
-onerror!(app, 503, json(Dict("error" => "Overloaded"); status=503))
+app = trap(app, 500, json(Dict("error" => "Internal error"); status=500))
+app = trap(app, 413, json(Dict("error" => "Too large"); status=413))
+app = trap(app, 503, json(Dict("error" => "Overloaded"); status=503))
 
 # Services
-service!(app, :env, get(ENV, "APP_ENV", "production"))
+app = provide(app, (env = get(ENV, "APP_ENV", "production"),))
 
 # Static assets
 serve!(app, "public"; uri_prefix="/static")

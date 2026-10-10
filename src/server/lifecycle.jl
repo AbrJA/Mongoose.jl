@@ -9,13 +9,13 @@ Start the HTTP server. Initializes manager, binds listener, spawns workers (if a
 
 When `blocking=true` (default), the caller blocks until shutdown, and a
 delivered `InterruptException` (Ctrl+C) triggers graceful shutdown (drain +
-`onstop!` hooks) before `start!` returns. Graceful shutdown depends on Julia
+`onstop` hooks) before `start!` returns. Graceful shutdown depends on Julia
 delivering SIGINT as an exception to the waiting task; process managers that
 only send SIGTERM bypass it.
 
 # Example
 ```julia
-app = App(workers=4)
+app = App(4)
 get!(app, "/") do req; json(Dict("ok" => true)) end
 start!(app; port=8080)
 ```
@@ -25,8 +25,8 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
     Threads.atomic_xchg!(server.runtime.running, true) && return server
 
     if server.config.workers == 0 && server.config.request_timeout_ms > 0
-        @log_warn "request_timeout_ms is ignored in sync mode (workers=0); " *
-                  "use workers=N for per-request timeouts"
+        @log_warn "request_timeout_ms is ignored in sync mode (App()); " *
+                  "use App(N) for per-request timeouts"
     end
 
     try
@@ -40,19 +40,16 @@ function start!(server::AbstractServer; host::AbstractString="127.0.0.1", port::
         freeze!(server.router)
 
         # Run lifecycle start hooks and background tasks
-        for hook in server.hooks_start
-            try hook() catch e; @log_error "onstart! hook error" e catch_backtrace() end
-        end
+        _run_start_hooks(server.context.registries.hooks_start, server)
 
         start!(server.executor, server)
         log_server_start(server, url)
 
         if blocking
-            # Loop on its own task: the raw mg_mgr_poll ccall cannot be
-            # preempted, so waiting here keeps Ctrl+C deliverable.
-            spawn_event_loop!(server)
+            # Run the loop inline: the caller blocks until shutdown. This is
+            # also the AOT profile — trimmed exes cannot run tasks.
             try
-                wait(server.runtime.master)
+                event_loop(server)
             catch e
                 e isa InterruptException || rethrow(e)
             finally
@@ -73,7 +70,7 @@ end
     shutdown!(server)
 
 Gracefully stop the server: drain requests, stop workers, free resources.
-In-flight requests and tracked background tasks (see `background!`, and
+In-flight requests and tracked background tasks (see `background`, and
 over-budget handlers from `request_timeout_ms`) get one shared grace period of
 `drain_timeout_ms` ms before teardown; tasks still running after it are left
 alone, completed ones are dropped.
@@ -82,9 +79,7 @@ function shutdown!(server::AbstractServer)
     Threads.atomic_xchg!(server.runtime.running, false) || return
     log_server_stop(server)
 
-    for hook in server.hooks_stop
-        try hook() catch e; @log_error "onstop! hook error" e catch_backtrace() end
-    end
+    _run_stop_hooks(server.context.registries.hooks_stop, server)
 
     drain!(server)
     _stop_executor(server.executor, server.config.drain_timeout_ms / 1000.0)
@@ -108,8 +103,17 @@ function bind_server!(server::AbstractServer, host::AbstractString, port::Intege
     # C parser mis-reads the address and binds nowhere useful.
     h = occursin(':', host) && !startswith(host, "[") ? "[$host]" : host
     url = "$scheme://$h:$port"
-    fn_data = Ptr{Cvoid}(objectid(server))
-    listener = mg_http_listen(server.runtime.manager.ptr, url, get_c_callback(), fn_data)
+    if _CLOSURE_CFUNCTIONS
+        # Per-server closure: captures the concrete server (static dispatch, trim-safe).
+        callback = (conn::Ptr{Cvoid}, ev::Cint, data::Ptr{Cvoid}) -> c_event_callback(server, conn, ev, data)
+        cb = @cfunction($callback, Cvoid, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
+        server.runtime.cb_root = cb      # roots the closure for the server's lifetime
+        listener = mg_http_listen(server.runtime.manager.ptr, url, cb.ptr, C_NULL)
+    else
+        # ARM/AArch64/PPC64: constant callback + registry (JIT profile).
+        listener = mg_http_listen(server.runtime.manager.ptr, url, get_c_callback(),
+                                  Ptr{Cvoid}(objectid(server)))
+    end
     listener == C_NULL && throw(BindError("Failed to bind to $url. Port may be in use."))
     return url
 end

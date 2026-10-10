@@ -35,10 +35,10 @@ const CLOSE = ["Connection" => "close"]
             @test r.status == 200
             @test JSON.parse(String(r.body))["id"] == 42
 
-            # Typed param mismatch → custom 404 page, not 500.
+            # Typed param mismatch → custom 400 page, not 500.
             r = HTTP.get("$base/api/users/abc"; status_exception=false, headers=AUTH, read_idle_timeout=10)
-            @test r.status == 404
-            @test contains(String(r.body), "Not found")
+            @test r.status == 400
+            @test contains(String(r.body), "Bad request")
 
             r = HTTP.post("$base/api/users"; status_exception=false, headers=AUTH,
                 body=JSON.json(Dict("name" => "Carol")))
@@ -190,7 +190,7 @@ const CLOSE = ["Connection" => "close"]
             @test r.status == 404
             @test contains(String(r.body), "everything")
 
-            # Built-in HTTPError{418}: automatic mapping, no onerror! needed.
+            # Built-in HTTPError{418}: automatic mapping, no trap needed.
             r = HTTP.get("$base/api/http-error"; status_exception=false, headers=AUTH, read_idle_timeout=10)
             @test r.status == 418
             @test String(r.body) == "short and stout"
@@ -299,7 +299,7 @@ end
     using Mongoose
     app = App()
     get!(app, "/") do req; text("ok") end
-    onstop!(app) do
+    app = onstop(app) do
         write($(repr(marker)), "ONSTOP-RAN")
     end
     start!(app; port=$port, blocking=true)
@@ -318,7 +318,7 @@ end
         kill(proc, 9)
         @test false
     else
-        kill(proc, 15)          # SIGTERM: Julia runs atexit → drain + onstop!
+        kill(proc, 15)          # SIGTERM: Julia runs atexit → drain + onstop
         wait(proc)
         ran = wait_until(timeout=5.0) do
             isfile(marker) && read(marker, String) == "ONSTOP-RAN"

@@ -38,6 +38,7 @@ include("router.jl")        # Default Router (method map + ordered patterns)
 include("groups.jl")        # RouteGroup + mount!
 include("compiled.jl")      # Compiled frozen-route dispatch (freeze! table)
 include("process.jl")       # process — the transport-agnostic seam
+include("static_router.jl") # StaticRouter + @routes — compile-time typed table
 include("streaming.jl")     # SSEWriter/emit/sse — SSE producer over StreamResponse
 
 include("cors.jl")
@@ -70,15 +71,16 @@ export AbstractRequest, Request, Headers, asheaders, mergeheaders, context, pars
     LoopDetectedError, NotExtendedError, NetworkAuthenticationRequiredError,
     validate, ValidationError,
     Message, WSEndpoint,
-    AbstractRouter, Router, MethodMap, RouteResult, Matched, NoMatch, MethodMismatch,
+    AbstractRouter, Router, MethodMap, RouteResult, Matched, NoMatch, MethodMismatch, ParamMismatch,
     SingleEndpoint, matchroute, hasroute,
+    StaticRouter, @routes,
     gethandler, getendpoint, sethandler!, haswsroutes, getwsendpoint,
     route!, ws!, group, group!, RouteGroup, mount!, post!, patch!, options!, head!,
     Endpoint, errorresponse, process, RequestContext, freeze!, isfrozen, getterminal,
     invokeendpoint, scopedmiddleware,
-    AbstractMiddleware, PathFilter, runpipeline, FunctionMiddleware, asmiddleware, asmiddlewares, attach!,
+    AbstractMiddleware, PathFilter, runpipeline, FunctionMiddleware, asmiddleware, asmiddlewares, asmiddlewaretuple, attach!,
     AbstractExecutor, SyncExecutor, FakeExecutor, run!, submit!, start!, stop!,
-    AbstractTransport, canws, cantls, canstream,
+    AbstractTransport, supportsws, supportstls, supportsstream,
     Cors, Bearer, ApiKey, BasicAuth, RateLimit, Compress, Logger, Health,
     Metrics, Security, Etag,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,

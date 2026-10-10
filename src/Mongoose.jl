@@ -6,8 +6,9 @@ import JSON
 
 # Facade exports the user surface only; extension protocols live in Kernel.
 export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
+    StaticRouter, @routes,
     Plain, Html, Json, Css, Js, Xml, Binary,
-    start!, shutdown!, isrunning, url, route!, use!, serve!, onerror!, onstart!, onstop!,
+    start!, shutdown!, isrunning, url, route!, use, serve!, trap, onstart, onstop,
     context, Cookie, Headers, setcookie, parsecookies, parseform, header,
     ws!, broadcastws, Message,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
@@ -25,11 +26,11 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
     HTTPVersionNotSupportedError, VariantAlsoNegotiatesError, InsufficientStorageError,
     LoopDetectedError, NotExtendedError, NetworkAuthenticationRequiredError,
     TLSConfig,
-    service!, service, services, withservices, background!,
+    provide, service, services, withservices, background,
     AbstractExecutor, SyncExecutor, AsyncExecutor, FakeExecutor, run!,
     submit!, stop!, haspending,
     AbstractTransport, FakeTransport, close!,
-    canws, cantls, canstream,
+    supportsws, supportstls, supportsstream,
     AbstractMiddleware,
     group, group!, RouteGroup, mount!,
     freeze!, isfrozen,
@@ -46,9 +47,9 @@ using .Kernel
 # Server/transport layers extend these core generics; `using` alone is read-only.
 import .Kernel: route!, ws!, post!, patch!, options!, head!,
     submit!, start!, stop!, haspending,
-    canws, cantls, canstream,
+    supportsws, supportstls, supportsstream,
     freeze!, isfrozen, matchroute, hasroute, haswsroutes, getwsendpoint,
-    attach!, getterminal
+    attach!, getterminal, errorresponse
 
 # --- FFI layer (C constants, structs, bindings) ---
 include("ffi/constants.jl")
@@ -93,6 +94,15 @@ end
         matchroute(router, :get,  "/users/1")
         matchroute(router, :post, "/data")
         matchroute(router, :get,  "/nonexistent")
+
+        # --- Static router (@routes) ---
+        static_router = @routes begin
+            get("/", req -> Response(200, Pair{String,String}[], ""))
+            get("/users/:id::Int", (req, id) -> Response(200, Pair{String,String}[], ""))
+        end
+        static_ctx = RequestContext(static_router)
+        process(static_ctx, Request(:get, "/", Dict{String,String}(), Pair{String,String}[], ""))
+        process(static_ctx, Request(:get, "/users/1", Dict{String,String}(), Pair{String,String}[], ""))
 
         # --- Response constructors & helpers ---
         Response(Plain, "ok")
@@ -141,10 +151,10 @@ end
 
         # --- App construction ---
         app = App()
-        use!(app, cors())
+        app = use(app, cors())
         get!(app, "/") do r; json(Dict("ok" => true)) end
         post!(app, "/data") do r; text("ok") end
-        errorresponse(app.errors, req, 500)
+        errorresponse(app, req, 500)
 
         # --- HTTPError hierarchy + transport fallback ---
         err404 = NotFoundError("user missing")
@@ -179,8 +189,6 @@ end
         is_handled_event(MG_EV_POLL)
     end
 
-    # Precompile C callback entry point
-    precompile(c_event_callback, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
 end
 
 end # module Mongoose

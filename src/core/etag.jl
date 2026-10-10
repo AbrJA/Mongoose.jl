@@ -27,8 +27,8 @@ struct Etag <: AbstractMiddleware end
 
     # Example
     ```julia
-    use!(app, etag())                    # before compress, after cors
-    use!(app, compress(min_size_bytes=1024))
+    app = use(app, etag())                    # before compress, after cors
+    app = use(app, compress(min_size_bytes=1024))
     ```
 """
 etag() = Etag()

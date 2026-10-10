@@ -55,7 +55,16 @@ any same-named pair the original carried.
 """
 @inline function mergeheaders(h::Headers, extra::Pair{String,String};
                               prepend::Bool=false)
-    return mergeheaders(h, [extra]; prepend=prepend)
+    n = length(h.data)
+    merged = Vector{Pair{String,String}}(undef, n + 1)
+    if prepend
+        @inbounds merged[1] = extra
+        copyto!(merged, 2, h.data, 1, n)
+    else
+        copyto!(merged, 1, h.data, 1, n)
+        @inbounds merged[n + 1] = extra
+    end
+    return Headers(merged)
 end
 
 @inline function mergeheaders(h::Headers, extra::AbstractVector{<:Pair{String,String}};
@@ -81,7 +90,7 @@ end
 # --- Primary ergonomic constructor: status + body ---
 
 """
-    Response(status, body; headers=[]) → Response
+    Response(status, body; headers=Headers()) → Response
 
 Create a plain-text response.
 
@@ -214,23 +223,23 @@ end
     end
     ```
 """
-struct StreamResponse
+struct StreamResponse{P}
     status::Int
     content_type::String
     headers::Headers
-    producer::Function  # (writer::StreamWriter) -> nothing
+    producer::P  # (writer::StreamWriter) -> nothing
 end
 
-function StreamResponse(producer::Function, status::Int, content_type::String;
-                        headers=Headers())
-    return StreamResponse(status, content_type, asheaders(headers), producer)
+function StreamResponse(producer::P, status::Int, content_type::String;
+                        headers=Headers()) where {P}
+    return StreamResponse{P}(status, content_type, asheaders(headers), producer)
 end
 
 # Convenience: StreamResponse(200, "text/event-stream") do writer ... end
-function StreamResponse(producer::Function, status::Int=200;
+function StreamResponse(producer::P, status::Int=200;
                         content_type::String="application/octet-stream",
-                        headers=Headers())
-    return StreamResponse(status, content_type, asheaders(headers), producer)
+                        headers=Headers()) where {P}
+    return StreamResponse{P}(status, content_type, asheaders(headers), producer)
 end
 
 function Base.show(io::IO, resp::StreamResponse)

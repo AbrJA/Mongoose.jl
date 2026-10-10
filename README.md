@@ -21,7 +21,7 @@
 ## ✨ Why Mongoose.jl?
 
 - ⚡ **Fast** — precompiled cold start; `freeze!` compiles the route table so
-  warm dispatch stays at ~100 ns (fixed routes) / ~400 ns (typed params) with
+  warm dispatch stays at ~180 ns (fixed routes) / ~500 ns (typed params) with
   minimal allocation.
 - 🧪 **Testable without FFI** — `FakeTransport` drives the full pipeline in pure
   Julia: no ports, no C library, deterministic tests.
@@ -47,7 +47,7 @@ using Pkg; Pkg.add("Mongoose")
 ```julia
 using Mongoose
 
-app = App(workers=4)
+app = App(4)
 
 get!(app, "/") do req
     text("Hello from Mongoose.jl!")
@@ -78,7 +78,8 @@ route!(app, :get, "/search", req -> ...)
 ```
 
 Typed path parameters use `:name::Type` and arrive as a typed tuple (invalid
-values are 404s). Wildcards capture the rest of the path:
+values are 400s, unless a later route serves the path). Wildcards capture the
+rest of the path:
 
 ```julia
 get!(app, "/users/:id::Int",       (req, id)   -> ...)   # id::Int
@@ -106,9 +107,30 @@ end
 mount!(app, api)
 ```
 
-**Compiled dispatch** — register everything, then `freeze!` to close and compile
-the route table (later registration throws). The closed table is the foundation
-for AOT builds; `juliac --trim` compatibility is still in progress:
+**Static routing (AOT/trim-safe)** — declare the whole table with `@routes` to
+build a `StaticRouter`. Every path segment, capture type, method, and handler is
+a type parameter, so dispatch is fully static and `juliac --trim=safe` builds a
+working executable:
+
+```julia
+router = @routes begin
+    get("/users", list_users)
+    get("/users/:id::Int", get_user)
+    get("/files/*path", serve_file)
+
+    ws("/chat", msg -> Message("Echo: " * String(msg.data)))
+
+    group("/api"; middleware=(bearer(token),)) do api
+        get("/items", list_items)          # GET /api/items
+    end
+end
+app = App(router = router)
+```
+
+**Compiled dispatch** — with the dynamic `Router`, register everything then
+`freeze!` to close and compile the route table (later registration throws).
+`start!` freezes automatically after bind, so an explicit `freeze!` is only
+needed to close/compile before starting (fail-fast builds, tests):
 
 ```julia
 freeze!(app)     # or freeze!(router) before App(router=router)
@@ -122,24 +144,29 @@ Any callable `(req, next) → Response` is middleware — no subtyping needed.
 Built-ins cover the common production stack:
 
 ```julia
-use!(app, security())                                   # OWASP headers
-use!(app, health())                                     # /healthz /readyz /livez
-use!(app, metrics())                                    # Prometheus /metrics
-use!(app, cors(origins="https://myapp.com"))            # CORS + preflight
-use!(app, compress(min_size_bytes=1024))                # gzip
-use!(app, etag())                                       # ETag + 304/412
-use!(app, logger())                                     # access logs
-use!(app, ratelimit(max_requests=100, window_seconds=60))
-use!(app, bearer("secret"); paths=["/api"])             # path-scoped auth
-use!(app, apikey(["key-abc", "key-xyz"]))
-use!(app, basicauth("admin", ENV["ADMIN_PASSWORD"]))
+app = use(app, security())                        # OWASP headers
+app = use(app, health())                          # /healthz /readyz /livez (paths configurable)
+app = use(app, metrics())                         # Prometheus /metrics
+app = use(app, cors(origins="https://myapp.com")) # CORS + preflight
+app = use(app, compress(min_size_bytes=1024))     # gzip
+app = use(app, etag())                            # ETag + 304/412
+app = use(app, logger())                          # access logs
+app = use(app, ratelimit(max_requests=100, window_seconds=60))
+app = use(app, bearer("secret"); paths=["/api"]) # path-scoped auth
+app = use(app, apikey(["key-abc", "key-xyz"]))
+app = use(app, basicauth("admin", ENV["ADMIN_PASSWORD"]))
 serve!(app, "public"; uri_prefix="/static")             # C-level static files
 ```
+
+**Registration rule** — functions that change the app's typed configuration
+return a rebuilt `App`: `use`, `provide`, `trap`, `onstart`, `onstop`,
+`background`. Functions that mutate shared build-phase state keep the bang:
+`route!`, `get!`, `ws!`, `serve!`.
 
 Custom middleware — a closure or a small type:
 
 ```julia
-use!(app) do req, next
+app = use(app) do req, next
     t = time()
     res = next()
     @info "$(req.method) $(req.uri)" status=res.status ms=round((time()-t)*1000; digits=1)
@@ -178,11 +205,11 @@ Errors can be thrown or handled by status/type:
 ```julia
 throw(NotFoundError("user 7"))            # → 404 automatically
 
-onerror!(app, 404) do req
+app = trap(app, 404) do req
     json(Dict("error" => "not found"); status=404)
 end
 
-onerror!(app, AccountGone) do req, e      # typed exception handler
+app = trap(app, AccountGone) do req, e      # typed exception handler
     json(Dict("error" => "gone"); status=410)
 end
 ```
@@ -195,7 +222,7 @@ end
 ws!(app, "/chat";
     allowed_origins = ["https://myapp.com"],   # optional
     on_open         = req -> true,             # false → 403
-    on_message      = msg -> Message("Echo: $(msg.data)"),
+    on_message      = msg -> Message("Echo: " * String(msg.data)),
     on_close        = () -> @info "disconnected",
 )
 
@@ -227,8 +254,7 @@ end
 ## ⚙️ Configuration
 
 ```julia
-app = App(;
-    workers            = 4,          # 0 = sync (inline); N = worker pool
+app = App(4;                         # N = worker pool; App() = sync inline
     queue_size         = 1024,       # pending requests before 503
     request_timeout_ms = 5_000,      # 0 = disabled (async mode)
     drain_timeout_ms   = 5_000,      # graceful shutdown budget
@@ -260,7 +286,7 @@ start!(app; port=8443)
 ## 🛡️ Production
 
 - **Graceful shutdown** — SIGINT and SIGTERM drain in-flight requests and SSE
-  streams, run `onstop!` hooks, and stop workers (SIGTERM and normal exits go
+  streams, run `onstop` hooks, and stop workers (SIGTERM and normal exits go
   through Julia's `atexit` path; SIGINT is caught while `start!` blocks).
 - **Backpressure** — the async executor bounds its queue and answers `503` when
   full; `max_connections`, `header_timeout_ms`, `body_timeout_ms`, and
@@ -268,16 +294,16 @@ start!(app; port=8443)
 - **Observability** — `logger()` access logs, `metrics()` (request counters,
   latency histogram, and live gauges: connections, WS clients, streams,
   executor depth), and `health()` probes for Kubernetes.
-- **Errors** — `onerror!` per status or per exception type; typed
+- **Errors** — `trap` per status or per exception type; typed
   `HTTPError{status}` aliases map to responses automatically.
 - **Introspection** — `isrunning(app)`, `url(app)`, `length(app)`,
   `matchroute(app, …)`, `hasroute(app, path)`.
 
 ```julia
-onstart!(app) do; @info "starting"; connect_database!() end
-onstop!(app)  do; @info "stopping"; close_database!() end
+app = onstart(app) do; @info "starting"; connect_database!() end
+app = onstop(app)  do; @info "stopping"; close_database!() end
 
-background!(app) do
+app = background(app) do
     while true
         cleanup_expired_sessions!()
         sleep(60)
@@ -311,7 +337,7 @@ using Test, Mongoose
 
 app = App()
 get!(app, "/hello", req -> json(Dict("msg" => "hi")))
-use!(app, cors())
+app = use(app, cors())
 
 client = FakeTransport(app)
 resp = client(:get, "/hello")
@@ -333,10 +359,21 @@ submit!(fe, () -> "work")   # enqueued, not run
 ## 🔌 Pluggable Components
 
 Each boundary is a replacement point: `App(router=my_router)`,
-`App(workers=n)` chooses the executor, and `AbstractTransport` declares its
-capabilities (`canws`, `cantls`, `canstream`). Custom routers
-implement `route!`/`matchroute`/`hasroute` and may carry their own endpoint
-type via `invokeendpoint`. See the API reference for the exact contracts.
+`App(n)` chooses the executor (or inject it explicitly and type-stably
+with `App(executor=AsyncExecutor(n))`), and `AbstractTransport` declares its
+capabilities (`supportsws`, `supportstls`, `supportsstream`).
+
+Exports are the consumer surface; to *extend* the framework, import exactly
+what you extend (required to add methods anyway):
+
+```julia
+import Mongoose: AbstractRouter, route!, matchroute, hasroute,
+    Matched, NoMatch, MethodMismatch, Endpoint, SingleEndpoint
+
+struct MyRouter <: AbstractRouter end
+Mongoose.length(::MyRouter) = 0
+# implement the protocol; see test/routing/query.jl for a full example
+```
 
 ---
 

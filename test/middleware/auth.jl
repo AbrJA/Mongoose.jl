@@ -3,7 +3,7 @@ import Base64
     @testset "Valid token passes" begin
         s = App()
         get!(s, "/secure") do req; text("secret") end
-        use!(s, bearer(token -> token == "valid-token"))
+        s = use(s, bearer(token -> token == "valid-token"))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/secure";
@@ -17,7 +17,7 @@ import Base64
     @testset "Missing auth header returns 401" begin
         s = App()
         get!(s, "/secure") do req; text("secret") end
-        use!(s, bearer(token -> token == "valid-token"))
+        s = use(s, bearer(token -> token == "valid-token"))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/secure"; status_exception=false)
@@ -28,7 +28,7 @@ import Base64
     @testset "Invalid token returns 403" begin
         s = App()
         get!(s, "/secure") do req; text("secret") end
-        use!(s, bearer(token -> token == "valid-token"))
+        s = use(s, bearer(token -> token == "valid-token"))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/secure";
@@ -41,7 +41,7 @@ import Base64
     @testset "Invalid scheme returns 401" begin
         s = App()
         get!(s, "/secure") do req; text("secret") end
-        use!(s, bearer(token -> true))
+        s = use(s, bearer(token -> true))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/secure";
@@ -56,7 +56,7 @@ end
     @testset "Valid key passes" begin
         s = App()
         get!(s, "/api") do req; text("data") end
-        use!(s, apikey(keys=Set(["key-123", "key-456"])))
+        s = use(s, apikey(keys=Set(["key-123", "key-456"])))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/api";
@@ -69,7 +69,7 @@ end
     @testset "Missing key returns 401" begin
         s = App()
         get!(s, "/api") do req; text("data") end
-        use!(s, apikey(keys=Set(["key-123"])))
+        s = use(s, apikey(keys=Set(["key-123"])))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/api"; status_exception=false)
@@ -80,7 +80,7 @@ end
     @testset "Invalid key returns 401" begin
         s = App()
         get!(s, "/api") do req; text("data") end
-        use!(s, apikey(keys=Set(["key-123"])))
+        s = use(s, apikey(keys=Set(["key-123"])))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/api";
@@ -101,7 +101,7 @@ end
                apikey(keys=Set(["key-123"])),
                apikey(keys=["key-123"]))
         app = App()
-        use!(app, mw)
+        app = use(app, mw)
         get!(app, "/") do req; text("ok") end
         client = Mongoose.FakeTransport(app)
         @test client(:get, "/"; headers=["x-api-key" => "key-123"]).status == 200
@@ -110,7 +110,7 @@ end
 
     # Custom header name on the positional form.
     app = App()
-    use!(app, apikey("key-123"; header_name="X-Api-Token"))
+    app = use(app, apikey("key-123"; header_name="X-Api-Token"))
     get!(app, "/") do req; text("ok") end
     client = Mongoose.FakeTransport(app)
     @test client(:get, "/"; headers=["x-api-token" => "key-123"]).status == 200
@@ -120,7 +120,7 @@ end
 @testset "Constant-Time Auth" begin
     @testset "bearer with string uses constant-time comparison" begin
         app = App()
-        use!(app, bearer("secret-token-123"))
+        app = use(app, bearer("secret-token-123"))
         get!(app, "/") do req; text("ok") end
 
         client = Mongoose.FakeTransport(app)
@@ -140,7 +140,7 @@ end
 
     @testset "apikey uses constant-time comparison" begin
         app = App()
-        use!(app, apikey(keys=Set(["key-abc-123"])))
+        app = use(app, apikey(keys=Set(["key-abc-123"])))
         get!(app, "/") do req; text("ok") end
 
         client = Mongoose.FakeTransport(app)
@@ -158,7 +158,7 @@ end
     get!(app, "/secure") do req
         text("secret data")
     end
-    use!(app, basicauth("admin", "hunter2"))
+    app = use(app, basicauth("admin", "hunter2"))
 
     with_server(app) do port
         base = "http://127.0.0.1:$port"

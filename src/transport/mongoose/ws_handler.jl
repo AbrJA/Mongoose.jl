@@ -174,17 +174,8 @@ function close_ws!(server::AbstractServer, conn_id::Int)
         pop!(server.runtime.ws_clients, conn_id, nothing)
     end
     uri = entry === nothing ? nothing : entry.uri
-
-    if uri !== nothing
-        endpoint = getwsendpoint(server.router, uri)
-        if endpoint !== nothing && endpoint.on_close !== nothing
-            try
-                endpoint.on_close()
-            catch e
-                @log_error "WebSocket on_close error uri=$uri" e catch_backtrace()
-            end
-        end
-    end
+    uri === nothing || ws_close(server.router, uri)
+    return nothing
 end
 
 # --- WS Idle Sweep ---
@@ -193,17 +184,17 @@ function ws_idle_sweep!(server::AbstractServer)
     now = time()
     # `last_active` is `time()` (seconds); the config is milliseconds.
     timeout = server.config.ws_idle_timeout_ms / 1000.0
-    to_close = lock(server.runtime.ws_lock) do
-        to_close = Int[]
+    stale = lock(server.runtime.ws_lock) do
+        ids = Int[]
         for (id, entry) in server.runtime.ws_clients
             if (now - entry.last_active) > timeout
                 entry.closing = true
-                push!(to_close, id)
+                push!(ids, id)
             end
         end
-        return to_close
+        return ids
     end
-    for id in to_close
+    for id in stale
         conn = get(server.runtime.connections, id, nothing)
         conn === nothing && continue
         # Send a proper Close frame (1001 "going away") and drain. The poll
@@ -230,7 +221,7 @@ function broadcastws(server::AbstractServer, path::AbstractString, data::Abstrac
     end
     frame = Message(String(data))
     for id in ids
-        tagged = Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, frame)
+        tagged = Kernel.Tagged{Kernel.ReplyPayload}(id, frame)
         # Non-blocking: a full reply queue drops the frame for that client
         # rather than stalling the caller (which may be a request handler).
         _offer_reply!(exec, tagged) ||
@@ -241,13 +232,101 @@ end
 
 # --- WS Dispatch ---
 
-function invoke_ws(server::AbstractServer, request::Kernel.Tagged{Kernel.Intent})
-    endpoint = getwsendpoint(server.router, request.payload.uri)
+# Router protocol: three hooks let the transport dispatch WS events without
+# assuming how endpoints are stored. The generic implementations resolve the
+# endpoint via `getwsendpoint` (the dynamic `Router`); `StaticRouter` methods
+# scan its typed table and call the concrete handlers (trim-safe).
+function ws_upgrade(router::AbstractRouter, server::AbstractServer, conn::MgConnection,
+                    ev_data::Ptr{Cvoid}, uri::String, msg)
+    endpoint = getwsendpoint(router, uri)
+    endpoint === nothing && return false
+    ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
+    return true
+end
+
+function ws_message(router::AbstractRouter, request::Kernel.Tagged{Kernel.Intent})
+    endpoint = getwsendpoint(router, request.payload.uri)
     endpoint === nothing && return nothing
     return call_ws_endpoint(endpoint, request)
 end
 
-tag_ws(id, res::Message)        = Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, res)
+function ws_close(router::AbstractRouter, uri::String)
+    endpoint = getwsendpoint(router, uri)
+    (endpoint === nothing || endpoint.on_close === nothing) && return nothing
+    try
+        endpoint.on_close()
+    catch e
+        @log_error "WebSocket on_close error uri=$uri" e catch_backtrace()
+    end
+    return nothing
+end
+
+# --- StaticRouter: typed WS dispatch (no Dict, no abstract handler call) ---
+
+@inline function _scan_ws_upgrade(::Tuple{}, server, conn, ev_data, uri, msg)
+    return false
+end
+
+@inline function _scan_ws_upgrade(routes::Tuple, server, conn, ev_data, uri, msg)
+    route = routes[1]
+    if route.path == uri
+        ws_upgrade!(server, conn, ev_data, uri, route, msg)
+        return true
+    end
+    return _scan_ws_upgrade(Base.tail(routes), server, conn, ev_data, uri, msg)
+end
+
+ws_upgrade(router::StaticRouter, server::AbstractServer, conn::MgConnection,
+           ev_data::Ptr{Cvoid}, uri::String, msg) =
+    _scan_ws_upgrade(router.ws_routes, server, conn, ev_data, uri, msg)
+
+@inline function _invoke_ws_static(route::Kernel.StaticWSRoute{M,O,C},
+                                   request::Kernel.Tagged{Kernel.Intent}) where {M,O,C}
+    try
+        res = route.on_message(request.payload.body)
+        return tag_ws(request.id, res)
+    catch e
+        @log_error "WebSocket on_message error uri=$(request.payload.uri)" e catch_backtrace()
+    end
+    return nothing
+end
+
+@inline _scan_ws_msg(::Tuple{}, uri, request) = nothing
+@inline function _scan_ws_msg(routes::Tuple, uri, request)
+    route = routes[1]
+    route.path == uri && return _invoke_ws_static(route, request)
+    return _scan_ws_msg(Base.tail(routes), uri, request)
+end
+
+ws_message(router::StaticRouter, request::Kernel.Tagged{Kernel.Intent}) =
+    _scan_ws_msg(router.ws_routes, request.payload.uri, request)
+
+@inline _run_ws_close(::Nothing) = nothing
+@inline function _run_ws_close(f::F) where {F}
+    try
+        f()
+    catch e
+        @log_error "WebSocket on_close error" e catch_backtrace()
+    end
+    return nothing
+end
+
+@inline _scan_ws_close(::Tuple{}, uri) = nothing
+@inline function _scan_ws_close(routes::Tuple, uri)
+    route = routes[1]
+    route.path == uri && return _run_ws_close(route.on_close)
+    return _scan_ws_close(Base.tail(routes), uri)
+end
+
+ws_close(router::StaticRouter, uri::String) = _scan_ws_close(router.ws_routes, uri)
+
+# --- Transport entry points ---
+
+function invoke_ws(server::AbstractServer, request::Kernel.Tagged{Kernel.Intent})
+    return ws_message(server.router, request)
+end
+
+tag_ws(id, res::Message)        = Kernel.Tagged{Kernel.ReplyPayload}(id, res)
 tag_ws(id, res::String)         = tag_ws(id, Message(res))
 tag_ws(id, res::Vector{UInt8})  = tag_ws(id, Message(res))
 tag_ws(id, ::Nothing)           = nothing

@@ -141,7 +141,7 @@ function mount!(router, g::RouteGroup, parent_prefix::String="",
 
     for (method, path, handler) in g.routes
         full_path = full_prefix * path
-        route!(router, method, full_path, handler; middleware=combined_mw)
+        route!(router, method, full_path, handler; middleware=asmiddlewaretuple(combined_mw))
     end
 
     for (path, kwargs) in g.ws_routes

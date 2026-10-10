@@ -22,7 +22,8 @@
 # --- Route endpoint (handler + scoped middleware + metadata) ---
 
 """
-    Endpoint{F} — what a route owns: handler, scoped middleware, and metadata.
+    Endpoint{F,M,MD} — what a route owns: handler, scoped middleware, and
+    metadata (all type parameters, so the endpoint has no abstract fields).
 
     The handler's concrete type is a type parameter, so the endpoint can be
     invoked without a dynamic call when its type is known (custom routers,
@@ -32,17 +33,17 @@
     middleware. `middleware` applies to this route (in addition to app-global
     middleware); `metadata` is opaque and available for OpenAPI-style docs.
 """
-struct Endpoint{F,M<:Tuple}
+struct Endpoint{F,M<:Tuple,MD}
     handler::F
     middleware::M
-    metadata::Any
+    metadata::MD
 end
 
 function Endpoint(handler::F;
                   middleware=nothing,
                   metadata=nothing) where {F}
     mws = asmiddlewaretuple(middleware)
-    return Endpoint{F,typeof(mws)}(handler, mws, metadata)
+    return Endpoint{F,typeof(mws),typeof(metadata)}(handler, mws, metadata)
 end
 
 # --- Method Dispatch (struct fields instead of Dict for zero-allocation dispatch) ---
@@ -221,6 +222,22 @@ const PARAM_TYPES = Dict{String,Type}(
     "UInt" => UInt, "UInt64" => UInt64
 )
 
+"""
+    _param_type(type_str) → Type
+
+Resolve a route parameter type name (`"Int"`, `"Float64"`, …). An unknown
+name throws `RouteError`: a silently-`String`ed `:id::UUID` capture is a typo,
+not a routing policy. Custom capture types can be registered in
+`PARAM_TYPES`; they must support `tryparse(T, value)`.
+"""
+function _param_type(type_str::AbstractString)::Type
+    T = get(PARAM_TYPES, type_str, nothing)
+    T !== nothing && return T
+    supported = join(sort!(collect(keys(PARAM_TYPES))), ", ")
+    throw(RouteError("unknown route parameter type `$type_str`; supported: $supported " *
+                     "(register custom types in Mongoose.Kernel.PARAM_TYPES)"))
+end
+
 # --- Route Registration ---
 
 """
@@ -240,9 +257,9 @@ OpenAPI-style tooling.
 Overlapping parametric routes resolve first-registered-first at dispatch;
 static routes always take precedence over parametric ones.
 """
-function route!(router::Router, method::Symbol, path::AbstractString, handler::Function;
+function route!(router::Router, method::Symbol, path::AbstractString, handler::F;
                 middleware=nothing,
-                metadata=nothing)
+                metadata=nothing) where {F<:Function}
     m = _normalize_method(method)
     router.frozen && throw(RouteError("router is frozen: registration is closed"))
     _register_route!(router, m, String(path),
@@ -250,20 +267,31 @@ function route!(router::Router, method::Symbol, path::AbstractString, handler::F
     return router
 end
 
-function route!(router::Router, method::AbstractString, path::AbstractString, handler::Function;
+function route!(router::Router, method::AbstractString, path::AbstractString, handler::F;
                 middleware=nothing,
-                metadata=nothing)
+                metadata=nothing) where {F<:Function}
     route!(router, _normalize_method(Symbol(method)), path, handler;
            middleware=middleware, metadata=metadata)
 end
 
-# Registration is cold: accept `:GET`/`:Get` by lowering once. Valid lowercase
-# methods (the hot-path protocol form) pass through the tuple scan untouched.
-@inline function _normalize_method(method::Symbol)::Symbol
+# Dispatch-safe method normalization: valid methods are lowered (`:GET` →
+# `:get`); anything else becomes `:unknown`, which matches no endpoint but still
+# reports the path's Allow set (405) instead of failing the request with a
+# RouteError. Wire methods are already lowercase (or `:unknown` from
+# `parse_method`), so the hot path pays one tuple scan.
+@inline function _match_method(method::Symbol)::Symbol
     method in VALID_METHODS && return method
+    method === :unknown && return :unknown
     lowered = Symbol(lowercase(String(method)))
-    lowered in VALID_METHODS || throw(RouteError("Invalid HTTP method: $method"))
-    return lowered
+    return lowered in VALID_METHODS ? lowered : :unknown
+end
+
+# Registration is cold: accept `:GET`/`:Get` by lowering once, and reject
+# anything that is not a supported HTTP method.
+@inline function _normalize_method(method::Symbol)::Symbol
+    m = _match_method(method)
+    m === :unknown && throw(RouteError("Invalid HTTP method: $method"))
+    return m
 end
 
 function _register_route!(router::Router, method::Symbol, path::String, endpoint::Endpoint)
@@ -321,8 +349,7 @@ function _parse_param_spec(spec::AbstractString)
     end
     name = String(spec[1:first(idx)-1])
     type_str = String(spec[last(idx)+1:end])
-    T = get(PARAM_TYPES, type_str, String)
-    return (name, T)
+    return (name, _param_type(type_str))
 end
 
 # Path segments are URL-decoded before parsing (RFC 3986): `+` stays a literal
@@ -379,23 +406,55 @@ function _matchroute(route::ParamRoute{P,N}, parts::Vector{String}) where {P,N}
     return _extract(route.param_types, route.param_pos, parts)
 end
 
+# True when the route matches structurally but a capture fails to parse (400).
+function _matchroute_parsefail(route::ParamRoute{P,N}, parts::Vector{String}) where {P,N}
+    nseg = length(route.segments)
+    n = length(parts)
+    if route.is_wildcard
+        n < nseg - 1 && return false
+    elseif n != nseg
+        return false
+    end
+    @inbounds for idx in 1:nseg
+        seg = route.segments[idx]
+        if !seg.is_param
+            parts[idx] == seg.text || return false
+        end
+    end
+    return _extract(route.param_types, route.param_pos, parts) === nothing
+end
+
+function _any_param_mismatch(router::Router, clean::AbstractString)::Bool
+    isempty(router.param_routes) && return false
+    parts = String[String(seg) for seg in eachsplit(clean, '/'; keepempty=false)]
+    for route in router.param_routes
+        _matchroute_parsefail(route, parts) && return true
+    end
+    return false
+end
+
 """
     matchroute(router, method, path) → RouteResult
 
 Resolve a request to its exhaustive outcome: `Matched(endpoint, handlers,
 params)` when the route serves the method, `NoMatch` when the path matches
-nothing, or `MethodMismatch{allowed}` carrying the route's method bitmask.
-Exact (static) matches win; parametric routes are scanned in registration
-order; the `"*"` catch-all is the final fallback. `HEAD` is served only by an
-explicit `head!` route — there is no auto-HEAD fallback.
+nothing, `MethodMismatch{allowed}` carrying the route's method bitmask, or
+`ParamMismatch` when a typed capture could not be parsed. Exact (static)
+matches win; parametric routes are scanned in registration order; the `"*"`
+catch-all is the final fallback. `HEAD` is served only by an explicit `head!`
+route — there is no auto-HEAD fallback. Unknown methods (`:unknown` from the
+transport, or any Symbol outside the supported seven) match no endpoint: a
+served path answers `405` with its `Allow` set, an unserved path answers `404`.
 """
 function matchroute(router::Router, method::Symbol, path::AbstractString)::RouteResult
-    m = _normalize_method(method)
+    m = _match_method(method)
     clean = stripquery(path)
     found = _find_route(router, clean)
-    found === nothing && return NoMatch()
+    if found === nothing
+        return _any_param_mismatch(router, clean) ? ParamMismatch() : NoMatch()
+    end
     mm, params = found
-    ep = resolve_method(mm, m)
+    ep = m === :unknown ? nothing : resolve_method(mm, m)
     ep === nothing && return MethodMismatch(method_bitmask(mm))
     return Matched(ep, mm, params)
 end
@@ -475,6 +534,8 @@ end
 end
 
 @inline function _find_route_no_wildcard(router::Router, clean::AbstractString)
+    # The catch-all lives under the literal "*" key; it owns no concrete path.
+    clean == "*" && return nothing
     fixed = get(router.fixed, clean, nothing)
     fixed !== nothing && return (fixed.handlers, ())
     if !isempty(router.param_routes)

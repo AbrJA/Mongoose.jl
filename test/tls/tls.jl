@@ -50,7 +50,7 @@ using Sockets
         end
 
         @testset "wss over TLS" begin
-            s = App(workers=2)
+            s = App(2)
             ws!(s, "/ws"; on_message=msg -> Message(msg.data))
             port = fresh_port()
             start!(s; host="127.0.0.1", port=port, blocking=false, tls=tls)

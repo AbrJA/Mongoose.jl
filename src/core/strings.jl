@@ -144,6 +144,78 @@ end
 
 @inline to_lower(b::UInt8) = (UInt8('A') <= b <= UInt8('Z')) ? (b | 0x20) : b
 
+# --- Allocation-free ASCII case-insensitive matching (header names/tokens) ---
+#
+# HTTP field names and list tokens are ASCII (RFC 9110 §5.1); folding A-Z per
+# byte is equivalent to `lowercase` for them and never allocates. Non-ASCII
+# bytes compare by identity (invalid in field names; harmless in values).
+
+# Case-insensitive equality; either side may be mixed case.
+@inline function _ci_eq(a::AbstractString, b::AbstractString)::Bool
+    ncodeunits(a) == ncodeunits(b) || return false
+    @inbounds for i in 1:ncodeunits(a)
+        to_lower(codeunit(a, i)) == to_lower(codeunit(b, i)) || return false
+    end
+    return true
+end
+
+# Header-name equality (probe may be any case); zero allocation.
+@inline function _key_eq(k::AbstractString, probe::AbstractString)::Bool
+    ncodeunits(k) == ncodeunits(probe) || return false
+    @inbounds for i in 1:ncodeunits(k)
+        b = codeunit(k, i)
+        p = codeunit(probe, i)
+        (b == p || to_lower(b) == p || b == to_lower(p)) || return false
+    end
+    return true
+end
+
+# Does `s` start with `prefix` (which must be ASCII-lowercase)?
+@inline function _starts_ci(s::AbstractString, prefix::String)::Bool
+    ncodeunits(s) >= ncodeunits(prefix) || return false
+    @inbounds for i in 1:ncodeunits(prefix)
+        b = codeunit(s, i)
+        (b == codeunit(prefix, i) || to_lower(b) == codeunit(prefix, i)) || return false
+    end
+    return true
+end
+
+# Case-insensitive equality of the byte span [i0, i1] (inclusive) with `token`
+# (`token` must be ASCII-lowercase).
+@inline function _span_ci_eq(s::AbstractString, i0::Int, i1::Int, token::String)::Bool
+    (i1 - i0 + 1) == ncodeunits(token) || return false
+    @inbounds for k in 1:ncodeunits(token)
+        b = codeunit(s, i0 + k - 1)
+        (b == codeunit(token, k) || to_lower(b) == codeunit(token, k)) || return false
+    end
+    return true
+end
+
+# Whether a comma-separated header value contains `token` (case-insensitive,
+# ignoring optional whitespace and empty elements). Zero allocation; the
+# allocation-free replacement for `any(t -> lowercase(strip(t)) == token,
+# split(value, ','))`.
+function _has_token(value::AbstractString, token::String)::Bool
+    n = ncodeunits(value)
+    i = 1
+    @inbounds while i <= n
+        b = codeunit(value, i)
+        if b == UInt8(',') || b == UInt8(' ') || b == UInt8('\t')
+            i += 1
+            continue
+        end
+        j = i
+        while j <= n
+            bb = codeunit(value, j)
+            (bb == UInt8(',') || bb == UInt8(' ') || bb == UInt8('\t')) && break
+            j += 1
+        end
+        _span_ci_eq(value, i, j - 1, token) && return true
+        i = j
+    end
+    return false
+end
+
 """
     sanitize_header_value(s) → String
 

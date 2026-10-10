@@ -35,9 +35,9 @@ Base.showerror(io::IO, e::BindError) = print(io, "BindError: ", e.msg)
     HTTPError{status} <: Exception
 
 Exception that maps to an HTTP error response. The status code is a
-compile-time constant type parameter, so `errorstatus(e)` is free and
-`onerror!(app, NotFoundError)` (or `onerror!(app, HTTPError{404})`) registers a
-handler for exactly that status.
+compile-time constant type parameter (mirrored to a `status` field so it can
+be read from an abstractly-typed caught error), so `trap(app, NotFoundError)`
+(or `trap(app, HTTPError{404})`) registers a handler for exactly that status.
 
 Throw it inside a handler (or middleware) to signal a non-200 reply with a
 custom message:
@@ -51,8 +51,8 @@ end
 
 A thrown `HTTPError` is mapped to
 `Response(status, headers, message)` automatically at the transport boundary,
-unless a more specific `onerror!` handler (checked first) or a custom
-`onerror!(app, status, …)` error page takes precedence.
+unless a more specific `trap` handler (checked first) or a custom
+`trap(app, status, …)` error page takes precedence.
 
 Named aliases are provided for every standard status from 400 to 511 (RFC 9110
 plus the common extensions): `BadRequestError`, `UnauthorizedError`,
@@ -66,6 +66,10 @@ plus the common extensions): `BadRequestError`, `UnauthorizedError`,
 struct HTTPError{status} <: Exception
     message::String
     headers::Headers
+    status::Int   # mirrors the type parameter, readable without dispatching
+
+    HTTPError{status}(message::String, headers::Headers) where {status} =
+        new{status}(message, headers, status)
 end
 
 HTTPError{status}(message::AbstractString) where {status} =
@@ -76,9 +80,9 @@ HTTPError{status}() where {status} =
 """
     errorstatus(e::HTTPError) → Int
 
-The HTTP status code carried by `e` (the compile-time type parameter).
+The HTTP status code carried by `e`.
 """
-@inline errorstatus(::HTTPError{status}) where {status} = status
+@inline errorstatus(@nospecialize(e::HTTPError)) = e.status
 
 function Base.showerror(io::IO, e::HTTPError{status}) where {status}
     reason = statusreason(status)

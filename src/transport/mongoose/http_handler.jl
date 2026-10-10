@@ -96,13 +96,8 @@ end
 # Mongoose closes on request `Connection: close` but does not echo it; echo
 # the header so pooling clients do not reuse a dead socket.
 
-@inline function conn_close_requested(req::Request)::Bool
-    value = get(req.headers, "connection", "")
-    for token in split(value, ',')
-        lowercase(strip(token)) == "close" && return true
-    end
-    return false
-end
+@inline conn_close_requested(req::Request)::Bool =
+    Kernel._has_token(get(req.headers, "connection", ""), "close")
 
 @inline function _echo_conn_close!(res, req::Request)
     if conn_close_requested(req) && res isa Response
@@ -123,7 +118,7 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
     # incomplete case is dropped by the sweep before more is buffered).
     if server.config.max_header_bytes > 0 && Int(msg.head.len) > server.config.max_header_bytes
         rid = resolve_request_id(server, get(parse_headers(msg), "x-request-id", nothing))
-        send_http_response!(conn, errorresponse(server.errors, 431), rid)
+        send_http_response!(conn, errorresponse(server, 431), rid)
         return nothing
     end
 
@@ -131,18 +126,14 @@ function preprocess_http(server::AbstractServer, conn::MgConnection, ev_data::Pt
     uri = to_string(msg.uri)
 
     # 1. WebSocket upgrade check
-    if haswsroutes(server.router)
-        endpoint = getwsendpoint(server.router, uri)
-        if endpoint !== nothing
-            ws_upgrade!(server, conn, ev_data, uri, endpoint, msg)
-            return nothing
-        end
+    if haswsroutes(server.router) && ws_upgrade(server.router, server, conn, ev_data, uri, msg)
+        return nothing
     end
 
     # 2. Body size enforcement (mongoose buffers up to its 8 MiB ceiling)
     if msg.body.len > server.config.max_body_bytes
         rid = resolve_request_id(server, get(parse_headers(msg), "x-request-id", nothing))
-        send_http_response!(conn, errorresponse(server.errors, 413), rid)
+        send_http_response!(conn, errorresponse(server, 413), rid)
         return nothing
     end
 
@@ -166,7 +157,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
             invoke_http(server, req)
         catch e
             @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
-            errorresponse(server.errors, req, 500)
+            errorresponse(server, req, 500)
         end
         res = _echo_conn_close!(res, req)
         rid = resolve_request_id(req, server)
@@ -184,7 +175,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         # Timed-out handlers cannot be killed; once the runaway budget is
         # exhausted, shed new timed requests rather than accumulate more.
         if timeout > 0 && _bg_full(server)
-            res = _add_header_once(errorresponse(server.errors, 503), "Retry-After", "1")
+            res = _add_header_once(errorresponse(server, 503), "Retry-After", "1")
             res = _echo_conn_close!(res, req)
             @log_warn "Request shed: runaway timed-out tasks reached $(server.config.max_bg_tasks)"
             send_http_response!(conn, res::Response, resolve_request_id(req, server))
@@ -202,7 +193,7 @@ function on_http_message(server::AbstractServer, conn::MgConnection, ev_data::Pt
         end
         if !submit!(exec, job)
             delete!(server.runtime.connections, id)
-            res = _add_header_once(errorresponse(server.errors, 503), "Retry-After", "1")
+            res = _add_header_once(errorresponse(server, 503), "Retry-After", "1")
             res = _echo_conn_close!(res, req)
             send_http_response!(conn, res::Response, resolve_request_id(req, server))
             _response_wants_close(res) && mgjl_conn_close_after_send(conn)
@@ -224,19 +215,21 @@ function _http_job(server::AbstractServer, id::Int, req::Request)
             invoke_http(server, req)
         catch e
             @log_error "Handler error uri=$(req.uri)" e catch_backtrace()
-            errorresponse(server.errors, req, 500)
+            errorresponse(server, req, 500)
         end
         if res isa StreamResponse
-            return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, res)
+            # Prepare the stream here (worker thread): the producer type is
+            # concrete in this frame, so no abstract Function is shipped.
+            return Kernel.Tagged{Kernel.ReplyPayload}(id, _prepare_stream(res))
         end
         resp = mergeheaders(res, ["X-Request-Id" => rid])
-        return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, _echo_conn_close!(resp, req))
+        return Kernel.Tagged{Kernel.ReplyPayload}(id, _echo_conn_close!(resp, req))
     catch e
         # Anything outside the handler's own try (post-processing) still gets a
         # reply, so the connection entry is cleaned up and the client answered.
         @log_error "Request job error uri=$(req.uri)" e catch_backtrace()
-        resp = errorresponse(server.errors, req, 500)
-        return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, _echo_conn_close!(resp, req))
+        resp = errorresponse(server, req, 500)
+        return Kernel.Tagged{Kernel.ReplyPayload}(id, _echo_conn_close!(resp, req))
     end
 end
 
@@ -259,19 +252,19 @@ function _http_job_timed(server::AbstractServer, id::Int, req::Request, timeout:
             # A job that failed outside the handler's own try still gets a reply
             # so the connection entry is cleaned up and the client is answered.
             @log_error "Request job failed uri=$(req.uri)" e catch_backtrace()
-            resp = errorresponse(server.errors, req, 500)
-            Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, _echo_conn_close!(resp, req))
+            resp = errorresponse(server, req, 500)
+            Kernel.Tagged{Kernel.ReplyPayload}(id, _echo_conn_close!(resp, req))
         end
     end
     bg_track!(server, t)
     @log_warn "Request timeout uri=$(req.uri)"
-    resp = errorresponse(server.errors, req, 504)
-    return Kernel.Tagged{Union{Response,StreamResponse,Message}}(id, _echo_conn_close!(resp, req))
+    resp = errorresponse(server, req, 504)
+    return Kernel.Tagged{Kernel.ReplyPayload}(id, _echo_conn_close!(resp, req))
 end
 
 # --- HTTP dispatch (thin transport wrapper over the core pipeline) ---
 
-function invoke_http(server::AbstractServer, req::Request)::Union{Response,StreamResponse}
+function invoke_http(server::AbstractServer, req::Request)
     res = process(server.context, req)
     # HEAD must not carry a body (RFC 9110 §3.1); strip, mongoose frames CL:0.
     if req.method === :head && res isa Response
@@ -340,11 +333,14 @@ end
 
 # --- Routing convenience on server/app ---
 
+# Every router receives an immutable middleware tuple (the same snapshot the
+# typed pipeline consumes), so there is no vector round-trip.
 function route!(server::AbstractServer, method::Symbol, path::AbstractString, handler::Function;
                 middleware=nothing,
                 metadata=nothing)
     _ensure_registratable(server, "routes")
-    route!(server.router, method, path, handler; middleware=asmiddlewares(middleware), metadata=metadata)
+    route!(server.router, method, path, handler;
+           middleware=asmiddlewaretuple(middleware), metadata=metadata)
     return server
 end
 
@@ -352,7 +348,7 @@ function route!(server::AbstractServer, method::AbstractString, path::AbstractSt
                 middleware=nothing,
                 metadata=nothing)
     route!(server.router, Symbol(lowercase(method)), path, handler;
-           middleware=asmiddlewares(middleware), metadata=metadata)
+           middleware=asmiddlewaretuple(middleware), metadata=metadata)
     return server
 end
 

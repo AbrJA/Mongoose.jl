@@ -58,6 +58,38 @@ end
         @test !haskey(h, "x-missing")
     end
 
+    @testset "Case-insensitive matching is allocation-free" begin
+        # Mixed-case stored keys are the response-header norm (mergeheaders et
+        # al.); lookups must fold case per byte instead of allocating lowercase.
+        mixed = Headers(["Content-Type" => "text/plain", "X-Custom" => "1"])
+        lower = Headers(["content-type" => "text/plain"])
+        @test get(mixed, "content-type", "") == "text/plain"
+        @test get(mixed, "Content-Type", "") == "text/plain"
+        @test get(mixed, "X-CUSTOM", "") == "1"
+        @test haskey(mixed, "x-custom")
+        @test !haskey(mixed, "x-missing")
+        @test @allocated(get(mixed, "connection", nothing)) == 0
+        @test @allocated(get(mixed, "Content-Type", nothing)) == 0
+        @test @allocated(haskey(mixed, "x-custom")) == 0
+        @test @allocated(get(lower, "Content-Type", nothing)) == 0
+    end
+
+    @testset "Comma-separated token matching (_has_token)" begin
+        H = Mongoose.Kernel._has_token
+        @test H("close", "close")
+        @test H("Close", "close")
+        @test H("keep-alive, close", "close")
+        @test H("KEEP-ALIVE,\tCLOSE", "close")
+        @test H(" x , close ", "close")
+        @test !H("closed", "close")
+        @test !H("close-x", "close")
+        @test !H("keep-alive", "close")
+        @test !H(",", "close")
+        @test !H("", "close")
+        @test @allocated(H("keep-alive", "close")) == 0
+        @test @allocated(H("keep-alive, close", "close")) == 0
+    end
+
     @testset "Default value for missing key" begin
         h = Headers(["a" => "1"])
         @test get(h, "b", "default") == "default"

@@ -13,13 +13,13 @@ guarantees — re-run the script on your hardware.
 
 | Path | Allocations | Latency |
 |---|---|---|
-| `process` frozen fixed route | 192 B | ~225 ns |
-| `process` frozen typed-param route | 528 B | ~400 ns |
-| `process` frozen + route-scoped middleware | 192 B | ~350 ns |
-| `process` frozen + `cors()` + `etag()` | 1024 B | ~1.3 µs |
-| `process` generic fixed route | 256 B | ~700 ns |
-| `process` generic typed-param route | 640 B | ~1.5 µs |
-| `parse_method` | 0 B | ~4 ns |
+| `process` frozen fixed route | 192 B | ~180 ns |
+| `process` frozen typed-param route | 528 B | ~500 ns |
+| `process` frozen + route-scoped middleware | 192 B | ~210 ns |
+| `process` frozen + `cors()` + `etag()` | 1024 B | ~2.6 µs |
+| `process` generic fixed route | 224 B | ~2 µs |
+| `process` generic typed-param route | 656 B | ~2.2 µs |
+| `parse_method` | 0 B | ~1 ns |
 
 A handler that returns `text("ok")`/`json(...)` costs one `Response` plus the
 header block; header-adding middleware costs one `mergeheaders` (368 B) each.
@@ -28,8 +28,7 @@ Streams and binary bodies are hand-framed and always close the connection.
 ## The production recipe
 
 ```julia
-app = App(;
-    workers            = Threads.nthreads(),  # 0 = sync (inline handlers)
+app = App(Threads.nthreads();                 # App() = sync (inline handlers)
     queue_size         = 1024,                # 503 backpressure when full
     request_timeout_ms = 5_000,               # async only
     drain_timeout_ms   = 5_000,               # graceful shutdown budget
@@ -41,11 +40,11 @@ app = App(;
     max_connections    = 10_000,
 )
 
-use!(app, security())
-use!(app, etag())
-use!(app, compress(min_size_bytes=1024))
-use!(app, metrics())          # /metrics with counters, histogram, live gauges
-use!(app, health())           # /healthz /readyz /livez
+app = use(app, security())
+app = use(app, etag())
+app = use(app, compress(min_size_bytes=1024))
+app = use(app, metrics()) # /metrics with counters, histogram, live gauges
+app = use(app, health())  # /healthz /readyz /livez
 
 get!(app, "/users/:id::Int") do req, id
     json((id=id,))
@@ -58,12 +57,13 @@ start!(app; port=8080)        # binds, then freezes/compiles the route table
   bind, so production gets compiled dispatch without an extra call. A failed
   start does not freeze, so you can fix routes and retry. Register everything
   before `start!`; later registration throws.
-- **Sync or async.** `workers=0` runs handlers inline (lowest overhead, one
-  slow handler blocks the loop); `workers=N` runs a bounded pool with
-  backpressure, per-request timeouts, and thread-safe reply delivery. Use
-  async when handlers do I/O.
+- **Sync or async.** `App()` runs handlers inline (lowest overhead, one slow
+  handler blocks the loop); `App(N)` runs a bounded pool with backpressure,
+  per-request timeouts, and thread-safe reply delivery. Use async when handlers
+  do I/O. For a runtime-chosen executor, inject it explicitly
+  (`App(executor=AsyncExecutor(n))`) so the App type stays concrete.
 - **Scoped middleware is cheap.** `route!(...; middleware=(a, b))`,
-  `group(...)`, and `use!(...; paths=["/api"])` all run through the tuple
+  `group(...)`, and `use(...; paths=["/api"])` all run through the tuple
   pipeline; route-scoped middleware adds no allocation over an unscoped route.
 - **DI is typed.** `App(services=(db=pool,))` sets a typed `Request` field;
   read it with `withservices(req) do svcs … end` for type-stable access.
@@ -86,7 +86,7 @@ histogram, and live gauges: `mongoose_connections`, `mongoose_ws_clients`,
 `mongoose_active_streams`, `mongoose_executor_inflight`,
 `mongoose_executor_queue_depth`. `logger()` emits access logs (including 500s
 from throwing handlers) and `health()` serves Kubernetes probes. Shutdown on
-SIGINT/SIGTERM drains in-flight requests and SSE streams, runs `onstop!` hooks,
+SIGINT/SIGTERM drains in-flight requests and SSE streams, runs `onstop` hooks,
 and stops workers.
 
 ## Guarding against regressions
@@ -108,7 +108,54 @@ numbers in the commit message and update the baseline table above plus the
 
 ## AOT / `juliac --trim`
 
-`freeze!` and the compiled route table are the foundation for AOT builds, but
-`juliac --trim` support is **not complete yet**: the trim verifier still finds
-dynamic dispatch in startup/registration. Use the standard Julia runtime until
-that lands.
+Mongoose ships a **trim-safe profile**: `@routes` declares the route table at
+compile time (paths, capture types, methods, handlers are type parameters), so
+dispatch has no runtime `apply_type`, no erased `Function` slots, and no dynamic
+terminal. Trim-safe builds produce **0 verifier errors** and run (verified on
+Julia 1.12 and 1.13); local reference builds live under `examples/aot/`
+(gitignored): `server.jl` (comprehensive server + browser dashboard),
+`trim_core.jl` (self-checking pipeline probe), and `trim_server.jl` (minimal
+C-transport server).
+
+```sh
+# Run from the package root (its Project.toml is the build project).
+cd /path/to/Mongoose.jl
+~/.julia/bin/juliac --output-exe app --trim=safe --experimental \
+  --project="$PWD" "$PWD/myapp.jl" > /tmp/app.log 2>&1
+
+grep -c '^Verifier error' /tmp/app.log || true   # expect 0
+./app 8080 &                                      # blocks inline; serves
+curl -s http://127.0.0.1:8080/hello               # hello
+```
+
+`JULIA_APPS_JULIA_CMD=/path/to/julia` selects a different Julia for the build
+(juliac otherwise uses its own); `--output-exe` takes a bare name and writes to
+the invocation directory.
+
+```julia
+router = @routes begin
+    get("/", req -> json((ok = true,)))
+end
+app = App(router = router)
+
+function main(args)                 # canonical entry: `function main` + `@main`
+    start!(app; host = "127.0.0.1", port = 8080, blocking = true)
+    return 0                        # JuliaC calls exit(main(ARGS))
+end
+@main
+```
+
+Two constraints of the AOT profile (juliac/trim, not Mongoose):
+
+- **No tasks.** Trimmed executables cannot run `@async`/`Threads.@spawn`
+  (stale task world age), so `blocking = true` runs the event loop **inline**
+  and the profile is sync-mode only: no async workers, streams, or
+  `background` tasks.
+- **No dynamic `Router`.** Runtime registration (`get!`/`route!`) is rejected by
+  the verifier; use `@routes`/`StaticRouter`.
+
+Static mounts (`serve!`) and `@routes` WebSocket endpoints are trim-safe:
+mounts are concrete `(dir, prefix)` pairs served by the C helper, and WS
+upgrades/messages resolve typed handlers with no Dict lookup. WS is sync-only
+in AOT (the profile has no tasks). TLS is not trim-verified yet. The default
+`Router` remains the JIT profile.

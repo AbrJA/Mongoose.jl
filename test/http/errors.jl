@@ -56,10 +56,10 @@
         end
     end
 
-    @testset "Custom error handler via onerror!" begin
+    @testset "Custom error handler via trap" begin
         s = App()
         get!(s, "/") do req; text("ok") end
-        onerror!(s, 404) do req
+        s = trap(s, 404) do req
             text("custom 404"; status=404)
         end
         with_server(s) do port
@@ -81,7 +81,7 @@
         get!(s, "/conflict") do req; throw(ConflictError("duplicate")) end
         post!(s, "/valid") do req; validate(req, ErrUser) end
 
-        onerror!(s, 409) do req
+        s = trap(s, 409) do req
             json(Dict("err" => "custom conflict page"); status=409)
         end
 
@@ -109,9 +109,9 @@
         end
     end
 
-    @testset "onerror! beats automatic HTTPError" begin
+    @testset "trap beats automatic HTTPError" begin
         s = App()
-        onerror!(s, NotFoundError) do req, e
+        s = trap(s, NotFoundError) do req, e
             json(Dict("err" => "custom: $(e.message)"); status=404)
         end
         get!(s, "/boom") do req; throw(NotFoundError("oops")) end

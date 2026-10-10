@@ -21,9 +21,9 @@
     end
     ```
 
-    Plain closures/functions work too: `use!`/`route!` wrap them via
+    Plain closures/functions work too: `use`/`route!` wrap them via
     `asmiddleware` (see `FunctionMiddleware`). The tag type exists so the
-    pipeline can hold a typed stack (`Vector{AbstractMiddleware}`).
+    pipeline can hold a typed tuple stack.
 """
 abstract type AbstractMiddleware end
 
@@ -32,9 +32,9 @@ abstract type AbstractMiddleware end
 """
     attach!(middleware, server) → middleware
 
-Optional lifecycle hook: `use!` calls it when middleware is registered, so
-middleware that needs server state (metrics gauges, readiness checks) can
-capture a reference. Default is a no-op.
+Optional lifecycle hook: `use` calls it when middleware is registered so it
+can capture server state (metrics gauges). Default is a no-op; a middleware
+whose type changes when attached (e.g. `Metrics`) returns the rebuilt instance.
 """
 attach!(mw, server) = mw
 
@@ -43,15 +43,20 @@ attach!(mw, server) = mw
 struct PathFilter{M} <: AbstractMiddleware
     inner::M
     prefixes::Vector{String}
+    prefixed::Vector{String}   # `prefix * "/"`, precomputed (no per-request join)
 end
 
-attach!(mw::PathFilter, server) = (attach!(mw.inner, server); mw)
+PathFilter(inner::M, prefixes::Vector{String}) where {M} =
+    PathFilter{M}(inner, prefixes, String[p * "/" for p in prefixes])
+
+attach!(mw::PathFilter, server) = PathFilter(attach!(mw.inner, server), mw.prefixes)
 
 function (mw::PathFilter)(req::Request, next::Function)
     path = req.path
-    for prefix in mw.prefixes
+    prefixes, prefixed = mw.prefixes, mw.prefixed
+    @inbounds for i in eachindex(prefixes)
         # Segment-boundary match: "/api" matches "/api" and "/api/x", not "/apixyz".
-        (path == prefix || startswith(path, prefix * "/")) && return mw.inner(req, next)
+        (path == prefixes[i] || startswith(path, prefixed[i])) && return mw.inner(req, next)
     end
     return next()
 end
@@ -62,7 +67,7 @@ end
     FunctionMiddleware{F} — adapter that lets any callable `f(req, next)` act
     as a middleware without subtyping `AbstractMiddleware`.
 
-    User code rarely needs this directly: `use!` and `route!(; middleware=...)`
+    User code rarely needs this directly: `use` and `route!(; middleware=...)`
     accept plain closures/functions and wrap them automatically.
 """
 struct FunctionMiddleware{F} <: AbstractMiddleware
@@ -78,7 +83,7 @@ end
 
 Normalize any middleware into an `AbstractMiddleware`: `AbstractMiddleware`
 instances pass through; any other callable `f(req, next)` is wrapped in a
-`FunctionMiddleware`. This is the single admission point used by `use!`, by
+`FunctionMiddleware`. This is the single admission point used by `use`, by
 `route!`/`group` `middleware=` metadata, and by `Endpoint`s.
 """
 asmiddleware(mw::AbstractMiddleware) = mw
@@ -100,7 +105,7 @@ asmiddlewares(mw) = AbstractMiddleware[asmiddleware(mw)]
     asmiddlewaretuple(input) → Tuple
 
 Like [`asmiddlewares`](@ref) but returns an immutable tuple, so route-scoped
-middleware can live in a type parameter (`Endpoint{F,M}`) and run through the
+middleware can live in a type parameter (`Endpoint{F,M,MD}`) and run through the
 allocation-free tuple pipeline.
 """
 asmiddlewaretuple(::Nothing) = ()
@@ -111,17 +116,25 @@ asmiddlewaretuple(mw) = (asmiddleware(mw),)
 """
     Next — immutable middleware continuation (internal).
 
-    A `Function` holding the remaining middleware tuple, the terminal handler,
-    and the request, so the onion needs no per-request closure.
+    A `Function` holding the remaining global and scoped middleware stacks, the
+    terminal handler, and the request, so the onion needs no per-request closure
+    or cursor. The global stack runs first, then the route-scoped stack, then
+    the handler.
 """
-struct Next{M,H} <: Function
-    mws::M
+struct Next{G,S,H,R} <: Function
+    globals::G
+    scoped::S
     handler::H
-    req::Request
+    req::R
 end
 
-@inline (n::Next{Tuple{}})() = n.handler(n.req)
-@inline (n::Next)() = first(n.mws)(n.req, Next(Base.tail(n.mws), n.handler, n.req))
+@inline _run_next(n::Next{Tuple{},Tuple{}}) = n.handler(n.req)
+@inline _run_next(n::Next{Tuple{},S}) where {S<:Tuple} =
+    first(n.scoped)(n.req, Next((), Base.tail(n.scoped), n.handler, n.req))
+@inline _run_next(n::Next{G,S}) where {G<:Tuple,S<:Tuple} =
+    first(n.globals)(n.req, Next(Base.tail(n.globals), n.scoped, n.handler, n.req))
+
+@inline (n::Next)() = _run_next(n)
 
 """
     runpipeline(middlewares, request, handler) → Response
@@ -137,44 +150,27 @@ callable continuation — `Next` is a `Function`, so the `(req, next)` contract
 is unchanged, but no closure or cursor is allocated per request.
 
 The four-argument form (generic/dev path) walks the baked app-global stack and
-the route-scoped stack with **one cursor over their virtual concatenation** —
-no `[global; scoped]` array built per request.
+the route-scoped stack with the same continuation — no `[global; scoped]`
+array built per request.
 
 `handler` may be any 0-arity callable (`Function` or functor) — the compiled
 dispatch path passes pre-baked terminal functors.
 """
 @inline runpipeline(middlewares::Tuple, req::Request, handler) =
-    Next(middlewares, handler, req)()
+    _run_next(Next(middlewares, (), handler, req))
 
-# Fallback for vector stacks (e.g. a compiled route's scoped wrapper): same
-# onion with one closure + cursor per request.
-@inline function runpipeline(middlewares, req::Request, handler)
-    n = length(middlewares)
-    n == 0 && return handler(req)
-    cell = _ChainCursor(0)
-    next = () -> begin
-        cell.i += 1
-        cell.i <= n || return handler(req)
-        middlewares[cell.i](req, next)
-    end
-    return next()
-end
+@inline runpipeline(globals::Tuple, scoped::Tuple, req::Request, handler) =
+    _run_next(Next(globals, scoped, handler, req))
 
-@inline function runpipeline(globals, scoped,
-                                  req::Request, handler)
-    ng, ns = length(globals), length(scoped)
-    total = ng + ns
-    total == 0 && return handler(req)
-    cell = _ChainCursor(0)
-    next = () -> begin
-        cell.i += 1
-        cell.i <= ng && return globals[cell.i](req, next)
-        cell.i <= total || return handler(req)
-        scoped[cell.i - ng](req, next)
-    end
-    return next()
-end
+# Compatibility: vectors are snapshotted into tuples (same typed continuation).
+@inline runpipeline(middlewares::AbstractVector, req::Request, handler) =
+    runpipeline(Tuple(middlewares), req, handler)
 
-mutable struct _ChainCursor
-    i::Int
-end
+@inline runpipeline(globals::AbstractVector, scoped::AbstractVector, req::Request, handler) =
+    runpipeline(Tuple(globals), Tuple(scoped), req, handler)
+
+@inline runpipeline(globals::AbstractVector, scoped, req::Request, handler) =
+    runpipeline(Tuple(globals), scoped, req, handler)
+
+@inline runpipeline(globals, scoped::AbstractVector, req::Request, handler) =
+    runpipeline(globals, Tuple(scoped), req, handler)

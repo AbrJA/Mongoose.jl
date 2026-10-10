@@ -17,15 +17,16 @@
 
     Semantics are identical to the generic path: exact (fixed) matches win,
     parametric routes resolve in registration order, the `"*"` catch-all is
-    the final fallback, and missing methods produce 405. HEAD is served only
-    by an explicit `head!` route (no auto-HEAD fallback).
+    the final fallback, missing methods produce 405, and an unparseable typed
+    capture produces 400. HEAD is served only by an explicit `head!` route
+    (no auto-HEAD fallback).
 """
 
 # --- Prebuilt 0-arity terminal: calls a handler with a baked concrete type ---
 
-# Pre-built short-circuit terminals (immutable singletons; mirror the generic
-# path's inline 404/405 producers).
+# Pre-built short-circuit terminals (mirror the generic path's producers).
 const TERM_404 = (req) -> Response(Plain, "404 Not Found"; status=404)
+const TERM_400 = (req) -> Response(Plain, "400 Bad Request"; status=400)
 
 """
     Terminal{H} — pre-built terminal for a fixed route / catch-all.
@@ -344,6 +345,42 @@ end
     return _walk_ops(node.ops, s, 1, ())
 end
 
+# (parse_failed, structurally_matched) for a path against the node's ops.
+# A capture that fails to parse must still walk the *rest* of the pattern:
+# `/users/abraham` fails the capture of `/users/:id::Int/posts` but does not
+# structurally match it (trailing segment missing), so it is a 404, not a 400.
+@inline _walk_ops_parsefail(::Tuple{}, s::AbstractString, i::Int) =
+    (false, _only_slashes(s, i))
+@inline function _walk_ops_parsefail(ops::Tuple, s::AbstractString, i::Int)
+    op = ops[1]
+    rest = Base.tail(ops)
+    if op isa LitOp
+        j0, j1, ni = _next_seg(s, i)
+        (j0 != 0 && _bytes_eq(s, j0, j1, op.text)) || return (false, false)
+        return _walk_ops_parsefail(rest, s, ni)
+    elseif op isa CaptureOp
+        j0, j1, ni = _next_seg(s, i)
+        j0 == 0 && return (false, false)
+        failed = op.parse(s, j0, j1) === nothing
+        rest_failed, matched = _walk_ops_parsefail(rest, s, ni)
+        return (failed || rest_failed, matched)
+    else # WildOp — consumes the remainder, so the path matches structurally
+        return _walk_ops_parsefail(rest, s, ncodeunits(s) + 1)
+    end
+end
+
+# True when the path matches structurally but a capture fails to parse (400).
+@inline function _walk_segs_parsefail(node::CompiledParam, s::AbstractString)
+    failed, matched = _walk_ops_parsefail(node.ops, s, 1)
+    return failed && matched
+end
+
+@inline _scan_parsefail(::Tuple{}, clean::AbstractString) = false
+@inline function _scan_parsefail(chain::Tuple, clean::AbstractString)
+    _walk_segs_parsefail(chain[1], clean) && return true
+    return _scan_parsefail(Base.tail(chain), clean)
+end
+
 # --- Dispatch through the compiled table ---
 
 # Fixed/catch-all node: method → baked terminal, else 405.
@@ -385,7 +422,7 @@ end
 Resolve a frozen request into a pre-built terminal (a `Function` or a
 `BoundParams` functor). Fixed paths first, then parametric routes in
 registration order, then the `"*"` catch-all; no match yields the pre-built
-404 terminal.
+404 terminal, or 400 when a typed capture failed to parse.
 """
 @inline function _compiled_terminal(d::CompiledDispatch, method::Symbol,
                                     clean::AbstractString)
@@ -395,7 +432,7 @@ registration order, then the `"*"` catch-all; no match yields the pre-built
     t === nothing || return t
     w = d.wildcard
     w !== nothing && return _action(w, method)
-    return TERM_404
+    return _scan_parsefail(d.chain, clean) ? TERM_400 : TERM_404
 end
 
 # --- Pipeline entry point ---
@@ -403,5 +440,5 @@ end
 function getterminal(r::Router, req::Request)
     c = r.compiled
     c === nothing && return nothing
-    return _compiled_terminal(c, req.method, stripquery(req.uri))
+    return _compiled_terminal(c, _match_method(req.method), stripquery(req.uri))
 end
