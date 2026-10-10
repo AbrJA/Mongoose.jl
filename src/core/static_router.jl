@@ -154,9 +154,13 @@ end
 @inline function _match_path(::Type{PathCons{Cap{N,T},Rest}}, parts::Vector{String}, i::Int) where {N,T,Rest}
     i <= length(parts) || return nothing
     v = _try_parse_param(parts[i], T)
-    v === nothing && return ParamParseFail()
+    # Structural continuation first: a failed capture is only a 400 signal when
+    # the rest of the pattern structurally matches (`/users/abraham` against
+    # `/users/:id::Int/posts` is a 404 — the trailing segment is missing).
     rest = _match_path(Rest, parts, i + 1)
-    (rest === nothing || rest isa ParamParseFail) && return rest
+    rest === nothing && return nothing
+    rest isa ParamParseFail && return ParamParseFail
+    v === nothing && return ParamParseFail()
     return (v, rest...)
 end
 
@@ -306,6 +310,9 @@ function _dispatch_static(router::StaticRouter, ctx::RequestContext, req::Reques
 
     res, mask = _scan_catchall(router.routes, method, parts, UInt8(0), k)
     res === nothing || return res
+    # A catch-all owns every path: a method mismatch there is a 405, and it
+    # wins over another route's unparseable typed capture (matches `Router`).
+    mask != 0x00 && return _fallback_static(ctx, req, mask)
     parse_failed && return _bad_params_static(ctx, req)
     return _fallback_static(ctx, req, mask)
 end
@@ -333,8 +340,8 @@ function matchroute(router::StaticRouter, method::Symbol, path::AbstractString):
 
     res, mask = _scan_catchall(router.routes, m, parts, UInt8(0), k)
     res === nothing || return res
-    parse_failed && return ParamMismatch()
     mask != 0x00 && return MethodMismatch(mask)
+    parse_failed && return ParamMismatch()
     return NoMatch()
 end
 

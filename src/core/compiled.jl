@@ -345,27 +345,35 @@ end
     return _walk_ops(node.ops, s, 1, ())
 end
 
-# True when the path matches structurally but a capture fails to parse (400).
-@inline _walk_ops_parsefail(::Tuple{}, s::AbstractString, i::Int) = false
+# (parse_failed, structurally_matched) for a path against the node's ops.
+# A capture that fails to parse must still walk the *rest* of the pattern:
+# `/users/abraham` fails the capture of `/users/:id::Int/posts` but does not
+# structurally match it (trailing segment missing), so it is a 404, not a 400.
+@inline _walk_ops_parsefail(::Tuple{}, s::AbstractString, i::Int) =
+    (false, _only_slashes(s, i))
 @inline function _walk_ops_parsefail(ops::Tuple, s::AbstractString, i::Int)
     op = ops[1]
     rest = Base.tail(ops)
     if op isa LitOp
         j0, j1, ni = _next_seg(s, i)
-        (j0 != 0 && _bytes_eq(s, j0, j1, op.text)) || return false
+        (j0 != 0 && _bytes_eq(s, j0, j1, op.text)) || return (false, false)
         return _walk_ops_parsefail(rest, s, ni)
     elseif op isa CaptureOp
         j0, j1, ni = _next_seg(s, i)
-        j0 == 0 && return false
-        op.parse(s, j0, j1) === nothing && return true
-        return _walk_ops_parsefail(rest, s, ni)
-    else # WildOp — never fails
-        return false
+        j0 == 0 && return (false, false)
+        failed = op.parse(s, j0, j1) === nothing
+        rest_failed, matched = _walk_ops_parsefail(rest, s, ni)
+        return (failed || rest_failed, matched)
+    else # WildOp — consumes the remainder, so the path matches structurally
+        return _walk_ops_parsefail(rest, s, ncodeunits(s) + 1)
     end
 end
 
-@inline _walk_segs_parsefail(node::CompiledParam, s::AbstractString) =
-    _walk_ops_parsefail(node.ops, s, 1)
+# True when the path matches structurally but a capture fails to parse (400).
+@inline function _walk_segs_parsefail(node::CompiledParam, s::AbstractString)
+    failed, matched = _walk_ops_parsefail(node.ops, s, 1)
+    return failed && matched
+end
 
 @inline _scan_parsefail(::Tuple{}, clean::AbstractString) = false
 @inline function _scan_parsefail(chain::Tuple, clean::AbstractString)

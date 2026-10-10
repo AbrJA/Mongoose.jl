@@ -506,6 +506,8 @@ end
 end
 
 @inline function _find_route_no_wildcard(router::Router, clean::AbstractString)
+    # The catch-all lives under the literal "*" key; it owns no concrete path.
+    clean == "*" && return nothing
     fixed = get(router.fixed, clean, nothing)
     fixed !== nothing && return (fixed.handlers, ())
     if !isempty(router.param_routes)

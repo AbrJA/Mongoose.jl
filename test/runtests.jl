@@ -52,6 +52,7 @@ using Mongoose
         include("routing/pluggable.jl")
         include("routing/compiled.jl")
         include("routing/static_router.jl")
+        include("routing/differential.jl")
     end
 
     # ── Middleware: each component against a live server ──
