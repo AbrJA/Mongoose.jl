@@ -222,6 +222,22 @@ const PARAM_TYPES = Dict{String,Type}(
     "UInt" => UInt, "UInt64" => UInt64
 )
 
+"""
+    _param_type(type_str) → Type
+
+Resolve a route parameter type name (`"Int"`, `"Float64"`, …). An unknown
+name throws `RouteError`: a silently-`String`ed `:id::UUID` capture is a typo,
+not a routing policy. Custom capture types can be registered in
+`PARAM_TYPES`; they must support `tryparse(T, value)`.
+"""
+function _param_type(type_str::AbstractString)::Type
+    T = get(PARAM_TYPES, type_str, nothing)
+    T !== nothing && return T
+    supported = join(sort!(collect(keys(PARAM_TYPES))), ", ")
+    throw(RouteError("unknown route parameter type `$type_str`; supported: $supported " *
+                     "(register custom types in Mongoose.Kernel.PARAM_TYPES)"))
+end
+
 # --- Route Registration ---
 
 """
@@ -322,8 +338,7 @@ function _parse_param_spec(spec::AbstractString)
     end
     name = String(spec[1:first(idx)-1])
     type_str = String(spec[last(idx)+1:end])
-    T = get(PARAM_TYPES, type_str, String)
-    return (name, T)
+    return (name, _param_type(type_str))
 end
 
 # Path segments are URL-decoded before parsing (RFC 3986): `+` stays a literal

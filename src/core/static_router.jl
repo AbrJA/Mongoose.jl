@@ -401,7 +401,7 @@ function _path_type_expr(path::AbstractString)
             else
                 name = spec[1:first(sep)-1]
                 tname = spec[last(sep)+1:end]
-                T = get(PARAM_TYPES, tname, String)
+                T = _param_type(tname)
             end
             isempty(name) && error("@routes: parameter name is empty in '$path'")
             expr = :(PathCons{Cap{$(QuoteNode(Symbol(name))),$T},$expr})
