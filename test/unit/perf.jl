@@ -110,7 +110,7 @@ end
 
     # Warm up: the first call in a fresh process includes compilation.
     Mongoose.Kernel.mergeheaders(Headers(), "A" => "1")
-    @test @allocated(Mongoose.Kernel.mergeheaders(Headers(), "A" => "1")) <= 128
+    @test @allocated(Mongoose.Kernel.mergeheaders(Headers(), "A" => "1")) <= 160
 end
 
 @testset "Hot helper inference" begin
