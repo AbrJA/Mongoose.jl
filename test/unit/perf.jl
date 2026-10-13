@@ -108,9 +108,15 @@ end
     pf(preq, next0)
     @test @allocated(pf(preq, next0)) == 0
 
-    # Warm up: the first call in a fresh process includes compilation.
-    Mongoose.Kernel.mergeheaders(Headers(), "A" => "1")
-    @test @allocated(Mongoose.Kernel.mergeheaders(Headers(), "A" => "1")) <= 160
+    # Allocation count, not bytes: byte sizes vary by Julia version (96-208),
+    # counts do not. The single-pair fast path must stay at 4-5 allocs; the old
+    # delegating path (pair -> [pair] -> vector method) allocated 7.
+    h0 = Headers()                                        # hoisted: not measured
+    Mongoose.Kernel.mergeheaders(h0, "A" => "1")          # warm up
+    g0 = Base.gc_num()
+    Mongoose.Kernel.mergeheaders(h0, "A" => "1")
+    g1 = Base.gc_num()
+    @test Base.gc_alloc_count(Base.GC_Diff(g1, g0)) <= 5
 end
 
 @testset "Hot helper inference" begin
