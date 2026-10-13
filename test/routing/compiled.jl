@@ -158,7 +158,7 @@ end
 
     # Frozen routers still reject registration.
     @test_throws RouteError route!(r, :get, "/b", req -> text("b"))
-    @test_throws RouteError ws!(r, "/ws"; on_message=req -> nothing)
+    @test_throws RouteError ws!(r, "/ws"; on_message = (req, client) -> nothing)
     @test isfrozen(r)
 end
 

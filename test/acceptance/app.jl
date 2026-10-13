@@ -117,7 +117,7 @@ function buildapp(; token::String="test-token", workers::Integer=2)
 
     # --- WebSocket echo (text + binary) ---
     ws!(router, "/ws";
-        on_message=msg -> Message(msg.data),
+        on_message = (msg, client) -> Message(msg.data),
         allowed_origins=["http://127.0.0.1", "http://localhost"])
 
     # --- Compose the app ---

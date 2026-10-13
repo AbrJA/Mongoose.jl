@@ -36,7 +36,7 @@
     @testset "WebSocket binary frame round-trip" begin
         payload = UInt8[0x00, 0x01, 0xfe, 0xff, 0x00]
         s = App()
-        ws!(s, "/ws-bin"; on_message=msg -> Message(msg.data))
+        ws!(s, "/ws-bin"; on_message=(msg, client) -> Message(msg.data))
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws-bin") do ws

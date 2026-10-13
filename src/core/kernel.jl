@@ -70,7 +70,7 @@ export AbstractRequest, Request, Headers, asheaders, mergeheaders, context, pars
     HTTPVersionNotSupportedError, VariantAlsoNegotiatesError, InsufficientStorageError,
     LoopDetectedError, NotExtendedError, NetworkAuthenticationRequiredError,
     validate, ValidationError,
-    Message, WSEndpoint,
+    Message, WSEndpoint, WSClient,
     AbstractRouter, Router, MethodMap, RouteResult, Matched, NoMatch, MethodMismatch, ParamMismatch,
     SingleEndpoint, matchroute, hasroute,
     StaticRouter, @routes,

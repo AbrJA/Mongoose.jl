@@ -4,8 +4,8 @@
         s = App(2)
         route!(s, :get, "/") do req; text("ok") end
         ws!(s, "/ws/close";
-            on_message=msg -> Message("ack"),
-            on_close=() -> (closed[] = true))
+            on_message = (msg, client) -> Message("ack"),
+            on_close = client -> (closed[] = true))
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/close") do ws
                 HTTP.WebSockets.send(ws, "hi")
@@ -22,8 +22,8 @@
         s = App(2)
         route!(s, :get, "/") do req; text("ok") end
         ws!(s, "/ws/open";
-            on_open=req -> (captured_uri[] = req.uri; true),
-            on_message=msg -> Message("ok"))
+            on_open = (req, client) -> (captured_uri[] = req.uri; true),
+            on_message = (msg, client) -> Message("ok"))
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/open") do ws
                 HTTP.WebSockets.send(ws, "test")

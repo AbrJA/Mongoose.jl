@@ -10,7 +10,7 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
     Plain, Html, Json, Css, Js, Xml, Binary,
     start!, shutdown!, isrunning, url, route!, use, serve!, trap, onstart, onstop,
     context, Cookie, Headers, setcookie, parsecookies, parseform, header,
-    ws!, broadcastws, Message,
+    ws!, broadcastws, sendws, Message, WSClient,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
     RouteError, ServerError, BindError,
     HTTPError, errorstatus,
@@ -147,6 +147,11 @@ end
         # --- Input normalization ---
         asheaders("x" => "1"); asheaders(Headers())
         asstrings(("/api",)); asmiddlewares((cors(),))
+
+        # --- WebSocket client handle ---
+        wsreq = Request(:get, "/ws", Dict{String,String}(), Pair{String,String}[], "")
+        WSClient(1, "/ws", NamedTuple(), wsreq, Dict{Symbol,Any}())
+        Message("hi")
 
         # --- App construction ---
         app = App()

@@ -16,8 +16,17 @@ All notable changes to Mongoose.jl are documented here. The format is based on
 - `route!(server, method, path) do req … end` and `ws!(server, path) do msg … end`
   do-block forms (a do-block passes the handler first, so the argument order
   mirrors the positional `route!(server, method, path, handler)`).
+- **`WSClient`** — the per-connection handle passed to WebSocket callbacks:
+  `id`, `uri`, the handshake `request` (DI services, headers, `remote_addr`),
+  and a per-connection `state::Dict{Symbol,Any}` created in `on_open` and
+  released with the connection. `sendws(server, client, data)` pushes to one
+  client (async: reply-queue safe from any task; sync: from a handler).
 
 ### Changed
+- **Breaking**: WebSocket callbacks now receive the connection handle —
+  `on_message(msg, client)`, `on_open(req, client)`, `on_close(client)`.
+  Previously `on_message` had no way to identify the connection (stateful
+  handlers had to use global side tables).
 - **WebSocket handshakes now run through the middleware pipeline** (security
   fix): global and path-scoped middleware (`bearer`, `apikey`, `ratelimit`,
   `logger`, …) observe the upgrade request, and a short-circuiting response

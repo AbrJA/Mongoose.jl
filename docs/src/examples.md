@@ -94,7 +94,7 @@ router = @routes begin
     get("/users/:id::Int", (req, id) -> json((id = id,)))
     get("/files/*path", (req, path) -> text("Requested: $path"))
     post("/echo", req -> text(body(req)); middleware = (cors(),))
-    ws("/chat", msg -> Message("Echo: " * String(msg.data)); on_open = req -> true)
+    ws("/chat", (msg, client) -> Message("Echo: " * String(msg.data)); on_open = (req, client) -> true)
 
     group("/api"; middleware = (bearer(token),)) do api
         get("/items", list_items)                    # GET /api/items
@@ -300,14 +300,14 @@ route!(router, :get, "/", req -> html("""
 """))
 
 ws!(router, "/ws";
-    on_open = req -> begin
+    on_open = (req, client) -> begin
         auth = get(req.headers, "authorization", nothing)
         # Return false to reject with 403
         @info "WS connected" uri=req.uri
         true
     end,
-    on_message = msg -> Message("Echo: " * String(msg.data)),
-    on_close = () -> @info "WS disconnected"
+    on_message = (msg, client) -> Message("Echo: " * String(msg.data)),
+    on_close = client -> @info "WS disconnected"
 )
 
 app = App(4; router=router, ws_idle_timeout_ms=60_000)
@@ -327,6 +327,12 @@ A middleware that short-circuits (401/403/429) aborts the upgrade; otherwise
 attached). Handshake middleware runs on the event-loop thread, so keep it
 fast.
 
+Every callback receives a [`WSClient`](@ref): `id`, `uri`, the handshake
+`request` (DI services, headers, `remote_addr`), and a per-connection `state`
+dict created in `on_open` and released in `on_close`. Messages from one
+connection may run concurrently on the worker pool; lock `state` mutations
+when that matters.
+
 ## WebSocket Server Push (`broadcastws`)
 
 WebSockets can also be *pushed* to: send a frame to every open client of a
@@ -343,7 +349,7 @@ router = Router()
 
 # Clients subscribe to stock updates
 ws!(router, "/stock";
-    on_message = msg -> Message("pong: " * String(msg.data)),
+    on_message = (msg, client) -> Message("pong: " * String(msg.data)),
 )
 
 app = App(4; router=router)
@@ -356,6 +362,16 @@ start!(app; port=8080)
 
 Requires an async executor (`workers > 0`); stale/closed connections are
 dropped silently.
+
+`sendws(app, client, data)` pushes to **one** client (a `WSClient` captured
+from `on_open`/`on_message`), through the same reply queue:
+
+```julia
+ws!(app, "/alerts";
+    on_open = (req, client) -> (register_session(client); true),
+    on_message = (msg, client) -> (sendws(app, client, "ack"); nothing),
+)
+```
 
 ## Server-Sent Events (SSE)
 

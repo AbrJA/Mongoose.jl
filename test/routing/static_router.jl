@@ -142,7 +142,7 @@
             get("/hello", req -> text("hi"))
         end
         @test_throws Mongoose.RouteError route!(router, :post, "/x", req -> text("x"))
-        @test_throws Mongoose.RouteError ws!(router, "/ws"; on_message = req -> nothing)
+        @test_throws Mongoose.RouteError ws!(router, "/ws"; on_message = (req, client) -> nothing)
         @test_throws Mongoose.RouteError route!(App(router = router), :get, "/late", req -> text("x"))
     end
 
@@ -199,10 +199,10 @@
         closed = Ref(false)
         router = @routes begin
             get("/hello", req -> text("hi"))
-            ws("/chat", msg -> Message("Echo: $(msg.data)");
-               on_open = req -> (opened[] = true; true),
-               on_close = () -> (closed[] = true))
-            ws("/gated", msg -> Message("gated"); allowed_origins = ["http://localhost"])
+            ws("/chat", (msg, client) -> Message("Echo: $(msg.data)");
+               on_open = (req, client) -> (opened[] = true; true),
+               on_close = client -> (closed[] = true))
+            ws("/gated", (msg, client) -> Message("gated"); allowed_origins = ["http://localhost"])
         end
         @test Mongoose.haswsroutes(router)
         @test length(router) == 1
@@ -232,7 +232,7 @@
 
     @testset "Static WebSocket routes (async executor)" begin
         router = @routes begin
-            ws("/chat", msg -> Message("Got: $(msg.data)"))
+            ws("/chat", (msg, client) -> Message("Got: $(msg.data)"))
         end
         with_server(App(2; router = router)) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/chat") do ws

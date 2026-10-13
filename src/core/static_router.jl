@@ -531,7 +531,7 @@ end
         get("/users/:id::Int", (req, id) -> json((id = id,)))
         get("/files/*path", (req, path) -> text(path))
         post("/echo", req -> text(body(req)); middleware=(cors(),))
-        ws("/chat", msg -> Message("Echo: \$(msg.data)"))
+        ws("/chat", (msg, client) -> Message("Echo: \$(msg.data)"))
 
         group("/api"; middleware=(bearer(token),)) do api
             get("/items", list_items)

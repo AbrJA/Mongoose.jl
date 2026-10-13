@@ -47,7 +47,7 @@ end
 @testset "App-level router introspection" begin
     app = App()
     route!(app, :get, "/a") do req; text("a") end
-    ws!(app, "/ws", m -> nothing)
+    ws!(app, "/ws", (m, client) -> nothing)
 
     @test length(app) == 1
     @test !isempty(app)
@@ -63,22 +63,24 @@ end
     @test freeze!(app) === app
     @test isfrozen(app)
     @test_throws Mongoose.RouteError route!(app, :get, "/late", req -> text("x"))
-    @test_throws Mongoose.RouteError ws!(app, "/late", m -> nothing)
+    @test_throws Mongoose.RouteError ws!(app, "/late", (m, client) -> nothing)
 end
 
 
 @testset "ws! do-block form" begin
     app = App()
-    ws!(app, "/chat") do msg
+    ws!(app, "/chat") do msg, client
         Message("Echo: " * String(msg.data))
     end
     @test Mongoose.haswsroutes(app)
     ep = Mongoose.getwsendpoint(app, "/chat")
     @test ep !== nothing
-    @test ep.on_message(Message("hi")).data == "Echo: hi"
+    req = Request(:get, "/chat", Dict{String,String}(), Pair{String,String}[], "")
+    client = WSClient(1, "/chat", NamedTuple(), req, Dict{Symbol,Any}())
+    @test ep.on_message(Message("hi"), client).data == "Echo: hi"
 
     r = Router()
-    ws!(r, "/chat") do msg
+    ws!(r, "/chat") do msg, client
         Message("r")
     end
     @test Mongoose.Kernel.haswsroutes(r)

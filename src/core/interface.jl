@@ -25,7 +25,9 @@
 
     Optional capabilities (safe defaults are provided):
     - `haswsroutes(r::R) → Bool`                   (default: `false`)
-    - `ws!(r::R, path; ...)`                         (no default)
+    - `ws!(r::R, path; ...)`                         (no default). The endpoint
+      callbacks receive `(msg, client)`, `(req, client)`, and `(client)` where
+      `client` is a [`WSClient`](@ref)
     - `getwsendpoint(r::R, uri)`                    (default: `nothing`)
     - `length(r::R)`                            (default: `0`)
 

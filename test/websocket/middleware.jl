@@ -15,7 +15,7 @@ end
 @testset "WS handshake middleware" begin
     @testset "API key protects the handshake" begin
         s = App(2)
-        ws!(s, "/ws/secure"; on_message=msg -> Message("ok: $(msg.data)"))
+        ws!(s, "/ws/secure"; on_message = (msg, client) -> Message("ok: $(msg.data)"))
         s = use(s, apikey("secret-key"))
 
         with_server(s) do port
@@ -38,7 +38,7 @@ end
     @testset "Path-scoped middleware applies to WS only" begin
         s = App()
         route!(s, :get, "/open") do req; text("open") end
-        ws!(s, "/ws/scoped"; on_message=msg -> Message("ok"))
+        ws!(s, "/ws/scoped"; on_message = (msg, client) -> Message("ok"))
         s = use(s, bearer("tok"); paths=["/ws"])
 
         with_server(s) do port
@@ -54,7 +54,7 @@ end
 
     @testset "Streaming middleware short-circuit" begin
         s = App()
-        ws!(s, "/ws/stream"; on_message=msg -> Message("x"))
+        ws!(s, "/ws/stream"; on_message = (msg, client) -> Message("x"))
         s = use(s, _StreamUpgrade())
         with_server(s) do port
             r = HTTP.get("http://127.0.0.1:$port/ws/stream"; status_exception=false)
@@ -65,7 +65,7 @@ end
 
     @testset "Middleware exception maps to its HTTP status" begin
         s = App()
-        ws!(s, "/ws/deny"; on_message=msg -> Message("never"))
+        ws!(s, "/ws/deny"; on_message = (msg, client) -> Message("never"))
         s = use(s, _DenyUpgrade())
         with_server(s) do port
             r = HTTP.get("http://127.0.0.1:$port/ws/deny"; status_exception=false)
@@ -77,8 +77,8 @@ end
         s = App()
         seen = Ref{Any}(nothing)
         ws!(s, "/ws/di";
-            on_open=req -> (seen[] = service(req, Val(:db)); true),
-            on_message=msg -> Message("ok"))
+            on_open = (req, client) -> (seen[] = service(req, Val(:db)); true),
+            on_message = (msg, client) -> Message("ok"))
         s = provide(s, (db="pool",))
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/di") do ws
@@ -91,7 +91,7 @@ end
 
     @testset "on_open rejection still answers 403" begin
         s = App()
-        ws!(s, "/ws/no"; on_message=msg -> Message("x"), on_open=req -> false)
+        ws!(s, "/ws/no"; on_message = (msg, client) -> Message("x"), on_open = (req, client) -> false)
         s = use(s, (req, next) -> next())   # pass-through middleware
         with_server(s) do port
             sock = Sockets.connect("127.0.0.1", port)

@@ -10,7 +10,7 @@
     @test_throws MethodError Mongoose.matchroute(r, :get, "/")
     @test_throws MethodError Mongoose.hasroute(r, "/")
     @test_throws MethodError route!(r, :get, "/x", req -> text(""))
-    @test_throws MethodError ws!(r, "/x"; on_message=req -> nothing)
+    @test_throws MethodError ws!(r, "/x"; on_message = (req, client) -> nothing)
 end
 
 @testset "RegexRouter alternative (pluggability showcase)" begin

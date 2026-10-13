@@ -2,7 +2,7 @@
     # Router contents use `haswsroutes`; `can*` is transport capability only.
     r = Router()
     @test Mongoose.haswsroutes(r) == false
-    ws!(r, "/ws"; on_message=req -> nothing)
+    ws!(r, "/ws"; on_message = (req, client) -> nothing)
     @test Mongoose.haswsroutes(r) == true
 
     # A full request cycle with a fake transport, no server started.

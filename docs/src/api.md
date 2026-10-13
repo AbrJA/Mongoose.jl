@@ -168,6 +168,8 @@ sse
 
 ```@docs
 Message
+WSClient
+sendws
 broadcastws
 ```
 

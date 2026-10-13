@@ -29,10 +29,14 @@ end
     end
 end
 
-@inline function ws_register!(server::AbstractServer, uri::String, conn::MgConnection)
-    id = Int(Threads.atomic_add!(server.runtime.conn_seq, UInt64(1)) + UInt64(1))
+# Monotonic per-server connection id (shared with HTTP async requests).
+@inline _next_conn_id(server::AbstractServer)::Int =
+    Int(Threads.atomic_add!(server.runtime.conn_seq, UInt64(1)) + UInt64(1))
+
+@inline function ws_register!(server::AbstractServer, id::Int, conn::MgConnection,
+                              wsc::Kernel.WSConn)
     lock(server.runtime.ws_lock) do
-        server.runtime.ws_clients[id] = Kernel.WSConn(uri, time(), false)
+        server.runtime.ws_clients[id] = wsc
         server.runtime.ws_gen_ids[conn] = id
     end
     # Track the connection so idle sweeps can send close frames in sync mode
@@ -40,6 +44,11 @@ end
     server.runtime.connections[id] = conn
     return id
 end
+
+# Per-event client handle built from the connection record; params are empty
+# until typed parametric WS routes land (`matchws`).
+@inline _ws_client(id::Int, wsc::Kernel.WSConn, params=NamedTuple()) =
+    Kernel.WSClient(id, wsc.uri, params, wsc.request, wsc.state)
 
 # Generation id for reply routing: a stale worker reply cannot hit a reused pointer.
 @inline function ws_id_of(server::AbstractServer, conn::MgConnection)::Int
@@ -84,9 +93,16 @@ function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg, req)::Union{WSUp
             return Response(403, Pair{String,String}[], "Forbidden")
         end
     end
+
+    # Allocate the connection record before `on_open` so the callback gets a
+    # live client (id + state + handshake request). A rejection discards it.
+    id = _next_conn_id(server)
+    wsc = Kernel.WSConn(uri, req)
+    client = _ws_client(id, wsc)
+
     if endpoint.on_open !== nothing
         accepted = try
-            endpoint.on_open(req) !== false
+            endpoint.on_open(req, client) !== false
         catch e
             @log_error "WebSocket on_open error uri=$uri" e catch_backtrace()
             true
@@ -94,7 +110,7 @@ function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg, req)::Union{WSUp
         accepted || return Response(403, Pair{String,String}[], "Forbidden")
     end
     mg_ws_upgrade(conn, ev_data, C_NULL)
-    ws_register!(server, uri, conn)
+    ws_register!(server, id, conn, wsc)
     return WS_UPGRADED
 end
 
@@ -178,19 +194,20 @@ function on_ws_message(server::AbstractServer, conn::MgConnection, ev_data::Ptr{
         mgjl_ws_close(conn, 1007, "WebSocket invalid UTF-8")
         return
     end
-    uri = lock(server.runtime.ws_lock) do
-        let e = get(server.runtime.ws_clients, conn_id, nothing); e === nothing ? "" : e.uri end
+    wsc = lock(server.runtime.ws_lock) do
+        get(server.runtime.ws_clients, conn_id, nothing)
     end
+    wsc === nothing && return
 
     if server.executor isa AsyncExecutor
         exec = server.executor
         server.runtime.connections[conn_id] = conn
-        tagged = Kernel.Tagged(conn_id, Kernel.Intent(ws_msg, uri))
+        tagged = Kernel.Tagged(conn_id, Kernel.Intent(ws_msg, wsc.uri, wsc))
         if !submit!(exec, () -> invoke_ws(server, tagged))
             @log_warn "WebSocket message dropped: worker queue full conn_id=$conn_id"
         end
     else
-        tagged = Kernel.Tagged(conn_id, Kernel.Intent(ws_msg, uri))
+        tagged = Kernel.Tagged(conn_id, Kernel.Intent(ws_msg, wsc.uri, wsc))
         result = invoke_ws(server, tagged)
         if result !== nothing
             send_ws_frame!(conn, result.payload)
@@ -221,8 +238,8 @@ function close_ws!(server::AbstractServer, conn_id::Int)
     entry = lock(server.runtime.ws_lock) do
         pop!(server.runtime.ws_clients, conn_id, nothing)
     end
-    uri = entry === nothing ? nothing : entry.uri
-    uri === nothing || ws_close(server.router, uri)
+    entry === nothing && return nothing
+    ws_close(server, server.router, conn_id, entry)
     return nothing
 end
 
@@ -278,6 +295,30 @@ function broadcastws(server::AbstractServer, path::AbstractString, data::Abstrac
     return nothing
 end
 
+"""
+    sendws(server, client::WSClient, data) → nothing
+
+Send one frame to a single WebSocket client (`Message`, `String`, or
+`Vector{UInt8}`; `nothing` is a no-op). With an async executor the frame is
+routed through the reply queue like `broadcastws`, so it is safe to call from
+any task; with a sync executor it is written directly and must be called from
+the poll thread (i.e. inside a handler). A closed/stale client is skipped.
+"""
+function sendws(server::AbstractServer, client::Kernel.WSClient, data)
+    tagged = tag_ws(client.id, data)
+    tagged === nothing && return nothing
+    exec = server.executor
+    if exec isa AsyncExecutor
+        _offer_reply!(exec, tagged) ||
+            Threads.atomic_add!(server.runtime.ws_dropped, UInt64(1))
+    else
+        conn = get(server.runtime.connections, client.id, nothing)
+        conn === nothing && return nothing
+        send_ws_frame!(conn, tagged.payload)
+    end
+    return nothing
+end
+
 # --- WS Dispatch ---
 
 # Router protocol: three hooks let the transport dispatch WS events without
@@ -289,19 +330,22 @@ end
 # running middleware; the actual handshake lives in `ws_upgrade!`.
 @inline resolve_ws(router::AbstractRouter, uri::String) = getwsendpoint(router, uri)
 
-function ws_message(router::AbstractRouter, request::Kernel.Tagged{Kernel.Intent})
+function ws_message(server::AbstractServer, router::AbstractRouter,
+                    request::Kernel.Tagged{Kernel.Intent})
     endpoint = getwsendpoint(router, request.payload.uri)
     endpoint === nothing && return nothing
-    return call_ws_endpoint(endpoint, request)
+    client = _ws_client(request.id, request.payload.conn)
+    return call_ws_endpoint(endpoint, request, client)
 end
 
-function ws_close(router::AbstractRouter, uri::String)
-    endpoint = getwsendpoint(router, uri)
+function ws_close(server::AbstractServer, router::AbstractRouter, conn_id::Int,
+                  wsc::Kernel.WSConn)
+    endpoint = getwsendpoint(router, wsc.uri)
     (endpoint === nothing || endpoint.on_close === nothing) && return nothing
     try
-        endpoint.on_close()
+        endpoint.on_close(_ws_client(conn_id, wsc))
     catch e
-        @log_error "WebSocket on_close error uri=$uri" e catch_backtrace()
+        @log_error "WebSocket on_close error uri=$(wsc.uri)" e catch_backtrace()
     end
     return nothing
 end
@@ -320,7 +364,8 @@ end
 @inline function _invoke_ws_static(route::Kernel.StaticWSRoute{M,O,C},
                                    request::Kernel.Tagged{Kernel.Intent}) where {M,O,C}
     try
-        res = route.on_message(request.payload.body)
+        client = _ws_client(request.id, request.payload.conn)
+        res = route.on_message(request.payload.body, client)
         return tag_ws(request.id, res)
     catch e
         @log_error "WebSocket on_message error uri=$(request.payload.uri)" e catch_backtrace()
@@ -335,42 +380,43 @@ end
     return _scan_ws_msg(Base.tail(routes), uri, request)
 end
 
-ws_message(router::StaticRouter, request::Kernel.Tagged{Kernel.Intent}) =
+ws_message(server::AbstractServer, router::StaticRouter, request::Kernel.Tagged{Kernel.Intent}) =
     _scan_ws_msg(router.ws_routes, request.payload.uri, request)
 
-@inline _run_ws_close(::Nothing) = nothing
-@inline function _run_ws_close(f::F) where {F}
+@inline _run_ws_close(::Nothing, client) = nothing
+@inline function _run_ws_close(f::F, client) where {F}
     try
-        f()
+        f(client)
     catch e
         @log_error "WebSocket on_close error" e catch_backtrace()
     end
     return nothing
 end
 
-@inline _scan_ws_close(::Tuple{}, uri) = nothing
-@inline function _scan_ws_close(routes::Tuple, uri)
+@inline _scan_ws_close(::Tuple{}, uri, client) = nothing
+@inline function _scan_ws_close(routes::Tuple, uri, client)
     route = routes[1]
-    route.path == uri && return _run_ws_close(route.on_close)
-    return _scan_ws_close(Base.tail(routes), uri)
+    route.path == uri && return _run_ws_close(route.on_close, client)
+    return _scan_ws_close(Base.tail(routes), uri, client)
 end
 
-ws_close(router::StaticRouter, uri::String) = _scan_ws_close(router.ws_routes, uri)
+ws_close(server::AbstractServer, router::StaticRouter, conn_id::Int, wsc::Kernel.WSConn) =
+    _scan_ws_close(router.ws_routes, wsc.uri, _ws_client(conn_id, wsc))
 
 # --- Transport entry points ---
 
-function invoke_ws(server::AbstractServer, request::Kernel.Tagged{Kernel.Intent})
-    return ws_message(server.router, request)
-end
+invoke_ws(server::AbstractServer, request::Kernel.Tagged{Kernel.Intent}) =
+    ws_message(server, server.router, request)
 
 tag_ws(id, res::Message)        = Kernel.Tagged{Kernel.ReplyPayload}(id, res)
 tag_ws(id, res::String)         = tag_ws(id, Message(res))
 tag_ws(id, res::Vector{UInt8})  = tag_ws(id, Message(res))
 tag_ws(id, ::Nothing)           = nothing
 
-function call_ws_endpoint(endpoint::WSEndpoint, request::Kernel.Tagged{Kernel.Intent})
+function call_ws_endpoint(endpoint::WSEndpoint, request::Kernel.Tagged{Kernel.Intent},
+                          client::Kernel.WSClient)
     try
-        res = endpoint.on_message(request.payload.body)
+        res = endpoint.on_message(request.payload.body, client)
         return tag_ws(request.id, res)
     catch e
         @log_error "WebSocket on_message error uri=$(request.payload.uri)" e catch_backtrace()

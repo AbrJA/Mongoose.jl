@@ -51,7 +51,7 @@ using Sockets
 
         @testset "wss over TLS" begin
             s = App(2)
-            ws!(s, "/ws"; on_message=msg -> Message(msg.data))
+            ws!(s, "/ws"; on_message = (msg, client) -> Message(msg.data))
             port = fresh_port()
             start!(s; host="127.0.0.1", port=port, blocking=false, tls=tls)
             try

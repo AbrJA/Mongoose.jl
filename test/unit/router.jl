@@ -100,7 +100,7 @@ end
     # Registration is closed; dispatch still works.
     @test_throws RouteError route!(r, :get, "/b", req -> text("b"))
     @test_throws RouteError route!(r, :get, "/b", req -> text("b"))
-    @test_throws RouteError ws!(r, "/ws"; on_message=req -> nothing)
+    @test_throws RouteError ws!(r, "/ws"; on_message = (req, client) -> nothing)
     @test Mongoose.matchroute(r, :get, "/a") isa Mongoose.Matched
 
     # A frozen router keeps working through the full pipeline.

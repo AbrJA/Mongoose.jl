@@ -73,7 +73,8 @@ end
     ws!(group, path, handler; kwargs...)
 
 Add a WebSocket route to a group. The handler may be positional (shorthand
-for `on_message=handler`) or passed as the `on_message` keyword.
+for `on_message=handler`) or passed as the `on_message` keyword; it is called
+as `(msg, client)` with a [`WSClient`](@ref) handle.
 """
 function ws!(g::RouteGroup, path::AbstractString; kwargs...)
     push!(g.ws_routes, (String(path), values(kwargs)))

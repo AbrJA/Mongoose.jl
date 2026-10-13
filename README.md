@@ -118,7 +118,7 @@ router = @routes begin
     get("/users/:id::Int", get_user)
     get("/files/*path", serve_file)
 
-    ws("/chat", msg -> Message("Echo: " * String(msg.data)))
+    ws("/chat", (msg, client) -> Message("Echo: " * String(msg.data)))
 
     group("/api"; middleware=(bearer(token),)) do api
         get("/items", list_items)          # GET /api/items
@@ -221,14 +221,27 @@ end
 ```julia
 ws!(app, "/chat";
     allowed_origins = ["https://myapp.com"],   # optional
-    on_open         = req -> true,             # false → 403
-    on_message      = msg -> Message("Echo: " * String(msg.data)),
-    on_close        = () -> @info "disconnected",
+    on_open = (req, client) -> begin           # false → 403
+        client.state[:joined] = time()
+        true
+    end,
+    on_message = (msg, client) -> begin
+        db = service(client.request, Val(:db))  # DI, headers, remote_addr
+        Message("Echo: " * String(msg.data))
+    end,
+    on_close = client -> @info "disconnected" id=client.id,
 )
 
-# Server-initiated push to every client of a path (thread-safe, any task):
-broadcastws(app, "/chat", "Server announcement")
+# Server-initiated push: every client of a path, or one specific client.
+broadcastws(app, "/chat", "Server announcement")   # thread-safe, any task
+sendws(app, client, "just for you")                # from a handler/task
 ```
+
+Every callback receives a `WSClient` — `id`, `uri`, `request` (the handshake
+request: DI services, headers, `remote_addr`), and per-connection `state`
+created in `on_open` and released with the connection. Messages from one
+connection may run concurrently on the worker pool; lock `state` mutations
+when that matters.
 
 > WebSocket **handshakes run through the middleware pipeline**, so
 > `use(app, bearer(...))`, `apikey`, `ratelimit`, `logger`, and path-scoped
