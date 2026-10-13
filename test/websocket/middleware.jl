@@ -1,6 +1,5 @@
-# WebSocket handshakes run through the middleware pipeline: global and
-# path-scoped middleware (auth, ratelimit, logging…) observe the upgrade
-# request; a short-circuiting Response aborts the handshake.
+# WS handshakes run through the middleware pipeline: auth/ratelimit/logging
+# observe the upgrade; a short-circuiting Response aborts it.
 
 using Sockets
 

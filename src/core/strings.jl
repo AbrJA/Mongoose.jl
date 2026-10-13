@@ -145,10 +145,7 @@ end
 @inline to_lower(b::UInt8) = (UInt8('A') <= b <= UInt8('Z')) ? (b | 0x20) : b
 
 # --- Allocation-free ASCII case-insensitive matching (header names/tokens) ---
-#
-# HTTP field names and list tokens are ASCII (RFC 9110 §5.1); folding A-Z per
-# byte is equivalent to `lowercase` for them and never allocates. Non-ASCII
-# bytes compare by identity (invalid in field names; harmless in values).
+# Field names/tokens are ASCII (RFC 9110 §5.1); folding A-Z per byte never allocates.
 
 # Case-insensitive equality; either side may be mixed case.
 @inline function _ci_eq(a::AbstractString, b::AbstractString)::Bool
@@ -191,10 +188,8 @@ end
     return true
 end
 
-# Whether a comma-separated header value contains `token` (case-insensitive,
-# ignoring optional whitespace and empty elements). Zero allocation; the
-# allocation-free replacement for `any(t -> lowercase(strip(t)) == token,
-# split(value, ','))`.
+# Comma-separated token lookup (case-insensitive, OWS/empty-tolerant);
+# allocation-free replacement for `any(t -> lowercase(strip(t)) == token, …)`.
 function _has_token(value::AbstractString, token::String)::Bool
     n = ncodeunits(value)
     i = 1

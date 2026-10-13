@@ -1,6 +1,5 @@
-# WSClient: per-connection identity, state, DI access, and targeted send.
-# (Sync mode is used where per-connection ordering must be deterministic;
-# async workers may run frames from one connection concurrently.)
+# WSClient: per-connection identity, state, DI access, targeted send.
+# Sync mode is used where per-connection ordering must be deterministic.
 
 using Sockets
 

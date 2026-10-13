@@ -345,10 +345,8 @@ end
     return _walk_ops(node.ops, s, 1, ())
 end
 
-# (parse_failed, structurally_matched) for a path against the node's ops.
-# A capture that fails to parse must still walk the *rest* of the pattern:
-# `/users/abraham` fails the capture of `/users/:id::Int/posts` but does not
-# structurally match it (trailing segment missing), so it is a 404, not a 400.
+# (parse_failed, structurally_matched): a failed capture must still walk the
+# rest of the pattern (`/users/abraham` vs `/users/:id::Int/posts` → 404).
 @inline _walk_ops_parsefail(::Tuple{}, s::AbstractString, i::Int) =
     (false, _only_slashes(s, i))
 @inline function _walk_ops_parsefail(ops::Tuple, s::AbstractString, i::Int)

@@ -332,11 +332,8 @@ function route!(router::Router, method::AbstractString, path::AbstractString, ha
            middleware=middleware, metadata=metadata)
 end
 
-# Dispatch-safe method normalization: valid methods are lowered (`:GET` →
-# `:get`); anything else becomes `:unknown`, which matches no endpoint but still
-# reports the path's Allow set (405) instead of failing the request with a
-# RouteError. Wire methods are already lowercase (or `:unknown` from
-# `parse_method`), so the hot path pays one tuple scan.
+# Dispatch-safe normalization: `:GET` → `:get`; anything else becomes
+# `:unknown` (matches nothing, still reports Allow/405 instead of erroring).
 @inline function _match_method(method::Symbol)::Symbol
     method in VALID_METHODS && return method
     method === :unknown && return :unknown
@@ -663,12 +660,7 @@ function _register_ws!(router::Router, path::String, endpoint::WSEndpoint)
 end
 
 # --- Do-block convenience ---
-# A do-block passes the handler first, so these mirror the argument order of
-# `route!(router, method, path, handler)`:
-#
-#     route!(router, :get, "/users/:id::Int") do req, id
-#         json((id = id,))
-#     end
+# `route!(router, :get, "/x") do req … end` mirrors the positional arg order.
 
 function route!(f::Function, r::Router, method::Symbol, path::AbstractString;
                 middleware=nothing, metadata=nothing)

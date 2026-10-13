@@ -1,10 +1,5 @@
-# Differential dispatch: the generic `Router`, the freeze!-compiled table, and
-# the compile-time `StaticRouter` implement the same matching semantics, so for
-# any route table + request the observable outcome (status, body, Allow) must
-# be identical. Random tables make this an invariant test, not an example test.
-#
-# Deterministic LCG: reproducible matrix without adding a `Random` test dep
-# (test/Project.toml stays untouched).
+# Differential dispatch: generic Router, freeze!-compiled table, and StaticRouter
+# must agree on (status, body, Allow) for random tables (deterministic LCG).
 
 mutable struct _DiffRNG
     s::UInt64

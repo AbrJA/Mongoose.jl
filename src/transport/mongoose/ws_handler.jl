@@ -95,9 +95,8 @@ function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg, req,
         end
     end
 
-    # Allocate the connection record before `on_open` so the callback gets a
-    # live client (id + state + handshake request + typed params). A rejection
-    # discards it.
+        # Allocate the record before `on_open` so the callback gets a live
+        # client; a rejection discards it.
     id = _next_conn_id(server)
     wsc = Kernel.WSConn(uri, req)
     client = _ws_client(id, wsc, params)
@@ -194,9 +193,8 @@ function ws_handle_upgrade(server::AbstractServer, conn::MgConnection, ev_data::
     return _ws_match_dispatch(server.router, uri, dispatch) === true
 end
 
-# Typed WS dispatch for the upgrade path: `StaticRouter` scans its table with
-# the callback (concrete route/params per generated branch); every other
-# router resolves through the `matchws` protocol.
+# Typed upgrade dispatch: StaticRouter scans with `k` (concrete per branch);
+# other routers resolve through the `matchws` protocol.
 @inline function _ws_match_dispatch(router::AbstractRouter, uri::AbstractString, k)
     matched = matchws(router, uri)
     matched === nothing && return nothing
@@ -382,10 +380,8 @@ end
 
 # --- WS Dispatch ---
 
-# Router protocol: three hooks let the transport dispatch WS events without
-# assuming how endpoints are stored. `matchws` resolves endpoint + typed
-# params for the dynamic `Router`; `StaticRouter` methods scan its typed table
-# and call the concrete handlers (trim-safe).
+# WS dispatch hooks: `matchws` resolves endpoint + typed params (dynamic
+# Router); StaticRouter scans its typed table (trim-safe).
 function ws_message(server::AbstractServer, router::AbstractRouter,
                     request::Kernel.Tagged{Kernel.Intent})
     matched = matchws(router, request.payload.uri)

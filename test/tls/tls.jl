@@ -19,10 +19,8 @@ using Sockets
             start!(s; host="127.0.0.1", port=port, blocking=false, tls=tls)
 
             try
-                # Wait for TLS server to be ready (skip SSL verification for
-                # self-signed): condition-based, not a fixed sleep.
-                # mongoose is HTTP/1.1-only: pin the client protocol so HTTP.jl
-                # does not attempt an h2 handshake first.
+                    # Wait for TLS readiness (condition-based); pin HTTP/1.1 so
+                    # HTTP.jl does not try an h2 handshake first.
                 ready = wait_until(timeout=10.0, interval=0.1) do
                     HTTP.get("https://127.0.0.1:$port/secure";
                         require_ssl_verification=false,

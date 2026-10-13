@@ -157,9 +157,8 @@ end
 @inline function _match_path(::Type{PathCons{Cap{N,T},Rest}}, parts::Vector{String}, i::Int) where {N,T,Rest}
     i <= length(parts) || return nothing
     v = _try_parse_param(parts[i], T)
-    # Structural continuation first: a failed capture is only a 400 signal when
-    # the rest of the pattern structurally matches (`/users/abraham` against
-    # `/users/:id::Int/posts` is a 404 — the trailing segment is missing).
+        # Structural continuation first: a failed capture is a 400 signal only
+        # when the rest of the pattern matches (missing trailing segment → 404).
     rest = _match_path(Rest, parts, i + 1)
     rest === nothing && return nothing
     rest isa ParamParseFail && return ParamParseFail
@@ -221,10 +220,8 @@ end
     return NamedTuple{_param_names(PT)}(m)
 end
 
-# Flat generated scan (same pattern as the HTTP `_scan_fixed`): each branch
-# calls `k(route, params)` with concrete types, so the common return type
-# stays uniform and inference never merges a route-type union (a 4+-route
-# union widens to Any, which the trim verifier rejects).
+# Flat generated scan (like HTTP `_scan_fixed`): each branch calls `k` with
+# concrete types — a 4+-route union widens to Any and fails the trim verifier.
 @generated function _scan_ws_match(routes::Routes, clean, parts, k) where {Routes<:Tuple}
     exprs = Any[]
     for i in 1:length(Routes.parameters)

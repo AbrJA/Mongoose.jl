@@ -1,7 +1,5 @@
-# Parametric WebSocket routes: typed path captures delivered to callbacks as
-# client.params (a NamedTuple), dynamic Router and StaticRouter alike. A
-# capture that fails to parse is "no WS match" (the request falls through to
-# the HTTP pipeline).
+# Parametric WS routes: typed captures arrive as client.params on both routers;
+# a failed parse is "no WS match" and falls through to HTTP (404).
 
 using Sockets
 
