@@ -8,7 +8,7 @@
     end
 
     @testset "Async App" begin
-        app = App(workers=4)
+        app = App(4)
         @test app isa App
         @test app.runtime.running[] == false
         @test app.config.workers == 4
@@ -19,7 +19,7 @@
     end
 
     @testset "App with custom options" begin
-        app = App(workers=2, queue_size=512, poll_timeout_ms=2, max_body_bytes=2048)
+        app = App(2; queue_size=512, poll_timeout_ms=2, max_body_bytes=2048)
         @test app.config.workers == 2
         @test app.config.queue_size == 512
         @test app.config.poll_timeout_ms == 2
@@ -35,7 +35,7 @@ end
 @testset "App start/shutdown" begin
     @testset "Basic start and stop (sync)" begin
         app = App()
-        get!(app, "/") do req; text("ok") end
+        route!(app, :get, "/") do req; text("ok") end
         with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
             @test resp.status == 200
@@ -43,8 +43,8 @@ end
     end
 
     @testset "Basic start and stop (async)" begin
-        app = App(workers=2)
-        get!(app, "/") do req; text("ok") end
+        app = App(2)
+        route!(app, :get, "/") do req; text("ok") end
         with_server(app) do port
             resp = HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
             @test resp.status == 200
@@ -53,7 +53,7 @@ end
 
     @testset "Double shutdown is safe" begin
         app = App()
-        get!(app, "/") do req; text("ok") end
+        route!(app, :get, "/") do req; text("ok") end
         with_server(app) do port end
         shutdown!(app)  # second call should be no-op
     end
@@ -65,20 +65,20 @@ end
 
     @testset "start! returns the server" begin
         app = App()
-        get!(app, "/") do req; text("ok") end
+        route!(app, :get, "/") do req; text("ok") end
         @test start!(app; port=fresh_port(), blocking=false) === app
         @test start!(app; port=fresh_port(), blocking=false) === app  # already running
         shutdown!(app)
     end
 end
 
-@testset "onstart! / onstop! hooks" begin
+@testset "onstart / onstop hooks" begin
     started = Ref(false)
     stopped = Ref(false)
     app = App()
-    get!(app, "/") do req; text("ok") end
-    onstart!(app) do; started[] = true end
-    onstop!(app) do; stopped[] = true end
+    route!(app, :get, "/") do req; text("ok") end
+    app = onstart(app) do; started[] = true end
+    app = onstop(app) do; stopped[] = true end
 
     with_server(app) do port
         @test started[] == true
@@ -91,22 +91,22 @@ end
     stopped = Ref(false)
     ran = Ref(false)
     app = App()
-    get!(app, "/") do req; text("ok") end
-    @test onstart!(app, () -> (started[] = true)) === app
-    @test onstop!(app, () -> (stopped[] = true)) === app
-    @test background!(app, () -> (ran[] = true)) === app
+    route!(app, :get, "/") do req; text("ok") end
+    app = onstart(app, () -> (started[] = true))
+    app = onstop(app, () -> (stopped[] = true))
+    app = background(app, () -> (ran[] = true))
 
     with_server(app) do port end
     @test started[] && stopped[] && ran[]
 end
 
 @testset "Per-request timeout (async)" begin
-    app = App(workers=1, request_timeout_ms=150)
-    get!(app, "/slow") do req
+    app = App(1; request_timeout_ms=150)
+    route!(app, :get, "/slow") do req
         sleep(1.0)
         text("late")
     end
-    get!(app, "/fast") do req
+    route!(app, :get, "/fast") do req
         text("fast")
     end
 
@@ -133,8 +133,8 @@ end
     @testset "short task is awaited and pruned" begin
         finished = Ref(false)
         app = App()
-        get!(app, "/") do req; text("ok") end
-        background!(app) do
+        route!(app, :get, "/") do req; text("ok") end
+        app = background(app) do
             sleep(0.5)
             finished[] = true
         end
@@ -150,8 +150,8 @@ end
 
     @testset "never-ending task is not joined" begin
         app = App(drain_timeout_ms=100)
-        get!(app, "/") do req; text("ok") end
-        background!(app) do
+        route!(app, :get, "/") do req; text("ok") end
+        app = background(app) do
             sleep(60.0)
         end
 
@@ -166,11 +166,11 @@ end
 end
 
 @testset "Queue-full 503 carries X-Request-Id" begin
-    app = App(workers=1, queue_size=1, drain_timeout_ms=200)
+    app = App(1; queue_size=1, drain_timeout_ms=200)
     started = Channel{Nothing}(1)
     gate = Channel{Nothing}(1)
     blocked = Ref(false)
-    get!(app, "/block") do req
+    route!(app, :get, "/block") do req
         if !blocked[]
             blocked[] = true
             signal(started)
@@ -206,8 +206,8 @@ end
     # SIGTERM, so a custom handler cannot run). Exercise the hook directly.
     stopped = Ref(false)
     app = App()
-    get!(app, "/") do req; text("ok") end
-    onstop!(app) do; stopped[] = true end
+    route!(app, :get, "/") do req; text("ok") end
+    app = onstop(app) do; stopped[] = true end
 
     port = fresh_port()
     start!(app; host="127.0.0.1", port=port, blocking=false)
@@ -221,7 +221,7 @@ end
 
 @testset "sync mode warns about ignored request_timeout_ms" begin
     app = App(request_timeout_ms=100)
-    get!(app, "/") do req; text("ok") end
+    route!(app, :get, "/") do req; text("ok") end
     @test_logs (:warn, r"request_timeout_ms is ignored in sync mode") match_mode=:any begin
         start!(app; port=fresh_port(), blocking=false)
     end
@@ -230,7 +230,7 @@ end
 
 @testset "isrunning/url accessors" begin
     app = App()
-    get!(app, "/") do req; text("ok") end
+    route!(app, :get, "/") do req; text("ok") end
     @test !isrunning(app)
     @test url(app) === nothing
     with_server(app) do port

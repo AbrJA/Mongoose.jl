@@ -62,7 +62,7 @@ end
     r = Router()
     sink = String[]
     grp = group("/api", middleware=[_RecordMw("grp", sink)])
-    get!(grp, "/x") do req; push!(sink, "handler"); text("ok") end
+    route!(grp, :get, "/x") do req; push!(sink, "handler"); text("ok") end
     mount!(r, grp)
 
     ep = r.fixed["/api/x"].handlers.get
@@ -79,17 +79,17 @@ end
 @testset "Plain callable middleware (no subtype needed)" begin
     r = Router()
     hang = String[]
-    get!(r, "/c", req -> (push!(hang, "handler"); text("ok")))
+    route!(r, :get, "/c", req -> (push!(hang, "handler"); text("ok")))
 
-    # use! accepts a plain closure.
+    # use accepts a plain closure.
     app = App()
-    use!(app) do req, next
+    app = use(app) do req, next
         push!(hang, "mw")
         next()
     end
-    @test app.middlewares[1] isa Mongoose.FunctionMiddleware
+    @test app.context.middlewares[1] isa Mongoose.FunctionMiddleware
 
-    res = Mongoose.process(Mongoose.RequestContext(r; middlewares=app.middlewares),
+    res = Mongoose.process(Mongoose.RequestContext(r; middlewares=app.context.middlewares),
         Request(:get, "/c", Dict{String,String}(), Pair{String,String}[], ""))
     @test res.status == 200
     @test hang == ["mw", "handler"]

@@ -3,7 +3,7 @@ using Sockets
 @testset "App lifecycle edge cases" begin
     @testset "Double start is no-op" begin
         s = App()
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         port = fresh_port()
         start!(s; host="127.0.0.1", port=port, blocking=false)
         try
@@ -19,7 +19,7 @@ using Sockets
 
     @testset "Double shutdown is safe" begin
         s = App()
-        get!(s, "/") do req; text("ok") end
+        route!(s, :get, "/") do req; text("ok") end
         port = fresh_port()
         start!(s; host="127.0.0.1", port=port, blocking=false)
         try
@@ -34,8 +34,8 @@ using Sockets
     @testset "BindError on port in use" begin
         s1 = App()
         s2 = App()
-        get!(s1, "/") do req; text("ok") end
-        get!(s2, "/") do req; text("ok") end
+        route!(s1, :get, "/") do req; text("ok") end
+        route!(s2, :get, "/") do req; text("ok") end
         port = fresh_port()
         start!(s1; host="127.0.0.1", port=port, blocking=false)
         try
@@ -51,12 +51,12 @@ using Sockets
         @test_throws ServerError App(max_body_bytes=0)
         @test_throws ServerError App(max_body_bytes=-1)
         @test_throws ServerError App(poll_timeout_ms=-1)
-        @test_throws ServerError App(workers=-1)
+        @test_throws ServerError App(-1)
     end
 
     @testset "Async App basic request" begin
-        s = App(workers=2)
-        get!(s, "/") do req; text("async-ok") end
+        s = App(2)
+        route!(s, :get, "/") do req; text("async-ok") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/"; status_exception=false)
             @test resp.status == 200
@@ -65,8 +65,8 @@ using Sockets
     end
 
     @testset "Async App concurrent requests" begin
-        s = App(workers=4)
-        get!(s, "/slow") do req
+        s = App(4)
+        route!(s, :get, "/slow") do req
             sleep(0.05)
             text("done")
         end
@@ -82,13 +82,13 @@ end
 
 @testset "Registration is rejected after start!" begin
     s = App()
-    get!(s, "/before", req -> text("ok"))
+    route!(s, :get, "/before", req -> text("ok"))
     with_server(s) do port
-        @test_throws Mongoose.ServerError get!(s, "/late", req -> text("x"))
+        @test_throws Mongoose.ServerError route!(s, :get, "/late", req -> text("x"))
         @test_throws Mongoose.ServerError route!(s, :get, "/late2", req -> text("x"))
-        @test_throws Mongoose.ServerError use!(s, cors())
-        @test_throws Mongoose.ServerError onerror!(s, 404, req -> text("x"))
-        @test_throws Mongoose.ServerError ws!(s, "/ws"; on_message=req -> nothing)
+        @test_throws Mongoose.ServerError s = use(s, cors())
+        @test_throws Mongoose.ServerError trap(s, 404, req -> text("x"))
+        @test_throws Mongoose.ServerError ws!(s, "/ws"; on_message = (req, client) -> nothing)
         # pre-start registration still fine
         @test HTTP.get("http://127.0.0.1:$port/before"; status_exception=false).status == 200
     end
@@ -96,14 +96,14 @@ end
 
 @testset "max_connections refuses extra connections" begin
     gate = Channel{Nothing}(2)
-    app = App(workers=2, max_connections=2)
-    get!(app, "/hold") do req
+    app = App(2; max_connections=2)
+    route!(app, :get, "/hold") do req
         sse(req) do w
             emit(w; data="open")
             take!(gate)
         end
     end
-    get!(app, "/ping") do req; text("pong") end
+    route!(app, :get, "/ping") do req; text("pong") end
 
     with_server(app) do port
         t1 = @async HTTP.get("http://127.0.0.1:$port/hold"; status_exception=false,
@@ -139,7 +139,7 @@ end
 
 @testset "header_timeout closes idle connections" begin
     app = App(header_timeout_ms=200)
-    get!(app, "/") do req; text("ok") end
+    route!(app, :get, "/") do req; text("ok") end
 
     with_server(app) do port
         sock = Sockets.connect("127.0.0.1", port)
@@ -163,7 +163,7 @@ end
 
 @testset "header_timeout does not kill slow request bodies" begin
     app = App(header_timeout_ms=200)
-    post!(app, "/echo") do req; text("len=$(sizeof(body(req)))") end
+    route!(app, :post, "/echo") do req; text("len=$(sizeof(body(req)))") end
 
     with_server(app) do port
         sock = Sockets.connect("127.0.0.1", port)
@@ -182,9 +182,9 @@ end
 end
 
 @testset "body_timeout closes stalled uploads" begin
-    app = App(workers=2, body_timeout_ms=300)
-    get!(app, "/ping") do req; text("pong") end
-    post!(app, "/echo") do req; text("len=$(sizeof(body(req)))") end
+    app = App(2; body_timeout_ms=300)
+    route!(app, :get, "/ping") do req; text("pong") end
+    route!(app, :post, "/echo") do req; text("len=$(sizeof(body(req)))") end
 
     with_server(app) do port
         # A body that never completes is reclaimed after the timeout.
@@ -214,7 +214,7 @@ end
 @testset "max_header_bytes caps request headers" begin
     # header_timeout_ms reclaims incomplete headers; the byte cap 431s complete blocks.
     app = App(max_header_bytes=1024, header_timeout_ms=200)
-    get!(app, "/ping") do req; text("pong") end
+    route!(app, :get, "/ping") do req; text("pong") end
 
     with_server(app) do port
         @test HTTP.get("http://127.0.0.1:$port/ping"; status_exception=false,
@@ -245,12 +245,12 @@ end
 
 @testset "runaway timed-out tasks are capped and shed" begin
     gate = Channel{Nothing}(2)
-    app = App(workers=2, request_timeout_ms=100, max_bg_tasks=2, drain_timeout_ms=100)
-    get!(app, "/hang") do req
+    app = App(2; request_timeout_ms=100, max_bg_tasks=2, drain_timeout_ms=100)
+    route!(app, :get, "/hang") do req
         take!(gate)          # blocks until the test releases it
         text("late")
     end
-    get!(app, "/ping") do req; text("pong") end
+    route!(app, :get, "/ping") do req; text("pong") end
 
     with_server(app) do port
         # Two handlers time out (504) and become tracked runaways.
@@ -294,8 +294,8 @@ end
     if !v6
         @test_skip true
     else
-        app = App(workers=2)
-        get!(app, "/v6") do req
+        app = App(2)
+        route!(app, :get, "/v6") do req
             json(Dict("remote" => something(req.remote_addr, "none")))
         end
         port = fresh_port()

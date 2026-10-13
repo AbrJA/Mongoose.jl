@@ -85,7 +85,8 @@ const _METHODS = (("GET", :get), ("POST", :post), ("PUT", :put),
     parse_method(str::MgStr) → Symbol
 
 Convert the C method string to a lowercase `Symbol`; unknown methods return
-`:unknown`, which the router rejects with a 405/RouteError.
+`:unknown`, which dispatch answers with `405` (served path, with the `Allow`
+set) or `404` (unserved path) — never an error status.
 """
 @inline function parse_method(str::MgStr)::Symbol
     len = Int(str.len)

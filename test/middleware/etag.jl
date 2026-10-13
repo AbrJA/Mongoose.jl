@@ -1,15 +1,15 @@
 @testset "ETag + conditional requests" begin
     app = App()
-    get!(app, "/res") do req
+    route!(app, :get, "/res") do req
         json((id=1, name="Alice"))
     end
     route!(app, :post, "/res", req -> json((id=1, name="Alice")))
-    get!(app, "/empty") do req; Response(204, Pair{String,String}[], "") end
-    get!(app, "/raw") do req; "plain" end
-    get!(app, "/pre") do req
+    route!(app, :get, "/empty") do req; Response(204, Pair{String,String}[], "") end
+    route!(app, :get, "/raw") do req; "plain" end
+    route!(app, :get, "/pre") do req
         Response(200, ["etag" => "\"custom\""], "x")
     end
-    use!(app, etag())
+    app = use(app, etag())
     client = Mongoose.FakeTransport(app)
 
     @testset "ETag generation" begin
@@ -74,18 +74,18 @@ end
 
 @testset "ETag on the wire (live server)" begin
     s = App()
-    get!(s, "/data") do req
+    route!(s, :get, "/data") do req
         text("etag me")
     end
-    get!(s, "/get-only") do req
+    route!(s, :get, "/get-only") do req
         text("no head here")
     end
     # HEAD must be registered explicitly (no auto-HEAD fallback); mirroring
     # the GET body means it validates the same representation.
-    head!(s, "/data") do req
+    route!(s, :head, "/data") do req
         text("etag me")
     end
-    use!(s, etag())
+    s = use(s, etag())
     with_server(s) do port
         r = HTTP.get("http://127.0.0.1:$port/data"; status_exception=false)
         @test r.status == 200
@@ -116,14 +116,14 @@ end
 
 @testset "HEAD through compress + etag (live; explicit head! route)" begin
     s = App()
-    get!(s, "/payload") do req
+    route!(s, :get, "/payload") do req
         text(repeat("All partial functions are structured transformations. ", 20))
     end
-    head!(s, "/payload") do req
+    route!(s, :head, "/payload") do req
         text(repeat("All partial functions are structured transformations. ", 20))
     end
-    use!(s, etag())          # registered outside compress: hashes wire bytes
-    use!(s, compress(min_size_bytes=64))
+    s = use(s, etag())          # registered outside compress: hashes wire bytes
+    s = use(s, compress(min_size_bytes=64))
     with_server(s) do port
         # Fresh connection per probe (HTTP.jl gzip pooling wedges otherwise).
         g = HTTP.get("http://127.0.0.1:$port/payload"; status_exception=false,

@@ -97,7 +97,7 @@ Create a CORS middleware. `origins` accepts `"*"`, a single origin, or a
 
 # Example
 ```julia
-use!(app, cors(origins=["https://myapp.com", "https://admin.myapp.com"],
+app = use(app, cors(origins=["https://myapp.com", "https://admin.myapp.com"],
                allow_credentials=true, max_age_seconds=600))
 ```
 """

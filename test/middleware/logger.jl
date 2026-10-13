@@ -2,8 +2,8 @@
     @testset "Logs to buffer" begin
         io = IOBuffer()
         s = App()
-        get!(s, "/logged") do req; text("ok") end
-        use!(s, logger(output=io))
+        route!(s, :get, "/logged") do req; text("ok") end
+        s = use(s, logger(output=io))
 
         with_server(s) do port
             HTTP.get("http://127.0.0.1:$port/logged"; status_exception=false)
@@ -17,8 +17,8 @@
     @testset "Structured JSON logging" begin
         io = IOBuffer()
         s = App()
-        get!(s, "/json-log") do req; text("ok") end
-        use!(s, logger(output=io, structured=true))
+        route!(s, :get, "/json-log") do req; text("ok") end
+        s = use(s, logger(output=io, structured=true))
 
         with_server(s) do port
             HTTP.get("http://127.0.0.1:$port/json-log"; status_exception=false)
@@ -34,8 +34,8 @@
     @testset "Threshold filtering" begin
         io = IOBuffer()
         s = App()
-        get!(s, "/fast") do req; text("ok") end
-        use!(s, logger(output=io, threshold_ms=10000))  # 10 seconds — nothing logged
+        route!(s, :get, "/fast") do req; text("ok") end
+        s = use(s, logger(output=io, threshold_ms=10000))  # 10 seconds — nothing logged
 
         with_server(s) do port
             HTTP.get("http://127.0.0.1:$port/fast"; status_exception=false)
@@ -46,8 +46,8 @@
     @testset "Throwing handler is logged as 500" begin
         io = IOBuffer()
         s = App()
-        get!(s, "/boom") do req; error("boom") end
-        use!(s, logger(output=io))
+        route!(s, :get, "/boom") do req; error("boom") end
+        s = use(s, logger(output=io))
 
         with_server(s) do port
             HTTP.get("http://127.0.0.1:$port/boom"; status_exception=false)
@@ -62,8 +62,8 @@ end
 @testset "Control characters are sanitized (log injection)" begin
     io = IOBuffer()
     s = App()
-    get!(s, "/x") do req; text("ok") end
-    use!(s, logger(output=io))
+    route!(s, :get, "/x") do req; text("ok") end
+    s = use(s, logger(output=io))
     FakeTransport(s)(:get, "/x\x1b[31mHACK\x0aINJECTED")
     out = String(take!(io))
     @test !occursin('\x1b', out)
@@ -71,8 +71,8 @@ end
 
     io2 = IOBuffer()
     s2 = App()
-    get!(s2, "/x") do req; text("ok") end
-    use!(s2, logger(output=io2, structured=true))
+    route!(s2, :get, "/x") do req; text("ok") end
+    s2 = use(s2, logger(output=io2, structured=true))
     FakeTransport(s2)(:get, "/x\x1b[31m")
     for line in filter(!isempty, split(String(take!(io2)), '\n'))
         JSON.parse(line)                     # must remain valid JSON

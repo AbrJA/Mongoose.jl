@@ -1,7 +1,7 @@
 @testset "Error handling" begin
     @testset "Handler exception returns 500" begin
         s = App()
-        get!(s, "/crash") do req; error("boom") end
+        route!(s, :get, "/crash") do req; error("boom") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/crash"; status_exception=false)
             @test resp.status == 500
@@ -10,7 +10,7 @@
 
     @testset "404 for unmatched routes" begin
         s = App()
-        get!(s, "/exists") do req; text("ok") end
+        route!(s, :get, "/exists") do req; text("ok") end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/nope"; status_exception=false)
             @test resp.status == 404
@@ -19,7 +19,7 @@
 
     @testset "413 early response carries X-Request-Id" begin
         s = App(max_body_bytes=1024)
-        post!(s, "/echo") do req; text(req.body) end
+        route!(s, :post, "/echo") do req; text(req.body) end
         with_server(s) do port
             resp = HTTP.post("http://127.0.0.1:$port/echo";
                 body=repeat("x", 4096),
@@ -32,9 +32,9 @@
 
     @testset "Malformed bodies map to 400/415" begin
         s = App()
-        post!(s, "/j") do req; json(parsejson(req)) end
-        post!(s, "/f") do req; parseform(req); text("form ok") end
-        post!(s, "/m") do req; parsemultipart(req); text("multipart ok") end
+        route!(s, :post, "/j") do req; json(parsejson(req)) end
+        route!(s, :post, "/f") do req; parseform(req); text("form ok") end
+        route!(s, :post, "/m") do req; parsemultipart(req); text("multipart ok") end
 
         with_server(s) do port
             # Invalid JSON → 400 (was 500).
@@ -56,10 +56,10 @@
         end
     end
 
-    @testset "Custom error handler via onerror!" begin
+    @testset "Custom error handler via trap" begin
         s = App()
-        get!(s, "/") do req; text("ok") end
-        onerror!(s, 404) do req
+        route!(s, :get, "/") do req; text("ok") end
+        s = trap(s, 404) do req
             text("custom 404"; status=404)
         end
         with_server(s) do port
@@ -76,12 +76,12 @@
         end
 
         s = App()
-        get!(s, "/teapot") do req; throw(ImATeapotError("short and stout")) end
-        get!(s, "/missing") do req; throw(NotFoundError("user 9")) end
-        get!(s, "/conflict") do req; throw(ConflictError("duplicate")) end
-        post!(s, "/valid") do req; validate(req, ErrUser) end
+        route!(s, :get, "/teapot") do req; throw(ImATeapotError("short and stout")) end
+        route!(s, :get, "/missing") do req; throw(NotFoundError("user 9")) end
+        route!(s, :get, "/conflict") do req; throw(ConflictError("duplicate")) end
+        route!(s, :post, "/valid") do req; validate(req, ErrUser) end
 
-        onerror!(s, 409) do req
+        s = trap(s, 409) do req
             json(Dict("err" => "custom conflict page"); status=409)
         end
 
@@ -109,12 +109,12 @@
         end
     end
 
-    @testset "onerror! beats automatic HTTPError" begin
+    @testset "trap beats automatic HTTPError" begin
         s = App()
-        onerror!(s, NotFoundError) do req, e
+        s = trap(s, NotFoundError) do req, e
             json(Dict("err" => "custom: $(e.message)"); status=404)
         end
-        get!(s, "/boom") do req; throw(NotFoundError("oops")) end
+        route!(s, :get, "/boom") do req; throw(NotFoundError("oops")) end
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/boom"; status_exception=false)
             @test resp.status == 404

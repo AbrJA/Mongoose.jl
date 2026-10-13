@@ -6,11 +6,11 @@
     this protocol; they never inspect internal fields.
 
     Required protocol for HTTP dispatch:
-    - `route!(r::R, method, path, handler; middleware=AbstractMiddleware[], metadata=nothing) → r`
+    - `route!(r::R, method, path, handler; middleware=(), metadata=nothing) → r`
       (register an HTTP route; the router stores the handler inside an
       `Endpoint` and never interprets it. The `App` layer normalizes
-      `middleware` to a vector before delegating, so a router may assume an
-      `AbstractVector`)
+      `middleware` to an immutable tuple before delegating, so a router may
+      assume a `Tuple`)
     - `matchroute(r::R, method, path)`                → a `RouteResult`
       (`Matched` / `NoMatch` / `MethodMismatch{allowed}` — 404/405 and the
       `Allow` set are resolved by the router at match time)
@@ -25,8 +25,12 @@
 
     Optional capabilities (safe defaults are provided):
     - `haswsroutes(r::R) → Bool`                   (default: `false`)
-    - `ws!(r::R, path; ...)`                         (no default)
+    - `ws!(r::R, path; ...)`                         (no default). The endpoint
+      callbacks receive `(msg, client)`, `(req, client)`, and `(client)` where
+      `client` is a [`WSClient`](@ref)
     - `getwsendpoint(r::R, uri)`                    (default: `nothing`)
+    - `matchws(r::R, uri)` → `(endpoint, params)`   (default: exact match with
+      empty params; override for parametric WS routes)
     - `length(r::R)`                            (default: `0`)
 
     The default implementation is `Router` in `router.jl`.
@@ -44,9 +48,10 @@ abstract type AbstractRouter end
 # ── RouteResult — the exhaustive router match (Ciro/Keel-style ADT) ──────────
 
 """
-    RouteResult — outcome of `matchroute`: `Matched`, `NoMatch`, or
-    `MethodMismatch{allowed}` (the last carries the route's method bitmask,
-    so 405 `Allow` needs no secondary lookup).
+    RouteResult — outcome of `matchroute`: `Matched`, `NoMatch`,
+    `MethodMismatch{allowed}` (carries the route's method bitmask, so 405
+    `Allow` needs no secondary lookup), or `ParamMismatch` (the path matched a
+    typed pattern but a capture failed to parse → 400).
 """
 abstract type RouteResult end
 
@@ -66,6 +71,16 @@ end
 
 """No route matched the path."""
 struct NoMatch <: RouteResult end
+
+"""
+    ParamMismatch <: RouteResult
+
+The path structurally matched a parametric route but a typed capture could not
+be parsed (`/users/abraham` against `/users/:id::Int`); the dispatch layer
+answers 400. Reported only when no other route (including a later pattern or
+the `"*"` catch-all) actually serves the path.
+"""
+struct ParamMismatch <: RouteResult end
 
 """
     MethodMismatch{allowed::UInt8} <: RouteResult
@@ -163,7 +178,7 @@ function ws!(router::AbstractRouter, path::AbstractString; kwargs...)
     throw(MethodError(ws!, (router, path)))
 end
 
-# Positional-handler sugar, mirroring the HTTP DSL (`get!(app, path, handler)`).
+# Positional-handler sugar, mirroring the HTTP DSL (`route!(app, :get, path, handler)`).
 ws!(router::AbstractRouter, path::AbstractString, handler::Function; kwargs...) =
     ws!(router, path; on_message=handler, kwargs...)
 
@@ -174,6 +189,21 @@ Resolve the WebSocket endpoint registered for `uri`, or `nothing` when the
 router serves no matching WS route. Defaults to `nothing`.
 """
 getwsendpoint(::AbstractRouter, ::AbstractString) = nothing
+
+"""
+    matchws(router, uri) → Union{Nothing, Tuple{endpoint, params}}
+
+Optional WebSocket capability: resolve the endpoint serving `uri` together
+with its typed route parameters (a `NamedTuple`, empty for exact routes).
+Defaults to the exact [`getwsendpoint`](@ref) result; routers with parametric
+WebSocket routes override it. `nothing` means "no WebSocket route matches" and
+the request falls through to the HTTP pipeline.
+"""
+function matchws(router::AbstractRouter, uri::AbstractString)
+    endpoint = getwsendpoint(router, uri)
+    endpoint === nothing && return nothing
+    return (endpoint, NamedTuple())
+end
 
 Base.length(::AbstractRouter) = 0
 

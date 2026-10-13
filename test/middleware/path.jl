@@ -1,8 +1,8 @@
 @testset "Path-scoped middleware" begin
     s = App()
-    get!(s, "/public") do req; text("public") end
-    get!(s, "/admin/panel") do req; text("admin") end
-    use!(s, bearer(t -> t == "secret"); paths=["/admin"])
+    route!(s, :get, "/public") do req; text("public") end
+    route!(s, :get, "/admin/panel") do req; text("admin") end
+    s = use(s, bearer(t -> t == "secret"); paths=["/admin"])
 
     with_server(s) do port
         resp = HTTP.get("http://127.0.0.1:$port/public"; status_exception=false)
@@ -18,12 +18,12 @@
     end
 end
 
-@testset "use! paths= input forms" begin
+@testset "use paths= input forms" begin
     for paths in ("/admin", ("/admin",), ["/admin"], [SubString("/admin/x", 1, 6)])
         app = App()
-        get!(app, "/public") do req; text("public") end
-        get!(app, "/admin/panel") do req; text("admin") end
-        use!(app, bearer(t -> t == "secret"); paths=paths)
+        route!(app, :get, "/public") do req; text("public") end
+        route!(app, :get, "/admin/panel") do req; text("admin") end
+        app = use(app, bearer(t -> t == "secret"); paths=paths)
         client = Mongoose.FakeTransport(app)
         @test client(:get, "/public").status == 200
         @test client(:get, "/admin/panel").status == 401
@@ -33,21 +33,21 @@ end
 
 @testset "path prefixes match whole segments" begin
     app = App()
-    get!(app, "/api/users") do req; text("users") end
-    get!(app, "/apixyz") do req; text("other") end
-    use!(app, bearer(t -> t == "s"); paths=["/api"])
+    route!(app, :get, "/api/users") do req; text("users") end
+    route!(app, :get, "/apixyz") do req; text("other") end
+    app = use(app, bearer(t -> t == "s"); paths=["/api"])
     client = Mongoose.FakeTransport(app)
     @test client(:get, "/api/users").status == 401
     @test client(:get, "/apixyz").status == 200
 
     # Trailing slashes are normalized; "/" (or empty) means no filter.
     app2 = App()
-    get!(app2, "/api/users") do req; text("users") end
-    use!(app2, bearer(t -> t == "s"); paths=["/api/"])
+    route!(app2, :get, "/api/users") do req; text("users") end
+    app2 = use(app2, bearer(t -> t == "s"); paths=["/api/"])
     @test Mongoose.FakeTransport(app2)(:get, "/api/users").status == 401
 
     app3 = App()
-    get!(app3, "/api/users") do req; text("users") end
-    use!(app3, bearer(t -> t == "s"); paths=["/"])
+    route!(app3, :get, "/api/users") do req; text("users") end
+    app3 = use(app3, bearer(t -> t == "s"); paths=["/"])
     @test Mongoose.FakeTransport(app3)(:get, "/api/users").status == 401
 end

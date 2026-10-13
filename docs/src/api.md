@@ -26,6 +26,8 @@ url
 
 ```@docs
 Router
+StaticRouter
+@routes
 route!
 ws!
 freeze!
@@ -40,20 +42,22 @@ gethandler
 getendpoint
 haswsroutes
 getwsendpoint
+matchws
 Matched
 NoMatch
 MethodMismatch
+ParamMismatch
 RouteResult
 MethodMap
-post!
-patch!
-options!
-head!
 ```
 
-> `get!`, `put!`, and `delete!` are `Base` methods that Mongoose extends (the
-> other verbs are Mongoose exports). All accept `(server_or_router, path,
-> handler)` and the do-block form `get!(server, path) do req … end`.
+> Route registration is `route!(server_or_router, method, path, handler)`; the
+> do-block form is `route!(server, :get, path) do req … end`. `@routes` blocks
+> keep the short `get(...)`/`post(...)` names for compile-time static tables.
+>
+> WebSocket handshakes run through the middleware pipeline: global and
+> path-scoped middleware protect `ws!` endpoints exactly like HTTP, and
+> `on_open` receives the same `Request` (with DI services) the middleware saw.
 
 ## Request Processing
 
@@ -67,6 +71,7 @@ errorresponse
 runpipeline
 asmiddleware
 asmiddlewares
+asmiddlewaretuple
 attach!
 AbstractRequest
 ```
@@ -108,6 +113,7 @@ header
 service
 services
 withservices
+provide
 ```
 
 ## URI & String Utilities
@@ -124,7 +130,7 @@ statusreason
 ## Middleware
 
 ```@docs
-use!
+use
 cors
 ratelimit
 bearer
@@ -163,17 +169,17 @@ sse
 
 ```@docs
 Message
+WSClient
+sendws
 broadcastws
 ```
 
 ## Lifecycle
 
 ```@docs
-onerror!
-onstart!
-onstop!
-service!
-background!
+onstart
+onstop
+background
 serve!
 ```
 
@@ -186,6 +192,14 @@ TLSConfig
 
 ## Extensibility
 
+Exports are the consumer surface. Extension code imports exactly what it
+extends (required to add methods anyway):
+
+```julia
+import Mongoose: AbstractRouter, route!, matchroute, hasroute,
+    Matched, NoMatch, MethodMismatch, ParamMismatch, Endpoint, SingleEndpoint
+```
+
 ```@docs
 AbstractRouter
 SingleEndpoint
@@ -197,9 +211,9 @@ stop!
 FakeExecutor
 run!
 AbstractTransport
-canws
-cantls
-canstream
+supportsws
+supportstls
+supportsstream
 FakeTransport
 close!
 validate
@@ -243,4 +257,5 @@ errorstatus
 RouteError
 ServerError
 BindError
+trap
 ```

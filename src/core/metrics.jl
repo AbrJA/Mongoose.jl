@@ -56,10 +56,10 @@ mutable struct _MetricsShard
     )
 end
 
-mutable struct Metrics <: AbstractMiddleware
+struct Metrics{S} <: AbstractMiddleware
     shards::Vector{_MetricsShard}
     path::String
-    state::Union{Nothing,Function}   # set by `attach!` (server gauges)
+    state::S   # `Nothing` until `attach!` rebuilds it with the server gauges
 end
 
 @doc """
@@ -239,14 +239,14 @@ minimize lock contention under concurrent load.
 | `mongoose_bg_tasks` | gauge | abandoned timed-out handler tasks |
 | `mongoose_ws_frames_dropped` | gauge | WebSocket pushes dropped (slow readers) |
 
-Gauges are emitted once the middleware is registered (`use!` attaches the
+Gauges are emitted once the middleware is registered (`use` attaches the
 server); before that only the counter and histogram are exposed.
 
 # Example
 ```julia
-app = App(workers=4)
-use!(app, health())
-use!(app, metrics())   # exposes GET /metrics
+app = App(4)
+app = use(app, health())
+app = use(app, metrics())   # exposes GET /metrics
 
 start!(app; port=8080)
 ```
@@ -261,7 +261,7 @@ Prometheus `scrape_configs`:
 """
 function metrics(; path::String="/metrics")
     shards = [_MetricsShard() for _ in 1:_METRICS_SHARDS]
-    return Metrics(shards, path, nothing)
+    return Metrics{Nothing}(shards, path, nothing)
 end
 
 Base.show(io::IO, mw::Metrics) = print(io, "Metrics(path=", repr(mw.path), ")")

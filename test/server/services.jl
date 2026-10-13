@@ -1,11 +1,10 @@
-@testset "service!/inject" begin
+@testset "provide/inject" begin
     @testset "Service retrieved per request" begin
         s = App()
-        @test service!(s, :version, "1.0.0") === s
-        service!(s, :region, "us-east")
-        @test s.services.deps.version == "1.0.0"
-        @test s.services.deps.region == "us-east"
-        get!(s, "/version") do req
+        s = provide(s, (version="1.0.0", region="us-east"))
+        @test s.context.registries.services.version == "1.0.0"
+        @test s.context.registries.services.region == "us-east"
+        route!(s, :get, "/version") do req
             v = service(req, :version)
             text("v=$v")
         end
@@ -19,13 +18,13 @@ end
 @testset "Typed NamedTuple services" begin
     @testset "Val-typed access + missing service" begin
         s = App(services=(db="pool", retries=3))
-        @test s.services.deps.db == "pool"
-        get!(s, "/svc") do req
+        @test s.context.registries.services.db == "pool"
+        route!(s, :get, "/svc") do req
             db = service(req, Val(:db))       # type-stable access
             retries = service(req, Val(:retries))
             text("db=$db retries=$retries")
         end
-        get!(s, "/missing") do req
+        route!(s, :get, "/missing") do req
             v = service(req, Val(:nope))
             text(v === nothing ? "none" : "got")
         end
@@ -41,9 +40,9 @@ end
 @testset "Typed Services" begin
     @testset "service(req, name, T) returns typed value" begin
         app = App()
-        service!(app, :version, "1.0.0")
+        app = provide(app, (version="1.0.0",))
 
-        get!(app, "/test") do req
+        route!(app, :get, "/test") do req
             v = service(req, :version, String)
             text(v)
         end
@@ -56,9 +55,9 @@ end
 
     @testset "service(req, name, T) throws on type mismatch" begin
         app = App()
-        service!(app, :count, 42)
+        app = provide(app, (count=42,))
 
-        get!(app, "/test") do req
+        route!(app, :get, "/test") do req
             service(req, :count, String)  # Wrong type
         end
 
@@ -70,7 +69,7 @@ end
     @testset "service(req, name, T) throws KeyError on missing" begin
         app = App()
 
-        get!(app, "/test") do req
+        route!(app, :get, "/test") do req
             service(req, :missing, String)
         end
 
@@ -80,10 +79,10 @@ end
     end
 end
 
-@testset "service!/inject integration" begin
+@testset "provide/inject integration" begin
     app = App()
-    service!(app, :db, () -> "database_connection")
-    get!(app, "/svc") do req
+    app = provide(app, (db=() -> "database_connection",))
+    route!(app, :get, "/svc") do req
         db = service(req, :db)
         text(db)
     end
@@ -98,7 +97,7 @@ end
 
 @testset "services()/withservices type-stable access" begin
     s = App(services=(db="pool", retries=3))
-    get!(s, "/svcs") do req
+    route!(s, :get, "/svcs") do req
         plain = services(req)
         @test plain.db == "pool"
         out = withservices(req) do svcs
@@ -114,4 +113,12 @@ end
     r0 = Mongoose.Request(:get, "/", Dict{String,String}(), Pair{String,String}[], "")
     @test services(r0) == NamedTuple()
     @test withservices(svcs -> svcs, r0) == NamedTuple()
+
+    # The registry type rides in Request{S}: access is statically typed.
+    r = Mongoose.Request(; method=:get, uri="/", services=(db="pool", retries=3))
+    @test r isa Mongoose.Request{<:NamedTuple}
+    @test @inferred(services(r)) == (db="pool", retries=3)
+    @test @inferred(service(r, Val(:db))) == "pool"
+    @test @inferred(service(r, Val(:nope))) === nothing
+    @test @inferred(withservices(svcs -> svcs.db, r)) == "pool"
 end

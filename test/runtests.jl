@@ -51,6 +51,8 @@ using Mongoose
         include("routing/query.jl")
         include("routing/pluggable.jl")
         include("routing/compiled.jl")
+        include("routing/static_router.jl")
+        include("routing/differential.jl")
     end
 
     # ── Middleware: each component against a live server ──
@@ -94,6 +96,9 @@ using Mongoose
     @testset "WebSocket" begin
         include("websocket/websocket.jl")
         include("websocket/edge.jl")
+        include("websocket/middleware.jl")
+        include("websocket/client.jl")
+        include("websocket/params.jl")
     end
 
     @testset "TLS" begin

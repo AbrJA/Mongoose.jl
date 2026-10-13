@@ -6,10 +6,11 @@ import JSON
 
 # Facade exports the user surface only; extension protocols live in Kernel.
 export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Response, StreamResponse,
+    StaticRouter, @routes,
     Plain, Html, Json, Css, Js, Xml, Binary,
-    start!, shutdown!, isrunning, url, route!, use!, serve!, onerror!, onstart!, onstop!,
+    start!, shutdown!, isrunning, url, route!, use, serve!, trap, onstart, onstop,
     context, Cookie, Headers, setcookie, parsecookies, parseform, header,
-    ws!, broadcastws, Message,
+    ws!, broadcastws, sendws, Message, WSClient,
     cors, ratelimit, bearer, apikey, basicauth, logger, health, metrics, security, compress, etag,
     RouteError, ServerError, BindError,
     HTTPError, errorstatus,
@@ -25,18 +26,17 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
     HTTPVersionNotSupportedError, VariantAlsoNegotiatesError, InsufficientStorageError,
     LoopDetectedError, NotExtendedError, NetworkAuthenticationRequiredError,
     TLSConfig,
-    service!, service, services, withservices, background!,
+    provide, service, services, withservices, background,
     AbstractExecutor, SyncExecutor, AsyncExecutor, FakeExecutor, run!,
     submit!, stop!, haspending,
     AbstractTransport, FakeTransport, close!,
-    canws, cantls, canstream,
+    supportsws, supportstls, supportsstream,
     AbstractMiddleware,
     group, group!, RouteGroup, mount!,
     freeze!, isfrozen,
     RequestContext, process,
     SSEWriter, emit, sse,
     json, parsejson, html, text, redirect,
-    post!, patch!, options!, head!,
     query, parsequery, body, parsemultipart, MultipartFile,
     validate, ValidationError
 
@@ -44,11 +44,11 @@ export App, AbstractServer, ServerConfig, Router, AbstractRouter, Request, Respo
 include("core/kernel.jl")      # nested module: protocol, router, middleware
 using .Kernel
 # Server/transport layers extend these core generics; `using` alone is read-only.
-import .Kernel: route!, ws!, post!, patch!, options!, head!,
+import .Kernel: route!, ws!,
     submit!, start!, stop!, haspending,
-    canws, cantls, canstream,
+    supportsws, supportstls, supportsstream,
     freeze!, isfrozen, matchroute, hasroute, haswsroutes, getwsendpoint,
-    attach!, getterminal
+    attach!, getterminal, errorresponse
 
 # --- FFI layer (C constants, structs, bindings) ---
 include("ffi/constants.jl")
@@ -93,6 +93,15 @@ end
         matchroute(router, :get,  "/users/1")
         matchroute(router, :post, "/data")
         matchroute(router, :get,  "/nonexistent")
+
+        # --- Static router (@routes) ---
+        static_router = @routes begin
+            get("/", req -> Response(200, Pair{String,String}[], ""))
+            get("/users/:id::Int", (req, id) -> Response(200, Pair{String,String}[], ""))
+        end
+        static_ctx = RequestContext(static_router)
+        process(static_ctx, Request(:get, "/", Dict{String,String}(), Pair{String,String}[], ""))
+        process(static_ctx, Request(:get, "/users/1", Dict{String,String}(), Pair{String,String}[], ""))
 
         # --- Response constructors & helpers ---
         Response(Plain, "ok")
@@ -139,12 +148,17 @@ end
         asheaders("x" => "1"); asheaders(Headers())
         asstrings(("/api",)); asmiddlewares((cors(),))
 
+        # --- WebSocket client handle ---
+        wsreq = Request(:get, "/ws", Dict{String,String}(), Pair{String,String}[], "")
+        WSClient(1, "/ws", NamedTuple(), wsreq, Dict{Symbol,Any}())
+        Message("hi")
+
         # --- App construction ---
         app = App()
-        use!(app, cors())
-        get!(app, "/") do r; json(Dict("ok" => true)) end
-        post!(app, "/data") do r; text("ok") end
-        errorresponse(app.errors, req, 500)
+        app = use(app, cors())
+        route!(app, :get, "/") do r; json(Dict("ok" => true)) end
+        route!(app, :post, "/data") do r; text("ok") end
+        errorresponse(app, req, 500)
 
         # --- HTTPError hierarchy + transport fallback ---
         err404 = NotFoundError("user missing")
@@ -152,8 +166,8 @@ end
         sprint(showerror, err404)
         ValidationError("bad field", "age")
         thrower = App()
-        get!(thrower, "/bad") do r; throw(BadRequestError("bad input")) end
-        get!(thrower, "/gone") do r; throw(NotFoundError("user 7")) end
+        route!(thrower, :get, "/bad") do r; throw(BadRequestError("bad input")) end
+        route!(thrower, :get, "/gone") do r; throw(NotFoundError("user 7")) end
         req_bad = Request(:get, "/bad", Dict{String,String}(), Pair{String,String}[], "")
         req_gone = Request(:get, "/gone", Dict{String,String}(), Pair{String,String}[], "")
         process(thrower.context, req_bad)
@@ -179,8 +193,6 @@ end
         is_handled_event(MG_EV_POLL)
     end
 
-    # Precompile C callback entry point
-    precompile(c_event_callback, (Ptr{Cvoid}, Cint, Ptr{Cvoid}))
 end
 
 end # module Mongoose

@@ -16,43 +16,16 @@ const DEFAULT_503 = Response(Plain, "503 Service Unavailable"; status=503)
 const DEFAULT_504 = Response(Plain, "504 Gateway Timeout"; status=504)
 
 """
-    errorresponse(errors, status) → Response
-
-Look up a custom error response, falling back to module defaults.
-`errors` maps HTTP status codes to a static `Response` or `Function(req)`.
-"""
-@inline function errorresponse(errors::Dict{Int,Union{Response,Function}},
-                                req::Union{Request,Nothing}, status::Int)::Response
-    custom = get(errors, status, nothing)
-    if custom !== nothing
-        custom isa Response && return custom
-        custom isa Function && req !== nothing && return try
-            result = custom(req)
-            result isa Response ? result : Response(Plain, "$status $(statusreason(status))"; status=status)
-        catch
-            Response(Plain, "$status $(statusreason(status))"; status=status)
-        end
-    end
-    status == 500 && return DEFAULT_500
-    status == 413 && return DEFAULT_413
-    status == 503 && return DEFAULT_503
-    status == 504 && return DEFAULT_504
-    return Response(Plain, "$status $(statusreason(status))"; status=status)
-end
-
-@inline errorresponse(errors::Dict{Int,Union{Response,Function}}, status::Int) =
-    errorresponse(errors, nothing, status)
-
-"""
-    RequestContext{R,M,E,S,H} — the app-level request-processing bundle.
+    RequestContext{R,M,G} — the app-level typed registry bundle.
 
     Collapses the config that `process` needs into one object so the
     pipeline seam has a single argument: the router, the app-global middleware
-    stack, the status→error-page map, the DI services, and the typed exception
-    handlers.
+    stack, and a `registries` NamedTuple holding the static error pages, the DI
+    services, the typed dynamic error and exception handlers, and the lifecycle
+    hooks (all concrete, so every call site is statically typed).
 
     The global middleware stack is stored as a **baked tuple snapshot** (built
-    once by `App`/`use!` and immutable afterward), so the per-request pipeline
+    once by `App`/`use` and immutable afterward), so the per-request pipeline
     never re-grows or re-walks a mutable vector and needs no
     `[global; scoped]` concatenation.
 
@@ -62,34 +35,118 @@ end
     resp = process(ctx, Request(:get, "/", Dict{String,String}(), Pair{String,String}[], ""))
     ```
 """
-struct RequestContext{R<:AbstractRouter,
-                      M<:Tuple,
-                      E,
-                      S<:NamedTuple,
-                      H<:AbstractDict{DataType,Function}}
+struct RequestContext{R<:AbstractRouter, M<:Tuple, G<:NamedTuple}
     router::R
     middlewares::M
-    errors::E
-    services::S
-    exception_handlers::H
+    registries::G
 end
 
 Base.show(io::IO, ctx::RequestContext) =
-    print(io, "RequestContext(", length(ctx.middlewares), " middleware, ", length(ctx.services), " services)")
+    print(io, "RequestContext(", length(ctx.middlewares), " middleware, ",
+          length(ctx.registries.services), " services)")
 
+# Untyped kwargs: annotations here would widen inference of the rebuilt context.
 function RequestContext(router::AbstractRouter;
-                        middlewares::Union{AbstractVector{<:AbstractMiddleware},Tuple}=(),
-                        errors::AbstractDict{Int}=Dict{Int,Union{Response,Function}}(),
-                        services::NamedTuple=NamedTuple(),
-                        exception_handlers::AbstractDict{DataType,Function}=Dict{DataType,Function}())
-    return RequestContext(router, Tuple(middlewares), errors, services, exception_handlers)
+                        middlewares=(),
+                        errors=Dict{Int,Response}(),
+                        services=NamedTuple(),
+                        error_handlers=(),
+                        exception_handlers=(),
+                        hooks_start=(),
+                        hooks_stop=())
+    errs = Dict{Int,Response}(k => v for (k, v) in errors)
+    registries = (; errors=errs, services, error_handlers, exception_handlers,
+                  hooks_start, hooks_stop)
+    return RequestContext(router, Tuple(middlewares), registries)
 end
+
+# Rebuild a context with a new registries bundle while keeping router/middleware.
+@inline function _rebuild_context(ctx::RequestContext{R,M}, registries::G2) where {R,M,G2<:NamedTuple}
+    return RequestContext{R,M,G2}(ctx.router, ctx.middlewares, registries)
+end
+
+"""
+    ErrorPage{F} — dynamic per-status error handler (`trap(app, status, f)`).
+
+    The handler type is a type parameter, so resolving a page is a typed call
+    (no abstract `Function` slot, trim-safe).
+"""
+struct ErrorPage{F}
+    status::Int
+    f::F
+end
+
+"""
+    ExceptionHandler{E,F} — typed exception handler (`trap(app, E, f)`).
+"""
+struct ExceptionHandler{E<:Exception,F}
+    f::F
+end
+
+@inline function _default_error(status::Int)::Response
+    status == 500 && return DEFAULT_500
+    status == 413 && return DEFAULT_413
+    status == 503 && return DEFAULT_503
+    status == 504 && return DEFAULT_504
+    return Response(Plain, "$status $(statusreason(status))"; status=status)
+end
+
+@inline _scan_error_handlers(::Tuple{}, req::Union{Request,Nothing}, status::Int) = nothing
+
+@inline function _scan_error_handlers(handlers::Tuple, req::Union{Request,Nothing}, status::Int)
+    h = handlers[1]
+    if h.status == status && req !== nothing
+        return _try_error_page(h, req)
+    end
+    return _scan_error_handlers(Base.tail(handlers), req, status)
+end
+
+@inline function _try_error_page(h::ErrorPage, req::Request)::Response
+    return try
+        result = h.f(req)
+        result isa Response ? result : _default_error(h.status)
+    catch
+        _default_error(h.status)
+    end
+end
+
+@inline _has_error_handler(::Tuple{}, status::Int) = false
+@inline function _has_error_handler(handlers::Tuple, status::Int)
+    handlers[1].status == status && return true
+    return _has_error_handler(Base.tail(handlers), status)
+end
+
+@inline _scan_exceptions(::Tuple{}, e, req) = (false, nothing)
+@inline function _scan_exceptions(handlers::Tuple, e, req)
+    found, res = _try_exception(handlers[1], e, req)
+    found && return (true, res)
+    return _scan_exceptions(Base.tail(handlers), e, req)
+end
+
+@inline _try_exception(h::ExceptionHandler{E,F}, e, req) where {E,F} =
+    e isa E ? (true, h.f(req, e)) : (false, nothing)
+
+"""
+    errorresponse(ctx, req, status) → Response
+
+Resolve the response for `status`: a static page first, then a dynamic handler
+(in registration order), then the built-in default.
+"""
+@inline function errorresponse(ctx::RequestContext, req::Union{Request,Nothing},
+                               status::Int)::Response
+    page = get(ctx.registries.errors, status, nothing)
+    page !== nothing && return page
+    dynamic = _scan_error_handlers(ctx.registries.error_handlers, req, status)
+    return dynamic === nothing ? _default_error(status) : dynamic
+end
+
+@inline errorresponse(ctx::RequestContext, status::Int) = errorresponse(ctx, nothing, status)
 
 # --- Auto-serialization of non-Response handler returns ---
 
 # Turn common handler returns into a Response (only the default fallback allocates).
 @inline format_response(r::Response) = r
-@inline format_response(s::StreamResponse) = s
+@inline format_response(s::StreamResponse{P}) where {P} = s
 @inline format_response(x::AbstractString) = Response(Plain, String(x))
 @inline format_response(x::Vector{UInt8}) =
     Response(200, ["Content-Type" => "application/octet-stream"], x)
@@ -112,45 +169,59 @@ end
 end
 
 """
-    _resolve_terminal(router, request) → (terminal, scoped_middleware)
+    EndpointCall{E,P} — a matched endpoint bound to its parameter tuple.
 
-Resolve a request into a `terminal` callable `(Request) → Response` and the
-route's scoped middleware. The terminal is always a short-circuiting
-404/405 producer when no handler matches, so middleware sees every request
-exactly like the handler path.
+    The terminal `_generic_terminal` returns on the generic dispatch path.
+    A closure over an abstractly-typed `ep` forces *two* dynamic calls per
+    request (the closure body and `invokeendpoint`); this parametric functor
+    keeps one at the terminal boundary and lets `invokeendpoint` specialize on
+    the concrete endpoint/param types.
 """
-function _resolve_terminal(router::AbstractRouter, request::Request)
-    compiled = getterminal(router, request)
-    if compiled !== nothing
-        # Frozen/compiled router: the terminal already fuses scoped middleware;
-        # `nothing` marks scoped as baked-in.
-        return compiled, nothing
-    end
+struct EndpointCall{E,P}
+    ep::E
+    params::P
+end
+@inline (c::EndpointCall)(r::Request) = invokeendpoint(c.ep, r, c.params)
 
+"""
+    _generic_terminal(router, request) → (terminal, scoped_middleware)
+
+Resolve a request through `matchroute` into a `terminal` callable
+`(Request) → Response` and the route's scoped middleware. The terminal is
+always a short-circuiting 404/405/400 producer when no handler matches, so
+middleware sees every request exactly like the handler path.
+
+Kept separate from the compiled path in `_process_pipeline` so the compiled
+terminal union never mixes with `EndpointCall` — mixing the two perturbed
+union-split codegen (measured +16 B/op on frozen parametric routes).
+"""
+function _generic_terminal(router::AbstractRouter, request::Request)
     result = matchroute(router, request.method, request.uri)
     if result isa NoMatch
-        return ((r) -> Response(Plain, "404 Not Found"; status=404)), AbstractMiddleware[]
+        return ((r) -> Response(Plain, "404 Not Found"; status=404)), ()
     elseif result isa MethodMismatch
-        return ((r) -> _method_not_allowed(result.allowed)), AbstractMiddleware[]
+        return ((r) -> _method_not_allowed(result.allowed)), ()
+    elseif result isa ParamMismatch
+        return ((r) -> Response(Plain, "400 Bad Request"; status=400)), ()
     end
 
-    ep = result.endpoint
-    params = result.params
-    return ((r) -> invokeendpoint(ep, r, params)), scopedmiddleware(ep)
+    return EndpointCall(result.endpoint, result.params), scopedmiddleware(result.endpoint)
 end
 
 # Built-in mapping for status-carrying exceptions: a custom error page for that
-# status (onerror!(app, status, …)) wins; otherwise reply with the message.
+# status (trap(app, status, …)) wins; otherwise reply with the message.
 @inline function _http_error_response(ctx::RequestContext, req::Request,
                                       status::Int, message::String,
                                       headers::Headers=Headers())::Response
-    haskey(ctx.errors, status) && return errorresponse(ctx.errors, req, status)
+    (haskey(ctx.registries.errors, status) || _has_error_handler(ctx.registries.error_handlers, status)) &&
+        return errorresponse(ctx, req, status)
     isempty(headers) && push!(headers, "Content-Type" => "text/plain")
     return Response(status, headers, message)
 end
 
-@inline _http_error_response(ctx::RequestContext, req::Request, e::HTTPError{status}) where {status} =
-    _http_error_response(ctx, req, status, e.message, e.headers)
+# A caught HTTPError is the abstract UnionAll; the field + @nospecialize keep it resolvable.
+@inline _http_error_response(ctx::RequestContext, req::Request, @nospecialize(e::HTTPError)) =
+    _http_error_response(ctx, req, e.status, e.message, e.headers)
 
 # --- HEAD body semantics (RFC 9110 §3.1) ---
 
@@ -164,7 +235,7 @@ so no `Content-Length` header is set by this function (hand-writing it would
 duplicate mongoose's own and force a non-native frame). Non-`Response`
 (streaming) results and already bodyless responses pass through unchanged.
 """
-function _apply_head_semantics(result)::Union{Response,StreamResponse}
+function _apply_head_semantics(result)
     result isa Response || return result
     isempty(result.body) && return result
     return Response(result.status, result.headers, "")
@@ -175,7 +246,7 @@ end
 
 Run the full pipeline: attach services to the request context, dispatch the
 request through any middleware then the router, apply custom error responses
-for 4xx/5xx results, and map thrown exceptions (typed `onerror!` handlers
+for 4xx/5xx results, and map thrown exceptions (typed `trap` handlers
 first, then the built-in `HTTPError`/`ValidationError` mapping).
 
 # Arguments
@@ -189,33 +260,41 @@ the 404/405 producers — so interception middleware (CORS, health,
 metrics) observes all requests.
 """
 function process(ctx::RequestContext, request::Request)::Union{Response,StreamResponse}
-    # Typed DI: a field assignment, not a Dict allocation. `service` and
-    # `withservices` read it; `context(req)` stays user-data-only.
-    request.services = ctx.services
+    request = _attach_services(request, ctx.registries.services)
+    return _guarded_process(ctx, request) do
+        _process_pipeline(ctx, request)
+    end
+end
+
+@inline function _process_pipeline(ctx::RequestContext, request::Request)
+    compiled = getterminal(ctx.router, request)
+    result = if compiled !== nothing
+        # Compiled path: the terminal already fuses route-scoped middleware,
+        # so the baked global stack wraps it directly.
+        isempty(ctx.middlewares) ? compiled(request) :
+            runpipeline(ctx.middlewares, request, compiled)
+    else
+        # Generic path: global stack + route-scoped stack, walked with a
+        # single cursor (no per-request [global; scoped] concatenation).
+        terminal, scoped = _generic_terminal(ctx.router, request)
+        runpipeline(ctx.middlewares, scoped, request, terminal)
+    end
+    # Auto-serialize non-Response returns (String/Dict/bytes/nothing/…).
+    return format_response(result)
+end
+
+# Shared exception/error-page guard for every dispatch strategy.
+@inline function _guarded_process(dispatch::F, ctx::RequestContext, request::Request) where {F}
     try
-        terminal, scoped = _resolve_terminal(ctx.router, request)
-        result = if scoped === nothing
-            # Compiled path: scoped middleware is already fused into the terminal,
-            # so the baked global stack wraps it directly.
-            isempty(ctx.middlewares) ? terminal(request) :
-                runpipeline(ctx.middlewares, request, terminal)
-        else
-            # Generic path: global stack + route-scoped stack, walked with a
-            # single cursor (no per-request [global; scoped] concatenation).
-            runpipeline(ctx.middlewares, scoped, request, terminal)
-        end
-
-        # Auto-serialize non-Response returns (String/Dict/bytes/nothing/…).
-        result = format_response(result)
-
-        if result isa Response && haskey(ctx.errors, result.status)
-            return errorresponse(ctx.errors, request, result.status)
+        result = dispatch()
+        if result isa Response &&
+           (haskey(ctx.registries.errors, result.status) || _has_error_handler(ctx.registries.error_handlers, result.status))
+            return errorresponse(ctx, request, result.status)
         end
         return result
     catch e
-        for (T, handler) in ctx.exception_handlers
-            e isa T && return handler(request, e)
-        end
+        found, res = _scan_exceptions(ctx.registries.exception_handlers, e, request)
+        found && return res
         e isa HTTPError     && return _http_error_response(ctx, request, e)
         e isa ValidationError && return _http_error_response(ctx, request, 422, e.message)
         rethrow(e)

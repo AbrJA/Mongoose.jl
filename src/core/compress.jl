@@ -81,12 +81,11 @@ end
         while length(mw.compressors) < tid
             push!(mw.compressors, nothing)
         end
-        c = @inbounds mw.compressors[tid]
-        if !(c isa Compressor)
-            c = Compressor(UInt8(6))
-            @inbounds mw.compressors[tid] = c
-        end
-        return c::Compressor
+        existing = @inbounds mw.compressors[tid]
+        existing isa Compressor && return existing
+        created = Compressor(UInt8(6))
+        @inbounds mw.compressors[tid] = created
+        return created
     end
 end
 
@@ -130,8 +129,8 @@ when the client sends `Accept-Encoding: gzip`.
 
 # Example
 ```julia
-use!(app, compress())
-use!(app, compress(min_size_bytes=256))  # More aggressive compression
+app = use(app, compress())
+app = use(app, compress(min_size_bytes=256))  # More aggressive compression
 ```
 """
 compress(; min_size_bytes::Int=1024) = Compress(min_size_bytes)

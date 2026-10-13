@@ -22,7 +22,8 @@
 # --- Route endpoint (handler + scoped middleware + metadata) ---
 
 """
-    Endpoint{F} — what a route owns: handler, scoped middleware, and metadata.
+    Endpoint{F,M,MD} — what a route owns: handler, scoped middleware, and
+    metadata (all type parameters, so the endpoint has no abstract fields).
 
     The handler's concrete type is a type parameter, so the endpoint can be
     invoked without a dynamic call when its type is known (custom routers,
@@ -32,17 +33,17 @@
     middleware. `middleware` applies to this route (in addition to app-global
     middleware); `metadata` is opaque and available for OpenAPI-style docs.
 """
-struct Endpoint{F,M<:Tuple}
+struct Endpoint{F,M<:Tuple,MD}
     handler::F
     middleware::M
-    metadata::Any
+    metadata::MD
 end
 
 function Endpoint(handler::F;
                   middleware=nothing,
                   metadata=nothing) where {F}
     mws = asmiddlewaretuple(middleware)
-    return Endpoint{F,typeof(mws)}(handler, mws, metadata)
+    return Endpoint{F,typeof(mws),typeof(metadata)}(handler, mws, metadata)
 end
 
 # --- Method Dispatch (struct fields instead of Dict for zero-allocation dispatch) ---
@@ -157,22 +158,41 @@ end
 abstract type AbstractCompiledDispatch end
 
 """
+    WSParamRoute{P,N,NS} — a WebSocket route whose path has `:`/`*` segments.
+
+    WebSocket routes carry no methods, so this is the WS analogue of
+    `ParamRoute`: `param_types`/`param_names` are concrete tuples and a match
+    returns a `NamedTuple` with those names. Used by the dynamic `Router`
+    (JIT profile); `StaticRouter` derives names from the path type instead.
+"""
+struct WSParamRoute{P<:Tuple,N,NS<:Tuple}
+    segments::Vector{PatternSegment}
+    endpoint::WSEndpoint
+    is_wildcard::Bool              # last segment is a `*` catch-all
+    param_pos::NTuple{N,Int}
+    param_types::P
+    param_names::NS
+end
+
+"""
     Router — default `AbstractRouter` implementation.
 
     Supports: static paths, typed parameters (`:id::Int`), string parameters
     (`:slug`), and a catch-all wildcard (`*path`, must be the last segment).
-    `freeze!` closes the route table (registration throws afterwards) and
-    compiles the closed table into a `CompiledDispatch` — the contract that
-    makes the router amenable to AOT/`--trim=safe` builds.
+    WebSocket routes support the same path grammar. `freeze!` closes the route
+    table (registration throws afterwards) and compiles the closed table into
+    a `CompiledDispatch` — the contract that makes the router amenable to
+    AOT/`--trim=safe` builds.
 """
 mutable struct Router <: AbstractRouter
     fixed::Dict{String,FixedRoute}
     param_routes::Vector{ParamRoute}
     ws_routes::Dict{String,WSEndpoint}
+    ws_param_routes::Vector{WSParamRoute}
     frozen::Bool
     compiled::Union{Nothing,AbstractCompiledDispatch}
     Router() = new(Dict{String,FixedRoute}(), ParamRoute[],
-                   Dict{String,WSEndpoint}(), false, nothing)
+                   Dict{String,WSEndpoint}(), WSParamRoute[], false, nothing)
 end
 
 """
@@ -205,8 +225,47 @@ table compiled). Custom `AbstractRouter`s default to `false`.
 """
 @inline isfrozen(r::Router) = r.frozen
 
-@inline haswsroutes(r::Router) = !isempty(r.ws_routes)
+@inline haswsroutes(r::Router) = !isempty(r.ws_routes) || !isempty(r.ws_param_routes)
 @inline getwsendpoint(r::Router, uri::String) = get(r.ws_routes, uri, nothing)
+
+"""
+    matchws(router::Router, uri) → Union{Nothing, Tuple{WSEndpoint, NamedTuple}}
+
+Exact WS routes win; parametric WS routes resolve in registration order with
+their captured parameters as a `NamedTuple` (typed by the route pattern).
+"""
+function matchws(router::Router, uri::AbstractString)
+    clean = stripquery(uri)
+    fixed = get(router.ws_routes, clean, nothing)
+    fixed !== nothing && return (fixed, NamedTuple())
+    if !isempty(router.ws_param_routes)
+        parts = String[String(seg) for seg in eachsplit(clean, '/'; keepempty=false)]
+        for route in router.ws_param_routes
+            params = _match_ws_params(route, parts)
+            params === nothing || return (route.endpoint, params)
+        end
+    end
+    return nothing
+end
+
+function _match_ws_params(route::WSParamRoute{P,N,NS}, parts::Vector{String}) where {P,N,NS}
+    nseg = length(route.segments)
+    n = length(parts)
+    if route.is_wildcard
+        n < nseg - 1 && return nothing
+    elseif n != nseg
+        return nothing
+    end
+    @inbounds for idx in 1:nseg
+        seg = route.segments[idx]
+        if !seg.is_param
+            parts[idx] == seg.text || return nothing
+        end
+    end
+    t = _extract(route.param_types, route.param_pos, parts)
+    t === nothing && return nothing
+    return NamedTuple{route.param_names}(t)
+end
 
 Base.length(r::Router)::Int = length(r.fixed) + length(r.param_routes)
 Base.isempty(r::Router)::Bool = isempty(r.fixed) && isempty(r.param_routes)
@@ -220,6 +279,22 @@ const PARAM_TYPES = Dict{String,Type}(
     "Float64" => Float64, "Float32" => Float32, "Bool" => Bool,
     "UInt" => UInt, "UInt64" => UInt64
 )
+
+"""
+    _param_type(type_str) → Type
+
+Resolve a route parameter type name (`"Int"`, `"Float64"`, …). An unknown
+name throws `RouteError`: a silently-`String`ed `:id::UUID` capture is a typo,
+not a routing policy. Custom capture types can be registered in
+`PARAM_TYPES`; they must support `tryparse(T, value)`.
+"""
+function _param_type(type_str::AbstractString)::Type
+    T = get(PARAM_TYPES, type_str, nothing)
+    T !== nothing && return T
+    supported = join(sort!(collect(keys(PARAM_TYPES))), ", ")
+    throw(RouteError("unknown route parameter type `$type_str`; supported: $supported " *
+                     "(register custom types in Mongoose.Kernel.PARAM_TYPES)"))
+end
 
 # --- Route Registration ---
 
@@ -240,9 +315,9 @@ OpenAPI-style tooling.
 Overlapping parametric routes resolve first-registered-first at dispatch;
 static routes always take precedence over parametric ones.
 """
-function route!(router::Router, method::Symbol, path::AbstractString, handler::Function;
+function route!(router::Router, method::Symbol, path::AbstractString, handler::F;
                 middleware=nothing,
-                metadata=nothing)
+                metadata=nothing) where {F<:Function}
     m = _normalize_method(method)
     router.frozen && throw(RouteError("router is frozen: registration is closed"))
     _register_route!(router, m, String(path),
@@ -250,20 +325,28 @@ function route!(router::Router, method::Symbol, path::AbstractString, handler::F
     return router
 end
 
-function route!(router::Router, method::AbstractString, path::AbstractString, handler::Function;
+function route!(router::Router, method::AbstractString, path::AbstractString, handler::F;
                 middleware=nothing,
-                metadata=nothing)
+                metadata=nothing) where {F<:Function}
     route!(router, _normalize_method(Symbol(method)), path, handler;
            middleware=middleware, metadata=metadata)
 end
 
-# Registration is cold: accept `:GET`/`:Get` by lowering once. Valid lowercase
-# methods (the hot-path protocol form) pass through the tuple scan untouched.
-@inline function _normalize_method(method::Symbol)::Symbol
+# Dispatch-safe normalization: `:GET` → `:get`; anything else becomes
+# `:unknown` (matches nothing, still reports Allow/405 instead of erroring).
+@inline function _match_method(method::Symbol)::Symbol
     method in VALID_METHODS && return method
+    method === :unknown && return :unknown
     lowered = Symbol(lowercase(String(method)))
-    lowered in VALID_METHODS || throw(RouteError("Invalid HTTP method: $method"))
-    return lowered
+    return lowered in VALID_METHODS ? lowered : :unknown
+end
+
+# Registration is cold: accept `:GET`/`:Get` by lowering once, and reject
+# anything that is not a supported HTTP method.
+@inline function _normalize_method(method::Symbol)::Symbol
+    m = _match_method(method)
+    m === :unknown && throw(RouteError("Invalid HTTP method: $method"))
+    return m
 end
 
 function _register_route!(router::Router, method::Symbol, path::String, endpoint::Endpoint)
@@ -321,8 +404,7 @@ function _parse_param_spec(spec::AbstractString)
     end
     name = String(spec[1:first(idx)-1])
     type_str = String(spec[last(idx)+1:end])
-    T = get(PARAM_TYPES, type_str, String)
-    return (name, T)
+    return (name, _param_type(type_str))
 end
 
 # Path segments are URL-decoded before parsing (RFC 3986): `+` stays a literal
@@ -379,23 +461,55 @@ function _matchroute(route::ParamRoute{P,N}, parts::Vector{String}) where {P,N}
     return _extract(route.param_types, route.param_pos, parts)
 end
 
+# True when the route matches structurally but a capture fails to parse (400).
+function _matchroute_parsefail(route::ParamRoute{P,N}, parts::Vector{String}) where {P,N}
+    nseg = length(route.segments)
+    n = length(parts)
+    if route.is_wildcard
+        n < nseg - 1 && return false
+    elseif n != nseg
+        return false
+    end
+    @inbounds for idx in 1:nseg
+        seg = route.segments[idx]
+        if !seg.is_param
+            parts[idx] == seg.text || return false
+        end
+    end
+    return _extract(route.param_types, route.param_pos, parts) === nothing
+end
+
+function _any_param_mismatch(router::Router, clean::AbstractString)::Bool
+    isempty(router.param_routes) && return false
+    parts = String[String(seg) for seg in eachsplit(clean, '/'; keepempty=false)]
+    for route in router.param_routes
+        _matchroute_parsefail(route, parts) && return true
+    end
+    return false
+end
+
 """
     matchroute(router, method, path) → RouteResult
 
 Resolve a request to its exhaustive outcome: `Matched(endpoint, handlers,
 params)` when the route serves the method, `NoMatch` when the path matches
-nothing, or `MethodMismatch{allowed}` carrying the route's method bitmask.
-Exact (static) matches win; parametric routes are scanned in registration
-order; the `"*"` catch-all is the final fallback. `HEAD` is served only by an
-explicit `head!` route — there is no auto-HEAD fallback.
+nothing, `MethodMismatch{allowed}` carrying the route's method bitmask, or
+`ParamMismatch` when a typed capture could not be parsed. Exact (static)
+matches win; parametric routes are scanned in registration order; the `"*"`
+catch-all is the final fallback. `HEAD` is served only by an explicit `head!`
+route — there is no auto-HEAD fallback. Unknown methods (`:unknown` from the
+transport, or any Symbol outside the supported seven) match no endpoint: a
+served path answers `405` with its `Allow` set, an unserved path answers `404`.
 """
 function matchroute(router::Router, method::Symbol, path::AbstractString)::RouteResult
-    m = _normalize_method(method)
+    m = _match_method(method)
     clean = stripquery(path)
     found = _find_route(router, clean)
-    found === nothing && return NoMatch()
+    if found === nothing
+        return _any_param_mismatch(router, clean) ? ParamMismatch() : NoMatch()
+    end
     mm, params = found
-    ep = resolve_method(mm, m)
+    ep = m === :unknown ? nothing : resolve_method(mm, m)
     ep === nothing && return MethodMismatch(method_bitmask(mm))
     return Matched(ep, mm, params)
 end
@@ -475,6 +589,8 @@ end
 end
 
 @inline function _find_route_no_wildcard(router::Router, clean::AbstractString)
+    # The catch-all lives under the literal "*" key; it owns no concrete path.
+    clean == "*" && return nothing
     fixed = get(router.fixed, clean, nothing)
     fixed !== nothing && return (fixed.handlers, ())
     if !isempty(router.param_routes)
@@ -495,76 +611,73 @@ function ws!(router::Router, path::AbstractString;
              on_close::Union{Function,Nothing}=nothing,
              allowed_origins=nothing)
     router.frozen && throw(RouteError("router is frozen: registration is closed"))
-    router.ws_routes[String(path)] = WSEndpoint(on_message=on_message, on_open=on_open,
-        on_close=on_close, allowed_origins=asstrings(allowed_origins))
+    endpoint = WSEndpoint(on_message=on_message, on_open=on_open,
+                          on_close=on_close, allowed_origins=asstrings(allowed_origins))
+    _register_ws!(router, String(path), endpoint)
     return router
 end
 
-# --- Method-specific helpers ---
-# FastAPI-style DSL: get!(router, "/path", handler).
-
-"""
-    get!(router_or_app, path, handler)  /  get!(handler, router_or_app, path)
-
-Register a GET route. Do-block syntax:
-```julia
-get!(app, "/users/:id::Int") do req, id
-    json(Dict("id" => id))
+# Exact paths go in the O(1) dict; `:`/`*` paths become ordered parametric
+# routes (re-registering the same pattern replaces its endpoint).
+function _register_ws!(router::Router, path::String, endpoint::WSEndpoint)
+    if !occursin(':', path) && !occursin('*', path)
+        router.ws_routes[path] = endpoint
+        return
+    end
+    segments = PatternSegment[]
+    parts = collect(eachsplit(path, '/'; keepempty=false))
+    for (idx, part) in enumerate(parts)
+        if startswith(part, '*')
+            idx == length(parts) ||
+                throw(RouteError("Wildcard '*$part' must be the last route segment"))
+            push!(segments, PatternSegment(String(part[2:end]), WildcardParam))
+        elseif startswith(part, ':')
+            name, T = _parse_param_spec(part[2:end])
+            push!(segments, PatternSegment(name, T))
+        else
+            push!(segments, PatternSegment(part))
+        end
+    end
+    pos = Int[]
+    types = Type[]
+    names = Symbol[]
+    for (i, seg) in enumerate(segments)
+        seg.is_param || continue
+        push!(pos, i)
+        push!(types, seg.T)
+        push!(names, Symbol(seg.text))
+    end
+    is_wildcard = !isempty(types) && types[end] === WildcardParam
+    route = WSParamRoute(segments, endpoint, is_wildcard,
+                         (pos...,), (types...,), (names...,))
+    existing = findfirst(r -> r.segments == segments, router.ws_param_routes)
+    if existing === nothing
+        push!(router.ws_param_routes, route)
+    else
+        router.ws_param_routes[existing] = route
+    end
+    return
 end
-```
-"""
-function Base.get!(r::Router, path::AbstractString, handler::Function)
-    route!(r, :get, path, handler); return r
-end
-Base.get!(f::Function, r::Router, path::AbstractString) = Base.get!(r, path, f)
 
-"""
-    post!(router_or_app, path, handler)
-"""
-function post!(r::Router, path::AbstractString, handler::Function)
-    route!(r, :post, path, handler); return r
-end
-post!(f::Function, r::Router, path::AbstractString) = post!(r, path, f)
+# --- Do-block convenience ---
+# `route!(router, :get, "/x") do req … end` mirrors the positional arg order.
 
-"""
-    put!(router_or_app, path, handler)
-"""
-function Base.put!(r::Router, path::AbstractString, handler::Function)
-    route!(r, :put, path, handler); return r
+function route!(f::Function, r::Router, method::Symbol, path::AbstractString;
+                middleware=nothing, metadata=nothing)
+    route!(r, method, path, f; middleware=middleware, metadata=metadata)
+    return r
 end
-Base.put!(f::Function, r::Router, path::AbstractString) = Base.put!(r, path, f)
 
-"""
-    patch!(router_or_app, path, handler)
-"""
-function patch!(r::Router, path::AbstractString, handler::Function)
-    route!(r, :patch, path, handler); return r
+function route!(f::Function, r::Router, method::AbstractString, path::AbstractString;
+                middleware=nothing, metadata=nothing)
+    route!(r, method, path, f; middleware=middleware, metadata=metadata)
+    return r
 end
-patch!(f::Function, r::Router, path::AbstractString) = patch!(r, path, f)
 
-"""
-    delete!(router_or_app, path, handler)
-"""
-function Base.delete!(r::Router, path::AbstractString, handler::Function)
-    route!(r, :delete, path, handler); return r
+function ws!(f::Function, r::Router, path::AbstractString; kwargs...)
+    ws!(r, path; on_message=f, kwargs...)
+    return r
 end
-Base.delete!(f::Function, r::Router, path::AbstractString) = Base.delete!(r, path, f)
-
-"""
-    options!(router_or_app, path, handler)
-"""
-function options!(r::Router, path::AbstractString, handler::Function)
-    route!(r, :options, path, handler); return r
-end
-options!(f::Function, r::Router, path::AbstractString) = options!(r, path, f)
-
-"""
-    head!(router_or_app, path, handler)
-"""
-function head!(r::Router, path::AbstractString, handler::Function)
-    route!(r, :head, path, handler); return r
-end
-head!(f::Function, r::Router, path::AbstractString) = head!(r, path, f)
 
 # --- Display ---
 

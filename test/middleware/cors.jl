@@ -1,8 +1,8 @@
 @testset "CORS middleware" begin
     @testset "Preflight OPTIONS request (allowed origin)" begin
         s = App()
-        get!(s, "/api") do req; text("data") end
-        use!(s, cors())
+        route!(s, :get, "/api") do req; text("data") end
+        s = use(s, cors())
 
         with_server(s) do port
             resp = HTTP.request("OPTIONS", "http://127.0.0.1:$port/api";
@@ -19,8 +19,8 @@
 
     @testset "Bare OPTIONS is not a preflight and reaches the route" begin
         s = App()
-        options!(s, "/api") do req; text("options route") end
-        use!(s, cors())
+        route!(s, :options, "/api") do req; text("options route") end
+        s = use(s, cors())
 
         with_server(s) do port
             # No Origin / no Access-Control-Request-Method → regular request.
@@ -40,8 +40,8 @@
 
     @testset "Preflight rejected for foreign origin" begin
         s = App()
-        get!(s, "/api") do req; text("data") end
-        use!(s, cors(origins=["https://app.example"]))
+        route!(s, :get, "/api") do req; text("data") end
+        s = use(s, cors(origins=["https://app.example"]))
 
         with_server(s) do port
             ok = HTTP.request("OPTIONS", "http://127.0.0.1:$port/api";
@@ -61,8 +61,8 @@
 
     @testset "Preflight validates method and headers" begin
         s = App()
-        get!(s, "/api") do req; text("data") end
-        use!(s, cors(allow_methods="GET, POST", allow_headers="X-Custom, Content-Type", max_age_seconds=3600))
+        route!(s, :get, "/api") do req; text("data") end
+        s = use(s, cors(allow_methods="GET, POST", allow_headers="X-Custom, Content-Type", max_age_seconds=3600))
 
         with_server(s) do port
             # Allowed method + headers
@@ -88,8 +88,8 @@
 
     @testset "CORS headers on regular requests (origin echo)" begin
         s = App()
-        get!(s, "/api") do req; text("data") end
-        use!(s, cors(origins="https://example.com"))
+        route!(s, :get, "/api") do req; text("data") end
+        s = use(s, cors(origins="https://example.com"))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/api";
@@ -113,8 +113,8 @@
 
     @testset "Credentials mode reflects origin (no wildcard)" begin
         s = App()
-        get!(s, "/api") do req; text("data") end
-        use!(s, cors(origins=["https://app.example"], allow_credentials=true))
+        route!(s, :get, "/api") do req; text("data") end
+        s = use(s, cors(origins=["https://app.example"], allow_credentials=true))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/api";
@@ -131,8 +131,8 @@ end
     for origins in ("https://a.test", ("https://a.test",), ["https://a.test"],
                     [SubString("https://a.test/x", 1, 14)])
         app = App()
-        use!(app, cors(origins=origins))
-        get!(app, "/") do req; text("ok") end
+        app = use(app, cors(origins=origins))
+        route!(app, :get, "/") do req; text("ok") end
         client = Mongoose.FakeTransport(app)
 
         ok = client(:get, "/"; headers=["Origin" => "https://a.test"])

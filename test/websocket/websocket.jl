@@ -1,8 +1,8 @@
 @testset "WebSocket basic" begin
     @testset "Echo message" begin
-        s = App(workers=2)
-        get!(s, "/") do req; text("ok") end
-        ws!(s, "/ws/echo"; on_message=msg -> Message("Echo: $(msg.data)"))
+        s = App(2)
+        route!(s, :get, "/") do req; text("ok") end
+        ws!(s, "/ws/echo"; on_message = (msg, client) -> Message("Echo: $(msg.data)"))
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/echo") do ws
@@ -14,9 +14,9 @@
     end
 
     @testset "Multiple messages" begin
-        s = App(workers=2)
-        get!(s, "/") do req; text("ok") end
-        ws!(s, "/ws/multi"; on_message=msg -> Message("Got: $(msg.data)"))
+        s = App(2)
+        route!(s, :get, "/") do req; text("ok") end
+        ws!(s, "/ws/multi"; on_message = (msg, client) -> Message("Got: $(msg.data)"))
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/multi") do ws
@@ -31,9 +31,9 @@
 end
 
 @testset "WebSocket server-initiated push (broadcastws)" begin
-    s = App(workers=2)
-    get!(s, "/") do req; text("ok") end
-    ws!(s, "/ws/push"; on_message=msg -> Message("reply: $(msg.data)"))
+    s = App(2)
+    route!(s, :get, "/") do req; text("ok") end
+    ws!(s, "/ws/push"; on_message = (msg, client) -> Message("reply: $(msg.data)"))
 
     with_server(s) do port
         HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/push") do ws
@@ -48,9 +48,9 @@ end
     end
 
     @testset "push targets only the matching path" begin
-        s2 = App(workers=2)
-        ws!(s2, "/a"; on_message=msg -> Message("a"))
-        ws!(s2, "/b"; on_message=msg -> Message("b"))
+        s2 = App(2)
+        ws!(s2, "/a"; on_message = (msg, client) -> Message("a"))
+        ws!(s2, "/b"; on_message = (msg, client) -> Message("b"))
         with_server(s2) do port
             ch = Channel{String}(1)
             # Client A stays open while we push to /b only.
@@ -68,11 +68,11 @@ end
 @testset "WebSocket lifecycle callbacks" begin
     @testset "on_open callback" begin
         opened = Channel{Nothing}(1)
-        s = App(workers=2)
-        get!(s, "/") do req; text("ok") end
+        s = App(2)
+        route!(s, :get, "/") do req; text("ok") end
         ws!(s, "/ws/open";
-            on_message=msg -> Message("ok"),
-            on_open=(req) -> signal(opened))
+            on_message = (msg, client) -> Message("ok"),
+            on_open = (req, client) -> signal(opened))
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/open") do ws
@@ -86,11 +86,11 @@ end
 
     @testset "on_close callback" begin
         closed = Channel{Nothing}(1)
-        s = App(workers=2)
-        get!(s, "/") do req; text("ok") end
+        s = App(2)
+        route!(s, :get, "/") do req; text("ok") end
         ws!(s, "/ws/close";
-            on_message=msg -> Message("ok"),
-            on_close=() -> signal(closed))
+            on_message = (msg, client) -> Message("ok"),
+            on_close = client -> signal(closed))
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/close") do ws
@@ -107,9 +107,9 @@ end
 
 @testset "WebSocket special characters" begin
     @testset "Unicode messages" begin
-        s = App(workers=2)
-        get!(s, "/") do req; text("ok") end
-        ws!(s, "/ws/unicode"; on_message=msg -> Message(msg.data))
+        s = App(2)
+        route!(s, :get, "/") do req; text("ok") end
+        ws!(s, "/ws/unicode"; on_message = (msg, client) -> Message(msg.data))
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/unicode") do ws
@@ -122,9 +122,9 @@ end
     end
 
     @testset "Empty message" begin
-        s = App(workers=2)
-        get!(s, "/") do req; text("ok") end
-        ws!(s, "/ws/empty"; on_message=msg -> Message("len=$(length(msg.data))"))
+        s = App(2)
+        route!(s, :get, "/") do req; text("ok") end
+        ws!(s, "/ws/empty"; on_message = (msg, client) -> Message("len=$(length(msg.data))"))
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/empty") do ws
@@ -137,9 +137,9 @@ end
 end
 
 @testset "WebSocket concurrent connections" begin
-    s = App(workers=4)
-    get!(s, "/") do req; text("ok") end
-    ws!(s, "/ws/concurrent"; on_message=msg -> Message("Reply: $(msg.data)"))
+    s = App(4)
+    route!(s, :get, "/") do req; text("ok") end
+    ws!(s, "/ws/concurrent"; on_message = (msg, client) -> Message("Reply: $(msg.data)"))
 
     with_server(s) do port
         tasks = [@async begin
@@ -160,7 +160,7 @@ end
 @testset "WS origin allowlist" begin
     s = App()
     ws!(s, "/ws/guard";
-        on_message=msg -> Message("ok"),
+        on_message = (msg, client) -> Message("ok"),
         allowed_origins=["https://allowed.example"])
 
     with_server(s) do port
@@ -183,8 +183,8 @@ end
         s = App()
         opened = Ref(false)
         ws!(s, "/ws/hook";
-            on_message=msg -> Message("x"),
-            on_open=req -> (opened[] = true; true))
+            on_message = (msg, client) -> Message("x"),
+            on_open = (req, client) -> (opened[] = true; true))
 
         with_server(s) do port
             resp = HTTP.get("http://127.0.0.1:$port/ws/hook"; status_exception=false)
@@ -196,11 +196,11 @@ end
 
     @testset "Idle timeout closes the client" begin
         # Idle sweep drops server-side registration; assert the server-observable contract.
-        s = App(workers=2, ws_idle_timeout_ms=200)
+        s = App(2; ws_idle_timeout_ms=200)
         closed = Ref(false)
         ws!(s, "/ws/idle";
-            on_message=msg -> Message("x"),
-            on_close=() -> (closed[] = true))
+            on_message = (msg, client) -> Message("x"),
+            on_close = client -> (closed[] = true))
 
         with_server(s) do port
             HTTP.WebSockets.open("ws://127.0.0.1:$port/ws/idle") do ws
@@ -258,8 +258,8 @@ end
 @testset "Control frames are answered exactly once" begin
     # Regression: mongoose auto-replies to PING (PONG) and CLOSE (echo +
     # drain); the control handler must not reply a second time.
-    s = App(workers=2)
-    ws!(s, "/ws/ctl"; on_message=msg -> Message(msg.data))
+    s = App(2)
+    ws!(s, "/ws/ctl"; on_message = (msg, client) -> Message(msg.data))
     with_server(s) do port
         sock = Sockets.connect("127.0.0.1", port)
         write(sock, "GET /ws/ctl HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\n" *
@@ -284,9 +284,9 @@ end
 
 @testset "slow WS reader: pushes are capped and counted" begin
     cap = 64 * 1024
-    s = App(workers=2, send_buffer_bytes=cap)
-    ws!(s, "/ws"; on_message=msg -> Message(msg.data))
-    get!(s, "/flood") do req
+    s = App(2; send_buffer_bytes=cap)
+    ws!(s, "/ws"; on_message = (msg, client) -> Message(msg.data))
+    route!(s, :get, "/flood") do req
         for _ in 1:500
             broadcastws(s, "/ws", "x"^1024)
         end
@@ -312,8 +312,8 @@ end
 end
 
 @testset "Protocol violations drop the connection" begin
-    s = App(workers=2)
-    ws!(s, "/ws"; on_message=msg -> Message(msg.data))
+    s = App(2)
+    ws!(s, "/ws"; on_message = (msg, client) -> Message(msg.data))
 
     with_server(s) do port
         cases = [

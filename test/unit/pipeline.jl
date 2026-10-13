@@ -1,6 +1,6 @@
 @testset "Standalone pipeline (no server, Kernel seam)" begin
     r = Router()
-    get!(r, "/hi") do req; text("hello") end
+    route!(r, :get, "/hi") do req; text("hello") end
     route!(r, :get, "/users/:id::Int", (req, id) -> text("user $id"))
 
     req = Request(:get, "/hi", Dict{String,String}(), Pair{String,String}[], "")
@@ -14,22 +14,23 @@
     @test res2.body == "user 7"
 
     # Custom error response + middleware + services all apply without a server.
-    errs = Dict{Int,Union{Response,Function}}(404 => req -> Response(404, Pair{String,String}[], "custom 404"))
+    errs = Dict{Int,Response}()
+    eh = (Mongoose.Kernel.ErrorPage(404, req -> Response(404, Pair{String,String}[], "custom 404")),)
     svcs = (db="pool",)
     mws = Mongoose.AbstractMiddleware[logger(threshold_ms=0, output=devnull)]
-    ctx2 = Mongoose.RequestContext(r; middlewares=mws, errors=errs, services=svcs)
+    ctx2 = Mongoose.RequestContext(r; middlewares=mws, errors=errs, error_handlers=eh, services=svcs)
     res3 = Mongoose.process(ctx2,
         Request(:get, "/nope", Dict{String,String}(), Pair{String,String}[], ""))
     @test res3.status == 404
     @test res3.body == "custom 404"
 
-    req4 = Request(:get, "/hi", Dict{String,String}(), Pair{String,String}[], "")
+    seen = Ref{Any}(nothing)
+    route!(r, :get, "/svc", req -> (seen[] = Mongoose.service(req, Val(:db)); text("ok")))
+    req4 = Request(:get, "/svc", Dict{String,String}(), Pair{String,String}[], "")
     Mongoose.process(ctx2, req4)
-    # Typed DI: `process` sets the request's services field directly — no
-    # Dict{Symbol,Any} is allocated and `context(req)` stays untouched.
-    @test req4.services.db == "pool"
-    @test Mongoose.services(req4).db == "pool"
-    @test Mongoose.service(req4, Val(:db)) == "pool"
+    # Typed DI: `process` attaches the concrete registry to the dispatched
+    # request — no Dict{Symbol,Any} and `context(req)` stays untouched.
+    @test seen[] == "pool"
     @test req4.context === nothing
 end
 
@@ -61,10 +62,10 @@ end
 
     @testset "End-to-end via the pipeline" begin
         r = Router()
-        get!(r, "/raw", req -> "raw text")
-        get!(r, "/dict", req -> Dict("k" => 1))
-        get!(r, "/nil", req -> nothing)
-        rs = Dict{Int,Union{Response,Function}}()
+        route!(r, :get, "/raw", req -> "raw text")
+        route!(r, :get, "/dict", req -> Dict("k" => 1))
+        route!(r, :get, "/nil", req -> nothing)
+        rs = Dict{Int,Response}()
         mk(p) = Request(:get, p, Dict{String,String}(), Pair{String,String}[], "")
 
         resp = Mongoose.process(Mongoose.RequestContext(r; errors=rs), mk("/raw"))
@@ -81,9 +82,9 @@ end
     @testset "HEAD without an explicit route is 405 (generic & frozen)" begin
         for frozen in (false, true)
             r = Router()
-            get!(r, "/dict", req -> Dict("k" => 1))
+            route!(r, :get, "/dict", req -> Dict("k" => 1))
             frozen && freeze!(r)
-            rs = Dict{Int,Union{Response,Function}}()
+            rs = Dict{Int,Response}()
 
             resp = Mongoose.process(Mongoose.RequestContext(r; errors=rs),
                 Request(:head, "/dict", Dict{String,String}(), Pair{String,String}[], ""))
@@ -100,8 +101,8 @@ end
 
     @testset "Explicit HEAD route: handler body preserved at the seam" begin
         r = Router()
-        head!(r, "/ping", req -> text("pong"))
-        rs = Dict{Int,Union{Response,Function}}()
+        route!(r, :head, "/ping", req -> text("pong"))
+        rs = Dict{Int,Response}()
         resp = Mongoose.process(Mongoose.RequestContext(r; errors=rs),
             Request(:head, "/ping", Dict{String,String}(), Pair{String,String}[], ""))
         # The seam preserves what the handler returned; the transport strips

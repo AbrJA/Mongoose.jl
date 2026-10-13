@@ -39,6 +39,23 @@ end
         @test_throws RouteError route!(r, :invalid, "/bad", req -> text(""))
     end
 
+    @testset "Unknown parameter type" begin
+        r = Router()
+        err = try
+            route!(r, :get, "/u/:id::UUID", req -> text(""))
+        catch e
+            e
+        end
+        @test err isa RouteError
+        @test occursin("unknown route parameter type", err.msg)
+        @test occursin("Int", err.msg)             # lists the supported names
+        @test_throws RouteError route!(r, :get, "/u/:id::NotAType", req -> text(""))
+        # The @routes macro path must reject the same typo.
+        @test_throws LoadError @eval @routes begin
+            get("/u/:id::UUID", req -> text(""))
+        end
+    end
+
     @testset "Parametric routes" begin
         r = Router()
         route!(r, :get, "/users/:id::Int", (req, id) -> text("user $id"))

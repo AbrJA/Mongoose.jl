@@ -48,7 +48,7 @@ struct _PassMw <: AbstractMiddleware
 end
 (mw::_PassMw)(req::Request, next::Function) = (push!(mw.sink, mw.tag); next())
 
-const ERRORS = Dict{Int,Union{Response,Function}}()
+const ERRORS = Dict{Int,Response}()
 
 @testset "Compiled dispatch: 404/405/HEAD parity (frozen vs generic)" begin
     # Same routes: one frozen (compiled), one open (generic dispatch).
@@ -65,7 +65,7 @@ const ERRORS = Dict{Int,Union{Response,Function}}()
         (:get,    "/users/alice"),
         (:get,    "/org/julia/repo/mongoose"),
         (:get,    "/temp/36.6"),                    # Float64
-        (:get,    "/temp/abc"),                     # parse fail → 404
+        (:get,    "/temp/abc"),                     # parse fail → 400
         (:get,    "/flag/true"), (:get, "/flag/false"), (:get, "/flag/maybe"),
         (:get,    "/id/42"), (:get, "/id/-1"),
         (:get,    "/api/v2/users/5/posts/10"),
@@ -97,9 +97,9 @@ end
 @testset "Compiled dispatch: trailing literal cannot match an exhausted path" begin
     # Regression: a shorter path must not alias a longer route's trailing literal.
     r = Router()
-    post!(r, "/api/orders/:id::Int/payments") do req, id; text("pay:$id") end
-    get!(r, "/api/orders/:id::Int") do req, id; text("get:$id") end
-    post!(r, "/api/orders/:id::Int/cancel") do req, id; text("cancel:$id") end
+    route!(r, :post, "/api/orders/:id::Int/payments") do req, id; text("pay:$id") end
+    route!(r, :get, "/api/orders/:id::Int") do req, id; text("get:$id") end
+    route!(r, :post, "/api/orders/:id::Int/cancel") do req, id; text("cancel:$id") end
     freeze!(r)
 
     resp = process(mkctx(r), mkreq(:get, "/api/orders/1"))
@@ -143,7 +143,7 @@ end
 
 @testset "Compiled dispatch: getterminal contract" begin
     r = Router()
-    get!(r, "/a", req -> text("a"))
+    route!(r, :get, "/a", req -> text("a"))
     # Unfrozen routers fall back to the generic pipeline.
     @test getterminal(r, mkreq(:get, "/a")) === nothing
     freeze!(r)
@@ -158,7 +158,7 @@ end
 
     # Frozen routers still reject registration.
     @test_throws RouteError route!(r, :get, "/b", req -> text("b"))
-    @test_throws RouteError ws!(r, "/ws"; on_message=req -> nothing)
+    @test_throws RouteError ws!(r, "/ws"; on_message = (req, client) -> nothing)
     @test isfrozen(r)
 end
 
@@ -194,13 +194,13 @@ end
 
 @testset "Compiled dispatch: error remap + services still apply" begin
     r = Router()
-    get!(r, "/svc", req -> text(string(service(req, Val(:db)))))
+    route!(r, :get, "/svc", req -> text(string(service(req, Val(:db)))))
     freeze!(r)
     resp = process(mkctx(r; svcs=(db=42,)),
         mkreq(:get, "/svc"))
     @test String(resp.body) == "42"
 
-    errs = Dict{Int,Union{Response,Function}}(
+    errs = Dict{Int,Response}(
         404 => Response(Plain, "custom 404"; status=404))
     resp = process(mkctx(r; errs=errs),
         mkreq(:get, "/missing"))
@@ -246,8 +246,8 @@ end
 
 @testset "Compiled dispatch: parametric route with explicit head!" begin
     s = App()
-    get!(s, "/u/:id::Int", (req, id) -> text("g:$id"))
-    head!(s, "/u/:id::Int", (req, id) -> text("h:$id"))
+    route!(s, :get, "/u/:id::Int", (req, id) -> text("g:$id"))
+    route!(s, :head, "/u/:id::Int", (req, id) -> text("h:$id"))
     with_server(s) do port
         r = HTTP.get("http://127.0.0.1:$port/u/7"; status_exception=false)
         @test r.status == 200

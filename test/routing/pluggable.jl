@@ -4,7 +4,7 @@
 
     app = App(router=r)
     @test app isa App{DictRouter}
-    get!(app, "/custom") do req; text("custom router") end
+    route!(app, :get, "/custom") do req; text("custom router") end
 
     with_server(app) do port
         resp = HTTP.get("http://127.0.0.1:$port/custom"; status_exception=false)
@@ -17,7 +17,7 @@
 
     # The default Router still dispatches through the same seam.
     app_default = App()
-    get!(app_default, "/default") do req; text("default router") end
+    route!(app_default, :get, "/default") do req; text("default router") end
     with_server(app_default) do port
         resp = HTTP.get("http://127.0.0.1:$port/default"; status_exception=false)
         @test resp.status == 200

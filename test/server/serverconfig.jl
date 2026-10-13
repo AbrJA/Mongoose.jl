@@ -1,6 +1,6 @@
 @testset "ServerConfig" begin
     @testset "config stores tuning parameters" begin
-        app = App(workers=2, max_body_bytes=1024, poll_timeout_ms=5)
+        app = App(2; max_body_bytes=1024, poll_timeout_ms=5)
         @test app.config.workers == 2
         @test app.config.max_body_bytes == 1024
         @test app.config.poll_timeout_ms == 5
@@ -10,8 +10,25 @@
 
     @testset "config validates parameters" begin
         @test_throws Mongoose.ServerError App(max_body_bytes=0)
-        @test_throws Mongoose.ServerError App(workers=-1)
+        @test_throws Mongoose.ServerError App(-1)
         @test_throws Mongoose.ServerError App(poll_timeout_ms=-1)
+    end
+
+    @testset "executor injection" begin
+        app = App(executor=AsyncExecutor(2, 256))
+        @test app.executor isa AsyncExecutor
+        @test app.config.workers == 2
+        @test app.config.queue_size == 256
+
+        sync = App(executor=SyncExecutor())
+        @test sync.executor isa SyncExecutor
+        @test sync.config.workers == 0
+
+        # Async sugar: positional workers, queue_size kwarg.
+        @test App(2).executor isa AsyncExecutor
+        @test App(2; queue_size=512).executor.queue_size == 512
+        @test_throws Mongoose.ServerError App(0)
+        @test_throws Mongoose.ServerError App(-1)
     end
 end
 
@@ -33,8 +50,8 @@ end
     limits = App(body_timeout_ms=500, max_header_bytes=2048)
     @test limits.config.body_timeout_ms == 500
     @test limits.config.max_header_bytes == 2048
-    @test App(workers=2).config.max_bg_tasks == 8          # auto: 4×workers
-    @test App(workers=3, max_bg_tasks=5).config.max_bg_tasks == 5
+    @test App(2).config.max_bg_tasks == 8          # auto: 4×workers
+    @test App(3; max_bg_tasks=5).config.max_bg_tasks == 5
     @test_throws Mongoose.ServerError App(max_bg_tasks=-1)
     @test App().config.max_header_bytes == Mongoose.DEFAULT_MAX_HEADER_BYTES
     @test_throws Mongoose.ServerError App(body_timeout_ms=-1)

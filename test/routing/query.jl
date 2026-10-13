@@ -1,6 +1,6 @@
 @testset "Query string handling" begin
     app = App()
-    get!(app, "/search") do req
+    route!(app, :get, "/search") do req
         q = get(parsequery(req), "q", "")
         text("query=$q")
     end
@@ -19,7 +19,7 @@ end
 DictRouter() = DictRouter(Dict{String,Mongoose.MethodMap}())
 
 function Mongoose.route!(r::DictRouter, method::Symbol, path::AbstractString, @nospecialize(handler::Function);
-                         middleware::Vector{<:Mongoose.AbstractMiddleware}=Mongoose.AbstractMiddleware[],
+                         middleware=nothing,
                          metadata=nothing)
     m = get!(() -> Mongoose.MethodMap(), r.routes, String(path))
     Mongoose.sethandler!(m, method, handler)
