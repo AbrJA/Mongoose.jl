@@ -42,6 +42,7 @@ gethandler
 getendpoint
 haswsroutes
 getwsendpoint
+matchws
 Matched
 NoMatch
 MethodMismatch

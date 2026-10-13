@@ -98,6 +98,7 @@ using Mongoose
         include("websocket/edge.jl")
         include("websocket/middleware.jl")
         include("websocket/client.jl")
+        include("websocket/params.jl")
     end
 
     @testset "TLS" begin

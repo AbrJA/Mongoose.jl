@@ -29,6 +29,8 @@
       callbacks receive `(msg, client)`, `(req, client)`, and `(client)` where
       `client` is a [`WSClient`](@ref)
     - `getwsendpoint(r::R, uri)`                    (default: `nothing`)
+    - `matchws(r::R, uri)` → `(endpoint, params)`   (default: exact match with
+      empty params; override for parametric WS routes)
     - `length(r::R)`                            (default: `0`)
 
     The default implementation is `Router` in `router.jl`.
@@ -187,6 +189,21 @@ Resolve the WebSocket endpoint registered for `uri`, or `nothing` when the
 router serves no matching WS route. Defaults to `nothing`.
 """
 getwsendpoint(::AbstractRouter, ::AbstractString) = nothing
+
+"""
+    matchws(router, uri) → Union{Nothing, Tuple{endpoint, params}}
+
+Optional WebSocket capability: resolve the endpoint serving `uri` together
+with its typed route parameters (a `NamedTuple`, empty for exact routes).
+Defaults to the exact [`getwsendpoint`](@ref) result; routers with parametric
+WebSocket routes override it. `nothing` means "no WebSocket route matches" and
+the request falls through to the HTTP pipeline.
+"""
+function matchws(router::AbstractRouter, uri::AbstractString)
+    endpoint = getwsendpoint(router, uri)
+    endpoint === nothing && return nothing
+    return (endpoint, NamedTuple())
+end
 
 Base.length(::AbstractRouter) = 0
 

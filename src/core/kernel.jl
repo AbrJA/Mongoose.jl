@@ -74,7 +74,7 @@ export AbstractRequest, Request, Headers, asheaders, mergeheaders, context, pars
     AbstractRouter, Router, MethodMap, RouteResult, Matched, NoMatch, MethodMismatch, ParamMismatch,
     SingleEndpoint, matchroute, hasroute,
     StaticRouter, @routes,
-    gethandler, getendpoint, sethandler!, haswsroutes, getwsendpoint,
+    gethandler, getendpoint, sethandler!, haswsroutes, getwsendpoint, matchws,
     route!, ws!, group, group!, RouteGroup, mount!,
     Endpoint, errorresponse, process, RequestContext, freeze!, isfrozen, getterminal,
     invokeendpoint, scopedmiddleware,

@@ -158,22 +158,41 @@ end
 abstract type AbstractCompiledDispatch end
 
 """
+    WSParamRoute{P,N,NS} — a WebSocket route whose path has `:`/`*` segments.
+
+    WebSocket routes carry no methods, so this is the WS analogue of
+    `ParamRoute`: `param_types`/`param_names` are concrete tuples and a match
+    returns a `NamedTuple` with those names. Used by the dynamic `Router`
+    (JIT profile); `StaticRouter` derives names from the path type instead.
+"""
+struct WSParamRoute{P<:Tuple,N,NS<:Tuple}
+    segments::Vector{PatternSegment}
+    endpoint::WSEndpoint
+    is_wildcard::Bool              # last segment is a `*` catch-all
+    param_pos::NTuple{N,Int}
+    param_types::P
+    param_names::NS
+end
+
+"""
     Router — default `AbstractRouter` implementation.
 
     Supports: static paths, typed parameters (`:id::Int`), string parameters
     (`:slug`), and a catch-all wildcard (`*path`, must be the last segment).
-    `freeze!` closes the route table (registration throws afterwards) and
-    compiles the closed table into a `CompiledDispatch` — the contract that
-    makes the router amenable to AOT/`--trim=safe` builds.
+    WebSocket routes support the same path grammar. `freeze!` closes the route
+    table (registration throws afterwards) and compiles the closed table into
+    a `CompiledDispatch` — the contract that makes the router amenable to
+    AOT/`--trim=safe` builds.
 """
 mutable struct Router <: AbstractRouter
     fixed::Dict{String,FixedRoute}
     param_routes::Vector{ParamRoute}
     ws_routes::Dict{String,WSEndpoint}
+    ws_param_routes::Vector{WSParamRoute}
     frozen::Bool
     compiled::Union{Nothing,AbstractCompiledDispatch}
     Router() = new(Dict{String,FixedRoute}(), ParamRoute[],
-                   Dict{String,WSEndpoint}(), false, nothing)
+                   Dict{String,WSEndpoint}(), WSParamRoute[], false, nothing)
 end
 
 """
@@ -206,8 +225,47 @@ table compiled). Custom `AbstractRouter`s default to `false`.
 """
 @inline isfrozen(r::Router) = r.frozen
 
-@inline haswsroutes(r::Router) = !isempty(r.ws_routes)
+@inline haswsroutes(r::Router) = !isempty(r.ws_routes) || !isempty(r.ws_param_routes)
 @inline getwsendpoint(r::Router, uri::String) = get(r.ws_routes, uri, nothing)
+
+"""
+    matchws(router::Router, uri) → Union{Nothing, Tuple{WSEndpoint, NamedTuple}}
+
+Exact WS routes win; parametric WS routes resolve in registration order with
+their captured parameters as a `NamedTuple` (typed by the route pattern).
+"""
+function matchws(router::Router, uri::AbstractString)
+    clean = stripquery(uri)
+    fixed = get(router.ws_routes, clean, nothing)
+    fixed !== nothing && return (fixed, NamedTuple())
+    if !isempty(router.ws_param_routes)
+        parts = String[String(seg) for seg in eachsplit(clean, '/'; keepempty=false)]
+        for route in router.ws_param_routes
+            params = _match_ws_params(route, parts)
+            params === nothing || return (route.endpoint, params)
+        end
+    end
+    return nothing
+end
+
+function _match_ws_params(route::WSParamRoute{P,N,NS}, parts::Vector{String}) where {P,N,NS}
+    nseg = length(route.segments)
+    n = length(parts)
+    if route.is_wildcard
+        n < nseg - 1 && return nothing
+    elseif n != nseg
+        return nothing
+    end
+    @inbounds for idx in 1:nseg
+        seg = route.segments[idx]
+        if !seg.is_param
+            parts[idx] == seg.text || return nothing
+        end
+    end
+    t = _extract(route.param_types, route.param_pos, parts)
+    t === nothing && return nothing
+    return NamedTuple{route.param_names}(t)
+end
 
 Base.length(r::Router)::Int = length(r.fixed) + length(r.param_routes)
 Base.isempty(r::Router)::Bool = isempty(r.fixed) && isempty(r.param_routes)
@@ -556,9 +614,52 @@ function ws!(router::Router, path::AbstractString;
              on_close::Union{Function,Nothing}=nothing,
              allowed_origins=nothing)
     router.frozen && throw(RouteError("router is frozen: registration is closed"))
-    router.ws_routes[String(path)] = WSEndpoint(on_message=on_message, on_open=on_open,
-        on_close=on_close, allowed_origins=asstrings(allowed_origins))
+    endpoint = WSEndpoint(on_message=on_message, on_open=on_open,
+                          on_close=on_close, allowed_origins=asstrings(allowed_origins))
+    _register_ws!(router, String(path), endpoint)
     return router
+end
+
+# Exact paths go in the O(1) dict; `:`/`*` paths become ordered parametric
+# routes (re-registering the same pattern replaces its endpoint).
+function _register_ws!(router::Router, path::String, endpoint::WSEndpoint)
+    if !occursin(':', path) && !occursin('*', path)
+        router.ws_routes[path] = endpoint
+        return
+    end
+    segments = PatternSegment[]
+    parts = collect(eachsplit(path, '/'; keepempty=false))
+    for (idx, part) in enumerate(parts)
+        if startswith(part, '*')
+            idx == length(parts) ||
+                throw(RouteError("Wildcard '*$part' must be the last route segment"))
+            push!(segments, PatternSegment(String(part[2:end]), WildcardParam))
+        elseif startswith(part, ':')
+            name, T = _parse_param_spec(part[2:end])
+            push!(segments, PatternSegment(name, T))
+        else
+            push!(segments, PatternSegment(part))
+        end
+    end
+    pos = Int[]
+    types = Type[]
+    names = Symbol[]
+    for (i, seg) in enumerate(segments)
+        seg.is_param || continue
+        push!(pos, i)
+        push!(types, seg.T)
+        push!(names, Symbol(seg.text))
+    end
+    is_wildcard = !isempty(types) && types[end] === WildcardParam
+    route = WSParamRoute(segments, endpoint, is_wildcard,
+                         (pos...,), (types...,), (names...,))
+    existing = findfirst(r -> r.segments == segments, router.ws_param_routes)
+    if existing === nothing
+        push!(router.ws_param_routes, route)
+    else
+        router.ws_param_routes[existing] = route
+    end
+    return
 end
 
 # --- Do-block convenience ---

@@ -333,6 +333,21 @@ dict created in `on_open` and released in `on_close`. Messages from one
 connection may run concurrently on the worker pool; lock `state` mutations
 when that matters.
 
+WS paths take the same typed captures as HTTP routes (`:id::Int`, `:slug`,
+`*rest`), delivered as `client.params`:
+
+```julia
+ws!(router, "/rooms/:id::Int";
+    on_open = (req, client) -> subscribe_room(client.params.id),
+    on_message = (msg, client) -> Message("room $(client.params.id): $(msg.data)"),
+    on_close = client -> unsubscribe_room(client.params.id),
+)
+```
+
+A capture that fails to parse means "no WS match": the request falls through
+to the HTTP pipeline (404). `@routes` blocks accept parametric `ws(...)`
+paths with the same typed params and stay fully static (AOT/trim-safe).
+
 ## WebSocket Server Push (`broadcastws`)
 
 WebSockets can also be *pushed* to: send a frame to every open client of a

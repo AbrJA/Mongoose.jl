@@ -243,6 +243,21 @@ created in `on_open` and released with the connection. Messages from one
 connection may run concurrently on the worker pool; lock `state` mutations
 when that matters.
 
+WebSocket paths support the same typed captures as HTTP routes:
+
+```julia
+ws!(app, "/rooms/:id::Int") do msg, client
+    Message("room $(client.params.id): $(msg.data)")   # params::NamedTuple
+end
+ws!(app, "/files/*rest") do msg, client
+    Message("file $(client.params.rest)")
+end
+```
+
+A capture that fails to parse is "no WS match" — the request falls through to
+the HTTP pipeline (404). `@routes` blocks accept parametric `ws(...)` paths
+too, with the same typed params and full AOT/trim support.
+
 > WebSocket **handshakes run through the middleware pipeline**, so
 > `use(app, bearer(...))`, `apikey`, `ratelimit`, `logger`, and path-scoped
 > `use(app, mw; paths=["/ws"])` protect WS endpoints exactly like HTTP. A

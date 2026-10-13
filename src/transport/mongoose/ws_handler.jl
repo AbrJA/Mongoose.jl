@@ -79,7 +79,8 @@ saw. Endpoint-level rejections (origin allowlist, `on_open` returning `false`)
 come back as `403` Responses so they travel the normal send path; a successful
 upgrade (or mongoose's 426 for a non-upgrade request) returns `WS_UPGRADED`.
 """
-function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg, req)::Union{WSUpgraded,Response}
+function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg, req,
+                     params)::Union{WSUpgraded,Response}
     headers = parse_headers(msg)
     # Gate on Sec-WebSocket-Key: mongoose's own acceptance criterion (else 426).
     if !haskey(headers, "sec-websocket-key")
@@ -95,10 +96,11 @@ function ws_upgrade!(server, conn, ev_data, uri, endpoint, msg, req)::Union{WSUp
     end
 
     # Allocate the connection record before `on_open` so the callback gets a
-    # live client (id + state + handshake request). A rejection discards it.
+    # live client (id + state + handshake request + typed params). A rejection
+    # discards it.
     id = _next_conn_id(server)
     wsc = Kernel.WSConn(uri, req)
-    client = _ws_client(id, wsc)
+    client = _ws_client(id, wsc, params)
 
     if endpoint.on_open !== nothing
         accepted = try
@@ -125,27 +127,86 @@ the terminal performs the upgrade and returns `WS_UPGRADED`.
 Runs on the poll thread — the C upgrade is not thread-safe — so handshake
 middleware should stay fast (no blocking I/O).
 """
-function ws_handle_upgrade(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid},
-                           method::Symbol, uri::String, msg, endpoint)
-    # Single assignment before capture: a reassigned `req` would be boxed by
-    # the closure below (Core.Box), which the trim verifier rejects.
+# The upgrade path avoids closures entirely (functor fields keep every type
+# concrete; closure captures would box and fail the trim verifier).
+struct _WSUpgradeTerminal{S,C,E,U,Ep,P,Msg}
+    server::S
+    conn::C
+    ev_data::E
+    uri::U
+    endpoint::Ep
+    params::P
+    msg::Msg
+end
+@inline (t::_WSUpgradeTerminal)(req::Request) =
+    ws_upgrade!(t.server, t.conn, t.ev_data, t.uri, t.endpoint, t.msg, req, t.params)
+
+# 0-arity pipeline runner for `_guarded_process` (terminal + middleware).
+struct _WSRunPipeline{R,M,T}
+    req::R
+    middlewares::M
+    terminal::T
+end
+@inline function (r::_WSRunPipeline)()
+    isempty(r.middlewares) && return r.terminal(r.req)
+    return runpipeline(r.middlewares, r.req, r.terminal)
+end
+
+struct _WSUpgradeDispatch{S,C,E,M,U,Msg}
+    server::S
+    conn::C
+    ev_data::E
+    method::M
+    uri::U
+    msg::Msg
+end
+
+# Runs for a matched WS endpoint (concrete per route on the static path).
+function (d::_WSUpgradeDispatch)(endpoint, params)
     req = Kernel._attach_services(
-        adapt_request(msg, method, uri; remote_addr=cached_remote_addr(server, conn)),
-        server.context.registries.services)
-    terminal = (r) -> ws_upgrade!(server, conn, ev_data, uri, endpoint, msg, r)
-    res = Kernel._guarded_process(server.context, req) do
-        isempty(server.context.middlewares) ? terminal(req) :
-            runpipeline(server.context.middlewares, req, terminal)
-    end
+        adapt_request(d.msg, d.method, d.uri; remote_addr=cached_remote_addr(d.server, d.conn)),
+        d.server.context.registries.services)
+    terminal = _WSUpgradeTerminal(d.server, d.conn, d.ev_data, d.uri, endpoint, params, d.msg)
+    res = Kernel._guarded_process(
+        _WSRunPipeline(req, d.server.context.middlewares, terminal),
+        d.server.context, req)
     if res isa StreamResponse
         # A short-circuiting middleware may stream its rejection (e.g. SSE).
-        send_stream_response!(server, conn, res)
+        send_stream_response!(d.server, d.conn, res)
     elseif res isa Response
-        res = _echo_conn_close!(res, req)
-        send_http_response!(conn, res, resolve_request_id(req, server))
-        _response_wants_close(res) && mgjl_conn_close_after_send(conn)
+        echoed = _echo_conn_close!(res, req)
+        send_http_response!(d.conn, echoed, resolve_request_id(req, d.server))
+        _response_wants_close(echoed) && mgjl_conn_close_after_send(d.conn)
     end
-    return nothing
+    return true
+end
+
+"""
+    ws_handle_upgrade(server, conn, ev_data, method, uri, msg) → Bool
+
+Resolve the WS endpoint (typed params included) and run the handshake through
+the middleware pipeline. `true` means the request was a WebSocket route and is
+consumed; `false` falls through to the HTTP pipeline.
+"""
+function ws_handle_upgrade(server::AbstractServer, conn::MgConnection, ev_data::Ptr{Cvoid},
+                           method::Symbol, uri::String, msg)::Bool
+    dispatch = _WSUpgradeDispatch(server, conn, ev_data, method, uri, msg)
+    return _ws_match_dispatch(server.router, uri, dispatch) === true
+end
+
+# Typed WS dispatch for the upgrade path: `StaticRouter` scans its table with
+# the callback (concrete route/params per generated branch); every other
+# router resolves through the `matchws` protocol.
+@inline function _ws_match_dispatch(router::AbstractRouter, uri::AbstractString, k)
+    matched = matchws(router, uri)
+    matched === nothing && return nothing
+    return k(matched[1], matched[2])
+end
+
+function _ws_match_dispatch(router::StaticRouter, uri::AbstractString, k)
+    clean = stripquery(uri)
+    parts = Kernel._parts_for(Val(Kernel._has_ws_patterns(router.ws_routes)), clean)
+    return Kernel._scan_ws_match(router.ws_routes, clean, parts, k)
 end
 
 # --- WS Control Frames (Ping/Pong/Close) ---
@@ -322,28 +383,26 @@ end
 # --- WS Dispatch ---
 
 # Router protocol: three hooks let the transport dispatch WS events without
-# assuming how endpoints are stored. The generic implementations resolve the
-# endpoint via `getwsendpoint` (the dynamic `Router`); `StaticRouter` methods
-# scan its typed table and call the concrete handlers (trim-safe).
-#
-# `resolve_ws` is the side-effect-free lookup the upgrade pipeline needs before
-# running middleware; the actual handshake lives in `ws_upgrade!`.
-@inline resolve_ws(router::AbstractRouter, uri::String) = getwsendpoint(router, uri)
-
+# assuming how endpoints are stored. `matchws` resolves endpoint + typed
+# params for the dynamic `Router`; `StaticRouter` methods scan its typed table
+# and call the concrete handlers (trim-safe).
 function ws_message(server::AbstractServer, router::AbstractRouter,
                     request::Kernel.Tagged{Kernel.Intent})
-    endpoint = getwsendpoint(router, request.payload.uri)
-    endpoint === nothing && return nothing
-    client = _ws_client(request.id, request.payload.conn)
+    matched = matchws(router, request.payload.uri)
+    matched === nothing && return nothing
+    endpoint, params = matched
+    client = _ws_client(request.id, request.payload.conn, params)
     return call_ws_endpoint(endpoint, request, client)
 end
 
 function ws_close(server::AbstractServer, router::AbstractRouter, conn_id::Int,
                   wsc::Kernel.WSConn)
-    endpoint = getwsendpoint(router, wsc.uri)
-    (endpoint === nothing || endpoint.on_close === nothing) && return nothing
+    matched = matchws(router, wsc.uri)
+    matched === nothing && return nothing
+    endpoint, params = matched
+    endpoint.on_close === nothing && return nothing
     try
-        endpoint.on_close(_ws_client(conn_id, wsc))
+        endpoint.on_close(_ws_client(conn_id, wsc, params))
     catch e
         @log_error "WebSocket on_close error uri=$(wsc.uri)" e catch_backtrace()
     end
@@ -352,19 +411,10 @@ end
 
 # --- StaticRouter: typed WS dispatch (no Dict, no abstract handler call) ---
 
-@inline _find_ws_route(::Tuple{}, uri) = nothing
-@inline function _find_ws_route(routes::Tuple, uri)
-    route = routes[1]
-    route.path == uri && return route
-    return _find_ws_route(Base.tail(routes), uri)
-end
-
-@inline resolve_ws(router::StaticRouter, uri::String) = _find_ws_route(router.ws_routes, uri)
-
-@inline function _invoke_ws_static(route::Kernel.StaticWSRoute{M,O,C},
-                                   request::Kernel.Tagged{Kernel.Intent}) where {M,O,C}
+@inline function _invoke_ws_static(route::Kernel.StaticWSRoute{M,O,C,PT},
+                                   request::Kernel.Tagged{Kernel.Intent},
+                                   client::Kernel.WSClient) where {M,O,C,PT}
     try
-        client = _ws_client(request.id, request.payload.conn)
         res = route.on_message(request.payload.body, client)
         return tag_ws(request.id, res)
     catch e
@@ -373,15 +423,23 @@ end
     return nothing
 end
 
-@inline _scan_ws_msg(::Tuple{}, uri, request) = nothing
-@inline function _scan_ws_msg(routes::Tuple, uri, request)
+@inline _scan_ws_msg(::Tuple{}, uri, parts, request) = nothing
+@inline function _scan_ws_msg(routes::Tuple, uri, parts, request)
     route = routes[1]
-    route.path == uri && return _invoke_ws_static(route, request)
-    return _scan_ws_msg(Base.tail(routes), uri, request)
+    params = Kernel._match_ws_static(route, uri, parts)
+    if params !== nothing
+        client = _ws_client(request.id, request.payload.conn, params)
+        return _invoke_ws_static(route, request, client)
+    end
+    return _scan_ws_msg(Base.tail(routes), uri, parts, request)
 end
 
-ws_message(server::AbstractServer, router::StaticRouter, request::Kernel.Tagged{Kernel.Intent}) =
-    _scan_ws_msg(router.ws_routes, request.payload.uri, request)
+function ws_message(server::AbstractServer, router::StaticRouter,
+                    request::Kernel.Tagged{Kernel.Intent})
+    uri = request.payload.uri
+    parts = Kernel._parts_for(Val(Kernel._has_ws_patterns(router.ws_routes)), uri)
+    return _scan_ws_msg(router.ws_routes, uri, parts, request)
+end
 
 @inline _run_ws_close(::Nothing, client) = nothing
 @inline function _run_ws_close(f::F, client) where {F}
@@ -393,15 +451,20 @@ ws_message(server::AbstractServer, router::StaticRouter, request::Kernel.Tagged{
     return nothing
 end
 
-@inline _scan_ws_close(::Tuple{}, uri, client) = nothing
-@inline function _scan_ws_close(routes::Tuple, uri, client)
+@inline _scan_ws_close(::Tuple{}, uri, parts, conn_id, wsc) = nothing
+@inline function _scan_ws_close(routes::Tuple, uri, parts, conn_id, wsc)
     route = routes[1]
-    route.path == uri && return _run_ws_close(route.on_close, client)
-    return _scan_ws_close(Base.tail(routes), uri, client)
+    params = Kernel._match_ws_static(route, uri, parts)
+    if params !== nothing
+        return _run_ws_close(route.on_close, _ws_client(conn_id, wsc, params))
+    end
+    return _scan_ws_close(Base.tail(routes), uri, parts, conn_id, wsc)
 end
 
-ws_close(server::AbstractServer, router::StaticRouter, conn_id::Int, wsc::Kernel.WSConn) =
-    _scan_ws_close(router.ws_routes, wsc.uri, _ws_client(conn_id, wsc))
+function ws_close(server::AbstractServer, router::StaticRouter, conn_id::Int, wsc::Kernel.WSConn)
+    parts = Kernel._parts_for(Val(Kernel._has_ws_patterns(router.ws_routes)), wsc.uri)
+    return _scan_ws_close(router.ws_routes, wsc.uri, parts, conn_id, wsc)
+end
 
 # --- Transport entry points ---
 

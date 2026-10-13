@@ -92,12 +92,15 @@ end
 # --- Static router ---
 
 """
-    StaticWSRoute{M,O,C} — one compile-time WebSocket endpoint.
+    StaticWSRoute{M,O,C,PT} — one compile-time WebSocket endpoint.
 
-    Exact-path route: the transport matches `path` and calls `on_message` /
-    `on_open` / `on_close` through their concrete types (no dynamic lookup).
+    `PT` is the compile-time path type (same grammar as HTTP `StaticRoute`:
+    literal segments, `Cap{N,T}` params, `Wild{N}` catch-alls), so the
+    transport matches parametric WS paths with typed captures and no runtime
+    parsing. Callbacks are invoked through their concrete types (no dynamic
+    lookup), which keeps the AOT/trim profile clean.
 """
-struct StaticWSRoute{M,O,C}
+struct StaticWSRoute{M,O,C,PT}
     path::String
     on_message::M
     on_open::O
@@ -105,10 +108,10 @@ struct StaticWSRoute{M,O,C}
     allowed_origins::Vector{String}
 end
 
-function StaticWSRoute(path::AbstractString; on_message::M, on_open::O=nothing,
-                       on_close::C=nothing, allowed_origins=nothing) where {M,O,C}
-    return StaticWSRoute{M,O,C}(String(path), on_message, on_open, on_close,
-                                asstrings(allowed_origins))
+function StaticWSRoute(::Type{PT}, path::AbstractString; on_message::M, on_open::O=nothing,
+                       on_close::C=nothing, allowed_origins=nothing) where {PT,M,O,C}
+    return StaticWSRoute{M,O,C,PT}(String(path), on_message, on_open, on_close,
+                                   asstrings(allowed_origins))
 end
 
 """
@@ -190,6 +193,63 @@ end
 
 @inline _parts_for(::Val{true}, clean::AbstractString) = _split_parts(clean)
 @inline _parts_for(::Val{false}, clean::AbstractString) = EMPTY_PARTS
+
+# --- Static WS matching (typed params, unrolled over the path type) ---
+
+@inline _ws_is_fixed(route::StaticWSRoute{M,O,C,PT}) where {M,O,C,PT} = _is_fixed(PT)
+
+@inline _has_ws_patterns(::Tuple{}) = false
+@inline function _has_ws_patterns(routes::Tuple)
+    _ws_is_fixed(routes[1]) || return true
+    return _has_ws_patterns(Base.tail(routes))
+end
+
+# Captured parameter names, folded from the path type at compile time.
+@inline _param_names(::Type{PathEnd}) = ()
+@inline _param_names(::Type{PathCons{Lit{S},Rest}}) where {S,Rest} = _param_names(Rest)
+@inline _param_names(::Type{PathCons{Cap{N,T},Rest}}) where {N,T,Rest} =
+    (N, _param_names(Rest)...)
+@inline _param_names(::Type{PathCons{Wild{N},PathEnd}}) where {N} = (N,)
+@inline _param_names(::Type{PathCons{CatchAll,PathEnd}}) = ()
+
+@inline function _match_ws_static(route::StaticWSRoute{M,O,C,PT}, clean, parts) where {M,O,C,PT}
+    if _is_fixed(PT)
+        return clean == route.path ? NamedTuple() : nothing
+    end
+    m = _match_path(PT, parts, 1)
+    (m === nothing || m isa ParamParseFail) && return nothing
+    return NamedTuple{_param_names(PT)}(m)
+end
+
+# Flat generated scan (same pattern as the HTTP `_scan_fixed`): each branch
+# calls `k(route, params)` with concrete types, so the common return type
+# stays uniform and inference never merges a route-type union (a 4+-route
+# union widens to Any, which the trim verifier rejects).
+@generated function _scan_ws_match(routes::Routes, clean, parts, k) where {Routes<:Tuple}
+    exprs = Any[]
+    for i in 1:length(Routes.parameters)
+        push!(exprs, quote
+            let m = _match_ws_static(routes[$i], clean, parts)
+                m === nothing || return k(routes[$i], m)
+            end
+        end)
+    end
+    push!(exprs, :(return nothing))
+    return Expr(:block, exprs...)
+end
+
+"""
+    matchws(router::StaticRouter, uri) → Union{Nothing, Tuple{StaticWSRoute, NamedTuple}}
+
+Typed WS matching: literal routes compare exactly; `Cap{N,T}`/`Wild{N}`
+segments parse into a `NamedTuple` of captures. A failed typed capture means
+"no match" (the request falls through to the HTTP pipeline).
+"""
+function matchws(router::StaticRouter, uri::AbstractString)
+    clean = stripquery(uri)
+    parts = _parts_for(Val(_has_ws_patterns(router.ws_routes)), clean)
+    return _scan_ws_match(router.ws_routes, clean, parts, (r, p) -> (r, p))
+end
 
 # --- Dispatch scans (generated flat over the route tuple; `k` runs the match) ---
 # Flat per-route branches: recursive @inline scans explode compile memory.
@@ -499,8 +559,9 @@ function _ws_expr(ex::Expr, prefix::AbstractString)
     path, handler = args
     path isa String || error("@routes: ws path must be a string literal")
     full = _path_join(prefix, path)
+    pathtype = _path_type_expr(full)
     return quote
-        StaticWSRoute($full; on_message = $(esc(handler)),
+        StaticWSRoute($pathtype, $full; on_message = $(esc(handler)),
                       on_open = $(esc(on_open)),
                       on_close = $(esc(on_close)),
                       allowed_origins = $(esc(allowed)))
@@ -549,8 +610,9 @@ rest of the path, and a bare `"*"` is the final fallback.
 `group("prefix"; middleware=…) do … end` blocks are expanded at compile time:
 paths are prefixed and middleware tuples concatenated (outer → inner → route),
 so groups add no runtime structure. `ws("path", handler; on_open=, on_close=,
-allowed_origins=)` declares a typed WebSocket endpoint. All three forms are
-fully static.
+allowed_origins=)` declares a typed WebSocket endpoint (parametric `ws` paths
+work too; captures arrive as `client.params`). All three forms are fully
+static.
 """
 macro routes(block)
     block isa Expr && block.head === :block ||

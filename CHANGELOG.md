@@ -21,6 +21,13 @@ All notable changes to Mongoose.jl are documented here. The format is based on
   and a per-connection `state::Dict{Symbol,Any}` created in `on_open` and
   released with the connection. `sendws(server, client, data)` pushes to one
   client (async: reply-queue safe from any task; sync: from a handler).
+- **Parametric WebSocket routes** — `ws!(app, "/rooms/:id::Int", …)` (and
+  `ws("/rooms/:id::Int", …)` in `@routes`) capture typed path parameters,
+  delivered as `client.params` (a `NamedTuple`) to `on_open`/`on_message`/
+  `on_close`; `*rest` wildcards capture the remainder. A failed typed capture
+  means "no WS match" and the request falls through to the HTTP pipeline. The
+  `matchws(router, uri) → (endpoint, params)` protocol hook defaults to the
+  exact `getwsendpoint` result, so custom routers keep working unchanged.
 
 ### Changed
 - **Breaking**: WebSocket callbacks now receive the connection handle —
