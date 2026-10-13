@@ -108,6 +108,8 @@ end
     pf(preq, next0)
     @test @allocated(pf(preq, next0)) == 0
 
+    # Warm up: the first call in a fresh process includes compilation.
+    Mongoose.Kernel.mergeheaders(Headers(), "A" => "1")
     @test @allocated(Mongoose.Kernel.mergeheaders(Headers(), "A" => "1")) <= 128
 end
 
